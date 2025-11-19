@@ -55,7 +55,7 @@ def enable_cloud_images(
         # Check if SSH is already configured
         check_ssh = subprocess.run(
             [
-                'sudo', '-u', 'depl0y',
+                '/usr/bin/sudo', '-u', 'depl0y',
                 'ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5',
                 '-o', 'StrictHostKeyChecking=no',
                 f'root@{proxmox_host}',
@@ -85,7 +85,7 @@ def enable_cloud_images(
             logger.info("Installing sshpass")
             install_result = subprocess.run(
                 [
-                    'sudo', 'DEBIAN_FRONTEND=noninteractive',
+                    '/usr/bin/sudo', 'DEBIAN_FRONTEND=noninteractive',
                     'apt-get', 'install', '-y', '-qq', 'sshpass'
                 ],
                 capture_output=True,
@@ -101,14 +101,14 @@ def enable_cloud_images(
             logger.info("Generating SSH key")
             subprocess.run(
                 [
-                    'sudo', '-u', 'depl0y',
+                    '/usr/bin/sudo', '-u', 'depl0y',
                     'mkdir', '-p', '/opt/depl0y/.ssh'
                 ],
                 check=True
             )
             subprocess.run(
                 [
-                    'sudo', '-u', 'depl0y',
+                    '/usr/bin/sudo', '-u', 'depl0y',
                     'ssh-keygen', '-t', 'rsa', '-b', '4096',
                     '-f', ssh_key_path,
                     '-N', '', '-q'
@@ -120,7 +120,7 @@ def enable_cloud_images(
         logger.info(f"Copying SSH key to {proxmox_host}")
         copy_result = subprocess.run(
             [
-                'sudo', '-u', 'depl0y',
+                '/usr/bin/sudo', '-u', 'depl0y',
                 'sshpass', '-p', password,
                 'ssh-copy-id',
                 '-o', 'StrictHostKeyChecking=no',
@@ -140,7 +140,7 @@ def enable_cloud_images(
 
             alt_result = subprocess.run(
                 [
-                    'sudo', '-u', 'depl0y',
+                    '/usr/bin/sudo', '-u', 'depl0y',
                     'sshpass', '-p', password,
                     'ssh', '-o', 'StrictHostKeyChecking=no',
                     f'root@{proxmox_host}',
@@ -158,7 +158,7 @@ def enable_cloud_images(
         logger.info("Verifying SSH access")
         verify_result = subprocess.run(
             [
-                'sudo', '-u', 'depl0y',
+                '/usr/bin/sudo', '-u', 'depl0y',
                 'ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5',
                 '-o', 'StrictHostKeyChecking=no',
                 f'root@{proxmox_host}',
@@ -244,7 +244,7 @@ def enable_proxmox_cluster_ssh(
         test_node_1 = node_names[0]
         test_node_2 = node_names[1] if len(node_names) > 1 else node_names[0]
 
-        check_cmd = f"sudo -u depl0y ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no root@{proxmox_host} 'ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no {test_node_2} echo test' 2>&1"
+        check_cmd = f"/usr/bin/sudo -u depl0y ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no root@{proxmox_host} 'ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no {test_node_2} echo test' 2>&1"
         check_result = subprocess.run(check_cmd, shell=True, capture_output=True, text=True, timeout=15)
 
         if check_result.returncode == 0 and 'test' in check_result.stdout:
@@ -277,7 +277,7 @@ echo "SSH_SETUP_COMPLETE"
 """
 
         # Execute setup via SSH to Proxmox
-        cmd = f"sudo -u depl0y sshpass -p '{password}' ssh -o StrictHostKeyChecking=no root@{proxmox_host} '{setup_script}'"
+        cmd = f"/usr/bin/sudo -u depl0y sshpass -p '{password}' ssh -o StrictHostKeyChecking=no root@{proxmox_host} '{setup_script}'"
         result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=60)
 
         if result.returncode != 0:
@@ -285,7 +285,7 @@ echo "SSH_SETUP_COMPLETE"
 
         # Verify connectivity
         logger.info("Verifying inter-node SSH connectivity...")
-        verify_cmd = f"sudo -u depl0y ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no root@{proxmox_host} 'ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no {test_node_2} echo VERIFIED'"
+        verify_cmd = f"/usr/bin/sudo -u depl0y ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no root@{proxmox_host} 'ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no {test_node_2} echo VERIFIED'"
         verify_result = subprocess.run(verify_cmd, shell=True, capture_output=True, text=True, timeout=15)
 
         if verify_result.returncode != 0 or 'VERIFIED' not in verify_result.stdout:

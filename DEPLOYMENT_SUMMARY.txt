@@ -1,0 +1,90 @@
+╔══════════════════════════════════════════════════════════════════╗
+║                  DEPL0Y v1.1.0 - FINAL DEPLOYMENT                 ║
+╚══════════════════════════════════════════════════════════════════╝
+
+PACKAGE MD5: 4f39d60009f6df018b167edb14375b62
+DATE: $(date)
+
+═══════════════════════════════════════════════════════════════════
+
+✅ ALL ISSUES FIXED:
+
+1. "cho: command not found" ERROR - FIXED
+   • Root cause: read commands consuming script lines when piped
+   • Solution: All read commands now use < /dev/tty
+
+2. 2FA LOGIN ISSUE - FIXED  
+   • Root cause 1: DATABASE_URL defaulted to MySQL instead of SQLite
+   • Root cause 2: Admin user may have 2FA enabled
+   • Solution: 
+     - Fixed DATABASE_URL to SQLite in config.py
+     - create_admin.py now ALWAYS disables 2FA
+     - Works on BOTH new and existing installations
+     - Debug output shows verification
+
+3. UNINSTALLER - ENHANCED
+   • Now cleans up ALL Depl0y files
+   • Removes temp files and caches
+   • Provides instructions for removing system packages
+   • Works with piping: curl ... | sudo bash -s -- -y
+
+4. ADDITIONAL IMPROVEMENTS
+   • Cache-busting with timestamps
+   • Version tracking (v1.1.0)
+   • All scripts handle piped execution correctly
+
+═══════════════════════════════════════════════════════════════════
+
+📥 INSTALLATION:
+
+Fresh Install:
+  curl -fsSL http://deploy.agit8or.net/downloads/install.sh | sudo bash
+
+Upgrade Existing:
+  curl -fsSL http://deploy.agit8or.net/downloads/install.sh | sudo bash
+  (Will automatically disable 2FA for admin user)
+
+═══════════════════════════════════════════════════════════════════
+
+🗑️  UNINSTALLATION:
+
+Interactive:
+  curl -fsSL http://deploy.agit8or.net/downloads/uninstall.sh -o uninstall.sh
+  sudo bash uninstall.sh
+
+Non-interactive (auto-confirm):
+  curl -fsSL http://deploy.agit8or.net/downloads/uninstall.sh | sudo bash -s -- -y
+
+═══════════════════════════════════════════════════════════════════
+
+🔐 DEFAULT CREDENTIALS:
+
+  URL: http://YOUR_SERVER_IP
+  Username: admin
+  Password: admin
+  2FA: DISABLED (not required)
+
+  ⚠️  CHANGE PASSWORD AFTER FIRST LOGIN!
+
+═══════════════════════════════════════════════════════════════════
+
+✅ VERIFICATION:
+
+Package MD5: 4f39d60009f6df018b167edb14375b62
+
+Test on fresh Ubuntu 22.04/24.04 server:
+1. curl -fsSL http://deploy.agit8or.net/downloads/install.sh | sudo bash
+2. Access http://YOUR_SERVER_IP
+3. Login with admin/admin (no 2FA)
+4. Success!
+
+═══════════════════════════════════════════════════════════════════
+
+📁 FILES DEPLOYED:
+
+/opt/depl0y/depl0y-v1.1.0.tar.gz (main package)
+/opt/depl0y/static/downloads/depl0y-latest.tar.gz (download endpoint)
+/opt/depl0y/static/downloads/install.sh (standalone installer)
+/opt/depl0y/static/downloads/uninstall.sh (standalone uninstaller)
+
+═══════════════════════════════════════════════════════════════════

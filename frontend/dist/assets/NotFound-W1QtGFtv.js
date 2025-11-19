@@ -1,0 +1,1 @@
+import{_ as t,c as s,o as a,a as e}from"./index-DpP9cWht.js";const n={name:"NotFound"},d={class:"notfound-page"};function c(r,o,l,p,u,i){return a(),s("div",d,[...o[0]||(o[0]=[e("div",{class:"card"},[e("div",{class:"card-header"},[e("h3",null,"NotFound")]),e("p",{class:"text-muted"},"NotFound implementation goes here")],-1)])])}const m=t(n,[["render",c]]);export{m as default};

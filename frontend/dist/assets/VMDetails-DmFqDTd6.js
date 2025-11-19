@@ -1,0 +1,1 @@
+import{_ as a,c as t,o,a as e}from"./index-DpP9cWht.js";const c={name:"VMDetails"},r={class:"vmdetails-page"};function l(n,s,i,d,p,m){return o(),t("div",r,[...s[0]||(s[0]=[e("div",{class:"card"},[e("div",{class:"card-header"},[e("h3",null,"VMDetails")]),e("p",{class:"text-muted"},"VMDetails implementation goes here")],-1)])])}const f=a(c,[["render",l]]);export{f as default};

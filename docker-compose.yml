@@ -1,0 +1,95 @@
+version: '3.8'
+
+services:
+  # MariaDB Database
+  db:
+    image: mariadb:11.0
+    container_name: depl0y-db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-change_me_root}
+      MYSQL_DATABASE: depl0y
+      MYSQL_USER: depl0y
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-change_me_depl0y}
+    volumes:
+      - db_data:/var/lib/mysql
+    ports:
+      - "3306:3306"
+    networks:
+      - depl0y-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: depl0y-backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: mysql+pymysql://depl0y:${MYSQL_PASSWORD:-change_me_depl0y}@db:3306/depl0y
+      SECRET_KEY: ${SECRET_KEY:-generate-strong-secret-key-in-production}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-generate-fernet-key-for-encryption}
+      DEBUG: ${DEBUG:-false}
+      ISO_STORAGE_PATH: /app/storage/isos
+      CLOUDINIT_TEMPLATE_PATH: /app/storage/cloud-init
+      SSH_KEY_PATH: /app/storage/ssh_keys
+      LOG_FILE: /app/logs/app.log
+    volumes:
+      - ./backend:/app
+      - storage_data:/app/storage
+      - log_data:/app/logs
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - depl0y-network
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # Frontend (built separately, served by nginx)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: depl0y-frontend
+    restart: unless-stopped
+    networks:
+      - depl0y-network
+
+  # Nginx Reverse Proxy
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: depl0y-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/depl0y.conf:/etc/nginx/conf.d/default.conf
+      - ./frontend/dist:/var/www/depl0y/frontend/dist
+      - nginx_logs:/var/log/nginx
+    depends_on:
+      - backend
+      - frontend
+    networks:
+      - depl0y-network
+
+volumes:
+  db_data:
+    driver: local
+  storage_data:
+    driver: local
+  log_data:
+    driver: local
+  nginx_logs:
+    driver: local
+
+networks:
+  depl0y-network:
+    driver: bridge

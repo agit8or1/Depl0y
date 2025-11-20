@@ -56,9 +56,14 @@ def check_ha_status(current_user=Depends(get_current_user), db: Session = Depend
                 if "manager_status" in ha_data and isinstance(ha_data["manager_status"], dict):
                     node_status = ha_data["manager_status"].get("node_status", {})
                     if node_status:
-                        # Get first node's status
-                        first_node = next(iter(node_status.values()), {})
-                        manager_status = first_node.get("state", "unknown")
+                        # node_status contains strings like "online", "offline", not dicts
+                        # Get first node's status (should be "online" if HA is working)
+                        first_node_status = next(iter(node_status.values()), "unknown")
+                        # Map Proxmox status to manager status
+                        if first_node_status == "online":
+                            manager_status = "active"
+                        else:
+                            manager_status = first_node_status
                     else:
                         manager_status = "active"
 

@@ -428,8 +428,34 @@ class ProxmoxService:
                 vm_config["machine"] = machine_type
             if vga_type and vga_type != "std":
                 vm_config["vga"] = vga_type
-            if boot_order and boot_order != "cdn":
-                vm_config["boot"] = f"order={boot_order}"
+
+            # Convert legacy boot order to Proxmox 8.x format
+            # For ISO installations, CD-ROM (ide2) should boot first
+            if boot_order:
+                boot_order_map = {
+                    'cdn': 'ide2;scsi0;net0',  # CD first, then disk, then network (for ISO installation)
+                    'cnd': 'ide2;net0;scsi0',  # CD, network, disk
+                    'dcn': 'scsi0;ide2;net0',  # Disk, CD, network
+                    'dnc': 'scsi0;net0;ide2',  # Disk, network, CD
+                    'ncd': 'net0;ide2;scsi0',  # Network, CD, disk (PXE boot)
+                    'ndc': 'net0;scsi0;ide2',  # Network, disk, CD
+                    'c': 'scsi0',              # Disk only
+                    'd': 'scsi0',              # Disk only (legacy)
+                    'n': 'net0',               # Network only
+                }
+
+                # If already in new format (contains semicolon or equals), use as-is
+                if ';' in boot_order or '=' in boot_order:
+                    vm_config['boot'] = boot_order if '=' in boot_order else f"order={boot_order}"
+                else:
+                    # Convert legacy format to new format
+                    boot_devices = boot_order_map.get(boot_order.lower(), 'ide2;scsi0;net0')
+                    vm_config['boot'] = f"order={boot_devices}"
+                    logger.info(f"Converted boot order '{boot_order}' to 'order={boot_devices}'")
+            else:
+                # Default: CD first for ISO installations
+                vm_config['boot'] = 'order=ide2;scsi0;net0'
+                logger.info(f"Using default boot order for ISO installation: order=ide2;scsi0;net0")
 
             # Additional network interfaces
             if network_interfaces:

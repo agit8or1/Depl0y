@@ -747,7 +747,11 @@ class DeploymentService:
             vm.status_message = "Cloning VM from template (copying disks)..."
             self.db.commit()
             time.sleep(5)
-            max_wait = 180
+            # Timeout based on disk size: 1 minute per 50GB, minimum 5 minutes, max 30 minutes
+            vm_disk_size = vm.disk_size if hasattr(vm, 'disk_size') and vm.disk_size else 100
+            estimated_minutes = max(5, min(30, vm_disk_size // 50))
+            max_wait = estimated_minutes * 60
+            logger.info(f"Clone timeout set to {estimated_minutes} minutes ({max_wait} seconds) for {vm_disk_size}GB disk")
             waited = 0
             clone_completed = False
             
@@ -1142,11 +1146,18 @@ fi
         subprocess.run(cleanup_script, shell=True, capture_output=True)
 
         # Create new VM on specific node using pvesh
+        # Sanitize cloud image name to be DNS-compliant
+        import re
+        safe_name = re.sub(r'[^\w\.-]', '-', cloud_image.name.lower())  # Replace special chars
+        safe_name = re.sub(r'-+', '-', safe_name)  # Remove consecutive hyphens
+        safe_name = safe_name.strip('-')  # Remove leading/trailing hyphens
+        logger.info(f"Sanitized cloud image name: '{cloud_image.name}' -> '{safe_name}'")
+
         create_vm_script = f"""
 ssh -o StrictHostKeyChecking=no -o BatchMode=yes {ssh_host} '
 pvesh create /nodes/{target_node}/qemu \\
   -vmid {template_vmid} \\
-  -name {cloud_image.name.replace(' ', '-')} \\
+  -name {safe_name} \\
   -memory 2048 \\
   -cores 2 \\
   -net0 virtio,bridge=vmbr0 \\
@@ -1385,7 +1396,11 @@ echo "Template {template_vmid} creation complete!"
             raise Exception(f"Unknown cloud image: {cloud_image.name}")
 
         # Construct the SSH command to create the template
-        template_name = cloud_image.name.lower().replace(' ', '-').replace('.', '-')
+        # Sanitize name to be DNS-compliant
+        import re
+        template_name = re.sub(r'[^\w\.-]', '-', cloud_image.name.lower())
+        template_name = re.sub(r'-+', '-', template_name)  # Remove consecutive hyphens
+        template_name = template_name.strip('-')  # Remove leading/trailing hyphens
         image_filename = image_url.split('/')[-1]
 
         # Create a script that will be executed on the Proxmox host
@@ -1566,6 +1581,12 @@ echo "Template {template_vmid} created successfully"
             # Use subprocess to SSH and create the template
             # This assumes SSH key authentication is configured
 
+            # Sanitize cloud image name to be DNS-compliant
+            import re
+            template_name = re.sub(r'[^\w\.-]', '-', cloud_image.name.lower())
+            template_name = re.sub(r'-+', '-', template_name)  # Remove consecutive hyphens
+            template_name = template_name.strip('-')  # Remove leading/trailing hyphens
+
             # Create a temporary script to run on Proxmox
             script_content = f"""#!/bin/bash
 set -e
@@ -1581,7 +1602,7 @@ fi
 
 # Create VM shell
 qm create {template_vmid} \\
-    --name "{cloud_image.name.lower().replace(' ', '-')}" \\
+    --name "{template_name}" \\
     --memory 2048 \\
     --cores 2 \\
     --net0 virtio,bridge=vmbr0 \\

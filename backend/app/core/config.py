@@ -24,8 +24,8 @@ def get_app_version():
     except Exception as e:
         # Fallback to hardcoded version if database query fails
         pass
-    
-    return "1.2.2"
+
+    return "1.2.3"
 
 
 class Settings(BaseSettings):

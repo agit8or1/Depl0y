@@ -22,7 +22,7 @@ echo "║   ╚═════╝ ╚══════╝╚═╝     ╚═�
 echo "║                                                          ║"
 echo "║       Automated VM Deployment Panel for Proxmox VE      ║"
 echo "║              https://deploy.agit8or.net                 ║"
-echo "║                    Version 1.1.5                        ║"
+echo "║                    Version 1.2.1                        ║"
 echo "║                                                          ║"
 echo "╚══════════════════════════════════════════════════════════╝"
 echo ""
@@ -465,7 +465,7 @@ sudo -u depl0y sqlite3 /var/lib/depl0y/db/depl0y.db "CREATE TABLE IF NOT EXISTS 
 );" 2>/dev/null || true
 
 sudo -u depl0y sqlite3 /var/lib/depl0y/db/depl0y.db "INSERT OR REPLACE INTO system_settings (key, value, description) VALUES
-    ('app_version', '1.2.0', 'Current application version'),
+    ('app_version', '1.2.1', 'Current application version'),
     ('app_name', 'Depl0y', 'Application name');" 2>/dev/null || true
 
 echo "✓ System settings initialized"
@@ -611,15 +611,15 @@ if [ "$UPGRADE_MODE" = true ]; then
     echo "║                                                          ║"
     echo "╚══════════════════════════════════════════════════════════╝"
     echo ""
-    echo "🎉 Depl0y v1.2.0 has been successfully upgraded!"
+    echo "🎉 Depl0y v1.2.1 has been successfully upgraded!"
     echo ""
     echo "📍 Access Depl0y at:"
     echo "   http://$IP"
     echo ""
-    echo "✨ What's new in v1.2.0:"
-    echo "   • Fast fresh installs using pre-built frontend"
-    echo "   • No more 5-minute npm builds during installation"
-    echo "   • Automatic backend restart after upgrades"
+    echo "✨ What's new in v1.2.1:"
+    echo "   • Fixed cloud images fetch showing 'up to date' with empty database"
+    echo "   • Fixed SSH/sudo PATH issues in cloud image setup"
+    echo "   • Better error messages for cloud image configuration"
     echo "   • One-click automatic updates from Settings"
     echo ""
     echo "📚 Note:"
@@ -633,7 +633,7 @@ else
     echo "║                                                          ║"
     echo "╚══════════════════════════════════════════════════════════╝"
     echo ""
-    echo "🎉 Depl0y v1.2.0 has been successfully installed!"
+    echo "🎉 Depl0y v1.2.1 has been successfully installed!"
     echo ""
     echo "📍 Access Depl0y at:"
     echo "   http://$IP"

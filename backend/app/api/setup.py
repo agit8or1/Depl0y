@@ -77,7 +77,7 @@ def enable_cloud_images(
         # Install sshpass if not present
         logger.info("Checking for sshpass")
         check_sshpass = subprocess.run(
-            ['which', 'sshpass'],
+            ['/usr/bin/which', 'sshpass'],
             capture_output=True
         )
 
@@ -121,8 +121,8 @@ def enable_cloud_images(
         copy_result = subprocess.run(
             [
                 '/usr/bin/sudo', '-u', 'depl0y',
-                'sshpass', '-p', password,
-                'ssh-copy-id',
+                '/usr/bin/sshpass', '-p', password,
+                '/usr/bin/ssh-copy-id',
                 '-o', 'StrictHostKeyChecking=no',
                 '-i', f'{ssh_key_path}.pub',
                 f'root@{proxmox_host}'
@@ -141,8 +141,8 @@ def enable_cloud_images(
             alt_result = subprocess.run(
                 [
                     '/usr/bin/sudo', '-u', 'depl0y',
-                    'sshpass', '-p', password,
-                    'ssh', '-o', 'StrictHostKeyChecking=no',
+                    '/usr/bin/sshpass', '-p', password,
+                    '/usr/bin/ssh', '-o', 'StrictHostKeyChecking=no',
                     f'root@{proxmox_host}',
                     f"mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo '{public_key}' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && sort -u ~/.ssh/authorized_keys -o ~/.ssh/authorized_keys"
                 ],
@@ -159,7 +159,7 @@ def enable_cloud_images(
         verify_result = subprocess.run(
             [
                 '/usr/bin/sudo', '-u', 'depl0y',
-                'ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5',
+                '/usr/bin/ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5',
                 '-o', 'StrictHostKeyChecking=no',
                 f'root@{proxmox_host}',
                 'echo SSH_CONFIGURED'

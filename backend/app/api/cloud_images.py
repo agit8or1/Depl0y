@@ -62,6 +62,15 @@ def fetch_latest_cloud_images(
         # Get all existing cloud images
         images = db.query(CloudImage).filter(CloudImage.is_available == True).all()
 
+        # If no cloud images exist, return helpful message
+        if len(images) == 0:
+            return {
+                "message": "No cloud images found in database. Please add cloud images first.",
+                "updated_count": 0,
+                "updated_images": [],
+                "errors": ["No cloud images configured. Use 'Add Cloud Image' button to add images."]
+            }
+
         for image in images:
             try:
                 updated = False
@@ -521,7 +530,7 @@ def check_ssh_status(
             # Try to run a simple command via SSH
             result = subprocess.run(
                 [
-                    'ssh',
+                    '/usr/bin/ssh',
                     '-o', 'BatchMode=yes',
                     '-o', 'ConnectTimeout=5',
                     '-o', 'StrictHostKeyChecking=no',

@@ -5,6 +5,16 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] - 2025-11-20
+
+### Fixed
+- Cloud images "Fetch Latest" now shows proper error when no images exist in database
+- Fixed misleading "All cloud images are up to date" message on empty database
+- Fixed `[Error 2] No such file or directory: 'sudo'` in cloud image SSH setup
+- Fixed `[Error 2] No such file or directory: 'ssh'` in SSH configuration
+- All subprocess commands now use full paths (/usr/bin/ssh, /usr/bin/sshpass, etc.)
+- SSH key setup now works correctly in restricted PATH environments
+
 ## [1.2.0] - 2025-11-19
 
 ### Added

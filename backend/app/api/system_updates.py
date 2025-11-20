@@ -83,19 +83,18 @@ def get_version_info():
         "release_notes": f"""
 Depl0y {settings.APP_VERSION} Release Notes:
 
-✨ New in v1.2.1:
-- Fixed cloud images "Fetch Latest" showing "up to date" with empty database
-- Fixed [Error 2] No such file or directory errors in SSH setup
-- All subprocess commands now use full paths for reliability
-- Better error messages for cloud image configuration
+✨ New in v1.2.2:
+- Auto-populate 7 popular cloud images automatically
+- Ubuntu 24.04/22.04/20.04, Debian 12/11, Rocky Linux 9/8
+- No more "all up to date" confusion with empty database
+- Improved error handling and user feedback
 
 ✨ Previous versions:
+- Fixed SSH/sudo PATH issues in cloud image setup (v1.2.1)
 - Fast fresh installs using pre-built frontend (v1.2.0)
 - Installation completes in ~30 seconds instead of 5+ minutes (v1.2.0)
 - Automatic backend restart after upgrades (v1.1.9)
 - One-click automatic updates from Settings (v1.1.5)
-- Automated cloud image deployment
-- Inter-node SSH setup for clusters
         """.strip()
     }
 
@@ -105,7 +104,7 @@ def download_update():
     """Download the latest update package (public endpoint for automated updates)"""
     try:
         # Use pre-packaged file
-        package_path = "/opt/depl0y/depl0y-v1.2.1.tar.gz"
+        package_path = "/opt/depl0y/depl0y-v1.2.2.tar.gz"
         
         if not os.path.exists(package_path):
             # Fallback: create package on-the-fly

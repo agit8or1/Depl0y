@@ -495,7 +495,13 @@ export default {
         const response = await api.cloudImages.fetchLatest()
 
         if (response.data.updated_count > 0) {
-          toast.success(`Updated ${response.data.updated_count} cloud image(s)`)
+          // Check if images were added (new) or updated (existing)
+          const hasAdded = response.data.updated_images?.some(img => img.status === 'added')
+          if (hasAdded) {
+            toast.success(`Added ${response.data.updated_count} cloud image(s) to database`)
+          } else {
+            toast.success(`Updated ${response.data.updated_count} cloud image(s)`)
+          }
           // Reload the images list
           await fetchImages()
         } else {
@@ -503,6 +509,7 @@ export default {
         }
 
         if (response.data.errors && response.data.errors.length > 0) {
+          console.error('Cloud image errors:', response.data.errors)
           toast.warning(`Some images could not be updated: ${response.data.errors.length} errors`)
         }
       } catch (error) {

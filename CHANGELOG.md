@@ -5,6 +5,21 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.2] - 2025-11-20
+
+### Added
+- Auto-populate default cloud images when clicking "Fetch Latest" with empty database
+- 7 popular cloud images now added automatically (Ubuntu 24.04/22.04/20.04, Debian 12/11, Rocky Linux 9/8)
+- Improved error handling and logging for cloud image operations
+
+### Changed
+- Frontend now differentiates between "added" vs "updated" cloud images
+- Better error messages displayed in console for debugging
+
+### Fixed
+- No more confusing "all cloud images are up to date" message when database is empty
+- Cloud images now properly populate on first use
+
 ## [1.2.1] - 2025-11-20
 
 ### Fixed

@@ -45,6 +45,97 @@ def list_cloud_images(
         logger.error(f"Failed to list cloud images: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+def populate_default_cloud_images(db: Session):
+    """Populate the database with default cloud images"""
+    default_images = [
+        {
+            "name": "Ubuntu 24.04 LTS (Noble)",
+            "filename": "noble-server-cloudimg-amd64.img",
+            "os_type": "ubuntu",
+            "version": "24.04",
+            "architecture": "amd64",
+            "download_url": "https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img"
+        },
+        {
+            "name": "Ubuntu 22.04 LTS (Jammy)",
+            "filename": "jammy-server-cloudimg-amd64.img",
+            "os_type": "ubuntu",
+            "version": "22.04",
+            "architecture": "amd64",
+            "download_url": "https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img"
+        },
+        {
+            "name": "Ubuntu 20.04 LTS (Focal)",
+            "filename": "focal-server-cloudimg-amd64.img",
+            "os_type": "ubuntu",
+            "version": "20.04",
+            "architecture": "amd64",
+            "download_url": "https://cloud-images.ubuntu.com/focal/current/focal-server-cloudimg-amd64.img"
+        },
+        {
+            "name": "Debian 12 (Bookworm)",
+            "filename": "debian-12-generic-amd64.qcow2",
+            "os_type": "debian",
+            "version": "12",
+            "architecture": "amd64",
+            "download_url": "https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-generic-amd64.qcow2"
+        },
+        {
+            "name": "Debian 11 (Bullseye)",
+            "filename": "debian-11-generic-amd64.qcow2",
+            "os_type": "debian",
+            "version": "11",
+            "architecture": "amd64",
+            "download_url": "https://cloud.debian.org/images/cloud/bullseye/latest/debian-11-generic-amd64.qcow2"
+        },
+        {
+            "name": "Rocky Linux 9",
+            "filename": "Rocky-9-GenericCloud-Base.latest.x86_64.qcow2",
+            "os_type": "rocky",
+            "version": "9",
+            "architecture": "amd64",
+            "download_url": "https://download.rockylinux.org/pub/rocky/9/images/x86_64/Rocky-9-GenericCloud-Base.latest.x86_64.qcow2"
+        },
+        {
+            "name": "Rocky Linux 8",
+            "filename": "Rocky-8-GenericCloud-Base.latest.x86_64.qcow2",
+            "os_type": "rocky",
+            "version": "8",
+            "architecture": "amd64",
+            "download_url": "https://download.rockylinux.org/pub/rocky/8/images/x86_64/Rocky-8-GenericCloud-Base.latest.x86_64.qcow2"
+        }
+    ]
+
+    added_images = []
+    for img_data in default_images:
+        try:
+            # Check if image already exists
+            existing = db.query(CloudImage).filter(CloudImage.filename == img_data["filename"]).first()
+            if not existing:
+                new_image = CloudImage(
+                    name=img_data["name"],
+                    filename=img_data["filename"],
+                    os_type=img_data["os_type"],
+                    version=img_data["version"],
+                    architecture=img_data["architecture"],
+                    download_url=img_data["download_url"],
+                    download_status="pending",
+                    is_downloaded=False,
+                    is_available=True
+                )
+                db.add(new_image)
+                added_images.append(img_data["name"])
+        except Exception as e:
+            logger.error(f"Failed to add default image {img_data['name']}: {e}")
+            continue
+
+    if added_images:
+        db.commit()
+        logger.info(f"Added {len(added_images)} default cloud images")
+
+    return added_images
+
+
 @router.post("/fetch-latest")
 def fetch_latest_cloud_images(
     db: Session = Depends(get_db),
@@ -62,13 +153,19 @@ def fetch_latest_cloud_images(
         # Get all existing cloud images
         images = db.query(CloudImage).filter(CloudImage.is_available == True).all()
 
-        # If no cloud images exist, return helpful message
+        # If no cloud images exist, populate with defaults
         if len(images) == 0:
+            logger.info("No cloud images found, populating with defaults...")
+            added_images = populate_default_cloud_images(db)
+
+            # Re-query to get the newly added images
+            images = db.query(CloudImage).filter(CloudImage.is_available == True).all()
+
             return {
-                "message": "No cloud images found in database. Please add cloud images first.",
-                "updated_count": 0,
-                "updated_images": [],
-                "errors": ["No cloud images configured. Use 'Add Cloud Image' button to add images."]
+                "message": f"Added {len(added_images)} default cloud images to database",
+                "updated_count": len(added_images),
+                "updated_images": [{"name": name, "status": "added"} for name in added_images],
+                "errors": []
             }
 
         for image in images:

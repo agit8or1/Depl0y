@@ -83,19 +83,17 @@ def get_version_info():
         "release_notes": f"""
 Depl0y {settings.APP_VERSION} Release Notes:
 
-✨ New in v1.2.0:
-- Fast fresh installs using pre-built frontend from package
-- Installation completes in ~30 seconds instead of 5+ minutes
-- No more npm build waiting during fresh installs
-
-✨ New in v1.1.9:
-- Automatic backend restart after upgrades
-- Updates apply immediately without manual intervention
+✨ New in v1.2.1:
+- Fixed cloud images "Fetch Latest" showing "up to date" with empty database
+- Fixed [Error 2] No such file or directory errors in SSH setup
+- All subprocess commands now use full paths for reliability
+- Better error messages for cloud image configuration
 
 ✨ Previous versions:
+- Fast fresh installs using pre-built frontend (v1.2.0)
+- Installation completes in ~30 seconds instead of 5+ minutes (v1.2.0)
+- Automatic backend restart after upgrades (v1.1.9)
 - One-click automatic updates from Settings (v1.1.5)
-- Fast 30-second upgrades with pre-built frontend (v1.1.5)
-- Fixed JavaScript errors and version display issues (v1.1.6-1.1.8)
 - Automated cloud image deployment
 - Inter-node SSH setup for clusters
         """.strip()
@@ -107,7 +105,7 @@ def download_update():
     """Download the latest update package (public endpoint for automated updates)"""
     try:
         # Use pre-packaged file
-        package_path = "/opt/depl0y/depl0y-v1.1.5.tar.gz"
+        package_path = "/opt/depl0y/depl0y-v1.2.1.tar.gz"
         
         if not os.path.exists(package_path):
             # Fallback: create package on-the-fly

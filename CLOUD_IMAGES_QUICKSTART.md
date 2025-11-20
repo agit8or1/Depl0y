@@ -61,16 +61,23 @@ Go back to **Settings** in web UI and click **"Re-check Status"** to verify.
 
 ## Using Cloud Images
 
+### Get Cloud Images (Auto-Populated!)
+
+**NEW in v1.2.2:** Cloud images are now auto-populated!
+
+1. Go to **"Cloud Images"** page in web UI
+2. Click **"⬇️ Fetch Latest"** button
+3. 7 popular cloud images are automatically added:
+   - Ubuntu 24.04, 22.04, 20.04 LTS
+   - Debian 12, 11
+   - Rocky Linux 9, 8
+4. Done! No manual configuration needed.
+
 ### Create a VM:
 
 1. Go to **"Create VM"** in web UI
 2. Select **"Cloud Image (Fast)"** installation method
-3. Choose a cloud image:
-   - Ubuntu 24.04 LTS
-   - Ubuntu 22.04 LTS
-   - Ubuntu 20.04 LTS
-   - Debian 12
-   - Debian 11
+3. Choose a cloud image from the list
 4. Configure CPU, RAM, disk size
 5. Enter your desired **username** and **password**
 6. Click **"Create VM"**

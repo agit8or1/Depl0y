@@ -232,6 +232,8 @@ ssh username@vm-ip-address
 
 ## Available Cloud Images
 
+**NEW in v1.2.2:** Cloud images are now **auto-populated**! Simply click "Fetch Latest" in the Cloud Images page to automatically add all available images.
+
 ### Ubuntu
 
 | Image | Version | Use Case | LTS Until |
@@ -247,7 +249,16 @@ ssh username@vm-ip-address
 | Debian 12 | Bookworm | Latest stable |
 | Debian 11 | Bullseye | Previous stable |
 
-**More cloud images can be added!** Contact your administrator or submit a feature request.
+### Rocky Linux
+
+| Image | Version | Use Case |
+|-------|---------|----------|
+| Rocky Linux 9 | Latest | RHEL 9 compatible |
+| Rocky Linux 8 | Stable | RHEL 8 compatible |
+
+**All 7 images above are automatically added** when you click "Fetch Latest" in the Cloud Images page.
+
+**Need more cloud images?** You can manually add additional images using the "+ Add Cloud Image" button.
 
 ---
 

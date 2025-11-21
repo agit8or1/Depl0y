@@ -22,7 +22,7 @@ echo "║   ╚═════╝ ╚══════╝╚═╝     ╚═�
 echo "║                                                          ║"
 echo "║       Automated VM Deployment Panel for Proxmox VE      ║"
 echo "║              https://deploy.agit8or.net                 ║"
-echo "║                    Version 1.2.4                        ║"
+echo "║                    Version 1.2.5                        ║"
 echo "║                                                          ║"
 echo "╚══════════════════════════════════════════════════════════╝"
 echo ""
@@ -527,7 +527,7 @@ sudo -u depl0y sqlite3 /var/lib/depl0y/db/depl0y.db "CREATE TABLE IF NOT EXISTS 
 );" 2>/dev/null || true
 
 sudo -u depl0y sqlite3 /var/lib/depl0y/db/depl0y.db "INSERT OR REPLACE INTO system_settings (key, value, description) VALUES
-    ('app_version', '1.2.4', 'Current application version'),
+    ('app_version', '1.2.5', 'Current application version'),
     ('app_name', 'Depl0y', 'Application name');" 2>/dev/null || true
 
 echo "✓ System settings initialized"
@@ -673,18 +673,18 @@ if [ "$UPGRADE_MODE" = true ]; then
     echo "║                                                          ║"
     echo "╚══════════════════════════════════════════════════════════╝"
     echo ""
-    echo "🎉 Depl0y v1.2.4 has been successfully upgraded!"
+    echo "🎉 Depl0y v1.2.5 has been successfully upgraded!"
     echo ""
     echo "📍 Access Depl0y at:"
     echo "   http://$IP"
     echo ""
-    echo "✨ What's new in v1.2.4:"
-    echo "   • 15 pre-configured cloud images (Ubuntu, Debian, Rocky, Alma, Fedora, etc.)"
-    echo "   • Added Flatcar Container Linux for container workloads"
-    echo "   • Multi-select cloud images before adding them"
+    echo "✨ What's new in v1.2.5:"
+    echo "   • 15 verified cloud images with working download URLs"
+    echo "   • Flatcar Container Linux for container workloads"
+    echo "   • Multi-select cloud images before adding"
     echo "   • Alphabetically sorted cloud image list"
-    echo "   • Enhanced dependency validation in installer"
-    echo "   • Improved logging and error handling"
+    echo "   • Comprehensive dependency validation (sudo, python3-cryptography)"
+    echo "   • Fixed broken cloud image downloads (removed 404 errors)"
     echo ""
     echo "📚 Note:"
     echo "   • Your database has been preserved"
@@ -697,7 +697,7 @@ else
     echo "║                                                          ║"
     echo "╚══════════════════════════════════════════════════════════╝"
     echo ""
-    echo "🎉 Depl0y v1.2.4 has been successfully installed!"
+    echo "🎉 Depl0y v1.2.5 has been successfully installed!"
     echo ""
     echo "📍 Access Depl0y at:"
     echo "   http://$IP"

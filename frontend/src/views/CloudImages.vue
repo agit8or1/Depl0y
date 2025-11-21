@@ -57,7 +57,7 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-for="image in images" :key="image.id">
+            <tr v-for="image in sortedImages" :key="image.id">
               <td>{{ image.name }}</td>
               <td>
                 <span class="badge badge-info">{{ formatOSType(image.os_type) }}</span>
@@ -125,7 +125,7 @@
           <div class="form-group">
             <label class="form-label">Select Cloud Images to Setup *</label>
             <div class="checkbox-list">
-              <label v-for="image in images" :key="image.id" class="checkbox-item">
+              <label v-for="image in sortedImages" :key="image.id" class="checkbox-item">
                 <input
                   type="checkbox"
                   :value="image.id"
@@ -532,6 +532,10 @@ export default {
       return [...predefinedImages.value].sort((a, b) => a.name.localeCompare(b.name))
     })
 
+    const sortedImages = computed(() => {
+      return [...images.value].sort((a, b) => a.name.localeCompare(b.name))
+    })
+
     const fetchImages = async () => {
       loading.value = true
       try {
@@ -850,6 +854,7 @@ export default {
 
     return {
       images,
+      sortedImages,
       nodes,
       loading,
       showAddModal,

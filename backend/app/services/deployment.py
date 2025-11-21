@@ -46,7 +46,8 @@ class DeploymentService:
 
                 try:
                     # Get node IP from corosync.conf
-                    get_ip_cmd = f"ssh -o StrictHostKeyChecking=no root@{host.hostname} \"grep -A3 'name: {node.node_name}' /etc/pve/corosync.conf | grep ring0_addr | awk '{{print \\$2}}'\""
+                    dollar_two = '\\$2'
+                    get_ip_cmd = f"ssh -o StrictHostKeyChecking=no root@{host.hostname} \"grep -A3 'name: {node.node_name}' /etc/pve/corosync.conf | grep ring0_addr | awk '{{print {dollar_two}}}'\""
                     ip_result = subprocess.run(get_ip_cmd, shell=True, capture_output=True, text=True)
 
                     if ip_result.returncode == 0 and ip_result.stdout.strip():
@@ -126,7 +127,8 @@ class DeploymentService:
                         logger.warning(f"Stale lock file detected for VM {locked_vmid} during operation, removing it...")
 
                         # Get node IP from corosync.conf
-                        get_ip_cmd = f"ssh -o StrictHostKeyChecking=no root@{host.hostname} \"grep -A3 'name: {node.node_name}' /etc/pve/corosync.conf | grep ring0_addr | awk '{{print \\$2}}'\""
+                        dollar_two = '\\$2'
+                        get_ip_cmd = f"ssh -o StrictHostKeyChecking=no root@{host.hostname} \"grep -A3 'name: {node.node_name}' /etc/pve/corosync.conf | grep ring0_addr | awk '{{print {dollar_two}}}'\""
                         ip_result = subprocess.run(get_ip_cmd, shell=True, capture_output=True, text=True)
 
                         if ip_result.returncode == 0 and ip_result.stdout.strip():
@@ -1038,7 +1040,8 @@ runcmd:
                     temp_file = f.name
 
                 # Get node IP
-                get_ip_cmd = f"ssh -o StrictHostKeyChecking=no root@{host.hostname} \"grep -A3 'name: {node.node_name}' /etc/pve/corosync.conf | grep ring0_addr | awk '{{print \\$2}}'\""
+                dollar_two = '\\$2'
+                get_ip_cmd = f"ssh -o StrictHostKeyChecking=no root@{host.hostname} \"grep -A3 'name: {node.node_name}' /etc/pve/corosync.conf | grep ring0_addr | awk '{{print {dollar_two}}}'\""
                 ip_result = subprocess.run(get_ip_cmd, shell=True, capture_output=True, text=True)
 
                 if ip_result.returncode == 0 and ip_result.stdout.strip():

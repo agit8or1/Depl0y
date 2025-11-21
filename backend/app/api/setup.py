@@ -258,6 +258,20 @@ def enable_proxmox_cluster_ssh(
         # Set up SSH keys on Proxmox cluster nodes
         logger.info("Setting up SSH keys between nodes...")
 
+        # Build SSH copy commands (can't use backslashes in f-strings for Python 3.11+)
+        escaped_pubkey = '\\"$PUB_KEY\\"'
+        empty_passphrase = '\\"\\"'
+
+        copy_key_cmds = []
+        for node in node_names:
+            cmd = f'sshpass -p "{password}" ssh-copy-id -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa.pub root@{node} 2>/dev/null || sshpass -p "{password}" ssh -o StrictHostKeyChecking=no root@{node} "mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo {escaped_pubkey} >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && sort -u ~/.ssh/authorized_keys -o ~/.ssh/authorized_keys"'
+            copy_key_cmds.append(cmd)
+
+        reverse_key_cmds = []
+        for node in node_names:
+            cmd = f'ssh -o StrictHostKeyChecking=no root@{node} "ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa -N {empty_passphrase} -q 2>/dev/null || true; ssh-copy-id -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa.pub root@{proxmox_host} 2>/dev/null || true"'
+            reverse_key_cmds.append(cmd)
+
         setup_script = f"""
 # Generate SSH key on first node if it doesn't exist
 if [ ! -f ~/.ssh/id_rsa ]; then
@@ -268,10 +282,10 @@ fi
 PUB_KEY=$(cat ~/.ssh/id_rsa.pub)
 
 # Copy key to all other nodes
-{' '.join([f'sshpass -p "{password}" ssh-copy-id -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa.pub root@{node} 2>/dev/null || sshpass -p "{password}" ssh -o StrictHostKeyChecking=no root@{node} "mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo \\"$PUB_KEY\\" >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && sort -u ~/.ssh/authorized_keys -o ~/.ssh/authorized_keys"' for node in node_names])}
+{' '.join(copy_key_cmds)}
 
 # Also set up reverse keys (each node can SSH to others)
-{' '.join([f'ssh -o StrictHostKeyChecking=no root@{node} "ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa -N \\"\\" -q 2>/dev/null || true; ssh-copy-id -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa.pub root@{proxmox_host} 2>/dev/null || true"' for node in node_names])}
+{' '.join(reverse_key_cmds)}
 
 echo "SSH_SETUP_COMPLETE"
 """

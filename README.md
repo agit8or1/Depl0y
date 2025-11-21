@@ -7,16 +7,15 @@ Depl0y is a free, open-source web-based control panel that simplifies the deploy
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)
 ![Vue.js](https://img.shields.io/badge/vue.js-3.x-green.svg)
-![Version](https://img.shields.io/badge/version-1.2.5-brightgreen.svg)
+![Version](https://img.shields.io/badge/version-1.3.2-brightgreen.svg)
 
-## What's New in v1.2.5
+## What's New in v1.3.2
 
-- **📦 15 Verified Cloud Images** - All cloud images have working download URLs (removed 404 errors)
-- **🐋 Flatcar Container Linux** - Added container-optimized Linux for container workloads
-- **🔢 Multi-Select Cloud Images** - Select multiple images before adding them
-- **🔤 Alphabetical Sorting** - Cloud images now sorted alphabetically everywhere
-- **✅ Enhanced Installer** - Comprehensive dependency validation (sudo, python3-cryptography)
-- **🐛 Bug Fixes** - Fixed broken downloads for Fedora, Oracle Linux, Kali, FreeBSD, Gentoo
+- **🗜️ Compressed ISO Support** - Backend now handles .gz and .bz2 compressed ISO files with automatic decompression
+- **🔥 Restored Critical ISOs** - pfSense CE 2.7.2, OPNsense 24.7, and TrueNAS CORE back in library
+- **🛡️ Untangle NG Firewall** - Added network security appliance ISO to the collection
+- **📀 19 Verified ISO Images** - All working and tested including infrastructure/firewall ISOs
+- **⚡ Enhanced Download Function** - Automatic detection and handling of compressed formats
 
 [View Full Changelog](CHANGELOG.md)
 
@@ -28,7 +27,7 @@ Depl0y is a free, open-source web-based control panel that simplifies the deploy
 - **Cloud-Init Integration** - Automatic configuration of Linux VMs with cloud-init
 - **Multi-Hypervisor Support** - Manage multiple Proxmox VE hosts and clusters
 - **Resource Management** - Real-time monitoring of CPU, memory, and disk usage across your infrastructure
-- **ISO Management** - 21 pre-populated ISOs or upload/download custom images with automatic checksum verification
+- **ISO Management** - 19 pre-populated ISOs or upload/download custom images with automatic checksum verification
 
 ### Advanced Features
 - **Update Management** - One-click system updates for deployed Linux VMs

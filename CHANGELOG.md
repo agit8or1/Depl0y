@@ -5,6 +5,30 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.2] - 2025-11-21
+
+### Added
+- **Compressed ISO support** - Backend now handles .gz (gzip) and .bz2 (bzip2) compressed ISO files
+- **Automatic decompression** - Downloads compressed ISOs and decompresses them to final storage
+- **Untangle NG Firewall 16.3** - Added network security appliance ISO
+- **Restored critical infrastructure ISOs**:
+  - pfSense CE 2.7.2 (gzip compressed)
+  - OPNsense 24.7 (bzip2 compressed)
+  - TrueNAS CORE 13.0-U6.2
+
+### Changed
+- **ISO count increased from 15 to 19** - Restored firewall/NAS ISOs after implementing compression support
+- **Enhanced download function** - `download_iso_from_url()` now detects and handles compressed formats
+
+### Fixed
+- **Missing infrastructure ISOs** - pfSense, OPNsense, and TrueNAS availability restored
+
+### ISO Images (19 total - all verified)
+- **Linux Servers**: Ubuntu (24.04.3, 22.04.5, 20.04.6), Debian 13.2, Rocky Linux (9, 8), AlmaLinux (9, 8), Fedora Server 41, CentOS Stream 9, openSUSE Leap 15.6
+- **Firewall/Network**: pfSense CE 2.7.2, OPNsense 24.7, Untangle NG Firewall 16.3
+- **Storage/NAS**: TrueNAS CORE 13.0-U6.2
+- **Other**: FreeBSD 14.2, Proxmox VE 8.3, Alpine Linux 3.21, Zentyal Server 8.0
+
 ## [1.3.1] - 2025-11-21
 
 ### Fixed

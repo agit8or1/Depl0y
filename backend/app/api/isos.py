@@ -10,6 +10,8 @@ import shutil
 import requests
 import tempfile
 import logging
+import gzip
+import bz2
 
 from app.core.database import get_db
 from app.core.config import settings
@@ -299,16 +301,28 @@ async def download_iso_from_url(
     current_user: User = Depends(require_operator),
     db: Session = Depends(get_db),
 ):
-    """Download an ISO image from a URL"""
+    """Download an ISO image from a URL (supports .iso, .iso.gz, .iso.bz2)"""
     # Create storage directory if it doesn't exist
     os.makedirs(settings.ISO_STORAGE_PATH, exist_ok=True)
 
-    # Extract filename from URL or use provided name
+    # Extract filename from URL
     url_filename = download_request.url.split('/')[-1]
-    if not url_filename.endswith('.iso'):
-        url_filename = download_request.name.replace(' ', '_') + '.iso'
 
-    filename = url_filename
+    # Detect compression format
+    is_gzipped = url_filename.endswith('.iso.gz') or url_filename.endswith('.gz')
+    is_bz2 = url_filename.endswith('.iso.bz2') or url_filename.endswith('.bz2')
+    is_compressed = is_gzipped or is_bz2
+
+    # Determine final ISO filename (remove compression extensions)
+    if is_gzipped:
+        filename = url_filename.replace('.gz', '').replace('.iso.iso', '.iso')
+    elif is_bz2:
+        filename = url_filename.replace('.bz2', '').replace('.iso.iso', '.iso')
+    elif url_filename.endswith('.iso'):
+        filename = url_filename
+    else:
+        filename = download_request.name.replace(' ', '_') + '.iso'
+
     storage_path = os.path.join(settings.ISO_STORAGE_PATH, filename)
 
     # Check if file already exists
@@ -317,24 +331,45 @@ async def download_iso_from_url(
 
     try:
         # Download file from URL
+        logger.info(f"Downloading ISO from {download_request.url} (compressed: {is_compressed})")
         response = requests.get(download_request.url, stream=True, timeout=30)
         response.raise_for_status()
 
         # Get total file size if available
         total_size = int(response.headers.get('content-length', 0))
 
-        if total_size > settings.MAX_ISO_SIZE:
+        if total_size > settings.MAX_ISO_SIZE * 2:  # Allow 2x for compressed files
             raise HTTPException(
                 status_code=400,
                 detail=f"File too large. Maximum size is {settings.MAX_ISO_SIZE / (1024**3)}GB"
             )
 
         # Download to temporary file first
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.iso') as tmp_file:
+        suffix = '.iso.gz' if is_gzipped else '.iso.bz2' if is_bz2 else '.iso'
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_file:
             for chunk in response.iter_content(chunk_size=8192):
                 if chunk:
                     tmp_file.write(chunk)
             tmp_path = tmp_file.name
+
+        # Decompress if necessary
+        if is_compressed:
+            logger.info(f"Decompressing {'gzip' if is_gzipped else 'bz2'} file...")
+            decompressed_path = tmp_path.replace('.gz', '').replace('.bz2', '')
+
+            if is_gzipped:
+                with gzip.open(tmp_path, 'rb') as f_in:
+                    with open(decompressed_path, 'wb') as f_out:
+                        shutil.copyfileobj(f_in, f_out)
+            elif is_bz2:
+                with bz2.open(tmp_path, 'rb') as f_in:
+                    with open(decompressed_path, 'wb') as f_out:
+                        shutil.copyfileobj(f_in, f_out)
+
+            # Remove compressed file
+            os.remove(tmp_path)
+            tmp_path = decompressed_path
+            logger.info(f"Decompression complete")
 
         # Move to final location
         shutil.move(tmp_path, storage_path)

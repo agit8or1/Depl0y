@@ -76,11 +76,11 @@
               <div class="selection-icon">💿</div>
               <div class="selection-info">
                 <h5>Select from Available</h5>
-                <p>Choose from 15 verified ISOs</p>
+                <p>Choose from 19 verified ISOs</p>
                 <ul class="selection-list">
                   <li>Ubuntu, Debian, RHEL-based</li>
-                  <li>FreeBSD, Proxmox, Zentyal</li>
-                  <li>Alpine, openSUSE, Fedora</li>
+                  <li>pfSense, OPNsense, TrueNAS</li>
+                  <li>Proxmox, Untangle, Zentyal</li>
                 </ul>
               </div>
               <div class="selection-arrow">→</div>
@@ -509,6 +509,26 @@ export default {
         download_url: 'https://download.opensuse.org/distribution/leap/15.6/iso/openSUSE-Leap-15.6-NET-x86_64-Media.iso',
         icon: '🟢'
       },
+      // pfSense
+      {
+        name: 'pfSense CE 2.7.2',
+        filename: 'pfSense-CE-2.7.2-RELEASE-amd64.iso',
+        os_type: 'pfsense',
+        version: '2.7.2',
+        architecture: 'amd64',
+        download_url: 'https://repo.ialab.dsu.edu/pfsense/pfSense-CE-2.7.2-RELEASE-amd64.iso.gz',
+        icon: '🔥'
+      },
+      // OPNsense
+      {
+        name: 'OPNsense 24.7',
+        filename: 'OPNsense-24.7-dvd-amd64.iso',
+        os_type: 'opnsense',
+        version: '24.7',
+        architecture: 'amd64',
+        download_url: 'https://mirrors.dotsrc.org/opnsense/releases/24.7/OPNsense-24.7-dvd-amd64.iso.bz2',
+        icon: '🛡️'
+      },
       // FreeBSD
       {
         name: 'FreeBSD 14.2',
@@ -519,6 +539,16 @@ export default {
         download_url: 'https://download.freebsd.org/releases/amd64/amd64/ISO-IMAGES/14.2/FreeBSD-14.2-RELEASE-amd64-disc1.iso',
         icon: '👹'
       },
+      // TrueNAS
+      {
+        name: 'TrueNAS CORE 13.0-U6.2',
+        filename: 'TrueNAS-13.0-U6.2.iso',
+        os_type: 'truenas',
+        version: '13.0-U6.2',
+        architecture: 'amd64',
+        download_url: 'https://download-core.sys.truenas.net/13.0/STABLE/U6.2/x64/TrueNAS-13.0-U6.2.iso',
+        icon: '💾'
+      },
       // Proxmox VE
       {
         name: 'Proxmox VE 8.3',
@@ -528,6 +558,16 @@ export default {
         architecture: 'amd64',
         download_url: 'https://www.proxmox.com/en/downloads?task=callelement&format=raw&item_id=859&element=f85c494b-2b32-4109-b8c1-083cca2b7db6&method=download',
         icon: '📦'
+      },
+      // Untangle NG Firewall
+      {
+        name: 'Untangle NG Firewall 16.3',
+        filename: 'ngfw-untangle-16.3.2-amd64.iso',
+        os_type: 'other',
+        version: '16.3.2',
+        architecture: 'amd64',
+        download_url: 'https://downloads.untangle.com/public/current-release/NGFW/ngfw-untangle-16.3.2-amd64.iso',
+        icon: '🛡️'
       },
       // Alpine Linux
       {

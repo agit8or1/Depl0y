@@ -5,6 +5,27 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.4] - 2025-11-21
+
+### Added
+- **Standalone download scripts** - ISO downloads now use dedicated Python scripts
+- **Real-time download status** - Visual indicators for downloading, processing, and errors
+- **Alphabetical ISO sorting** - Both downloaded and available ISOs sorted by name
+- **Download status badges** - Color-coded badges (Downloading/Processing/Available/Error)
+
+### Fixed
+- **CRITICAL: ISO downloads actually work** - Subprocess now properly executes with standalone scripts
+- **Stuck checksums resolved** - All "calculating..." checksums now complete properly
+- **openSUSE validation error** - Changed os_type from 'opensuse' to 'other'
+- **400 Bad Request errors** - Better duplicate detection and error messages
+
+### Technical Improvements
+- Created `/opt/depl0y/scripts/download_iso.py` for background downloads
+- Created `/opt/depl0y/scripts/calculate_iso_checksum.py` for checksum calculation
+- Subprocess.Popen properly detached with script arguments
+- Frontend shows ⏳ Downloading, ⚙️ Processing, ✓ Available, ❌ Error states
+- ISOs sorted with `localeCompare()` for proper alphabetical ordering
+
 ## [1.3.3] - 2025-11-21
 
 ### Fixed

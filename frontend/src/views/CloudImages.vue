@@ -164,31 +164,98 @@
           <h3>{{ editingImage ? 'Edit' : 'Add' }} Cloud Image</h3>
           <button @click="closeModal" class="btn-close">×</button>
         </div>
-        <form @submit.prevent="saveImage" class="modal-body">
-          <!-- Quick Select: Predefined Cloud Images -->
-          <div v-if="!editingImage" class="predefined-images-section">
-            <label class="form-label">Quick Select (Popular Cloud Images)</label>
-            <p class="text-xs text-muted mb-2">Click an image below to auto-populate the form, or scroll down to enter custom details</p>
-            <div class="predefined-images-grid">
-              <div
-                v-for="predefined in predefinedImages"
-                :key="predefined.name"
-                @click="selectPredefinedImage(predefined)"
-                :class="['predefined-image-card', { selected: imageForm.name === predefined.name }]"
-              >
-                <div class="predefined-image-icon">
-                  {{ predefined.icon }}
-                </div>
-                <div class="predefined-image-info">
-                  <div class="predefined-image-name">{{ predefined.name }}</div>
-                  <div class="predefined-image-details">{{ predefined.os_type }} {{ predefined.version }}</div>
-                </div>
-                <div v-if="imageForm.name === predefined.name" class="predefined-image-check">✓</div>
+
+        <!-- Selection Mode: Choose between Available or Custom -->
+        <div v-if="!editingImage && !imageSelectionMode" class="modal-body selection-mode">
+          <div class="selection-prompt">
+            <h4>How would you like to add a cloud image?</h4>
+            <p class="text-muted">Choose from popular distributions or add your own custom image</p>
+          </div>
+
+          <div class="selection-options">
+            <div @click="imageSelectionMode = 'available'" class="selection-card">
+              <div class="selection-icon">📦</div>
+              <div class="selection-info">
+                <h5>Select from Available</h5>
+                <p>Choose from 9+ popular cloud images</p>
+                <ul class="selection-list">
+                  <li>Ubuntu 24.04, 22.04, 20.04 LTS</li>
+                  <li>Debian 12, 11</li>
+                  <li>Rocky Linux 9, 8</li>
+                  <li>AlmaLinux 9, 8</li>
+                </ul>
               </div>
+              <div class="selection-arrow">→</div>
             </div>
-            <div class="divider">
-              <span>or enter custom cloud image details</span>
+
+            <div @click="imageSelectionMode = 'custom'" class="selection-card">
+              <div class="selection-icon">⚙️</div>
+              <div class="selection-info">
+                <h5>Add Custom Image</h5>
+                <p>Enter details for your own cloud image</p>
+                <ul class="selection-list">
+                  <li>Custom download URL</li>
+                  <li>Any Linux distribution</li>
+                  <li>Private or local images</li>
+                </ul>
+              </div>
+              <div class="selection-arrow">→</div>
             </div>
+          </div>
+        </div>
+
+        <!-- Available Images Selection -->
+        <div v-if="!editingImage && imageSelectionMode === 'available'" class="modal-body">
+          <div class="mode-header">
+            <button @click="imageSelectionMode = null" class="btn btn-outline btn-sm">
+              ← Back to Selection
+            </button>
+            <h4>Select a Cloud Image</h4>
+          </div>
+
+          <div class="predefined-images-grid">
+            <div
+              v-for="predefined in predefinedImages"
+              :key="predefined.name"
+              @click="selectPredefinedImage(predefined)"
+              :class="['predefined-image-card', { selected: imageForm.name === predefined.name }]"
+            >
+              <div class="predefined-image-icon">
+                {{ predefined.icon }}
+              </div>
+              <div class="predefined-image-info">
+                <div class="predefined-image-name">{{ predefined.name }}</div>
+                <div class="predefined-image-details">{{ predefined.os_type }} {{ predefined.version }}</div>
+              </div>
+              <div v-if="imageForm.name === predefined.name" class="predefined-image-check">✓</div>
+            </div>
+          </div>
+
+          <div v-if="imageForm.name" class="selected-image-preview">
+            <h5>Selected: {{ imageForm.name }}</h5>
+            <p class="text-xs text-muted">{{ imageForm.download_url }}</p>
+          </div>
+
+          <div class="modal-footer">
+            <button type="button" @click="closeModal" class="btn btn-outline">Cancel</button>
+            <button
+              type="button"
+              @click="saveImage"
+              :disabled="!imageForm.name || saving"
+              class="btn btn-primary"
+            >
+              {{ saving ? 'Adding...' : 'Add Selected Image' }}
+            </button>
+          </div>
+        </div>
+
+        <!-- Custom Image Form -->
+        <form v-if="editingImage || imageSelectionMode === 'custom'" @submit.prevent="saveImage" class="modal-body">
+          <div v-if="!editingImage" class="mode-header">
+            <button type="button" @click="imageSelectionMode = null" class="btn btn-outline btn-sm">
+              ← Back to Selection
+            </button>
+            <h4>Custom Cloud Image Details</h4>
           </div>
 
           <div class="form-group">
@@ -273,6 +340,7 @@ export default {
     const showSetupModal = ref(false)
     const editingImage = ref(null)
     const saving = ref(false)
+    const imageSelectionMode = ref(null) // 'available' or 'custom'
     const settingUpTemplates = ref(false)
     const templateStatus = ref({})
     const checkingTemplates = ref(false)
@@ -466,6 +534,7 @@ export default {
     const closeModal = () => {
       showAddModal.value = false
       editingImage.value = null
+      imageSelectionMode.value = null
       imageForm.value = {
         name: '',
         filename: '',
@@ -667,6 +736,7 @@ export default {
       imageForm,
       setupForm,
       saving,
+      imageSelectionMode,
       settingUpTemplates,
       templateStatus,
       checkingTemplates,
@@ -1063,5 +1133,151 @@ export default {
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+}
+
+.selection-mode {
+  padding: 2rem 1.5rem;
+}
+
+.selection-prompt {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.selection-prompt h4 {
+  color: #f1f5f9;
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.selection-prompt p {
+  color: #94a3b8;
+  font-size: 1rem;
+}
+
+.selection-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 1.5rem;
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.selection-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 2rem 1.5rem;
+  background: #0f172a;
+  border: 2px solid #475569;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.3s;
+  position: relative;
+}
+
+.selection-card:hover {
+  background: #1e293b;
+  border-color: #3b82f6;
+  transform: translateY(-4px);
+  box-shadow: 0 8px 24px rgba(59, 130, 246, 0.3);
+}
+
+.selection-icon {
+  font-size: 4rem;
+  margin-bottom: 1rem;
+}
+
+.selection-info {
+  text-align: center;
+  flex: 1;
+}
+
+.selection-info h5 {
+  color: #f1f5f9;
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.selection-info p {
+  color: #94a3b8;
+  font-size: 0.875rem;
+  margin-bottom: 1rem;
+}
+
+.selection-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  text-align: left;
+}
+
+.selection-list li {
+  color: #cbd5e1;
+  font-size: 0.875rem;
+  padding: 0.25rem 0;
+  padding-left: 1.5rem;
+  position: relative;
+}
+
+.selection-list li::before {
+  content: '✓';
+  position: absolute;
+  left: 0;
+  color: #22c55e;
+  font-weight: bold;
+}
+
+.selection-arrow {
+  font-size: 2rem;
+  color: #3b82f6;
+  margin-top: 1rem;
+  opacity: 0.7;
+  transition: all 0.3s;
+}
+
+.selection-card:hover .selection-arrow {
+  opacity: 1;
+  transform: translateX(4px);
+}
+
+.mode-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 2px solid #475569;
+}
+
+.mode-header h4 {
+  color: #f1f5f9;
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin: 0;
+  flex: 1;
+}
+
+.selected-image-preview {
+  margin-top: 1.5rem;
+  padding: 1rem;
+  background: rgba(59, 130, 246, 0.1);
+  border: 2px solid #3b82f6;
+  border-radius: 8px;
+}
+
+.selected-image-preview h5 {
+  color: #f1f5f9;
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.selected-image-preview p {
+  color: #94a3b8;
+  margin: 0;
+  word-break: break-all;
 }
 </style>

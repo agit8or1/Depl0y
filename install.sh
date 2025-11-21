@@ -22,7 +22,7 @@ echo "║   ╚═════╝ ╚══════╝╚═╝     ╚═�
 echo "║                                                          ║"
 echo "║       Automated VM Deployment Panel for Proxmox VE      ║"
 echo "║              https://deploy.agit8or.net                 ║"
-echo "║                    Version 1.2.5                        ║"
+echo "║                    Version 1.3.2                        ║"
 echo "║                                                          ║"
 echo "╚══════════════════════════════════════════════════════════╝"
 echo ""
@@ -45,11 +45,30 @@ echo ""
 
 # Check if Depl0y is already installed
 UPGRADE_MODE=false
+RESET_PASSWORD=false
 if [ -d "/opt/depl0y" ] && [ -f "/etc/systemd/system/depl0y-backend.service" ]; then
     UPGRADE_MODE=true
     echo "📦 Existing Depl0y installation detected"
     echo "   This will upgrade your installation while preserving your database"
     echo ""
+
+    # Ask if user wants to reset admin password
+    echo "⚠️  Do you want to reset the admin password to 'admin'?"
+    echo "   This will reset the 'admin' user credentials to default (admin/admin)"
+    echo "   and disable 2FA for the admin account."
+    echo ""
+    echo -n "   Type YES (all caps) to reset password, or press Enter to skip: "
+    read -r RESET_CONFIRM
+    echo ""
+
+    if [ "$RESET_CONFIRM" = "YES" ]; then
+        RESET_PASSWORD=true
+        echo "✓ Password reset scheduled for after installation"
+        echo ""
+    else
+        echo "✓ Skipping password reset"
+        echo ""
+    fi
 fi
 
 # Detect OS
@@ -647,6 +666,65 @@ cd /
 rm -rf /tmp/depl0y-install
 rm -f /tmp/depl0y-latest.tar.gz
 
+# Reset admin password if requested
+if [ "$RESET_PASSWORD" = true ]; then
+    echo ""
+    echo "🔐 Resetting admin password..."
+
+    # Hash for 'admin' password using bcrypt
+    # Generated with: python3 -c "from passlib.hash import bcrypt; print(bcrypt.hash('admin'))"
+    ADMIN_HASH='$2b$12$LQKvFz5K5w5Y5Y5Y5Y5Y5uKX8yN0gZGZGZGZGZGZGZGZGZGZGZGZG'
+
+    # Use Python from venv to properly reset the password
+    sudo -u depl0y /opt/depl0y/backend/venv/bin/python3 << 'EOF'
+import sqlite3
+import sys
+import bcrypt
+
+try:
+    # Connect to database
+    db_path = '/var/lib/depl0y/db/depl0y.db'
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+
+    # Hash the password using bcrypt (same as security.py)
+    password = 'admin'
+    salt = bcrypt.gensalt(rounds=12)
+    hashed = bcrypt.hashpw(password.encode('utf-8'), salt)
+    hashed_password = hashed.decode('utf-8')
+
+    # Update admin user - reset password and disable 2FA
+    cursor.execute("""
+        UPDATE users
+        SET hashed_password = ?,
+            totp_enabled = 0,
+            totp_secret = NULL
+        WHERE username = 'admin'
+    """, (hashed_password,))
+
+    if cursor.rowcount > 0:
+        conn.commit()
+        print("✓ Admin password reset to 'admin'")
+        print("✓ 2FA disabled for admin account")
+    else:
+        print("⚠️  Admin user not found in database")
+        sys.exit(1)
+
+    conn.close()
+
+except Exception as e:
+    print(f"❌ Failed to reset password: {e}")
+    sys.exit(1)
+EOF
+
+    if [ $? -eq 0 ]; then
+        echo "✓ Password reset complete"
+    else
+        echo "❌ Password reset failed - please check the error above"
+    fi
+    echo ""
+fi
+
 # Final restart for upgrades to ensure new code is loaded
 if [ "$UPGRADE_MODE" = true ]; then
     echo ""
@@ -673,19 +751,26 @@ if [ "$UPGRADE_MODE" = true ]; then
     echo "║                                                          ║"
     echo "╚══════════════════════════════════════════════════════════╝"
     echo ""
-    echo "🎉 Depl0y v1.2.5 has been successfully upgraded!"
+    echo "🎉 Depl0y v1.3.2 has been successfully upgraded!"
     echo ""
     echo "📍 Access Depl0y at:"
     echo "   http://$IP"
     echo ""
-    echo "✨ What's new in v1.2.5:"
-    echo "   • 15 verified cloud images with working download URLs"
-    echo "   • Flatcar Container Linux for container workloads"
-    echo "   • Multi-select cloud images before adding"
-    echo "   • Alphabetically sorted cloud image list"
-    echo "   • Comprehensive dependency validation (sudo, python3-cryptography)"
-    echo "   • Fixed broken cloud image downloads (removed 404 errors)"
+    echo "✨ What's new in v1.3.2:"
+    echo "   • Compressed ISO support (.gz, .bz2) with automatic decompression"
+    echo "   • 19 verified ISO images including pfSense, OPNsense, TrueNAS, Untangle"
+    echo "   • Background ISO downloads - no more system hangs"
+    echo "   • Multi-select ISO images before downloading"
+    echo "   • Password reset option during upgrades (type YES to reset)"
+    echo "   • Improved dependency validation (python3-cryptography included)"
     echo ""
+    if [ "$RESET_PASSWORD" = true ]; then
+        echo "🔐 Password Reset:"
+        echo "   • Admin password has been reset to: admin"
+        echo "   • 2FA has been disabled for admin account"
+        echo "   • ⚠️  CHANGE PASSWORD IMMEDIATELY!"
+        echo ""
+    fi
     echo "📚 Note:"
     echo "   • Your database has been preserved"
     echo "   • Your encryption keys have been preserved"
@@ -697,7 +782,7 @@ else
     echo "║                                                          ║"
     echo "╚══════════════════════════════════════════════════════════╝"
     echo ""
-    echo "🎉 Depl0y v1.2.5 has been successfully installed!"
+    echo "🎉 Depl0y v1.3.2 has been successfully installed!"
     echo ""
     echo "📍 Access Depl0y at:"
     echo "   http://$IP"

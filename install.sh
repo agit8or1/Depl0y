@@ -22,7 +22,7 @@ echo "║   ╚═════╝ ╚══════╝╚═╝     ╚═�
 echo "║                                                          ║"
 echo "║       Automated VM Deployment Panel for Proxmox VE      ║"
 echo "║              https://deploy.agit8or.net                 ║"
-echo "║                    Version 1.2.2                        ║"
+echo "║                    Version 1.2.4                        ║"
 echo "║                                                          ║"
 echo "╚══════════════════════════════════════════════════════════╝"
 echo ""
@@ -70,6 +70,58 @@ if [[ "$OS" != "ubuntu" && "$OS" != "debian" ]]; then
     exit 1
 fi
 
+# Function to validate dependencies after installation
+validate_dependencies() {
+    echo ""
+    echo "🔍 Validating installed dependencies..."
+
+    local MISSING_DEPS=()
+    local REQUIRED_PACKAGES=(
+        "python3"
+        "python3-pip"
+        "python3-venv"
+        "python3-cryptography"
+        "sudo"
+        "nginx"
+        "nodejs"
+        "npm"
+        "sqlite3"
+        "curl"
+        "wget"
+        "git"
+        "sshpass"
+        "at"
+    )
+
+    for pkg in "${REQUIRED_PACKAGES[@]}"; do
+        if ! dpkg -l | grep -q "^ii.*$pkg"; then
+            MISSING_DEPS+=("$pkg")
+        fi
+    done
+
+    # Also check for critical commands
+    if ! command -v python3 &> /dev/null; then
+        MISSING_DEPS+=("python3-binary")
+    fi
+
+    if ! command -v sudo &> /dev/null; then
+        MISSING_DEPS+=("sudo-binary")
+    fi
+
+    if [ ${#MISSING_DEPS[@]} -gt 0 ]; then
+        echo "❌ ERROR: Missing required dependencies:"
+        for dep in "${MISSING_DEPS[@]}"; do
+            echo "   • $dep"
+        done
+        echo ""
+        echo "Please install missing dependencies manually or check apt-get logs above."
+        return 1
+    fi
+
+    echo "✓ All dependencies validated successfully"
+    return 0
+}
+
 # Update system
 echo ""
 echo "📦 Updating system packages..."
@@ -79,11 +131,14 @@ apt-get update -qq
 echo "📦 Installing dependencies..."
 echo "   This includes: Python, Node.js, nginx, SQLite, PDF libraries, and more"
 apt-get install -y -qq \
+    sudo \
     python3 \
     python3-pip \
     python3-venv \
     python3-dev \
+    python3-cryptography \
     build-essential \
+    libssl-dev \
     nginx \
     nodejs \
     npm \
@@ -104,6 +159,13 @@ apt-get install -y -qq \
     shared-mime-info
 
 echo "✓ Dependencies installed"
+
+# Validate all dependencies are present
+if ! validate_dependencies; then
+    echo ""
+    echo "❌ Installation failed due to missing dependencies"
+    exit 1
+fi
 
 # Create depl0y user
 echo ""
@@ -465,7 +527,7 @@ sudo -u depl0y sqlite3 /var/lib/depl0y/db/depl0y.db "CREATE TABLE IF NOT EXISTS 
 );" 2>/dev/null || true
 
 sudo -u depl0y sqlite3 /var/lib/depl0y/db/depl0y.db "INSERT OR REPLACE INTO system_settings (key, value, description) VALUES
-    ('app_version', '1.2.2', 'Current application version'),
+    ('app_version', '1.2.4', 'Current application version'),
     ('app_name', 'Depl0y', 'Application name');" 2>/dev/null || true
 
 echo "✓ System settings initialized"
@@ -611,16 +673,18 @@ if [ "$UPGRADE_MODE" = true ]; then
     echo "║                                                          ║"
     echo "╚══════════════════════════════════════════════════════════╝"
     echo ""
-    echo "🎉 Depl0y v1.2.2 has been successfully upgraded!"
+    echo "🎉 Depl0y v1.2.4 has been successfully upgraded!"
     echo ""
     echo "📍 Access Depl0y at:"
     echo "   http://$IP"
     echo ""
-    echo "✨ What's new in v1.2.2:"
-    echo "   • Auto-populate 7 popular cloud images (Ubuntu, Debian, Rocky Linux)"
-    echo "   • Improved error handling for cloud image operations"
-    echo "   • Better UI feedback when adding vs updating cloud images"
-    echo "   • One-click automatic updates from Settings"
+    echo "✨ What's new in v1.2.4:"
+    echo "   • 15 pre-configured cloud images (Ubuntu, Debian, Rocky, Alma, Fedora, etc.)"
+    echo "   • Added Flatcar Container Linux for container workloads"
+    echo "   • Multi-select cloud images before adding them"
+    echo "   • Alphabetically sorted cloud image list"
+    echo "   • Enhanced dependency validation in installer"
+    echo "   • Improved logging and error handling"
     echo ""
     echo "📚 Note:"
     echo "   • Your database has been preserved"
@@ -633,7 +697,7 @@ else
     echo "║                                                          ║"
     echo "╚══════════════════════════════════════════════════════════╝"
     echo ""
-    echo "🎉 Depl0y v1.2.2 has been successfully installed!"
+    echo "🎉 Depl0y v1.2.4 has been successfully installed!"
     echo ""
     echo "📍 Access Depl0y at:"
     echo "   http://$IP"

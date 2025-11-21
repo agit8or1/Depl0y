@@ -5,6 +5,30 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.1] - 2025-11-21
+
+### Fixed
+- **All ISO download URLs verified and corrected** - Tested every URL for accessibility
+- **Updated to latest versions**:
+  - Ubuntu 24.04.1 → 24.04.3
+  - Debian 12 → 13 (Trixie)
+  - Rocky Linux 9 → uses "latest" symlink
+  - AlmaLinux 9 → uses "latest" symlink
+  - FreeBSD 14.1 → 14.2
+- **Removed broken/unavailable ISOs**:
+  - pfSense CE 2.7.2 (mirrors no longer available)
+  - OPNsense 24.7 (only compressed versions available)
+  - TrueNAS CORE 13.0 (download URLs changed/unavailable)
+  - FreeIPA Server (duplicate of AlmaLinux 9)
+  - Univention Corporate Server 5.0 (404 errors)
+  - Debian 11 (outdated, replaced with Debian 13)
+- **15 verified working ISOs** - All tested and confirmed downloadable
+- Updated selection UI text to reflect correct count
+
+### ISO Images (15 total - all verified)
+- **Linux Servers**: Ubuntu (24.04.3, 22.04.5, 20.04.6), Debian 13.2, Rocky Linux (9, 8), AlmaLinux (9, 8), Fedora Server 41, CentOS Stream 9, openSUSE Leap 15.6
+- **Other**: FreeBSD 14.2, Proxmox VE 8.3, Alpine Linux 3.21, Zentyal Server 8.0
+
 ## [1.3.0] - 2025-11-21
 
 ### Added

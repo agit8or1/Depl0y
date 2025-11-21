@@ -76,11 +76,11 @@
               <div class="selection-icon">💿</div>
               <div class="selection-info">
                 <h5>Select from Available</h5>
-                <p>Choose from 21 popular ISOs</p>
+                <p>Choose from 15 verified ISOs</p>
                 <ul class="selection-list">
                   <li>Ubuntu, Debian, RHEL-based</li>
-                  <li>pfSense, OPNsense, TrueNAS</li>
-                  <li>FreeIPA, Univention, Zentyal</li>
+                  <li>FreeBSD, Proxmox, Zentyal</li>
+                  <li>Alpine, openSUSE, Fedora</li>
                 </ul>
               </div>
               <div class="selection-arrow">→</div>
@@ -406,11 +406,11 @@ export default {
       // Ubuntu Server
       {
         name: 'Ubuntu 24.04 LTS Server',
-        filename: 'ubuntu-24.04-live-server-amd64.iso',
+        filename: 'ubuntu-24.04.3-live-server-amd64.iso',
         os_type: 'ubuntu',
-        version: '24.04',
+        version: '24.04.3',
         architecture: 'amd64',
-        download_url: 'https://releases.ubuntu.com/24.04/ubuntu-24.04.1-live-server-amd64.iso',
+        download_url: 'https://releases.ubuntu.com/24.04/ubuntu-24.04.3-live-server-amd64.iso',
         icon: '🟠'
       },
       {
@@ -433,31 +433,22 @@ export default {
       },
       // Debian
       {
-        name: 'Debian 12 (Bookworm)',
-        filename: 'debian-12-amd64-netinst.iso',
+        name: 'Debian 13 (Trixie)',
+        filename: 'debian-13.2.0-amd64-netinst.iso',
         os_type: 'debian',
-        version: '12',
+        version: '13.2',
         architecture: 'amd64',
-        download_url: 'https://cdimage.debian.org/debian-cd/current/amd64/iso-cd/debian-12.8.0-amd64-netinst.iso',
-        icon: '🔴'
-      },
-      {
-        name: 'Debian 11 (Bullseye)',
-        filename: 'debian-11-amd64-netinst.iso',
-        os_type: 'debian',
-        version: '11',
-        architecture: 'amd64',
-        download_url: 'https://cdimage.debian.org/debian-cd/11.11.0/amd64/iso-cd/debian-11.11.0-amd64-netinst.iso',
+        download_url: 'https://cdimage.debian.org/debian-cd/current/amd64/iso-cd/debian-13.2.0-amd64-netinst.iso',
         icon: '🔴'
       },
       // Rocky Linux
       {
         name: 'Rocky Linux 9',
-        filename: 'Rocky-9-x86_64-minimal.iso',
+        filename: 'Rocky-9-latest-x86_64-minimal.iso',
         os_type: 'rocky',
         version: '9',
         architecture: 'amd64',
-        download_url: 'https://download.rockylinux.org/pub/rocky/9/isos/x86_64/Rocky-9.5-x86_64-minimal.iso',
+        download_url: 'https://download.rockylinux.org/pub/rocky/9/isos/x86_64/Rocky-9-latest-x86_64-minimal.iso',
         icon: '🟢'
       },
       {
@@ -472,11 +463,11 @@ export default {
       // AlmaLinux
       {
         name: 'AlmaLinux 9',
-        filename: 'AlmaLinux-9-x86_64-minimal.iso',
+        filename: 'AlmaLinux-9-latest-x86_64-minimal.iso',
         os_type: 'alma',
         version: '9',
         architecture: 'amd64',
-        download_url: 'https://repo.almalinux.org/almalinux/9/isos/x86_64/AlmaLinux-9.5-x86_64-minimal.iso',
+        download_url: 'https://repo.almalinux.org/almalinux/9/isos/x86_64/AlmaLinux-9-latest-x86_64-minimal.iso',
         icon: '🔵'
       },
       {
@@ -511,57 +502,27 @@ export default {
       // openSUSE
       {
         name: 'openSUSE Leap 15.6',
-        filename: 'openSUSE-Leap-15.6.iso',
+        filename: 'openSUSE-Leap-15.6-NET-x86_64-Media.iso',
         os_type: 'opensuse',
         version: '15.6',
         architecture: 'amd64',
         download_url: 'https://download.opensuse.org/distribution/leap/15.6/iso/openSUSE-Leap-15.6-NET-x86_64-Media.iso',
         icon: '🟢'
       },
-      // pfSense
-      {
-        name: 'pfSense CE 2.7.2',
-        filename: 'pfSense-CE-2.7.2-amd64.iso',
-        os_type: 'pfsense',
-        version: '2.7.2',
-        architecture: 'amd64',
-        download_url: 'https://frafiles.netgate.com/mirror/downloads/pfSense-CE-2.7.2-RELEASE-amd64.iso',
-        icon: '🔥'
-      },
-      // OPNsense
-      {
-        name: 'OPNsense 24.7',
-        filename: 'OPNsense-24.7-amd64.iso',
-        os_type: 'opnsense',
-        version: '24.7',
-        architecture: 'amd64',
-        download_url: 'https://ftp.rrze.uni-erlangen.de/opnsense/releases/24.7/OPNsense-24.7-dvd-amd64.iso',
-        icon: '🛡️'
-      },
       // FreeBSD
       {
-        name: 'FreeBSD 14.1',
-        filename: 'FreeBSD-14.1-amd64.iso',
+        name: 'FreeBSD 14.2',
+        filename: 'FreeBSD-14.2-RELEASE-amd64-disc1.iso',
         os_type: 'freebsd',
-        version: '14.1',
+        version: '14.2',
         architecture: 'amd64',
-        download_url: 'https://download.freebsd.org/releases/amd64/amd64/ISO-IMAGES/14.1/FreeBSD-14.1-RELEASE-amd64-disc1.iso',
+        download_url: 'https://download.freebsd.org/releases/amd64/amd64/ISO-IMAGES/14.2/FreeBSD-14.2-RELEASE-amd64-disc1.iso',
         icon: '👹'
-      },
-      // TrueNAS
-      {
-        name: 'TrueNAS CORE 13.0',
-        filename: 'TrueNAS-13.0-U6.2.iso',
-        os_type: 'truenas',
-        version: '13.0-U6.2',
-        architecture: 'amd64',
-        download_url: 'https://download.sys.truenas.net/TrueNAS-13.0/STABLE/TrueNAS-13.0-U6.2/TrueNAS-13.0-U6.2.iso',
-        icon: '💾'
       },
       // Proxmox VE
       {
         name: 'Proxmox VE 8.3',
-        filename: 'proxmox-ve-8.3.iso',
+        filename: 'proxmox-ve_8.3-1.iso',
         os_type: 'proxmox',
         version: '8.3',
         architecture: 'amd64',
@@ -571,37 +532,17 @@ export default {
       // Alpine Linux
       {
         name: 'Alpine Linux 3.21',
-        filename: 'alpine-virt-3.21.iso',
+        filename: 'alpine-virt-3.21.0-x86_64.iso',
         os_type: 'other',
-        version: '3.21',
+        version: '3.21.0',
         architecture: 'amd64',
         download_url: 'https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/x86_64/alpine-virt-3.21.0-x86_64.iso',
         icon: '⛰️'
       },
-      // FreeIPA
-      {
-        name: 'FreeIPA Server (AlmaLinux 9)',
-        filename: 'AlmaLinux-9-x86_64-minimal.iso',
-        os_type: 'other',
-        version: '9',
-        architecture: 'amd64',
-        download_url: 'https://repo.almalinux.org/almalinux/9/isos/x86_64/AlmaLinux-9.5-x86_64-minimal.iso',
-        icon: '🔐'
-      },
-      // Univention Corporate Server
-      {
-        name: 'Univention Corporate Server 5.0',
-        filename: 'UCS-5.0-amd64.iso',
-        os_type: 'other',
-        version: '5.0',
-        architecture: 'amd64',
-        download_url: 'https://updates.software-univention.de/download/ucs-iso/5.0/5.0-8/UCS_5.0-8-amd64.iso',
-        icon: '🏢'
-      },
       // Zentyal Server
       {
         name: 'Zentyal Server 8.0',
-        filename: 'zentyal-8.0-amd64.iso',
+        filename: 'zentyal-8.0-development-amd64.iso',
         os_type: 'other',
         version: '8.0',
         architecture: 'amd64',

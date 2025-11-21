@@ -219,7 +219,7 @@
 
           <div class="predefined-images-grid">
             <div
-              v-for="predefined in predefinedImages"
+              v-for="predefined in sortedPredefinedImages"
               :key="predefined.name"
               @click="toggleImageSelection(predefined)"
               :class="['predefined-image-card', { selected: isImageSelected(predefined.name) }]"
@@ -333,7 +333,7 @@
 </template>
 
 <script>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import api from '@/services/api'
 import { useToast } from 'vue-toastification'
 
@@ -572,6 +572,10 @@ export default {
     const getSelectedImages = () => {
       return predefinedImages.value.filter(img => selectedImageNames.value.includes(img.name))
     }
+
+    const sortedPredefinedImages = computed(() => {
+      return [...predefinedImages.value].sort((a, b) => a.name.localeCompare(b.name))
+    })
 
     const fetchImages = async () => {
       loading.value = true
@@ -906,6 +910,7 @@ export default {
       checkingTemplates,
       fetchingLatest,
       predefinedImages,
+      sortedPredefinedImages,
       fetchImages,
       downloadImage,
       saveImage,

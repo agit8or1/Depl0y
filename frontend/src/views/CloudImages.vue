@@ -177,7 +177,7 @@
               <div class="selection-icon">📦</div>
               <div class="selection-info">
                 <h5>Select from Available</h5>
-                <p>Choose from 21 cloud-ready images</p>
+                <p>Choose from 22 cloud-ready images</p>
                 <ul class="selection-list">
                   <li>Ubuntu, Debian, RHEL-based</li>
                   <li>Fedora, SUSE, Arch, Oracle</li>
@@ -454,21 +454,21 @@ export default {
         icon: '🔵'
       },
       {
+        name: 'Fedora Cloud 41',
+        filename: 'Fedora-Cloud-Base-41.qcow2',
+        os_type: 'fedora',
+        version: '41',
+        architecture: 'amd64',
+        download_url: 'https://download.fedoraproject.org/pub/fedora/linux/releases/41/Cloud/x86_64/images/Fedora-Cloud-Base-Generic-41-1.4.x86_64.qcow2',
+        icon: '🔷'
+      },
+      {
         name: 'Fedora Cloud 40',
         filename: 'Fedora-Cloud-Base-40.qcow2',
         os_type: 'fedora',
         version: '40',
         architecture: 'amd64',
-        download_url: 'https://download.fedoraproject.org/pub/fedora/linux/releases/40/Cloud/x86_64/images/Fedora-Cloud-Base-Generic-40-1.14.x86_64.qcow2',
-        icon: '🔷'
-      },
-      {
-        name: 'Fedora Cloud 39',
-        filename: 'Fedora-Cloud-Base-39.qcow2',
-        os_type: 'fedora',
-        version: '39',
-        architecture: 'amd64',
-        download_url: 'https://download.fedoraproject.org/pub/fedora/linux/releases/39/Cloud/x86_64/images/Fedora-Cloud-Base-Generic-39-1.5.x86_64.qcow2',
+        download_url: 'https://download.fedoraproject.org/pub/fedora/linux/releases/40/Cloud/x86_64/images/Fedora-Cloud-Base-Generic.x86_64-40-1.14.qcow2',
         icon: '🔷'
       },
       {
@@ -500,20 +500,20 @@ export default {
       },
       {
         name: 'Oracle Linux 9',
-        filename: 'OL9U5_x86_64-kvm-b264.qcow2',
+        filename: 'OL9U5_x86_64-kvm-b272.qcow2',
         os_type: 'other',
         version: '9',
         architecture: 'amd64',
-        download_url: 'https://yum.oracle.com/templates/OracleLinux/OL9/u5/x86_64/OL9U5_x86_64-kvm-b264.qcow2',
+        download_url: 'https://yum.oracle.com/templates/OracleLinux/OL9/u5/x86_64/OL9U5_x86_64-kvm-b272.qcow2',
         icon: '🔴'
       },
       {
         name: 'Oracle Linux 8',
-        filename: 'OL8U10_x86_64-kvm-b245.qcow2',
+        filename: 'OL8U10_x86_64-kvm-b253.qcow2',
         os_type: 'other',
         version: '8',
         architecture: 'amd64',
-        download_url: 'https://yum.oracle.com/templates/OracleLinux/OL8/u10/x86_64/OL8U10_x86_64-kvm-b245.qcow2',
+        download_url: 'https://yum.oracle.com/templates/OracleLinux/OL8/u10/x86_64/OL8U10_x86_64-kvm-b253.qcow2',
         icon: '🔴'
       },
       {
@@ -526,30 +526,30 @@ export default {
         icon: '⛰️'
       },
       {
-        name: 'Kali Linux',
-        filename: 'kali-linux-cloud.qcow2',
+        name: 'Kali Linux 2024.4',
+        filename: 'kali-linux-2024.4-cloud.tar.xz',
         os_type: 'other',
-        version: 'latest',
+        version: '2024.4',
         architecture: 'amd64',
-        download_url: 'https://kali.download/cloud-images/kali-latest/kali-linux-cloud-generic-amd64.qcow2',
+        download_url: 'https://kali.download/cloud-images/kali-2024.4/kali-linux-2024.4-cloud-genericcloud-amd64.tar.xz',
         icon: '🐉'
       },
       {
         name: 'FreeBSD 14.1',
-        filename: 'FreeBSD-14.1-RELEASE-amd64.qcow2',
+        filename: 'FreeBSD-14.1-RELEASE-amd64-ufs.qcow2.xz',
         os_type: 'other',
         version: '14.1',
         architecture: 'amd64',
-        download_url: 'https://download.freebsd.org/releases/VM-IMAGES/14.1-RELEASE/amd64/Latest/FreeBSD-14.1-RELEASE-amd64-BASIC-CLOUDINIT.qcow2.xz',
+        download_url: 'https://download.freebsd.org/releases/VM-IMAGES/14.1-RELEASE/amd64/Latest/FreeBSD-14.1-RELEASE-amd64-BASIC-CLOUDINIT-ufs.qcow2.xz',
         icon: '😈'
       },
       {
         name: 'Gentoo Linux',
-        filename: 'gentoo-openstack-amd64.qcow2',
+        filename: 'gentoo-amd64-cloud-systemd.qcow2',
         os_type: 'other',
         version: 'latest',
         architecture: 'amd64',
-        download_url: 'https://distfiles.gentoo.org/releases/amd64/autobuilds/current-cloud-stage3/openstack/gentoo-openstack-amd64-systemd-latest.qcow2',
+        download_url: 'https://distfiles.gentoo.org/releases/amd64/autobuilds/current-cloud-amd64-openstack/cloud-amd64-openstack-systemd.qcow2',
         icon: '🦩'
       }
     ])

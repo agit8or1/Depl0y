@@ -38,9 +38,28 @@
               <td>{{ iso.version || 'N/A' }}</td>
               <td>{{ iso.architecture }}</td>
               <td>{{ formatBytes(iso.file_size) }}</td>
-              <td class="text-xs text-muted">{{ iso.checksum ? iso.checksum.substring(0, 16) + '...' : 'N/A' }}</td>
+              <td class="text-xs text-muted">
+                <span v-if="iso.checksum === 'downloading...'" class="text-blue-500">
+                  ⏳ Downloading...
+                </span>
+                <span v-else-if="iso.checksum === 'calculating...'" class="text-yellow-500">
+                  ⚙️ Calculating checksum...
+                </span>
+                <span v-else-if="iso.checksum === 'error'" class="text-red-500">
+                  ❌ Error
+                </span>
+                <span v-else>
+                  {{ iso.checksum ? iso.checksum.substring(0, 16) + '...' : 'N/A' }}
+                </span>
+              </td>
               <td>
-                <span :class="['badge', iso.is_available ? 'badge-success' : 'badge-danger']">
+                <span v-if="iso.checksum === 'downloading...'" class="badge badge-info">
+                  Downloading
+                </span>
+                <span v-else-if="iso.checksum === 'calculating...'" class="badge badge-warning">
+                  Processing
+                </span>
+                <span v-else :class="['badge', iso.is_available ? 'badge-success' : 'badge-danger']">
                   {{ iso.is_available ? 'Available' : 'Unavailable' }}
                 </span>
               </td>
@@ -503,7 +522,7 @@ export default {
       {
         name: 'openSUSE Leap 15.6',
         filename: 'openSUSE-Leap-15.6-NET-x86_64-Media.iso',
-        os_type: 'opensuse',
+        os_type: 'other',  // opensuse not in enum, use 'other'
         version: '15.6',
         architecture: 'amd64',
         download_url: 'https://download.opensuse.org/distribution/leap/15.6/iso/openSUSE-Leap-15.6-NET-x86_64-Media.iso',
@@ -616,7 +635,8 @@ export default {
       loading.value = true
       try {
         const response = await api.isos.list()
-        isos.value = response.data
+        // Sort ISOs alphabetically by name
+        isos.value = response.data.sort((a, b) => a.name.localeCompare(b.name))
       } catch (error) {
         console.error('Failed to fetch ISOs:', error)
       } finally {

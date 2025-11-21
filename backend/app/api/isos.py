@@ -448,32 +448,26 @@ async def download_iso_from_url(
 
         logger.info(f"Queued ISO download for '{download_request.name}' (ID: {new_iso.id}) from {download_request.url}")
 
-        # Spawn download in completely separate process using subprocess
+        # Spawn download in completely separate process using standalone script
         # This ensures it doesn't block the FastAPI worker at all
         python_path = "/opt/depl0y/backend/venv/bin/python3"
-        script_args = [
-            python_path,
-            "-c",
-            f"""
-import sys
-sys.path.insert(0, '/opt/depl0y/backend')
-from app.api.isos import download_iso_background
-download_iso_background(
-    "{download_request.url}",
-    "{storage_path}",
-    {new_iso.id},
-    {is_gzipped},
-    {is_bz2}
-)
-"""
-        ]
+        download_script = "/opt/depl0y/scripts/download_iso.py"
 
         # Start process detached (doesn't wait for completion)
         subprocess.Popen(
-            script_args,
+            [
+                python_path,
+                download_script,
+                download_request.url,
+                storage_path,
+                str(new_iso.id),
+                str(is_gzipped).lower(),
+                str(is_bz2).lower()
+            ],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            start_new_session=True  # Completely detach from parent
+            start_new_session=True,  # Completely detach from parent
+            cwd="/opt/depl0y/backend"
         )
 
         return new_iso

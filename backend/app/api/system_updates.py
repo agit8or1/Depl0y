@@ -103,8 +103,11 @@ Depl0y {settings.APP_VERSION} Release Notes:
 def download_update():
     """Download the latest update package (public endpoint for automated updates)"""
     try:
-        # Use pre-packaged file
-        package_path = "/opt/depl0y/depl0y-v1.2.2.tar.gz"
+        # Use pre-packaged file - check for latest version first
+        package_path = "/opt/depl0y/depl0y-latest.tar.gz"
+        if not os.path.exists(package_path):
+            # Fallback to versioned file
+            package_path = "/opt/depl0y/depl0y-v1.3.2.tar.gz"
         
         if not os.path.exists(package_path):
             # Fallback: create package on-the-fly

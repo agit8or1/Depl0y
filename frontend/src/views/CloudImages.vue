@@ -177,12 +177,11 @@
               <div class="selection-icon">📦</div>
               <div class="selection-info">
                 <h5>Select from Available</h5>
-                <p>Choose from 9+ popular cloud images</p>
+                <p>Choose from 14 popular cloud images</p>
                 <ul class="selection-list">
-                  <li>Ubuntu 24.04, 22.04, 20.04 LTS</li>
-                  <li>Debian 12, 11</li>
-                  <li>Rocky Linux 9, 8</li>
-                  <li>AlmaLinux 9, 8</li>
+                  <li>Ubuntu, Debian, Rocky, Alma</li>
+                  <li>Fedora, CentOS, openSUSE</li>
+                  <li>Arch Linux</li>
                 </ul>
               </div>
               <div class="selection-arrow">→</div>
@@ -442,6 +441,51 @@ export default {
         version: '8',
         architecture: 'amd64',
         download_url: 'https://repo.almalinux.org/almalinux/8/cloud/x86_64/images/AlmaLinux-8-GenericCloud-latest.x86_64.qcow2',
+        icon: '🔵'
+      },
+      {
+        name: 'Fedora Cloud 40',
+        filename: 'Fedora-Cloud-Base-Generic.x86_64-40.qcow2',
+        os_type: 'fedora',
+        version: '40',
+        architecture: 'amd64',
+        download_url: 'https://download.fedoraproject.org/pub/fedora/linux/releases/40/Cloud/x86_64/images/Fedora-Cloud-Base-Generic.x86_64-40-1.14.qcow2',
+        icon: '🔷'
+      },
+      {
+        name: 'Fedora Cloud 39',
+        filename: 'Fedora-Cloud-Base-Generic.x86_64-39.qcow2',
+        os_type: 'fedora',
+        version: '39',
+        architecture: 'amd64',
+        download_url: 'https://download.fedoraproject.org/pub/fedora/linux/releases/39/Cloud/x86_64/images/Fedora-Cloud-Base-Generic.x86_64-39-1.5.qcow2',
+        icon: '🔷'
+      },
+      {
+        name: 'CentOS Stream 9',
+        filename: 'CentOS-Stream-GenericCloud-9.qcow2',
+        os_type: 'centos',
+        version: '9',
+        architecture: 'amd64',
+        download_url: 'https://cloud.centos.org/centos/9-stream/x86_64/images/CentOS-Stream-GenericCloud-9-latest.x86_64.qcow2',
+        icon: '🟣'
+      },
+      {
+        name: 'openSUSE Leap 15.6',
+        filename: 'openSUSE-Leap-15.6-OpenStack.x86_64.qcow2',
+        os_type: 'opensuse',
+        version: '15.6',
+        architecture: 'amd64',
+        download_url: 'https://download.opensuse.org/distribution/leap/15.6/appliances/openSUSE-Leap-15.6-OpenStack.x86_64-Cloud.qcow2',
+        icon: '🟢'
+      },
+      {
+        name: 'Arch Linux',
+        filename: 'Arch-Linux-x86_64-cloudimg.qcow2',
+        os_type: 'other',
+        version: 'latest',
+        architecture: 'amd64',
+        download_url: 'https://gitlab.archlinux.org/archlinux/arch-boxes/-/jobs/artifacts/master/raw/output/Arch-Linux-x86_64-cloudimg.qcow2?job=build:secure',
         icon: '🔵'
       }
     ])
@@ -804,6 +848,19 @@ export default {
   max-height: 90vh;
   overflow-y: auto;
   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+}
+
+/* Fix button contrast in modal */
+.modal-content .btn-outline {
+  background-color: #334155;
+  border: 2px solid #64748b;
+  color: #f1f5f9;
+}
+
+.modal-content .btn-outline:hover {
+  background-color: #475569;
+  border-color: #94a3b8;
+  color: #ffffff;
 }
 
 .modal-header {

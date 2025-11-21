@@ -1047,7 +1047,7 @@ export default {
   align-items: center;
   gap: 0.75rem;
   padding: 1rem;
-  background: #0f172a;
+  background: #1e293b;
   border: 2px solid #475569;
   border-radius: 8px;
   cursor: pointer;
@@ -1056,16 +1056,16 @@ export default {
 }
 
 .predefined-image-card:hover {
-  background: #1e293b;
-  border-color: #3b82f6;
+  background: #334155;
+  border-color: #60a5fa;
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
 }
 
 .predefined-image-card.selected {
-  background: #1e293b;
+  background: #334155;
   border-color: #3b82f6;
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.4);
 }
 
 .predefined-image-icon {
@@ -1080,7 +1080,7 @@ export default {
 }
 
 .predefined-image-name {
-  color: #f1f5f9;
+  color: #ffffff;
   font-weight: 600;
   font-size: 0.875rem;
   margin-bottom: 0.25rem;
@@ -1090,10 +1090,11 @@ export default {
 }
 
 .predefined-image-details {
-  color: #94a3b8;
+  color: #cbd5e1;
   font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  font-weight: 500;
 }
 
 .predefined-image-check {
@@ -1102,14 +1103,15 @@ export default {
   right: 0.5rem;
   background: #3b82f6;
   color: #ffffff;
-  width: 1.5rem;
-  height: 1.5rem;
+  width: 1.75rem;
+  height: 1.75rem;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.875rem;
+  font-size: 1rem;
   font-weight: bold;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.5);
 }
 
 .divider {
@@ -1123,12 +1125,12 @@ export default {
 .divider::after {
   content: '';
   flex: 1;
-  border-bottom: 2px solid #475569;
+  border-bottom: 2px solid #64748b;
 }
 
 .divider span {
   padding: 0 1rem;
-  color: #94a3b8;
+  color: #cbd5e1;
   font-size: 0.875rem;
   font-weight: 500;
   text-transform: uppercase;
@@ -1145,14 +1147,14 @@ export default {
 }
 
 .selection-prompt h4 {
-  color: #f1f5f9;
+  color: #ffffff;
   font-size: 1.5rem;
   font-weight: 600;
   margin-bottom: 0.5rem;
 }
 
 .selection-prompt p {
-  color: #94a3b8;
+  color: #cbd5e1;
   font-size: 1rem;
 }
 
@@ -1169,8 +1171,8 @@ export default {
   flex-direction: column;
   align-items: center;
   padding: 2rem 1.5rem;
-  background: #0f172a;
-  border: 2px solid #475569;
+  background: #1e293b;
+  border: 3px solid #475569;
   border-radius: 12px;
   cursor: pointer;
   transition: all 0.3s;
@@ -1178,10 +1180,10 @@ export default {
 }
 
 .selection-card:hover {
-  background: #1e293b;
+  background: #334155;
   border-color: #3b82f6;
   transform: translateY(-4px);
-  box-shadow: 0 8px 24px rgba(59, 130, 246, 0.3);
+  box-shadow: 0 8px 24px rgba(59, 130, 246, 0.4);
 }
 
 .selection-icon {
@@ -1195,14 +1197,14 @@ export default {
 }
 
 .selection-info h5 {
-  color: #f1f5f9;
+  color: #ffffff;
   font-size: 1.25rem;
   font-weight: 600;
   margin-bottom: 0.5rem;
 }
 
 .selection-info p {
-  color: #94a3b8;
+  color: #e2e8f0;
   font-size: 0.875rem;
   margin-bottom: 1rem;
 }
@@ -1215,7 +1217,7 @@ export default {
 }
 
 .selection-list li {
-  color: #cbd5e1;
+  color: #f1f5f9;
   font-size: 0.875rem;
   padding: 0.25rem 0;
   padding-left: 1.5rem;
@@ -1226,20 +1228,22 @@ export default {
   content: '✓';
   position: absolute;
   left: 0;
-  color: #22c55e;
+  color: #4ade80;
   font-weight: bold;
+  font-size: 1rem;
 }
 
 .selection-arrow {
   font-size: 2rem;
-  color: #3b82f6;
+  color: #60a5fa;
   margin-top: 1rem;
-  opacity: 0.7;
+  opacity: 0.9;
   transition: all 0.3s;
 }
 
 .selection-card:hover .selection-arrow {
   opacity: 1;
+  color: #3b82f6;
   transform: translateX(4px);
 }
 
@@ -1253,7 +1257,7 @@ export default {
 }
 
 .mode-header h4 {
-  color: #f1f5f9;
+  color: #ffffff;
   font-size: 1.25rem;
   font-weight: 600;
   margin: 0;
@@ -1262,21 +1266,21 @@ export default {
 
 .selected-image-preview {
   margin-top: 1.5rem;
-  padding: 1rem;
-  background: rgba(59, 130, 246, 0.1);
-  border: 2px solid #3b82f6;
+  padding: 1.25rem;
+  background: rgba(59, 130, 246, 0.15);
+  border: 2px solid #60a5fa;
   border-radius: 8px;
 }
 
 .selected-image-preview h5 {
-  color: #f1f5f9;
+  color: #ffffff;
   font-size: 1rem;
   font-weight: 600;
   margin-bottom: 0.5rem;
 }
 
 .selected-image-preview p {
-  color: #94a3b8;
+  color: #cbd5e1;
   margin: 0;
   word-break: break-all;
 }

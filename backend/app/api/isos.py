@@ -12,6 +12,7 @@ import tempfile
 import logging
 import gzip
 import bz2
+import subprocess
 
 from app.core.database import get_db
 from app.core.config import settings
@@ -391,11 +392,10 @@ async def upload_iso(
 @router.post("/download", response_model=ISOImageResponse, status_code=status.HTTP_201_CREATED)
 async def download_iso_from_url(
     download_request: ISODownloadRequest,
-    background_tasks: BackgroundTasks,
     current_user: User = Depends(require_operator),
     db: Session = Depends(get_db),
 ):
-    """Download an ISO image from a URL (supports .iso, .iso.gz, .iso.bz2) - Downloads in background"""
+    """Download an ISO image from a URL (supports .iso, .iso.gz, .iso.bz2) - Downloads in separate process"""
     # Create storage directory if it doesn't exist
     os.makedirs(settings.ISO_STORAGE_PATH, exist_ok=True)
 
@@ -448,14 +448,32 @@ async def download_iso_from_url(
 
         logger.info(f"Queued ISO download for '{download_request.name}' (ID: {new_iso.id}) from {download_request.url}")
 
-        # Queue download in background - returns immediately
-        background_tasks.add_task(
-            download_iso_background,
-            download_request.url,
-            storage_path,
-            new_iso.id,
-            is_gzipped,
-            is_bz2
+        # Spawn download in completely separate process using subprocess
+        # This ensures it doesn't block the FastAPI worker at all
+        python_path = "/opt/depl0y/backend/venv/bin/python3"
+        script_args = [
+            python_path,
+            "-c",
+            f"""
+import sys
+sys.path.insert(0, '/opt/depl0y/backend')
+from app.api.isos import download_iso_background
+download_iso_background(
+    "{download_request.url}",
+    "{storage_path}",
+    {new_iso.id},
+    {is_gzipped},
+    {is_bz2}
+)
+"""
+        ]
+
+        # Start process detached (doesn't wait for completion)
+        subprocess.Popen(
+            script_args,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True  # Completely detach from parent
         )
 
         return new_iso

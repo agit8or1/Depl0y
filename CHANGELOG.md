@@ -5,6 +5,48 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.5] - 2025-11-21
+
+### Added
+- Flatcar Container Linux cloud image for container workloads
+- Multi-select functionality for cloud images before adding them
+- Alphabetically sorted cloud image lists
+- Comprehensive dependency validation in installer
+- Critical dependencies: `sudo`, `python3-cryptography`, `libssl-dev`
+- Dependency validation function that checks all packages after installation
+- Clear error messages for missing dependencies in installer
+
+### Changed
+- Cloud image library expanded from 7 to 15 verified working images
+- Cloud images now alphabetically sorted for easier browsing
+- Enhanced installer to validate dependencies before continuing
+- Improved installation error handling and feedback
+- Updated cloud image selection UI with better contrast
+
+### Fixed
+- Removed 6 broken cloud images with persistent 404 errors:
+  - Fedora Cloud 40
+  - Oracle Linux 9 and 8
+  - Kali Linux 2024.4
+  - FreeBSD 14.1
+  - Gentoo Linux
+- All remaining 15 cloud images now have verified working download URLs
+- Fixed missing `sudo` dependency causing installer failures
+- Fixed missing `python3-cryptography` dependency causing encryption key generation errors
+- Installer now stops early if critical dependencies are missing
+
+### Cloud Images (15 total)
+- Ubuntu 24.04 LTS, 22.04 LTS, 20.04 LTS
+- Debian 12 (Bookworm), 11 (Bullseye)
+- Rocky Linux 9, 8
+- AlmaLinux 9, 8
+- Fedora Cloud 41
+- CentOS Stream 9
+- openSUSE Leap 15.6
+- Arch Linux
+- Alpine Linux 3.21
+- Flatcar Container Linux (stable)
+
 ## [1.2.2] - 2025-11-20
 
 ### Added

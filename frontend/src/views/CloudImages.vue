@@ -177,11 +177,11 @@
               <div class="selection-icon">📦</div>
               <div class="selection-info">
                 <h5>Select from Available</h5>
-                <p>Choose from 14 popular cloud images</p>
+                <p>Choose from 21 cloud-ready images</p>
                 <ul class="selection-list">
-                  <li>Ubuntu, Debian, Rocky, Alma</li>
-                  <li>Fedora, CentOS, openSUSE</li>
-                  <li>Arch Linux</li>
+                  <li>Ubuntu, Debian, RHEL-based</li>
+                  <li>Fedora, SUSE, Arch, Oracle</li>
+                  <li>Alpine, Kali, FreeBSD, Gentoo</li>
                 </ul>
               </div>
               <div class="selection-arrow">→</div>
@@ -445,20 +445,20 @@ export default {
       },
       {
         name: 'Fedora Cloud 40',
-        filename: 'Fedora-Cloud-Base-Generic.x86_64-40.qcow2',
+        filename: 'Fedora-Cloud-Base-40.qcow2',
         os_type: 'fedora',
         version: '40',
         architecture: 'amd64',
-        download_url: 'https://download.fedoraproject.org/pub/fedora/linux/releases/40/Cloud/x86_64/images/Fedora-Cloud-Base-Generic.x86_64-40-1.14.qcow2',
+        download_url: 'https://download.fedoraproject.org/pub/fedora/linux/releases/40/Cloud/x86_64/images/Fedora-Cloud-Base-Generic-40-1.14.x86_64.qcow2',
         icon: '🔷'
       },
       {
         name: 'Fedora Cloud 39',
-        filename: 'Fedora-Cloud-Base-Generic.x86_64-39.qcow2',
+        filename: 'Fedora-Cloud-Base-39.qcow2',
         os_type: 'fedora',
         version: '39',
         architecture: 'amd64',
-        download_url: 'https://download.fedoraproject.org/pub/fedora/linux/releases/39/Cloud/x86_64/images/Fedora-Cloud-Base-Generic.x86_64-39-1.5.qcow2',
+        download_url: 'https://download.fedoraproject.org/pub/fedora/linux/releases/39/Cloud/x86_64/images/Fedora-Cloud-Base-Generic-39-1.5.x86_64.qcow2',
         icon: '🔷'
       },
       {
@@ -472,11 +472,11 @@ export default {
       },
       {
         name: 'openSUSE Leap 15.6',
-        filename: 'openSUSE-Leap-15.6-OpenStack.x86_64.qcow2',
+        filename: 'openSUSE-Leap-15.6-Minimal-VM.qcow2',
         os_type: 'opensuse',
         version: '15.6',
         architecture: 'amd64',
-        download_url: 'https://download.opensuse.org/distribution/leap/15.6/appliances/openSUSE-Leap-15.6-OpenStack.x86_64-Cloud.qcow2',
+        download_url: 'https://download.opensuse.org/distribution/leap/15.6/appliances/openSUSE-Leap-15.6-Minimal-VM.x86_64-Cloud.qcow2',
         icon: '🟢'
       },
       {
@@ -485,8 +485,62 @@ export default {
         os_type: 'other',
         version: 'latest',
         architecture: 'amd64',
-        download_url: 'https://gitlab.archlinux.org/archlinux/arch-boxes/-/jobs/artifacts/master/raw/output/Arch-Linux-x86_64-cloudimg.qcow2?job=build:secure',
+        download_url: 'https://geo.mirror.pkgbuild.com/images/latest/Arch-Linux-x86_64-cloudimg.qcow2',
         icon: '🔵'
+      },
+      {
+        name: 'Oracle Linux 9',
+        filename: 'OL9U5_x86_64-kvm-b264.qcow2',
+        os_type: 'other',
+        version: '9',
+        architecture: 'amd64',
+        download_url: 'https://yum.oracle.com/templates/OracleLinux/OL9/u5/x86_64/OL9U5_x86_64-kvm-b264.qcow2',
+        icon: '🔴'
+      },
+      {
+        name: 'Oracle Linux 8',
+        filename: 'OL8U10_x86_64-kvm-b245.qcow2',
+        os_type: 'other',
+        version: '8',
+        architecture: 'amd64',
+        download_url: 'https://yum.oracle.com/templates/OracleLinux/OL8/u10/x86_64/OL8U10_x86_64-kvm-b245.qcow2',
+        icon: '🔴'
+      },
+      {
+        name: 'Alpine Linux 3.21',
+        filename: 'alpine-virt-3.21.0-x86_64.qcow2',
+        os_type: 'other',
+        version: '3.21',
+        architecture: 'amd64',
+        download_url: 'https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/cloud/nocloud_alpine-3.21.0-x86_64-bios-cloudinit-r0.qcow2',
+        icon: '⛰️'
+      },
+      {
+        name: 'Kali Linux',
+        filename: 'kali-linux-cloud.qcow2',
+        os_type: 'other',
+        version: 'latest',
+        architecture: 'amd64',
+        download_url: 'https://kali.download/cloud-images/kali-latest/kali-linux-cloud-generic-amd64.qcow2',
+        icon: '🐉'
+      },
+      {
+        name: 'FreeBSD 14.1',
+        filename: 'FreeBSD-14.1-RELEASE-amd64.qcow2',
+        os_type: 'other',
+        version: '14.1',
+        architecture: 'amd64',
+        download_url: 'https://download.freebsd.org/releases/VM-IMAGES/14.1-RELEASE/amd64/Latest/FreeBSD-14.1-RELEASE-amd64-BASIC-CLOUDINIT.qcow2.xz',
+        icon: '😈'
+      },
+      {
+        name: 'Gentoo Linux',
+        filename: 'gentoo-openstack-amd64.qcow2',
+        os_type: 'other',
+        version: 'latest',
+        architecture: 'amd64',
+        download_url: 'https://distfiles.gentoo.org/releases/amd64/autobuilds/current-cloud-stage3/openstack/gentoo-openstack-amd64-systemd-latest.qcow2',
+        icon: '🦩'
       }
     ])
 

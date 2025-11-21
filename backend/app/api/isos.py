@@ -51,6 +51,100 @@ class ISODownloadRequest(BaseModel):
     architecture: str = "amd64"
 
 
+def download_iso_background(
+    url: str,
+    storage_path: str,
+    iso_id: int,
+    is_gzipped: bool,
+    is_bz2: bool
+):
+    """Download and process ISO file in background"""
+    from app.core.database import SessionLocal
+    db = SessionLocal()
+
+    try:
+        # Download file from URL
+        logger.info(f"Background download starting for ISO ID {iso_id} from {url}")
+        response = requests.get(url, stream=True, timeout=300)  # 5 minute timeout for initial connection
+        response.raise_for_status()
+
+        # Download to temporary file first
+        suffix = '.iso.gz' if is_gzipped else '.iso.bz2' if is_bz2 else '.iso'
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_file:
+            for chunk in response.iter_content(chunk_size=8192):
+                if chunk:
+                    tmp_file.write(chunk)
+            tmp_path = tmp_file.name
+
+        logger.info(f"Download complete for ISO ID {iso_id}, file saved to {tmp_path}")
+
+        # Decompress if necessary
+        if is_gzipped or is_bz2:
+            logger.info(f"Decompressing {'gzip' if is_gzipped else 'bz2'} file for ISO ID {iso_id}...")
+            decompressed_path = tmp_path.replace('.gz', '').replace('.bz2', '')
+
+            if is_gzipped:
+                with gzip.open(tmp_path, 'rb') as f_in:
+                    with open(decompressed_path, 'wb') as f_out:
+                        shutil.copyfileobj(f_in, f_out)
+            elif is_bz2:
+                with bz2.open(tmp_path, 'rb') as f_in:
+                    with open(decompressed_path, 'wb') as f_out:
+                        shutil.copyfileobj(f_in, f_out)
+
+            # Remove compressed file
+            os.remove(tmp_path)
+            tmp_path = decompressed_path
+            logger.info(f"Decompression complete for ISO ID {iso_id}")
+
+        # Move to final location
+        shutil.move(tmp_path, storage_path)
+        logger.info(f"ISO ID {iso_id} moved to final location: {storage_path}")
+
+        # Calculate file size
+        file_size = os.path.getsize(storage_path)
+
+        # Calculate checksum
+        logger.info(f"Calculating checksum for ISO ID {iso_id}...")
+        sha256_hash = hashlib.sha256()
+        chunk_size = 1024 * 1024  # 1MB chunks
+
+        with open(storage_path, "rb") as f:
+            while True:
+                chunk = f.read(chunk_size)
+                if not chunk:
+                    break
+                sha256_hash.update(chunk)
+
+        checksum = sha256_hash.hexdigest()
+        logger.info(f"Checksum calculated for ISO ID {iso_id}: {checksum}")
+
+        # Update database
+        iso = db.query(ISOImage).filter(ISOImage.id == iso_id).first()
+        if iso:
+            iso.file_size = file_size
+            iso.checksum = checksum
+            iso.is_available = True
+            db.commit()
+            logger.info(f"ISO ID {iso_id} download completed successfully")
+
+    except Exception as e:
+        logger.error(f"Failed to download ISO ID {iso_id}: {str(e)}")
+        # Update database with error status
+        iso = db.query(ISOImage).filter(ISOImage.id == iso_id).first()
+        if iso:
+            iso.checksum = "error"
+            iso.is_available = False
+            db.commit()
+        # Clean up files
+        if 'tmp_path' in locals() and os.path.exists(tmp_path):
+            os.remove(tmp_path)
+        if os.path.exists(storage_path):
+            os.remove(storage_path)
+    finally:
+        db.close()
+
+
 def calculate_checksum_background(
     storage_path: str,
     iso_id: int
@@ -301,7 +395,7 @@ async def download_iso_from_url(
     current_user: User = Depends(require_operator),
     db: Session = Depends(get_db),
 ):
-    """Download an ISO image from a URL (supports .iso, .iso.gz, .iso.bz2)"""
+    """Download an ISO image from a URL (supports .iso, .iso.gz, .iso.bz2) - Downloads in background"""
     # Create storage directory if it doesn't exist
     os.makedirs(settings.ISO_STORAGE_PATH, exist_ok=True)
 
@@ -311,7 +405,6 @@ async def download_iso_from_url(
     # Detect compression format
     is_gzipped = url_filename.endswith('.iso.gz') or url_filename.endswith('.gz')
     is_bz2 = url_filename.endswith('.iso.bz2') or url_filename.endswith('.bz2')
-    is_compressed = is_gzipped or is_bz2
 
     # Determine final ISO filename (remove compression extensions)
     if is_gzipped:
@@ -329,94 +422,46 @@ async def download_iso_from_url(
     if os.path.exists(storage_path):
         raise HTTPException(status_code=400, detail="ISO file already exists")
 
+    # Check if database record already exists
+    existing_iso = db.query(ISOImage).filter(ISOImage.filename == filename).first()
+    if existing_iso:
+        raise HTTPException(status_code=400, detail="ISO with this filename already exists in database")
+
     try:
-        # Download file from URL
-        logger.info(f"Downloading ISO from {download_request.url} (compressed: {is_compressed})")
-        response = requests.get(download_request.url, stream=True, timeout=30)
-        response.raise_for_status()
-
-        # Get total file size if available
-        total_size = int(response.headers.get('content-length', 0))
-
-        if total_size > settings.MAX_ISO_SIZE * 2:  # Allow 2x for compressed files
-            raise HTTPException(
-                status_code=400,
-                detail=f"File too large. Maximum size is {settings.MAX_ISO_SIZE / (1024**3)}GB"
-            )
-
-        # Download to temporary file first
-        suffix = '.iso.gz' if is_gzipped else '.iso.bz2' if is_bz2 else '.iso'
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_file:
-            for chunk in response.iter_content(chunk_size=8192):
-                if chunk:
-                    tmp_file.write(chunk)
-            tmp_path = tmp_file.name
-
-        # Decompress if necessary
-        if is_compressed:
-            logger.info(f"Decompressing {'gzip' if is_gzipped else 'bz2'} file...")
-            decompressed_path = tmp_path.replace('.gz', '').replace('.bz2', '')
-
-            if is_gzipped:
-                with gzip.open(tmp_path, 'rb') as f_in:
-                    with open(decompressed_path, 'wb') as f_out:
-                        shutil.copyfileobj(f_in, f_out)
-            elif is_bz2:
-                with bz2.open(tmp_path, 'rb') as f_in:
-                    with open(decompressed_path, 'wb') as f_out:
-                        shutil.copyfileobj(f_in, f_out)
-
-            # Remove compressed file
-            os.remove(tmp_path)
-            tmp_path = decompressed_path
-            logger.info(f"Decompression complete")
-
-        # Move to final location
-        shutil.move(tmp_path, storage_path)
-
-        # Calculate file size
-        file_size = os.path.getsize(storage_path)
-
-        # Set checksum to calculating for now
-        checksum = "calculating..."
-
-        # Create database record
+        # Create database record immediately with "downloading..." status
         new_iso = ISOImage(
             name=download_request.name,
             filename=filename,
             os_type=download_request.os_type,
             version=download_request.version,
             architecture=download_request.architecture,
-            file_size=file_size,
-            checksum=checksum,
+            file_size=0,  # Will be updated after download
+            checksum="downloading...",
             storage_path=storage_path,
             uploaded_by=current_user.id,
-            is_available=True,
+            is_available=False,  # Will be set to True after successful download
         )
 
         db.add(new_iso)
         db.commit()
         db.refresh(new_iso)
 
-        # Calculate checksum in background
+        logger.info(f"Queued ISO download for '{download_request.name}' (ID: {new_iso.id}) from {download_request.url}")
+
+        # Queue download in background - returns immediately
         background_tasks.add_task(
-            calculate_checksum_background,
+            download_iso_background,
+            download_request.url,
             storage_path,
-            new_iso.id
+            new_iso.id,
+            is_gzipped,
+            is_bz2
         )
 
         return new_iso
 
-    except requests.exceptions.RequestException as e:
-        # Clean up file if download fails
-        if os.path.exists(storage_path):
-            os.remove(storage_path)
-        raise HTTPException(status_code=400, detail=f"Failed to download ISO: {str(e)}")
     except Exception as e:
-        # Clean up file if database operation fails
-        if os.path.exists(storage_path):
-            os.remove(storage_path)
-        raise HTTPException(status_code=500, detail=f"Failed to download ISO: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to queue ISO download: {str(e)}")
 
 
 @router.get("/{iso_id}", response_model=ISOImageResponse)

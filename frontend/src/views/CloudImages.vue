@@ -209,15 +209,20 @@
             <button @click="imageSelectionMode = null" class="btn btn-outline btn-sm">
               ← Back to Selection
             </button>
-            <h4>Select a Cloud Image</h4>
+            <h4>Select Cloud Images</h4>
+            <span v-if="selectedImageNames.length > 0" class="selection-count">
+              {{ selectedImageNames.length }} selected
+            </span>
           </div>
+
+          <p class="text-muted text-sm mb-2">Click on images to select multiple. Selected images will be added to your library.</p>
 
           <div class="predefined-images-grid">
             <div
               v-for="predefined in predefinedImages"
               :key="predefined.name"
-              @click="selectPredefinedImage(predefined)"
-              :class="['predefined-image-card', { selected: imageForm.name === predefined.name }]"
+              @click="toggleImageSelection(predefined)"
+              :class="['predefined-image-card', { selected: isImageSelected(predefined.name) }]"
             >
               <div class="predefined-image-icon">
                 {{ predefined.icon }}
@@ -226,24 +231,28 @@
                 <div class="predefined-image-name">{{ predefined.name }}</div>
                 <div class="predefined-image-details">{{ predefined.os_type }} {{ predefined.version }}</div>
               </div>
-              <div v-if="imageForm.name === predefined.name" class="predefined-image-check">✓</div>
+              <div v-if="isImageSelected(predefined.name)" class="predefined-image-check">✓</div>
             </div>
           </div>
 
-          <div v-if="imageForm.name" class="selected-image-preview">
-            <h5>Selected: {{ imageForm.name }}</h5>
-            <p class="text-xs text-muted">{{ imageForm.download_url }}</p>
+          <div v-if="selectedImageNames.length > 0" class="selected-images-preview">
+            <h5>Selected Images ({{ selectedImageNames.length }}):</h5>
+            <div class="selected-images-list">
+              <span v-for="name in selectedImageNames" :key="name" class="selected-image-chip">
+                {{ name }}
+              </span>
+            </div>
           </div>
 
           <div class="modal-footer">
             <button type="button" @click="closeModal" class="btn btn-outline">Cancel</button>
             <button
               type="button"
-              @click="saveImage"
-              :disabled="!imageForm.name || saving"
+              @click="saveSelectedImages"
+              :disabled="selectedImageNames.length === 0 || saving"
               class="btn btn-primary"
             >
-              {{ saving ? 'Adding...' : 'Add Selected Image' }}
+              {{ saving ? 'Adding...' : `Add ${selectedImageNames.length} Image${selectedImageNames.length !== 1 ? 's' : ''}` }}
             </button>
           </div>
         </div>
@@ -340,6 +349,7 @@ export default {
     const editingImage = ref(null)
     const saving = ref(false)
     const imageSelectionMode = ref(null) // 'available' or 'custom'
+    const selectedImageNames = ref([]) // Array of selected image names for multiple selection
     const settingUpTemplates = ref(false)
     const templateStatus = ref({})
     const checkingTemplates = ref(false)
@@ -544,16 +554,23 @@ export default {
       }
     ])
 
-    const selectPredefinedImage = (predefined) => {
-      imageForm.value = {
-        name: predefined.name,
-        filename: predefined.filename,
-        download_url: predefined.download_url,
-        os_type: predefined.os_type,
-        version: predefined.version,
-        architecture: predefined.architecture,
-        checksum: ''
+    const toggleImageSelection = (predefined) => {
+      const index = selectedImageNames.value.indexOf(predefined.name)
+      if (index > -1) {
+        // Already selected, remove it
+        selectedImageNames.value.splice(index, 1)
+      } else {
+        // Not selected, add it
+        selectedImageNames.value.push(predefined.name)
       }
+    }
+
+    const isImageSelected = (imageName) => {
+      return selectedImageNames.value.includes(imageName)
+    }
+
+    const getSelectedImages = () => {
+      return predefinedImages.value.filter(img => selectedImageNames.value.includes(img.name))
     }
 
     const fetchImages = async () => {
@@ -600,6 +617,53 @@ export default {
       }
     }
 
+    const saveSelectedImages = async () => {
+      if (selectedImageNames.value.length === 0) {
+        toast.error('Please select at least one cloud image')
+        return
+      }
+
+      saving.value = true
+      const selectedImages = getSelectedImages()
+      let successCount = 0
+      let failCount = 0
+
+      try {
+        for (const image of selectedImages) {
+          try {
+            await api.cloudImages.create({
+              name: image.name,
+              filename: image.filename,
+              download_url: image.download_url,
+              os_type: image.os_type,
+              version: image.version,
+              architecture: image.architecture,
+              checksum: ''
+            })
+            successCount++
+          } catch (error) {
+            console.error(`Failed to add ${image.name}:`, error)
+            failCount++
+          }
+        }
+
+        if (successCount > 0) {
+          toast.success(`Successfully added ${successCount} cloud image${successCount > 1 ? 's' : ''}`)
+        }
+        if (failCount > 0) {
+          toast.warning(`Failed to add ${failCount} cloud image${failCount > 1 ? 's' : ''} (may already exist)`)
+        }
+
+        closeModal()
+        fetchImages()
+      } catch (error) {
+        console.error('Failed to save cloud images:', error)
+        toast.error('Failed to save cloud images')
+      } finally {
+        saving.value = false
+      }
+    }
+
     const editImage = (image) => {
       editingImage.value = image
       imageForm.value = {
@@ -633,6 +697,7 @@ export default {
       showAddModal.value = false
       editingImage.value = null
       imageSelectionMode.value = null
+      selectedImageNames.value = []
       imageForm.value = {
         name: '',
         filename: '',
@@ -835,6 +900,7 @@ export default {
       setupForm,
       saving,
       imageSelectionMode,
+      selectedImageNames,
       settingUpTemplates,
       templateStatus,
       checkingTemplates,
@@ -843,6 +909,7 @@ export default {
       fetchImages,
       downloadImage,
       saveImage,
+      saveSelectedImages,
       editImage,
       deleteImage,
       closeModal,
@@ -851,7 +918,9 @@ export default {
       checkAllTemplates,
       getTemplateCount,
       fetchLatestImages,
-      selectPredefinedImage,
+      toggleImageSelection,
+      isImageSelected,
+      getSelectedImages,
       formatBytes,
       formatOSType
     }
@@ -1373,6 +1442,50 @@ export default {
   font-weight: 600;
   margin: 0;
   flex: 1;
+}
+
+.selection-count {
+  background: #3b82f6;
+  color: #ffffff;
+  padding: 0.375rem 0.875rem;
+  border-radius: 20px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.selected-images-preview {
+  margin-top: 1.5rem;
+  padding: 1.25rem;
+  background: rgba(59, 130, 246, 0.15);
+  border: 2px solid #60a5fa;
+  border-radius: 8px;
+}
+
+.selected-images-preview h5 {
+  color: #ffffff;
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+}
+
+.selected-images-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.selected-image-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.375rem 0.75rem;
+  background: #334155;
+  border: 1px solid #60a5fa;
+  border-radius: 6px;
+  color: #f1f5f9;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  white-space: nowrap;
 }
 
 .selected-image-preview {

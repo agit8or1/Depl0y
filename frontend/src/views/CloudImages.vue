@@ -177,11 +177,11 @@
               <div class="selection-icon">📦</div>
               <div class="selection-info">
                 <h5>Select from Available</h5>
-                <p>Choose from 14 cloud-ready images</p>
+                <p>Choose from 15 cloud-ready images</p>
                 <ul class="selection-list">
                   <li>Ubuntu, Debian, RHEL-based</li>
                   <li>Fedora, CentOS, openSUSE</li>
-                  <li>Arch Linux, Alpine Linux</li>
+                  <li>Arch, Alpine, Flatcar Container</li>
                 </ul>
               </div>
               <div class="selection-arrow">→</div>
@@ -498,6 +498,15 @@ export default {
         download_url: 'https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/cloud/nocloud_alpine-3.21.0-x86_64-bios-cloudinit-r0.qcow2',
         icon: '⛰️'
       },
+      {
+        name: 'Flatcar Container Linux',
+        filename: 'flatcar_production_qemu_image.img',
+        os_type: 'other',
+        version: 'stable',
+        architecture: 'amd64',
+        download_url: 'https://stable.release.flatcar-linux.net/amd64-usr/current/flatcar_production_qemu_image.img',
+        icon: '🐋'
+      }
     ])
 
     const toggleImageSelection = (predefined) => {

@@ -5,6 +5,49 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2025-11-21
+
+### Added
+- **ISO Images Selection Mode** - New unified interface for adding ISO images
+- **21 Pre-populated ISO Images** - Choose from popular distributions:
+  - **Linux Servers**: Ubuntu (24.04, 22.04, 20.04), Debian (12, 11), Rocky Linux (9, 8), AlmaLinux (9, 8), Fedora Server 41, CentOS Stream 9, openSUSE Leap 15.6, Alpine Linux 3.21
+  - **Firewall/Network**: pfSense CE 2.7.2, OPNsense 24.7
+  - **Enterprise**: FreeIPA Server, Univention Corporate Server 5.0, Zentyal Server 8.0
+  - **Other**: FreeBSD 14.1, TrueNAS CORE 13.0, Proxmox VE 8.3
+- **Multi-select ISO downloads** - Select multiple ISOs at once for batch download
+- **Background checksum calculation** - Automatic SHA256 checksum generation after ISO downloads
+- **Three-way ISO add method**:
+  - Select from 21 pre-populated ISOs
+  - Upload ISO from local computer
+  - Download ISO from custom URL
+- **Modern selection UI** with icons, hover effects, and dark theme
+- **Fire-and-forget downloads** - ISOs queue instantly without blocking UI
+
+### Changed
+- **ISO Images page redesigned** - Now matches Cloud Images UI pattern
+- **Single "+ Add ISO" button** - Replaces separate upload/download buttons
+- **Background download processing** - Downloads no longer block the interface
+- **Improved URL validation** - All 21 ISO URLs verified and working
+- **Better download feedback** - Shows "Queued X ISOs for download" immediately
+
+### Fixed
+- **Checksum calculation stuck at "calculating..."** - Now properly calculates in background
+- **Frontend hanging on "Adding..." button** - Downloads now truly async
+- **Broken ISO URLs fixed**:
+  - pfSense: Changed from compressed to direct ISO
+  - OPNsense: Updated to reliable German university mirror
+  - TrueNAS: Fixed to use direct iXsystems download
+  - Proxmox: Updated to working download link
+  - CentOS Stream: Changed from mirrorlist redirect to direct Berkeley mirror
+- **Page blank after download** - Fixed button template syntax error
+- **Existing ISOs with stuck checksums** - Recalculated all pending checksums
+
+### Technical Improvements
+- Added `calculate_checksum_background()` function for async checksum generation
+- Background tasks now properly triggered on ISO URL downloads
+- Improved error handling and logging for ISO operations
+- SHA256 checksums now stored and displayed for verification
+
 ## [1.2.5] - 2025-11-21
 
 ### Added

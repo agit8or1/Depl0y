@@ -28,7 +28,7 @@ Depl0y is a free, open-source web-based control panel that simplifies the deploy
 - **Cloud-Init Integration** - Automatic configuration of Linux VMs with cloud-init
 - **Multi-Hypervisor Support** - Manage multiple Proxmox VE hosts and clusters
 - **Resource Management** - Real-time monitoring of CPU, memory, and disk usage across your infrastructure
-- **ISO Management** - Upload, store, and manage OS installation images
+- **ISO Management** - 21 pre-populated ISOs or upload/download custom images with automatic checksum verification
 
 ### Advanced Features
 - **Update Management** - One-click system updates for deployed Linux VMs

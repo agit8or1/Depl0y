@@ -49,6 +49,54 @@ class ISODownloadRequest(BaseModel):
     architecture: str = "amd64"
 
 
+def calculate_checksum_background(
+    storage_path: str,
+    iso_id: int
+):
+    """Calculate checksum for an already-downloaded ISO file"""
+    try:
+        logger.info(f"Calculating checksum for ISO ID {iso_id} at {storage_path}")
+
+        # Calculate checksum
+        sha256_hash = hashlib.sha256()
+        chunk_size = 1024 * 1024  # 1MB chunks
+
+        with open(storage_path, "rb") as f:
+            while True:
+                chunk = f.read(chunk_size)
+                if not chunk:
+                    break
+                sha256_hash.update(chunk)
+
+        checksum = sha256_hash.hexdigest()
+        logger.info(f"Checksum calculated for ISO ID {iso_id}: {checksum}")
+
+        # Update database
+        from app.core.database import SessionLocal
+        db = SessionLocal()
+        try:
+            iso = db.query(ISOImage).filter(ISOImage.id == iso_id).first()
+            if iso:
+                iso.checksum = checksum
+                db.commit()
+                logger.info(f"Database updated with checksum for ISO ID {iso_id}")
+        finally:
+            db.close()
+
+    except Exception as e:
+        logger.error(f"Failed to calculate checksum for ISO ID {iso_id}: {str(e)}")
+        # Update database with error status
+        from app.core.database import SessionLocal
+        db = SessionLocal()
+        try:
+            iso = db.query(ISOImage).filter(ISOImage.id == iso_id).first()
+            if iso:
+                iso.checksum = "error"
+                db.commit()
+        finally:
+            db.close()
+
+
 def process_iso_file(
     temp_path: str,
     storage_path: str,
@@ -247,6 +295,7 @@ async def upload_iso(
 @router.post("/download", response_model=ISOImageResponse, status_code=status.HTTP_201_CREATED)
 async def download_iso_from_url(
     download_request: ISODownloadRequest,
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(require_operator),
     db: Session = Depends(get_db),
 ):
@@ -313,6 +362,13 @@ async def download_iso_from_url(
         db.add(new_iso)
         db.commit()
         db.refresh(new_iso)
+
+        # Calculate checksum in background
+        background_tasks.add_task(
+            calculate_checksum_background,
+            storage_path,
+            new_iso.id
+        )
 
         return new_iso
 

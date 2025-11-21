@@ -4,8 +4,7 @@
       <div class="card-header">
         <h3>ISO Images</h3>
         <div class="flex gap-1">
-          <button @click="showUploadModal = true" class="btn btn-primary">+ Upload ISO</button>
-          <button @click="showDownloadModal = true" class="btn btn-outline">Download from URL</button>
+          <button @click="showAddModal = true" class="btn btn-primary">+ Add ISO</button>
         </div>
       </div>
 
@@ -57,14 +56,129 @@
       </div>
     </div>
 
-    <!-- Upload Modal -->
-    <div v-if="showUploadModal" class="modal" @click="showUploadModal = false">
-      <div class="modal-content" @click.stop>
+    <!-- Add ISO Modal -->
+    <div v-if="showAddModal" class="modal" @click="showAddModal = false">
+      <div class="modal-content modal-large" @click.stop>
         <div class="modal-header">
-          <h3>Upload ISO Image</h3>
-          <button @click="showUploadModal = false" class="btn-close">×</button>
+          <h3>Add ISO Image</h3>
+          <button @click="closeModal" class="btn-close">×</button>
         </div>
-        <form @submit.prevent="uploadISO" class="modal-body">
+
+        <!-- Selection Mode: Choose between Available, Upload or Download -->
+        <div v-if="!isoSelectionMode" class="modal-body selection-mode">
+          <div class="selection-prompt">
+            <h4>How would you like to add an ISO image?</h4>
+            <p class="text-muted">Choose from popular ISOs, upload from your computer, or download from a URL</p>
+          </div>
+
+          <div class="selection-options">
+            <div @click="isoSelectionMode = 'available'" class="selection-card">
+              <div class="selection-icon">💿</div>
+              <div class="selection-info">
+                <h5>Select from Available</h5>
+                <p>Choose from 21 popular ISOs</p>
+                <ul class="selection-list">
+                  <li>Ubuntu, Debian, RHEL-based</li>
+                  <li>pfSense, OPNsense, TrueNAS</li>
+                  <li>FreeIPA, Univention, Zentyal</li>
+                </ul>
+              </div>
+              <div class="selection-arrow">→</div>
+            </div>
+
+            <div @click="isoSelectionMode = 'upload'" class="selection-card">
+              <div class="selection-icon">⬆️</div>
+              <div class="selection-info">
+                <h5>Upload from Computer</h5>
+                <p>Upload an ISO file from your device</p>
+                <ul class="selection-list">
+                  <li>Any ISO file</li>
+                  <li>Custom distributions</li>
+                  <li>Local files</li>
+                </ul>
+              </div>
+              <div class="selection-arrow">→</div>
+            </div>
+
+            <div @click="isoSelectionMode = 'download'" class="selection-card">
+              <div class="selection-icon">⬇️</div>
+              <div class="selection-info">
+                <h5>Download from URL</h5>
+                <p>Provide a direct download link</p>
+                <ul class="selection-list">
+                  <li>Direct ISO URLs</li>
+                  <li>Mirror servers</li>
+                  <li>Custom sources</li>
+                </ul>
+              </div>
+              <div class="selection-arrow">→</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Available ISOs Selection -->
+        <div v-if="isoSelectionMode === 'available'" class="modal-body">
+          <div class="mode-header">
+            <button @click="isoSelectionMode = null" class="btn btn-outline btn-sm">
+              ← Back to Selection
+            </button>
+            <h4>Select ISO Images</h4>
+            <span v-if="selectedISONames.length > 0" class="selection-count">
+              {{ selectedISONames.length }} selected
+            </span>
+          </div>
+
+          <p class="text-muted text-sm mb-2">Click on ISOs to select multiple. Selected ISOs will be downloaded to your library.</p>
+
+          <div class="predefined-images-grid">
+            <div
+              v-for="predefined in sortedPredefinedISOs"
+              :key="predefined.name"
+              @click="toggleISOSelection(predefined)"
+              :class="['predefined-image-card', { selected: isISOSelected(predefined.name) }]"
+            >
+              <div class="predefined-image-icon">
+                {{ predefined.icon }}
+              </div>
+              <div class="predefined-image-info">
+                <div class="predefined-image-name">{{ predefined.name }}</div>
+                <div class="predefined-image-details">{{ formatOSType(predefined.os_type) }} {{ predefined.version }}</div>
+              </div>
+              <div v-if="isISOSelected(predefined.name)" class="predefined-image-check">✓</div>
+            </div>
+          </div>
+
+          <div v-if="selectedISONames.length > 0" class="selected-images-preview">
+            <h5>Selected ISOs ({{ selectedISONames.length }}):</h5>
+            <div class="selected-images-list">
+              <span v-for="name in selectedISONames" :key="name" class="selected-image-chip">
+                {{ name }}
+              </span>
+            </div>
+          </div>
+
+          <div class="modal-footer">
+            <button type="button" @click="closeModal" class="btn btn-outline">Cancel</button>
+            <button
+              type="button"
+              @click="saveSelectedISOs"
+              :disabled="selectedISONames.length === 0"
+              class="btn btn-primary"
+            >
+              {{ `Add ${selectedISONames.length} ISO${selectedISONames.length !== 1 ? 's' : ''}` }}
+            </button>
+          </div>
+        </div>
+
+        <!-- Upload from Computer -->
+        <form v-if="isoSelectionMode === 'upload'" @submit.prevent="uploadISO" class="modal-body">
+          <div class="mode-header">
+            <button type="button" @click="isoSelectionMode = null" class="btn btn-outline btn-sm">
+              ← Back to Selection
+            </button>
+            <h4>Upload ISO from Computer</h4>
+          </div>
+
           <div class="form-group">
             <label class="form-label">ISO File *</label>
             <input type="file" @change="onFileSelected" accept=".iso" class="form-control" required />
@@ -153,26 +267,23 @@
             </div>
           </div>
 
-          <div class="flex gap-1 mt-2">
+          <div class="modal-footer">
+            <button type="button" @click="closeModal" class="btn btn-outline" :disabled="uploading">Cancel</button>
             <button type="submit" class="btn btn-primary" :disabled="uploading || !selectedFile">
               {{ uploading ? 'Uploading...' : 'Upload ISO' }}
             </button>
-            <button type="button" @click="showUploadModal = false" class="btn btn-outline" :disabled="uploading">
-              Cancel
-            </button>
           </div>
         </form>
-      </div>
-    </div>
 
-    <!-- Download from URL Modal -->
-    <div v-if="showDownloadModal" class="modal" @click="showDownloadModal = false">
-      <div class="modal-content" @click.stop>
-        <div class="modal-header">
-          <h3>Download ISO from URL</h3>
-          <button @click="showDownloadModal = false" class="btn-close">×</button>
-        </div>
-        <form @submit.prevent="downloadFromUrl" class="modal-body">
+        <!-- Download from URL -->
+        <form v-if="isoSelectionMode === 'download'" @submit.prevent="downloadFromUrl" class="modal-body">
+          <div class="mode-header">
+            <button type="button" @click="isoSelectionMode = null" class="btn btn-outline btn-sm">
+              ← Back to Selection
+            </button>
+            <h4>Download ISO from URL</h4>
+          </div>
+
           <div class="form-group">
             <label class="form-label">ISO URL *</label>
             <input v-model="downloadForm.url" type="url" class="form-control" placeholder="https://example.com/path/to/image.iso" required />
@@ -240,12 +351,10 @@
             <div class="loading-spinner"></div>
           </div>
 
-          <div class="flex gap-1 mt-2">
+          <div class="modal-footer">
+            <button type="button" @click="closeModal" class="btn btn-outline" :disabled="downloading">Cancel</button>
             <button type="submit" class="btn btn-primary" :disabled="downloading">
               {{ downloading ? 'Downloading...' : 'Download ISO' }}
-            </button>
-            <button type="button" @click="showDownloadModal = false" class="btn btn-outline" :disabled="downloading">
-              Cancel
             </button>
           </div>
         </form>
@@ -255,7 +364,7 @@
 </template>
 
 <script>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import api from '@/services/api'
 import { useToast } from 'vue-toastification'
 
@@ -267,12 +376,14 @@ export default {
     const loading = ref(false)
     const uploading = ref(false)
     const downloading = ref(false)
+    const saving = ref(false)
     const uploadProgress = ref(0)
     const uploadedBytes = ref(0)
     const totalBytes = ref(0)
     const uploadSpeed = ref(0)
-    const showUploadModal = ref(false)
-    const showDownloadModal = ref(false)
+    const showAddModal = ref(false)
+    const isoSelectionMode = ref(null) // 'available', 'upload', or 'download'
+    const selectedISONames = ref([]) // Array of selected ISO names for multiple selection
     const selectedFile = ref(null)
     let uploadStartTime = null
 
@@ -290,6 +401,235 @@ export default {
       version: '',
       architecture: 'amd64'
     })
+
+    const predefinedISOs = ref([
+      // Ubuntu Server
+      {
+        name: 'Ubuntu 24.04 LTS Server',
+        filename: 'ubuntu-24.04-live-server-amd64.iso',
+        os_type: 'ubuntu',
+        version: '24.04',
+        architecture: 'amd64',
+        download_url: 'https://releases.ubuntu.com/24.04/ubuntu-24.04.1-live-server-amd64.iso',
+        icon: '🟠'
+      },
+      {
+        name: 'Ubuntu 22.04 LTS Server',
+        filename: 'ubuntu-22.04-live-server-amd64.iso',
+        os_type: 'ubuntu',
+        version: '22.04',
+        architecture: 'amd64',
+        download_url: 'https://releases.ubuntu.com/22.04/ubuntu-22.04.5-live-server-amd64.iso',
+        icon: '🟠'
+      },
+      {
+        name: 'Ubuntu 20.04 LTS Server',
+        filename: 'ubuntu-20.04-live-server-amd64.iso',
+        os_type: 'ubuntu',
+        version: '20.04',
+        architecture: 'amd64',
+        download_url: 'https://releases.ubuntu.com/20.04/ubuntu-20.04.6-live-server-amd64.iso',
+        icon: '🟠'
+      },
+      // Debian
+      {
+        name: 'Debian 12 (Bookworm)',
+        filename: 'debian-12-amd64-netinst.iso',
+        os_type: 'debian',
+        version: '12',
+        architecture: 'amd64',
+        download_url: 'https://cdimage.debian.org/debian-cd/current/amd64/iso-cd/debian-12.8.0-amd64-netinst.iso',
+        icon: '🔴'
+      },
+      {
+        name: 'Debian 11 (Bullseye)',
+        filename: 'debian-11-amd64-netinst.iso',
+        os_type: 'debian',
+        version: '11',
+        architecture: 'amd64',
+        download_url: 'https://cdimage.debian.org/debian-cd/11.11.0/amd64/iso-cd/debian-11.11.0-amd64-netinst.iso',
+        icon: '🔴'
+      },
+      // Rocky Linux
+      {
+        name: 'Rocky Linux 9',
+        filename: 'Rocky-9-x86_64-minimal.iso',
+        os_type: 'rocky',
+        version: '9',
+        architecture: 'amd64',
+        download_url: 'https://download.rockylinux.org/pub/rocky/9/isos/x86_64/Rocky-9.5-x86_64-minimal.iso',
+        icon: '🟢'
+      },
+      {
+        name: 'Rocky Linux 8',
+        filename: 'Rocky-8-x86_64-minimal.iso',
+        os_type: 'rocky',
+        version: '8',
+        architecture: 'amd64',
+        download_url: 'https://download.rockylinux.org/pub/rocky/8/isos/x86_64/Rocky-8.10-x86_64-minimal.iso',
+        icon: '🟢'
+      },
+      // AlmaLinux
+      {
+        name: 'AlmaLinux 9',
+        filename: 'AlmaLinux-9-x86_64-minimal.iso',
+        os_type: 'alma',
+        version: '9',
+        architecture: 'amd64',
+        download_url: 'https://repo.almalinux.org/almalinux/9/isos/x86_64/AlmaLinux-9.5-x86_64-minimal.iso',
+        icon: '🔵'
+      },
+      {
+        name: 'AlmaLinux 8',
+        filename: 'AlmaLinux-8-x86_64-minimal.iso',
+        os_type: 'alma',
+        version: '8',
+        architecture: 'amd64',
+        download_url: 'https://repo.almalinux.org/almalinux/8/isos/x86_64/AlmaLinux-8.10-x86_64-minimal.iso',
+        icon: '🔵'
+      },
+      // Fedora Server
+      {
+        name: 'Fedora Server 41',
+        filename: 'Fedora-Server-41.iso',
+        os_type: 'fedora',
+        version: '41',
+        architecture: 'amd64',
+        download_url: 'https://download.fedoraproject.org/pub/fedora/linux/releases/41/Server/x86_64/iso/Fedora-Server-netinst-x86_64-41-1.4.iso',
+        icon: '🔷'
+      },
+      // CentOS Stream
+      {
+        name: 'CentOS Stream 9',
+        filename: 'CentOS-Stream-9.iso',
+        os_type: 'centos',
+        version: '9',
+        architecture: 'amd64',
+        download_url: 'https://mirrors.ocf.berkeley.edu/centos-stream/9-stream/BaseOS/x86_64/iso/CentOS-Stream-9-latest-x86_64-dvd1.iso',
+        icon: '🟣'
+      },
+      // openSUSE
+      {
+        name: 'openSUSE Leap 15.6',
+        filename: 'openSUSE-Leap-15.6.iso',
+        os_type: 'opensuse',
+        version: '15.6',
+        architecture: 'amd64',
+        download_url: 'https://download.opensuse.org/distribution/leap/15.6/iso/openSUSE-Leap-15.6-NET-x86_64-Media.iso',
+        icon: '🟢'
+      },
+      // pfSense
+      {
+        name: 'pfSense CE 2.7.2',
+        filename: 'pfSense-CE-2.7.2-amd64.iso',
+        os_type: 'pfsense',
+        version: '2.7.2',
+        architecture: 'amd64',
+        download_url: 'https://frafiles.netgate.com/mirror/downloads/pfSense-CE-2.7.2-RELEASE-amd64.iso',
+        icon: '🔥'
+      },
+      // OPNsense
+      {
+        name: 'OPNsense 24.7',
+        filename: 'OPNsense-24.7-amd64.iso',
+        os_type: 'opnsense',
+        version: '24.7',
+        architecture: 'amd64',
+        download_url: 'https://ftp.rrze.uni-erlangen.de/opnsense/releases/24.7/OPNsense-24.7-dvd-amd64.iso',
+        icon: '🛡️'
+      },
+      // FreeBSD
+      {
+        name: 'FreeBSD 14.1',
+        filename: 'FreeBSD-14.1-amd64.iso',
+        os_type: 'freebsd',
+        version: '14.1',
+        architecture: 'amd64',
+        download_url: 'https://download.freebsd.org/releases/amd64/amd64/ISO-IMAGES/14.1/FreeBSD-14.1-RELEASE-amd64-disc1.iso',
+        icon: '👹'
+      },
+      // TrueNAS
+      {
+        name: 'TrueNAS CORE 13.0',
+        filename: 'TrueNAS-13.0-U6.2.iso',
+        os_type: 'truenas',
+        version: '13.0-U6.2',
+        architecture: 'amd64',
+        download_url: 'https://download.sys.truenas.net/TrueNAS-13.0/STABLE/TrueNAS-13.0-U6.2/TrueNAS-13.0-U6.2.iso',
+        icon: '💾'
+      },
+      // Proxmox VE
+      {
+        name: 'Proxmox VE 8.3',
+        filename: 'proxmox-ve-8.3.iso',
+        os_type: 'proxmox',
+        version: '8.3',
+        architecture: 'amd64',
+        download_url: 'https://www.proxmox.com/en/downloads?task=callelement&format=raw&item_id=859&element=f85c494b-2b32-4109-b8c1-083cca2b7db6&method=download',
+        icon: '📦'
+      },
+      // Alpine Linux
+      {
+        name: 'Alpine Linux 3.21',
+        filename: 'alpine-virt-3.21.iso',
+        os_type: 'other',
+        version: '3.21',
+        architecture: 'amd64',
+        download_url: 'https://dl-cdn.alpinelinux.org/alpine/v3.21/releases/x86_64/alpine-virt-3.21.0-x86_64.iso',
+        icon: '⛰️'
+      },
+      // FreeIPA
+      {
+        name: 'FreeIPA Server (AlmaLinux 9)',
+        filename: 'AlmaLinux-9-x86_64-minimal.iso',
+        os_type: 'other',
+        version: '9',
+        architecture: 'amd64',
+        download_url: 'https://repo.almalinux.org/almalinux/9/isos/x86_64/AlmaLinux-9.5-x86_64-minimal.iso',
+        icon: '🔐'
+      },
+      // Univention Corporate Server
+      {
+        name: 'Univention Corporate Server 5.0',
+        filename: 'UCS-5.0-amd64.iso',
+        os_type: 'other',
+        version: '5.0',
+        architecture: 'amd64',
+        download_url: 'https://updates.software-univention.de/download/ucs-iso/5.0/5.0-8/UCS_5.0-8-amd64.iso',
+        icon: '🏢'
+      },
+      // Zentyal Server
+      {
+        name: 'Zentyal Server 8.0',
+        filename: 'zentyal-8.0-amd64.iso',
+        os_type: 'other',
+        version: '8.0',
+        architecture: 'amd64',
+        download_url: 'https://download.zentyal.com/zentyal-8.0-development-amd64.iso',
+        icon: '🏢'
+      }
+    ])
+
+    const sortedPredefinedISOs = computed(() => {
+      return [...predefinedISOs.value].sort((a, b) => a.name.localeCompare(b.name))
+    })
+
+    const toggleISOSelection = (predefined) => {
+      const index = selectedISONames.value.indexOf(predefined.name)
+      if (index > -1) {
+        selectedISONames.value.splice(index, 1)
+      } else {
+        selectedISONames.value.push(predefined.name)
+      }
+    }
+
+    const isISOSelected = (isoName) => {
+      return selectedISONames.value.includes(isoName)
+    }
+
+    const getSelectedISOs = () => {
+      return predefinedISOs.value.filter(iso => selectedISONames.value.includes(iso.name))
+    }
 
     const fetchISOs = async () => {
       loading.value = true
@@ -311,6 +651,38 @@ export default {
           uploadForm.value.name = file.name.replace('.iso', '')
         }
       }
+    }
+
+    const saveSelectedISOs = () => {
+      if (selectedISONames.value.length === 0) {
+        toast.error('Please select at least one ISO')
+        return
+      }
+
+      const selectedISOs = getSelectedISOs()
+      const count = selectedISOs.length
+
+      // Fire off all downloads without waiting - completely async
+      selectedISOs.forEach(iso => {
+        api.isos.downloadFromUrl({
+          url: iso.download_url,
+          name: iso.name,
+          os_type: iso.os_type,
+          version: iso.version,
+          architecture: iso.architecture
+        }).catch(error => {
+          console.error(`Failed to queue ${iso.name}:`, error)
+        })
+      })
+
+      // Show success immediately
+      toast.success(`Queued ${count} ISO${count > 1 ? 's' : ''} for download`)
+
+      // Close modal immediately
+      closeModal()
+
+      // Refresh the list after a short delay to show queued downloads
+      setTimeout(() => fetchISOs(), 1500)
     }
 
     const uploadISO = async () => {
@@ -381,20 +753,7 @@ export default {
         // Small delay to show 100% completion
         await new Promise(resolve => setTimeout(resolve, 500))
 
-        showUploadModal.value = false
-
-        // Reset form
-        uploadForm.value = {
-          name: '',
-          os_type: '',
-          version: '',
-          architecture: 'amd64'
-        }
-        selectedFile.value = null
-        uploadedBytes.value = 0
-        totalBytes.value = 0
-        uploadSpeed.value = 0
-
+        closeModal()
         await fetchISOs()
       } catch (error) {
         console.error('Failed to upload ISO:', error)
@@ -482,23 +841,37 @@ export default {
       try {
         await api.isos.downloadFromUrl(downloadForm.value)
         toast.success('ISO download started successfully')
-        showDownloadModal.value = false
-
-        // Reset form
-        downloadForm.value = {
-          url: '',
-          name: '',
-          os_type: '',
-          version: '',
-          architecture: 'amd64'
-        }
-
+        closeModal()
         await fetchISOs()
       } catch (error) {
         console.error('Failed to download ISO:', error)
+        toast.error('Failed to download ISO')
       } finally {
         downloading.value = false
       }
+    }
+
+    const closeModal = () => {
+      showAddModal.value = false
+      isoSelectionMode.value = null
+      selectedISONames.value = []
+      uploadForm.value = {
+        name: '',
+        os_type: '',
+        version: '',
+        architecture: 'amd64'
+      }
+      downloadForm.value = {
+        url: '',
+        name: '',
+        os_type: '',
+        version: '',
+        architecture: 'amd64'
+      }
+      selectedFile.value = null
+      uploadedBytes.value = 0
+      totalBytes.value = 0
+      uploadSpeed.value = 0
     }
 
     onMounted(() => {
@@ -510,20 +883,28 @@ export default {
       loading,
       uploading,
       downloading,
+      saving,
       uploadProgress,
       uploadedBytes,
       totalBytes,
       uploadSpeed,
-      showUploadModal,
-      showDownloadModal,
+      showAddModal,
+      isoSelectionMode,
+      selectedISONames,
       selectedFile,
       uploadForm,
       downloadForm,
+      predefinedISOs,
+      sortedPredefinedISOs,
       onFileSelected,
       uploadISO,
       downloadFromUrl,
+      saveSelectedISOs,
+      toggleISOSelection,
+      isISOSelected,
       verifyISO,
       deleteISO,
+      closeModal,
       formatOSType,
       formatBytes,
       formatTimeRemaining
@@ -552,46 +933,114 @@ export default {
 }
 
 .modal-content {
-  background: white;
-  border-radius: 0.5rem;
-  max-width: 600px;
+  background: #1e293b;
+  border: 2px solid #475569;
+  border-radius: 12px;
   width: 90%;
+  max-width: 600px;
   max-height: 90vh;
   overflow-y: auto;
-  box-shadow: var(--shadow-lg);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+}
+
+.modal-large {
+  max-width: 900px;
+}
+
+.modal-content .btn-outline {
+  background-color: #334155;
+  border: 2px solid #64748b;
+  color: #f1f5f9;
+}
+
+.modal-content .btn-outline:hover {
+  background-color: #475569;
+  border-color: #94a3b8;
+  color: #ffffff;
 }
 
 .modal-header {
-  padding: 1.5rem;
-  border-bottom: 1px solid var(--border-color);
   display: flex;
   justify-content: space-between;
   align-items: center;
+  padding: 1.5rem;
+  border-bottom: 2px solid #475569;
+  background: #334155;
 }
 
 .modal-header h3 {
   margin: 0;
+  color: #ffffff;
+  font-weight: 600;
 }
 
 .btn-close {
-  background: none;
+  background: #475569;
   border: none;
-  font-size: 2rem;
-  cursor: pointer;
-  color: var(--text-secondary);
+  font-size: 1.5rem;
   line-height: 1;
+  cursor: pointer;
+  color: #cbd5e1;
+  padding: 0;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 6px;
+  transition: all 0.2s;
+}
+
+.btn-close:hover {
+  background: #ef4444;
+  color: #ffffff;
 }
 
 .modal-body {
   padding: 1.5rem;
+  background: #1e293b;
+}
+
+.modal-body :deep(.form-label) {
+  color: #e2e8f0;
+  font-weight: 500;
+}
+
+.modal-body :deep(.form-control),
+.modal-body :deep(input),
+.modal-body :deep(select),
+.modal-body :deep(textarea) {
+  background: #0f172a;
+  border: 1px solid #475569;
+  color: #f1f5f9;
+}
+
+.modal-body :deep(.form-control:focus),
+.modal-body :deep(input:focus),
+.modal-body :deep(select:focus),
+.modal-body :deep(textarea:focus) {
+  border-color: #3b82f6;
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+.modal-body :deep(.text-muted) {
+  color: #94a3b8 !important;
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding: 1rem 1.5rem;
+  margin-top: 0;
+  border-top: 2px solid #475569;
+  background: #334155;
 }
 
 .upload-progress {
   margin-top: 1rem;
   padding: 1rem;
-  background-color: var(--background);
+  background-color: #0f172a;
   border-radius: 0.5rem;
-  border: 1px solid var(--border-color);
+  border: 2px solid #475569;
 }
 
 .upload-stats {
@@ -603,7 +1052,7 @@ export default {
   justify-content: space-between;
   align-items: center;
   padding: 0.5rem 0;
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px solid #475569;
 }
 
 .stat-row:last-child {
@@ -612,20 +1061,20 @@ export default {
 
 .stat-label {
   font-size: 0.875rem;
-  color: var(--text-secondary);
+  color: #94a3b8;
   font-weight: 500;
 }
 
 .stat-value {
   font-size: 0.875rem;
-  color: var(--text-primary);
+  color: #f1f5f9;
   font-weight: 600;
   font-family: monospace;
 }
 
 .progress-bar {
   height: 1.25rem;
-  background-color: var(--border-color);
+  background-color: #475569;
   border-radius: 9999px;
   overflow: hidden;
   position: relative;
@@ -634,8 +1083,259 @@ export default {
 
 .progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, var(--primary-color), var(--secondary-color));
+  background: linear-gradient(90deg, #3b82f6, #60a5fa);
   transition: width 0.2s ease;
-  box-shadow: 0 0 10px rgba(37, 99, 235, 0.5);
+  box-shadow: 0 0 10px rgba(59, 130, 246, 0.5);
+}
+
+/* Selection Mode Styles */
+.selection-mode {
+  padding: 2rem 1.5rem;
+}
+
+.selection-prompt {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.selection-prompt h4 {
+  color: #ffffff;
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.selection-prompt p {
+  color: #cbd5e1;
+  font-size: 1rem;
+}
+
+.selection-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 1.5rem;
+  max-width: 1000px;
+  margin: 0 auto;
+}
+
+.selection-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 2rem 1.5rem;
+  background: #1e293b;
+  border: 3px solid #475569;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.3s;
+  position: relative;
+}
+
+.selection-card:hover {
+  background: #334155;
+  border-color: #3b82f6;
+  transform: translateY(-4px);
+  box-shadow: 0 8px 24px rgba(59, 130, 246, 0.4);
+}
+
+.selection-icon {
+  font-size: 4rem;
+  margin-bottom: 1rem;
+}
+
+.selection-info {
+  text-align: center;
+  flex: 1;
+}
+
+.selection-info h5 {
+  color: #ffffff;
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.selection-info p {
+  color: #e2e8f0;
+  font-size: 0.875rem;
+  margin-bottom: 1rem;
+}
+
+.selection-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  text-align: left;
+}
+
+.selection-list li {
+  color: #f1f5f9;
+  font-size: 0.875rem;
+  padding: 0.25rem 0;
+  padding-left: 1.5rem;
+  position: relative;
+}
+
+.selection-list li::before {
+  content: '✓';
+  position: absolute;
+  left: 0;
+  color: #4ade80;
+  font-weight: bold;
+  font-size: 1rem;
+}
+
+.selection-arrow {
+  font-size: 2rem;
+  color: #60a5fa;
+  margin-top: 1rem;
+  opacity: 0.9;
+  transition: all 0.3s;
+}
+
+.selection-card:hover .selection-arrow {
+  opacity: 1;
+  color: #3b82f6;
+  transform: translateX(4px);
+}
+
+.mode-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 2px solid #475569;
+}
+
+.mode-header h4 {
+  color: #ffffff;
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin: 0;
+  flex: 1;
+}
+
+.selection-count {
+  background: #3b82f6;
+  color: #ffffff;
+  padding: 0.375rem 0.875rem;
+  border-radius: 20px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.predefined-images-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.predefined-image-card {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem;
+  background: #1e293b;
+  border: 2px solid #475569;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
+}
+
+.predefined-image-card:hover {
+  background: #334155;
+  border-color: #60a5fa;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+}
+
+.predefined-image-card.selected {
+  background: #334155;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.4);
+}
+
+.predefined-image-icon {
+  font-size: 2rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.predefined-image-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.predefined-image-name {
+  color: #ffffff;
+  font-weight: 600;
+  font-size: 0.875rem;
+  margin-bottom: 0.25rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.predefined-image-details {
+  color: #cbd5e1;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 500;
+}
+
+.predefined-image-check {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  background: #3b82f6;
+  color: #ffffff;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  font-weight: bold;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.5);
+}
+
+.selected-images-preview {
+  margin-top: 1.5rem;
+  padding: 1.25rem;
+  background: rgba(59, 130, 246, 0.15);
+  border: 2px solid #60a5fa;
+  border-radius: 8px;
+}
+
+.selected-images-preview h5 {
+  color: #ffffff;
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+}
+
+.selected-images-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.selected-image-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.375rem 0.75rem;
+  background: #334155;
+  border: 1px solid #60a5fa;
+  border-radius: 6px;
+  color: #f1f5f9;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  white-space: nowrap;
 }
 </style>

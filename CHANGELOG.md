@@ -5,6 +5,19 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.3] - 2025-11-21
+
+### Fixed
+- **CRITICAL: Debian 12 installation support** - Fixed installer to serve correct package version
+- **Download endpoint updated** - Now serves depl0y-latest.tar.gz instead of hardcoded v1.2.2
+- **Package distribution** - Installer now downloads Python 3.11 compatible code
+- **Production deployment sync** - Fixed files properly copied to running backend
+
+### Technical Details
+- Updated system_updates.py download endpoint to use latest package
+- Created depl0y-latest.tar.gz symlink structure
+- All Python 3.11 compatibility fixes now included in installer package
+
 ## [1.3.2] - 2025-11-21
 
 ### Added

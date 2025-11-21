@@ -7,15 +7,15 @@ Depl0y is a free, open-source web-based control panel that simplifies the deploy
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)
 ![Vue.js](https://img.shields.io/badge/vue.js-3.x-green.svg)
-![Version](https://img.shields.io/badge/version-1.3.2-brightgreen.svg)
+![Version](https://img.shields.io/badge/version-1.3.3-brightgreen.svg)
 
-## What's New in v1.3.2
+## What's New in v1.3.3
 
-- **🗜️ Compressed ISO Support** - Backend now handles .gz and .bz2 compressed ISO files with automatic decompression
-- **🔥 Restored Critical ISOs** - pfSense CE 2.7.2, OPNsense 24.7, and TrueNAS CORE back in library
-- **🛡️ Untangle NG Firewall** - Added network security appliance ISO to the collection
-- **📀 19 Verified ISO Images** - All working and tested including infrastructure/firewall ISOs
-- **⚡ Enhanced Download Function** - Automatic detection and handling of compressed formats
+- **✅ Debian 12 Support** - Fixed critical Python 3.11 compatibility issues blocking Debian 12 installations
+- **📦 Updated Installer** - Installer now serves correct package with all compatibility fixes
+- **🔧 Production Deployment** - All fixes properly deployed to download server
+- **🗜️ Compressed ISO Support** - Backend handles .gz and .bz2 compressed ISO files with automatic decompression
+- **📀 19 Verified ISO Images** - Including pfSense, OPNsense, TrueNAS, and Untangle
 
 [View Full Changelog](CHANGELOG.md)
 

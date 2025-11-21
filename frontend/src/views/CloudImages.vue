@@ -159,12 +159,38 @@
 
     <!-- Add/Edit Cloud Image Modal -->
     <div v-if="showAddModal" class="modal" @click="showAddModal = false">
-      <div class="modal-content" @click.stop>
+      <div class="modal-content modal-large" @click.stop>
         <div class="modal-header">
           <h3>{{ editingImage ? 'Edit' : 'Add' }} Cloud Image</h3>
           <button @click="closeModal" class="btn-close">×</button>
         </div>
         <form @submit.prevent="saveImage" class="modal-body">
+          <!-- Quick Select: Predefined Cloud Images -->
+          <div v-if="!editingImage" class="predefined-images-section">
+            <label class="form-label">Quick Select (Popular Cloud Images)</label>
+            <p class="text-xs text-muted mb-2">Click an image below to auto-populate the form, or scroll down to enter custom details</p>
+            <div class="predefined-images-grid">
+              <div
+                v-for="predefined in predefinedImages"
+                :key="predefined.name"
+                @click="selectPredefinedImage(predefined)"
+                :class="['predefined-image-card', { selected: imageForm.name === predefined.name }]"
+              >
+                <div class="predefined-image-icon">
+                  {{ predefined.icon }}
+                </div>
+                <div class="predefined-image-info">
+                  <div class="predefined-image-name">{{ predefined.name }}</div>
+                  <div class="predefined-image-details">{{ predefined.os_type }} {{ predefined.version }}</div>
+                </div>
+                <div v-if="imageForm.name === predefined.name" class="predefined-image-check">✓</div>
+              </div>
+            </div>
+            <div class="divider">
+              <span>or enter custom cloud image details</span>
+            </div>
+          </div>
+
           <div class="form-group">
             <label class="form-label">Display Name *</label>
             <input v-model="imageForm.name" class="form-control" required placeholder="Ubuntu 24.04 LTS Cloud Image" />
@@ -267,6 +293,102 @@ export default {
       selectedNodeId: '',
       selectedImageIds: []
     })
+
+    const predefinedImages = ref([
+      {
+        name: 'Ubuntu 24.04 LTS (Noble)',
+        filename: 'noble-server-cloudimg-amd64.img',
+        os_type: 'ubuntu',
+        version: '24.04',
+        architecture: 'amd64',
+        download_url: 'https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img',
+        icon: '🟠'
+      },
+      {
+        name: 'Ubuntu 22.04 LTS (Jammy)',
+        filename: 'jammy-server-cloudimg-amd64.img',
+        os_type: 'ubuntu',
+        version: '22.04',
+        architecture: 'amd64',
+        download_url: 'https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img',
+        icon: '🟠'
+      },
+      {
+        name: 'Ubuntu 20.04 LTS (Focal)',
+        filename: 'focal-server-cloudimg-amd64.img',
+        os_type: 'ubuntu',
+        version: '20.04',
+        architecture: 'amd64',
+        download_url: 'https://cloud-images.ubuntu.com/focal/current/focal-server-cloudimg-amd64.img',
+        icon: '🟠'
+      },
+      {
+        name: 'Debian 12 (Bookworm)',
+        filename: 'debian-12-generic-amd64.qcow2',
+        os_type: 'debian',
+        version: '12',
+        architecture: 'amd64',
+        download_url: 'https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-generic-amd64.qcow2',
+        icon: '🔴'
+      },
+      {
+        name: 'Debian 11 (Bullseye)',
+        filename: 'debian-11-generic-amd64.qcow2',
+        os_type: 'debian',
+        version: '11',
+        architecture: 'amd64',
+        download_url: 'https://cloud.debian.org/images/cloud/bullseye/latest/debian-11-generic-amd64.qcow2',
+        icon: '🔴'
+      },
+      {
+        name: 'Rocky Linux 9',
+        filename: 'Rocky-9-GenericCloud-Base.latest.x86_64.qcow2',
+        os_type: 'rocky',
+        version: '9',
+        architecture: 'amd64',
+        download_url: 'https://download.rockylinux.org/pub/rocky/9/images/x86_64/Rocky-9-GenericCloud-Base.latest.x86_64.qcow2',
+        icon: '🟢'
+      },
+      {
+        name: 'Rocky Linux 8',
+        filename: 'Rocky-8-GenericCloud-Base.latest.x86_64.qcow2',
+        os_type: 'rocky',
+        version: '8',
+        architecture: 'amd64',
+        download_url: 'https://download.rockylinux.org/pub/rocky/8/images/x86_64/Rocky-8-GenericCloud-Base.latest.x86_64.qcow2',
+        icon: '🟢'
+      },
+      {
+        name: 'AlmaLinux 9',
+        filename: 'AlmaLinux-9-GenericCloud-latest.x86_64.qcow2',
+        os_type: 'alma',
+        version: '9',
+        architecture: 'amd64',
+        download_url: 'https://repo.almalinux.org/almalinux/9/cloud/x86_64/images/AlmaLinux-9-GenericCloud-latest.x86_64.qcow2',
+        icon: '🔵'
+      },
+      {
+        name: 'AlmaLinux 8',
+        filename: 'AlmaLinux-8-GenericCloud-latest.x86_64.qcow2',
+        os_type: 'alma',
+        version: '8',
+        architecture: 'amd64',
+        download_url: 'https://repo.almalinux.org/almalinux/8/cloud/x86_64/images/AlmaLinux-8-GenericCloud-latest.x86_64.qcow2',
+        icon: '🔵'
+      }
+    ])
+
+    const selectPredefinedImage = (predefined) => {
+      imageForm.value = {
+        name: predefined.name,
+        filename: predefined.filename,
+        download_url: predefined.download_url,
+        os_type: predefined.os_type,
+        version: predefined.version,
+        architecture: predefined.architecture,
+        checksum: ''
+      }
+    }
 
     const fetchImages = async () => {
       loading.value = true
@@ -549,6 +671,7 @@ export default {
       templateStatus,
       checkingTemplates,
       fetchingLatest,
+      predefinedImages,
       fetchImages,
       downloadImage,
       saveImage,
@@ -560,6 +683,7 @@ export default {
       checkAllTemplates,
       getTemplateCount,
       fetchLatestImages,
+      selectPredefinedImage,
       formatBytes,
       formatOSType
     }
@@ -830,5 +954,114 @@ export default {
   background: rgba(239, 68, 68, 0.2);
   color: #f87171;
   border: 1px solid #ef4444;
+}
+
+.modal-large {
+  max-width: 900px;
+}
+
+.predefined-images-section {
+  margin-bottom: 2rem;
+  padding-bottom: 1.5rem;
+}
+
+.predefined-images-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.predefined-image-card {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem;
+  background: #0f172a;
+  border: 2px solid #475569;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
+}
+
+.predefined-image-card:hover {
+  background: #1e293b;
+  border-color: #3b82f6;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
+}
+
+.predefined-image-card.selected {
+  background: #1e293b;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
+}
+
+.predefined-image-icon {
+  font-size: 2rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.predefined-image-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.predefined-image-name {
+  color: #f1f5f9;
+  font-weight: 600;
+  font-size: 0.875rem;
+  margin-bottom: 0.25rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.predefined-image-details {
+  color: #94a3b8;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.predefined-image-check {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  background: #3b82f6;
+  color: #ffffff;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.875rem;
+  font-weight: bold;
+}
+
+.divider {
+  display: flex;
+  align-items: center;
+  text-align: center;
+  margin: 1.5rem 0;
+}
+
+.divider::before,
+.divider::after {
+  content: '';
+  flex: 1;
+  border-bottom: 2px solid #475569;
+}
+
+.divider span {
+  padding: 0 1rem;
+  color: #94a3b8;
+  font-size: 0.875rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 </style>

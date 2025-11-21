@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Compressed ISO support** - Backend now handles .gz (gzip) and .bz2 (bzip2) compressed ISO files
 - **Automatic decompression** - Downloads compressed ISOs and decompresses them to final storage
 - **Untangle NG Firewall 16.3** - Added network security appliance ISO
+- **Password reset option in installer** - Can reset admin password during upgrades (type YES)
 - **Restored critical infrastructure ISOs**:
   - pfSense CE 2.7.2 (gzip compressed)
   - OPNsense 24.7 (bzip2 compressed)
@@ -19,9 +20,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **ISO count increased from 15 to 19** - Restored firewall/NAS ISOs after implementing compression support
 - **Enhanced download function** - `download_iso_from_url()` now detects and handles compressed formats
+- **Background ISO downloads** - Downloads no longer block the entire application
 
 ### Fixed
+- **CRITICAL: Python 3.11 compatibility** - Fixed SyntaxError on Debian 12 installations
+- **System hangs during ISO downloads** - Moved downloads to background tasks
 - **Missing infrastructure ISOs** - pfSense, OPNsense, and TrueNAS availability restored
+- **Installer password reset** - Can now reset admin credentials during upgrades
 
 ### ISO Images (19 total - all verified)
 - **Linux Servers**: Ubuntu (24.04.3, 22.04.5, 20.04.6), Debian 13.2, Rocky Linux (9, 8), AlmaLinux (9, 8), Fedora Server 41, CentOS Stream 9, openSUSE Leap 15.6

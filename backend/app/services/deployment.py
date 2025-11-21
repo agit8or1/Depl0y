@@ -754,38 +754,83 @@ class DeploymentService:
             logger.info(f"Clone timeout set to {estimated_minutes} minutes ({max_wait} seconds) for {vm_disk_size}GB disk")
             waited = 0
             clone_completed = False
-            
+            last_status_update = 0
+
             while waited < max_wait:
                 try:
                     # Get VM config
                     vm_config = proxmox.proxmox.nodes(node.node_name).qemu(vmid).config.get()
-                    
+
+                    # Update status message every 30 seconds
+                    if waited - last_status_update >= 30:
+                        progress_pct = int((waited / max_wait) * 100)
+                        vm.status_message = f"Cloning VM from template ({progress_pct}% - {waited}s / {max_wait}s)..."
+                        self.db.commit()
+                        last_status_update = waited
+
                     # Check if clone lock is still active
                     if 'lock' in vm_config and vm_config['lock'] == 'clone':
-                        logger.info(f"VM {vmid} is still cloning (lock active), waiting...")
+                        if waited % 30 == 0:  # Log every 30 seconds to avoid log spam
+                            logger.info(f"VM {vmid} is still cloning (lock active), waited {waited}s / {max_wait}s...")
                         time.sleep(3)
                         waited += 3
                         continue
-                    
+
                     # Clone lock is gone, check for disk
                     if 'scsi0' in vm_config:
-                        logger.info(f"VM {vmid} clone completed successfully, disk verified: scsi0={vm_config.get('scsi0')}")
+                        logger.info(f"✓ VM {vmid} clone completed successfully!")
+                        logger.info(f"  Disk: scsi0={vm_config.get('scsi0')}")
+                        logger.info(f"  Boot: {vm_config.get('boot', 'not set')}")
+                        logger.info(f"  Total time: {waited} seconds")
                         clone_completed = True
                         break
                     else:
-                        logger.warning(f"VM {vmid} clone lock released but no scsi0 disk found yet, waiting...")
+                        # Clone lock released but no disk yet - this may indicate a problem
+                        logger.warning(f"VM {vmid} clone lock released but no scsi0 disk found (waited {waited}s)")
+                        logger.debug(f"Current VM config: {vm_config}")
+
+                        # Wait a bit more but log if this persists
+                        if waited > 60:  # After 60 seconds without disk, something is wrong
+                            logger.error(f"VM {vmid} cloning appears to have failed - no disk after {waited}s")
+                            logger.error(f"Full VM config: {vm_config}")
+                            # Check the template to see if it has a disk
+                            try:
+                                template_config = proxmox.proxmox.nodes(source_node).qemu(template_vmid).config.get()
+                                logger.error(f"Template {template_vmid} config: {template_config}")
+                                if 'scsi0' not in template_config:
+                                    logger.error(f"⚠ Template {template_vmid} has no scsi0 disk! This is the root cause.")
+                                    raise Exception(f"Template {template_vmid} is missing scsi0 disk. Template needs to be recreated.")
+                            except Exception as template_err:
+                                logger.error(f"Could not check template config: {template_err}")
+
+                            raise Exception(f"Clone failed: VM {vmid} has no disk after cloning. Template may be corrupted.")
+
                         time.sleep(3)
                         waited += 3
-                        
+
                 except Exception as e:
+                    error_msg = str(e)
+                    if "Template" in error_msg or "missing" in error_msg:
+                        # Re-raise template errors immediately
+                        raise
                     logger.debug(f"Error checking clone status: {e}")
                     time.sleep(3)
                     waited += 3
-            
+
             if not clone_completed:
-                logger.error(f"Clone timeout: VM {vmid} did not complete within {max_wait} seconds")
-                vm_config = proxmox.proxmox.nodes(node.node_name).qemu(vmid).config.get()
-                logger.error(f"Final VM config: {vm_config}")
+                logger.error(f"❌ Clone timeout: VM {vmid} did not complete within {max_wait} seconds")
+                try:
+                    vm_config = proxmox.proxmox.nodes(node.node_name).qemu(vmid).config.get()
+                    logger.error(f"Final VM config: {vm_config}")
+
+                    # Check if template has a disk
+                    template_config = proxmox.proxmox.nodes(source_node).qemu(template_vmid).config.get()
+                    logger.error(f"Template {template_vmid} config: {template_config}")
+                    if 'scsi0' not in template_config:
+                        raise Exception(f"Clone failed: Template {template_vmid} has no scsi0 disk. Delete template and redeploy.")
+                except Exception as check_err:
+                    logger.error(f"Error during final diagnostic check: {check_err}")
+
                 raise Exception(f"VM {vmid} clone timeout. Clone did not complete within {max_wait} seconds.")
 
             # Customize VM resources
@@ -1201,32 +1246,75 @@ ssh -o StrictHostKeyChecking=no -o BatchMode=yes {ssh_host} "grep -A3 'name: {ta
         # Use node IP for SSH instead of hostname
         import_script = f"""
 ssh -o StrictHostKeyChecking=no -o BatchMode=yes {ssh_host} '
+set -e  # Exit on any error
+
 # Copy image file to target node
+echo "Copying cloud image to target node {target_node}..."
 scp -o StrictHostKeyChecking=no /tmp/{cloud_image.filename} root@{node_ip}:/tmp/{cloud_image.filename}
+echo "Cloud image copied successfully"
 
 # Run qm importdisk ON the target node (needs local VM config)
 # This outputs: "Successfully imported disk as unused0"
-echo "Importing disk to {storage}..."
-ssh -o StrictHostKeyChecking=no root@{node_ip} "qm importdisk {template_vmid} /tmp/{cloud_image.filename} {storage} --format qcow2"
+echo "Importing disk to storage {storage}..."
+IMPORT_OUTPUT=$(ssh -o StrictHostKeyChecking=no root@{node_ip} "qm importdisk {template_vmid} /tmp/{cloud_image.filename} {storage} --format qcow2 2>&1")
+echo "$IMPORT_OUTPUT"
 
-# Attach the imported disk (qm importdisk puts it in unused0)
-# Auto-detect the disk format from unused0 to handle both LVM and directory storage
-echo "Detecting disk format and attaching to scsi0..."
-DISK_PATH=$(ssh -o StrictHostKeyChecking=no root@{node_ip} "qm config {template_vmid} | grep unused0 | awk -F: '"'"'{{print \\$2\":\"\\$3}}'"'"' | tr -d ''''[:space:]''''")
-echo "Detected disk path: $DISK_PATH"
-ssh -o StrictHostKeyChecking=no root@{node_ip} "qm set {template_vmid} --scsi0 $DISK_PATH"
+# Verify disk was imported
+echo "Verifying disk import..."
+CONFIG=$(ssh -o StrictHostKeyChecking=no root@{node_ip} "qm config {template_vmid}")
+echo "Current VM config after import:"
+echo "$CONFIG"
+
+# Extract the unused0 disk path - it should be in format: storage:vm-VMID-disk-0
+DISK_PATH=$(ssh -o StrictHostKeyChecking=no root@{node_ip} "qm config {template_vmid} | grep unused0 | awk '"'"'{{print \\$2}}'"'"'")
+echo "Detected disk path from unused0: [$DISK_PATH]"
+
+if [ -z "$DISK_PATH" ]; then
+    echo "ERROR: Could not detect disk path from unused0"
+    exit 1
+fi
+
+# Attach the imported disk to scsi0
+echo "Attaching disk to scsi0..."
+ssh -o StrictHostKeyChecking=no root@{node_ip} "qm set {template_vmid} --scsi0 \\"$DISK_PATH\\" 2>&1"
+echo "Disk attached to scsi0"
+
+# Verify disk attachment
+echo "Verifying disk attachment..."
+VERIFY_CONFIG=$(ssh -o StrictHostKeyChecking=no root@{node_ip} "qm config {template_vmid} | grep scsi0")
+echo "scsi0 configuration: $VERIFY_CONFIG"
 
 # Configure boot order and cloud-init using pvesh on cluster host
-echo "Configuring boot order and cloud-init..."
+echo "Configuring boot order to boot from scsi0..."
 pvesh set /nodes/{target_node}/qemu/{template_vmid}/config -boot order=scsi0
+echo "Boot order set to scsi0"
+
+echo "Configuring cloud-init drive..."
 pvesh set /nodes/{target_node}/qemu/{template_vmid}/config -ide2 {storage}:cloudinit
+echo "Cloud-init drive configured"
+
+# Verify final configuration before converting to template
+echo "Final verification before template conversion..."
+FINAL_CONFIG=$(ssh -o StrictHostKeyChecking=no root@{node_ip} "qm config {template_vmid}")
+echo "Final VM configuration:"
+echo "$FINAL_CONFIG"
+
+# Check that scsi0 exists in final config
+if ! echo "$FINAL_CONFIG" | grep -q "^scsi0:"; then
+    echo "ERROR: scsi0 disk not found in final configuration!"
+    exit 1
+fi
+echo "✓ scsi0 disk verified in configuration"
 
 # Cleanup and convert to template
-echo "Converting to template..."
+echo "Cleaning up temporary files..."
 ssh -o StrictHostKeyChecking=no root@{node_ip} "rm -f /tmp/{cloud_image.filename}"
 rm -f /tmp/{cloud_image.filename}
+
+echo "Converting VM to template..."
 pvesh create /nodes/{target_node}/qemu/{template_vmid}/template
-echo "Template {template_vmid} creation complete!"
+
+echo "✓ Template {template_vmid} creation complete!"
 '
 """
         result = subprocess.run(import_script, shell=True, capture_output=True, timeout=300, text=True)

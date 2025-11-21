@@ -7,14 +7,16 @@ Depl0y is a free, open-source web-based control panel that simplifies the deploy
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)
 ![Vue.js](https://img.shields.io/badge/vue.js-3.x-green.svg)
-![Version](https://img.shields.io/badge/version-1.2.2-brightgreen.svg)
+![Version](https://img.shields.io/badge/version-1.2.5-brightgreen.svg)
 
-## What's New in v1.2.2
+## What's New in v1.2.5
 
-- **🎉 Auto-Populate Cloud Images** - Click "Fetch Latest" to automatically add 7 popular cloud images (Ubuntu, Debian, Rocky Linux)
-- **⚡ Zero Configuration** - No more manual cloud image setup required
-- **🐛 Bug Fixes** - Improved error handling and SSH/sudo PATH issue fixes
-- **📚 Better Documentation** - Updated guides with new auto-populate feature
+- **📦 15 Verified Cloud Images** - All cloud images have working download URLs (removed 404 errors)
+- **🐋 Flatcar Container Linux** - Added container-optimized Linux for container workloads
+- **🔢 Multi-Select Cloud Images** - Select multiple images before adding them
+- **🔤 Alphabetical Sorting** - Cloud images now sorted alphabetically everywhere
+- **✅ Enhanced Installer** - Comprehensive dependency validation (sudo, python3-cryptography)
+- **🐛 Bug Fixes** - Fixed broken downloads for Fedora, Oracle Linux, Kali, FreeBSD, Gentoo
 
 [View Full Changelog](CHANGELOG.md)
 

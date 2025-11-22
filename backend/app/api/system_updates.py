@@ -83,18 +83,17 @@ def get_version_info():
         "release_notes": f"""
 Depl0y {settings.APP_VERSION} Release Notes:
 
-✨ New in v1.2.2:
-- Auto-populate 7 popular cloud images automatically
-- Ubuntu 24.04/22.04/20.04, Debian 12/11, Rocky Linux 9/8
-- No more "all up to date" confusion with empty database
-- Improved error handling and user feedback
+✨ New in v1.3.5:
+- Fixed installer tarball structure - clean installs now work properly
+- Corrected "cannot stat 'backend'" error during installation
+- Cleared zombie processes and improved system resource management
+- Updated package generation with proper file structure
 
-✨ Previous versions:
-- Fixed SSH/sudo PATH issues in cloud image setup (v1.2.1)
+✨ Recent versions:
+- ISO downloads with real-time status and background processing (v1.3.4)
+- Compressed ISO support with automatic decompression (v1.3.2)
+- Auto-populate 7 popular cloud images (v1.2.2)
 - Fast fresh installs using pre-built frontend (v1.2.0)
-- Installation completes in ~30 seconds instead of 5+ minutes (v1.2.0)
-- Automatic backend restart after upgrades (v1.1.9)
-- One-click automatic updates from Settings (v1.1.5)
         """.strip()
     }
 
@@ -121,7 +120,7 @@ tar -czf {temp_package} \
   --exclude='__pycache__' \
   --exclude='*.pyc' \
   --exclude='venv' \
-  backend/ frontend/ *.md *.sh 2>/dev/null || true
+  backend/ frontend/ *.md *.sh nginx-depl0y.conf scripts/ docs/ .github/ 2>/dev/null || true
 """
             subprocess.run(create_package_cmd, shell=True, check=True)
             package_path = temp_package

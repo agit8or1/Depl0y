@@ -7,15 +7,13 @@ Depl0y is a free, open-source web-based control panel that simplifies the deploy
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)
 ![Vue.js](https://img.shields.io/badge/vue.js-3.x-green.svg)
-![Version](https://img.shields.io/badge/version-1.3.4-brightgreen.svg)
+![Version](https://img.shields.io/badge/version-1.3.5-brightgreen.svg)
 
-## What's New in v1.3.4
+## What's New in v1.3.5
 
-- **✅ ISO Downloads Actually Work** - Fixed with standalone scripts, downloads no longer hang or fail
-- **📊 Real-Time Status** - Visual indicators show downloading, processing, and completion status
-- **🔤 Alphabetical Sorting** - ISOs automatically sorted by name for easy browsing
-- **⚡ Background Processing** - System stays fully responsive during multi-GB ISO downloads
-- **🎨 Status Badges** - Color-coded indicators (Downloading/Processing/Available/Error)
+- **✅ Fixed Installer** - Corrected tarball structure for clean installations
+- **📦 Updated Packaging** - Proper extraction of backend and frontend components
+- **🧹 System Cleanup** - Cleared zombie processes and improved resource management
 
 [View Full Changelog](CHANGELOG.md)
 

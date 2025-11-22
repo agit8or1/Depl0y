@@ -83,10 +83,10 @@ def enable_cloud_images(
 
         if check_sshpass.returncode != 0:
             logger.info("Installing sshpass")
+            # Use the exact command allowed in sudoers
             install_result = subprocess.run(
                 [
-                    '/usr/bin/sudo', 'DEBIAN_FRONTEND=noninteractive',
-                    'apt-get', 'install', '-y', '-qq', 'sshpass'
+                    '/usr/bin/sudo', '/usr/bin/apt-get', 'install', '-y', '-qq', 'sshpass'
                 ],
                 capture_output=True,
                 text=True,

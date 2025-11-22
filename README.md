@@ -7,13 +7,13 @@ Depl0y is a free, open-source web-based control panel that simplifies the deploy
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)
 ![Vue.js](https://img.shields.io/badge/vue.js-3.x-green.svg)
-![Version](https://img.shields.io/badge/version-1.3.5-brightgreen.svg)
+![Version](https://img.shields.io/badge/version-1.3.6-brightgreen.svg)
 
-## What's New in v1.3.5
+## What's New in v1.3.6
 
-- **✅ Fixed Installer** - Corrected tarball structure for clean installations
-- **📦 Updated Packaging** - Proper extraction of backend and frontend components
-- **🧹 System Cleanup** - Cleared zombie processes and improved resource management
+- **✅ Fixed Cloud Image Enable** - Resolved sshpass installation error
+- **🔧 Sudo Permissions** - Fixed DEBIAN_FRONTEND environment variable error
+- **⚙️ Updated Sudoers** - Added missing systemctl and journalctl permissions
 
 [View Full Changelog](CHANGELOG.md)
 

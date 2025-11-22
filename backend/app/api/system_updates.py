@@ -83,17 +83,16 @@ def get_version_info():
         "release_notes": f"""
 Depl0y {settings.APP_VERSION} Release Notes:
 
-✨ New in v1.3.5:
-- Fixed installer tarball structure - clean installs now work properly
-- Corrected "cannot stat 'backend'" error during installation
-- Cleared zombie processes and improved system resource management
-- Updated package generation with proper file structure
+✨ New in v1.3.6:
+- Fixed cloud image enable - sshpass installation now works
+- Resolved DEBIAN_FRONTEND sudo environment variable error
+- Updated sudoers permissions for proper system functionality
 
 ✨ Recent versions:
+- Fixed installer tarball structure for clean installs (v1.3.5)
 - ISO downloads with real-time status and background processing (v1.3.4)
 - Compressed ISO support with automatic decompression (v1.3.2)
 - Auto-populate 7 popular cloud images (v1.2.2)
-- Fast fresh installs using pre-built frontend (v1.2.0)
         """.strip()
     }
 

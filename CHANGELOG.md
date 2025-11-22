@@ -5,6 +5,18 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.6] - 2025-11-22
+
+### Fixed
+- **CRITICAL: Cloud image enable error** - Fixed "sudo: sorry, you are not allowed to set the following environment variables: DEBIAN_FRONTEND"
+- **sshpass installation** - Removed incorrect environment variable from sudo command
+- **Sudoers permissions** - Updated production sudoers to include missing systemctl/journalctl commands
+
+### Technical Improvements
+- Changed setup.py to use full path /usr/bin/apt-get (matches sudoers permission)
+- Removed DEBIAN_FRONTEND=noninteractive argument (not needed with -qq flag)
+- Updated /etc/sudoers.d/depl0y with complete permission set from installer
+
 ## [1.3.5] - 2025-11-22
 
 ### Fixed

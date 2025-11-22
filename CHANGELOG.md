@@ -5,6 +5,19 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.7] - 2025-11-22
+
+### Fixed
+- **CRITICAL: Cloud image enable mkdir error** - Fixed "Command returned non-zero exit status 1" error
+- **Redundant sudo calls** - Removed all sudo -u depl0y commands from setup.py
+- **Permission errors** - Backend now runs SSH/mkdir/ssh-keygen directly as depl0y user
+
+### Technical Improvements
+- Backend service already runs as depl0y user, no need for sudo -u depl0y
+- Fixed 8 subprocess calls in setup.py (cloud image enable + inter-node SSH)
+- Simplified command execution - direct process calls instead of sudo switching
+- Commands now work: mkdir, ssh-keygen, ssh, sshpass, ssh-copy-id
+
 ## [1.3.6] - 2025-11-22
 
 ### Fixed

@@ -83,15 +83,15 @@ def get_version_info():
         "release_notes": f"""
 Depl0y {settings.APP_VERSION} Release Notes:
 
-✨ New in v1.3.6:
-- Fixed cloud image enable - sshpass installation now works
-- Resolved DEBIAN_FRONTEND sudo environment variable error
-- Updated sudoers permissions for proper system functionality
+✨ New in v1.3.7:
+- Cloud image enable now works completely - removed redundant sudo commands
+- Fixed mkdir permission errors - backend runs directly as depl0y user
+- Resolved SSH key generation and copy errors
 
 ✨ Recent versions:
+- Fixed sshpass installation and DEBIAN_FRONTEND error (v1.3.6)
 - Fixed installer tarball structure for clean installs (v1.3.5)
 - ISO downloads with real-time status and background processing (v1.3.4)
-- Compressed ISO support with automatic decompression (v1.3.2)
 - Auto-populate 7 popular cloud images (v1.2.2)
         """.strip()
     }

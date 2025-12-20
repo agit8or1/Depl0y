@@ -5,6 +5,75 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.8] - 2025-12-20 🚨 CRITICAL SECURITY RELEASE
+
+### 🚨 SECURITY FIXES - IMMEDIATE UPDATE REQUIRED
+
+This release addresses multiple **Remote Code Execution (RCE)** vulnerabilities with CVSS scores of 9.8 (Critical). All users must upgrade immediately.
+
+#### Fixed Vulnerabilities
+
+**CVE-2025-XXXX: Command Injection in Setup API (CRITICAL)**
+- **Component**: `backend/app/api/setup.py`
+- **Severity**: CVSS 9.8
+- **Impact**: Arbitrary command execution via unsanitized hostname/node name inputs
+- **Attack Vector**: Network, potentially unauthenticated during setup
+- **Fix**: Added regex validation, replaced `shell=True` with argument lists, implemented `shlex.quote()`
+
+**CVE-2025-XXXX: Command Injection in System Updates API (CRITICAL)**
+- **Component**: `backend/app/api/system_updates.py`
+- **Severity**: CVSS 9.8
+- **Impact**: Arbitrary command execution during update operations
+- **Attack Vector**: Network, requires admin authentication
+- **Fix**: Replaced all `shell=True` calls with safe subprocess execution, added path validation
+
+**CVE-2025-XXXX: Sensitive Data Exposure in Logs (HIGH)**
+- **Component**: `backend/app/api/vms.py`
+- **Severity**: CVSS 7.5
+- **Impact**: Password and SSH key leakage in log files
+- **Attack Vector**: Local, requires log file access
+- **Fix**: Redact all sensitive data from logs, encrypt passwords before database storage
+
+**CVE-2025-XXXX: Weak Cryptographic Key (HIGH)**
+- **Component**: `backend/app/core/config.py`
+- **Severity**: CVSS 7.5
+- **Impact**: JWT token forgery via weak default SECRET_KEY
+- **Attack Vector**: Network
+- **Fix**: Auto-generate strong 64-byte random SECRET_KEY using `secrets.token_urlsafe(64)`
+
+**CVE-2025-XXXX: Multiple Command Injection Vectors in Deployment Service (CRITICAL)**
+- **Component**: `backend/app/services/deployment.py`
+- **Severity**: CVSS 9.8
+- **Impact**: Arbitrary command execution via unsanitized SSH parameters
+- **Attack Vector**: Network, requires authenticated API access
+- **Fix**: Comprehensive input validation (hostname, node names, VMIDs, IPs), replaced all `shell=True` calls
+
+### Security Improvements
+
+- ✅ **Input Validation**: Added strict regex validation for all user-provided inputs
+- ✅ **No Shell Injection**: Eliminated all `subprocess.run(..., shell=True)` calls
+- ✅ **Proper Escaping**: Implemented `shlex.quote()` for all dynamic shell parameters
+- ✅ **Secrets Management**: Strong cryptographic key generation on startup
+- ✅ **Data Protection**: Sensitive credentials redacted from logs and encrypted in database
+- ✅ **Timeout Protection**: All subprocess calls now have timeout limits
+- ✅ **Least Privilege**: Validated all user permissions and sudo configurations
+
+### Update Instructions
+
+```bash
+cd /opt/depl0y
+git pull origin main
+sudo systemctl restart depl0y-backend
+```
+
+### References
+- [Full Security Advisory](SECURITY.md)
+- [OWASP Command Injection](https://owasp.org/www-community/attacks/Command_Injection)
+- [CWE-78: OS Command Injection](https://cwe.mitre.org/data/definitions/78.html)
+- Commit: 3786c83
+
+---
+
 ## [1.3.7] - 2025-11-22
 
 ### Fixed

@@ -45,18 +45,48 @@ class DeploymentService:
                 logger.warning(f"VM {vmid} has '{lock_type}' lock, removing it via SSH as root...")
 
                 try:
-                    # Get node IP from corosync.conf
-                    dollar_two = '\\$2'
-                    get_ip_cmd = f"ssh -o StrictHostKeyChecking=no root@{host.hostname} \"grep -A3 'name: {node.node_name}' /etc/pve/corosync.conf | grep ring0_addr | awk '{{print {dollar_two}}}'\""
-                    ip_result = subprocess.run(get_ip_cmd, shell=True, capture_output=True, text=True)
+                    # SECURITY: Validate inputs to prevent command injection
+                    import re
+                    import shlex
+
+                    # Validate hostname, node name, and VMID format
+                    if not re.match(r'^[a-zA-Z0-9._-]+$', host.hostname):
+                        logger.error("Invalid hostname format, skipping lock removal")
+                        return
+                    if not re.match(r'^[a-zA-Z0-9._-]+$', node.node_name):
+                        logger.error("Invalid node name format, skipping lock removal")
+                        return
+                    if not isinstance(vmid, int) or vmid < 100:
+                        logger.error("Invalid VMID, skipping lock removal")
+                        return
+
+                    # Get node IP from corosync.conf using safe command execution
+                    safe_node_name = shlex.quote(node.node_name)
+                    get_ip_cmd = f"grep -A3 'name: {safe_node_name}' /etc/pve/corosync.conf | grep ring0_addr | awk '{{print $2}}'"
+                    ip_result = subprocess.run(
+                        ['ssh', '-o', 'StrictHostKeyChecking=no', f'root@{host.hostname}', get_ip_cmd],
+                        capture_output=True,
+                        text=True,
+                        timeout=10
+                    )
 
                     if ip_result.returncode == 0 and ip_result.stdout.strip():
                         node_ip = ip_result.stdout.strip()
 
+                        # Validate IP address format
+                        if not re.match(r'^[0-9.]+$', node_ip):
+                            logger.error(f"Invalid IP address format: {node_ip}")
+                            return
+
                         # Remove lock directly from config file via SSH
                         # Use qm unlock command which requires root privileges
-                        unlock_cmd = f"ssh -o StrictHostKeyChecking=no root@{host.hostname} 'ssh -o StrictHostKeyChecking=no root@{node_ip} \"qm unlock {vmid}\"'"
-                        unlock_result = subprocess.run(unlock_cmd, shell=True, capture_output=True, text=True)
+                        unlock_result = subprocess.run(
+                            ['ssh', '-o', 'StrictHostKeyChecking=no', f'root@{host.hostname}',
+                             f'ssh -o StrictHostKeyChecking=no root@{node_ip} "qm unlock {vmid}"'],
+                            capture_output=True,
+                            text=True,
+                            timeout=10
+                        )
 
                         if unlock_result.returncode == 0:
                             logger.info(f"Successfully removed '{lock_type}' lock from VM {vmid} using qm unlock")
@@ -126,16 +156,47 @@ class DeploymentService:
                         locked_vmid = lock_match.group(1)
                         logger.warning(f"Stale lock file detected for VM {locked_vmid} during operation, removing it...")
 
-                        # Get node IP from corosync.conf
-                        dollar_two = '\\$2'
-                        get_ip_cmd = f"ssh -o StrictHostKeyChecking=no root@{host.hostname} \"grep -A3 'name: {node.node_name}' /etc/pve/corosync.conf | grep ring0_addr | awk '{{print {dollar_two}}}'\""
-                        ip_result = subprocess.run(get_ip_cmd, shell=True, capture_output=True, text=True)
+                        # SECURITY: Validate inputs to prevent command injection
+                        import shlex
+
+                        # Validate hostname and node name format
+                        if not re.match(r'^[a-zA-Z0-9._-]+$', host.hostname):
+                            logger.error("Invalid hostname format, skipping lock cleanup")
+                            raise
+                        if not re.match(r'^[a-zA-Z0-9._-]+$', node.node_name):
+                            logger.error("Invalid node name format, skipping lock cleanup")
+                            raise
+                        # Validate locked_vmid is digits only
+                        if not locked_vmid.isdigit():
+                            logger.error(f"Invalid VMID format: {locked_vmid}")
+                            raise
+
+                        # Get node IP from corosync.conf using safe command execution
+                        safe_node_name = shlex.quote(node.node_name)
+                        get_ip_cmd = f"grep -A3 'name: {safe_node_name}' /etc/pve/corosync.conf | grep ring0_addr | awk '{{print $2}}'"
+                        ip_result = subprocess.run(
+                            ['ssh', '-o', 'StrictHostKeyChecking=no', f'root@{host.hostname}', get_ip_cmd],
+                            capture_output=True,
+                            text=True,
+                            timeout=10
+                        )
 
                         if ip_result.returncode == 0 and ip_result.stdout.strip():
                             node_ip = ip_result.stdout.strip()
+
+                            # Validate IP address format
+                            if not re.match(r'^[0-9.]+$', node_ip):
+                                logger.error(f"Invalid IP address format: {node_ip}")
+                                raise
+
                             # Remove stale lock file
-                            cleanup_cmd = f"ssh -o StrictHostKeyChecking=no root@{host.hostname} 'ssh -o StrictHostKeyChecking=no root@{node_ip} \"rm -f /var/lock/qemu-server/lock-{locked_vmid}.conf\"'"
-                            cleanup_result = subprocess.run(cleanup_cmd, shell=True, capture_output=True, text=True)
+                            cleanup_result = subprocess.run(
+                                ['ssh', '-o', 'StrictHostKeyChecking=no', f'root@{host.hostname}',
+                                 f'ssh -o StrictHostKeyChecking=no root@{node_ip} "rm -f /var/lock/qemu-server/lock-{locked_vmid}.conf"'],
+                                capture_output=True,
+                                text=True,
+                                timeout=10
+                            )
 
                             if cleanup_result.returncode == 0:
                                 logger.info(f"Successfully removed stale lock file for VM {locked_vmid}, retrying operation...")

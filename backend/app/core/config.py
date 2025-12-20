@@ -40,7 +40,8 @@ class Settings(BaseSettings):
     API_V1_PREFIX: str = "/api/v1"
 
     # Security
-    SECRET_KEY: str = os.getenv("SECRET_KEY", "change-me-in-production-please-use-strong-secret")
+    # SECURITY: Generate strong random SECRET_KEY if not set via environment
+    SECRET_KEY: str = os.getenv("SECRET_KEY") or __import__('secrets').token_urlsafe(64)
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7

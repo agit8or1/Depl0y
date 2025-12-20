@@ -172,7 +172,12 @@ async def create_vm(
     """Create and deploy a new virtual machine"""
     import logging
     logger = logging.getLogger(__name__)
-    logger.info(f"Received VM create request: {vm_data.model_dump()}")
+    # SECURITY: Do not log sensitive data like passwords
+    vm_data_safe = vm_data.model_dump()
+    vm_data_safe['password'] = '***REDACTED***'
+    if 'ssh_key' in vm_data_safe and vm_data_safe['ssh_key']:
+        vm_data_safe['ssh_key'] = '***REDACTED***'
+    logger.info(f"Received VM create request: {vm_data_safe}")
 
     # Convert os_type string to enum
     try:
@@ -237,8 +242,9 @@ async def create_vm(
         dns_servers=vm_data.dns_servers,
 
         # Credentials
+        # SECURITY: Encrypt password before storing
         username=vm_data.username,
-        password=vm_data.password,  # Should be encrypted in production
+        password=encrypt_data(vm_data.password),
         ssh_key=vm_data.ssh_key,
 
         status=VMStatus.CREATING,

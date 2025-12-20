@@ -50,6 +50,11 @@ def enable_cloud_images(
                 detail="Proxmox root password is required"
             )
 
+        # SECURITY: Validate hostname to prevent command injection
+        import re
+        if not re.match(r'^[a-zA-Z0-9._-]+$', proxmox_host):
+            raise HTTPException(status_code=400, detail="Invalid hostname format")
+
         logger.info(f"Starting cloud image setup for host {proxmox_host}")
 
         # Check if SSH is already configured
@@ -138,12 +143,15 @@ def enable_cloud_images(
                 public_key = f.read().strip()
 
             # Backend already runs as depl0y user, no need for sudo -u
+            # SECURITY: Use proper shell escaping with shlex.quote to prevent command injection
+            import shlex
+            safe_public_key = shlex.quote(public_key)
             alt_result = subprocess.run(
                 [
                     '/usr/bin/sshpass', '-p', password,
                     '/usr/bin/ssh', '-o', 'StrictHostKeyChecking=no',
                     f'root@{proxmox_host}',
-                    f"mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo '{public_key}' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && sort -u ~/.ssh/authorized_keys -o ~/.ssh/authorized_keys"
+                    f"mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo {safe_public_key} >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && sort -u ~/.ssh/authorized_keys -o ~/.ssh/authorized_keys"
                 ],
                 capture_output=True,
                 text=True,
@@ -239,13 +247,33 @@ def enable_proxmox_cluster_ssh(
         logger.info(f"Starting inter-node SSH setup for Proxmox cluster")
 
         # Check if inter-node SSH is already working
+        # SECURITY: Sanitize node names to prevent command injection
+        import re
         node_names = [n.node_name for n in nodes]
+        # Validate node names contain only alphanumeric, dots, hyphens, underscores
+        for node_name in node_names:
+            if not re.match(r'^[a-zA-Z0-9._-]+$', node_name):
+                raise HTTPException(status_code=400, detail=f"Invalid node name: {node_name}")
+
         test_node_1 = node_names[0]
         test_node_2 = node_names[1] if len(node_names) > 1 else node_names[0]
 
         # Backend already runs as depl0y user, no need for sudo -u
-        check_cmd = f"ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no root@{proxmox_host} 'ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no {test_node_2} echo test' 2>&1"
-        check_result = subprocess.run(check_cmd, shell=True, capture_output=True, text=True, timeout=15)
+        # SECURITY: Validate hostname to prevent injection
+        if not re.match(r'^[a-zA-Z0-9._-]+$', proxmox_host):
+            raise HTTPException(status_code=400, detail="Invalid hostname")
+
+        check_result = subprocess.run(
+            [
+                'ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5',
+                '-o', 'StrictHostKeyChecking=no', f'root@{proxmox_host}',
+                f'ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no {test_node_2} echo test'
+            ],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            stderr=subprocess.STDOUT
+        )
 
         if check_result.returncode == 0 and 'test' in check_result.stdout:
             logger.info("Inter-node SSH already configured")
@@ -258,21 +286,18 @@ def enable_proxmox_cluster_ssh(
         # Set up SSH keys on Proxmox cluster nodes
         logger.info("Setting up SSH keys between nodes...")
 
-        # Build SSH copy commands (can't use backslashes in f-strings for Python 3.11+)
-        escaped_pubkey = '\\"$PUB_KEY\\"'
-        empty_passphrase = '\\"\\"'
+        # SECURITY: Build setup script safely without exposing password in shell commands
+        # Use shlex.quote to properly escape all variables
+        import shlex
 
-        copy_key_cmds = []
-        for node in node_names:
-            cmd = f'sshpass -p "{password}" ssh-copy-id -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa.pub root@{node} 2>/dev/null || sshpass -p "{password}" ssh -o StrictHostKeyChecking=no root@{node} "mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo {escaped_pubkey} >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && sort -u ~/.ssh/authorized_keys -o ~/.ssh/authorized_keys"'
-            copy_key_cmds.append(cmd)
+        # Build safe node list for the shell script
+        safe_node_list = ' '.join([shlex.quote(node) for node in node_names])
+        safe_proxmox_host = shlex.quote(proxmox_host)
 
-        reverse_key_cmds = []
-        for node in node_names:
-            cmd = f'ssh -o StrictHostKeyChecking=no root@{node} "ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa -N {empty_passphrase} -q 2>/dev/null || true; ssh-copy-id -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa.pub root@{proxmox_host} 2>/dev/null || true"'
-            reverse_key_cmds.append(cmd)
+        # Create a safe setup script that doesn't include the password
+        setup_script = f"""#!/bin/bash
+set -e
 
-        setup_script = f"""
 # Generate SSH key on first node if it doesn't exist
 if [ ! -f ~/.ssh/id_rsa ]; then
     ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa -N '' -q
@@ -282,18 +307,29 @@ fi
 PUB_KEY=$(cat ~/.ssh/id_rsa.pub)
 
 # Copy key to all other nodes
-{' '.join(copy_key_cmds)}
+for node in {safe_node_list}; do
+    ssh-copy-id -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa.pub root@$node 2>/dev/null || true
+    ssh -o StrictHostKeyChecking=no root@$node "mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo \\"$PUB_KEY\\" >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && sort -u ~/.ssh/authorized_keys -o ~/.ssh/authorized_keys" 2>/dev/null || true
+done
 
-# Also set up reverse keys (each node can SSH to others)
-{' '.join(reverse_key_cmds)}
+# Set up reverse keys (each node can SSH to others)
+for node in {safe_node_list}; do
+    ssh -o StrictHostKeyChecking=no root@$node "ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa -N '' -q 2>/dev/null || true; ssh-copy-id -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa.pub root@{safe_proxmox_host} 2>/dev/null || true" 2>/dev/null || true
+done
 
 echo "SSH_SETUP_COMPLETE"
 """
 
-        # Execute setup via SSH to Proxmox
-        # Backend already runs as depl0y user, no need for sudo -u
-        cmd = f"sshpass -p '{password}' ssh -o StrictHostKeyChecking=no root@{proxmox_host} '{setup_script}'"
-        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=60)
+        # Execute setup via SSH to Proxmox using sshpass
+        # SECURITY: Password is passed via -p flag, not in shell command
+        result = subprocess.run(
+            ['/usr/bin/sshpass', '-p', password, '/usr/bin/ssh',
+             '-o', 'StrictHostKeyChecking=no', f'root@{proxmox_host}',
+             setup_script],
+            capture_output=True,
+            text=True,
+            timeout=60
+        )
 
         if result.returncode != 0:
             raise Exception(f"Failed to setup inter-node SSH: {result.stderr}")
@@ -301,8 +337,15 @@ echo "SSH_SETUP_COMPLETE"
         # Verify connectivity
         logger.info("Verifying inter-node SSH connectivity...")
         # Backend already runs as depl0y user, no need for sudo -u
-        verify_cmd = f"ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no root@{proxmox_host} 'ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no {test_node_2} echo VERIFIED'"
-        verify_result = subprocess.run(verify_cmd, shell=True, capture_output=True, text=True, timeout=15)
+        # SECURITY: Use argument list instead of shell=True
+        verify_result = subprocess.run(
+            ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5',
+             '-o', 'StrictHostKeyChecking=no', f'root@{proxmox_host}',
+             f'ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no {test_node_2} echo VERIFIED'],
+            capture_output=True,
+            text=True,
+            timeout=15
+        )
 
         if verify_result.returncode != 0 or 'VERIFIED' not in verify_result.stdout:
             raise Exception(f"Inter-node SSH verification failed")

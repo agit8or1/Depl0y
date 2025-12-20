@@ -109,20 +109,30 @@ def download_update():
         
         if not os.path.exists(package_path):
             # Fallback: create package on-the-fly
+            # SECURITY: Use argument list instead of shell=True to prevent command injection
             temp_package = "/tmp/depl0y-update.tar.gz"
-            create_package_cmd = f"""
-cd /home/administrator/depl0y && \
-tar -czf {temp_package} \
-  --exclude='node_modules' \
-  --exclude='dist' \
-  --exclude='.git' \
-  --exclude='__pycache__' \
-  --exclude='*.pyc' \
-  --exclude='venv' \
-  backend/ frontend/ *.md *.sh nginx-depl0y.conf scripts/ docs/ .github/ 2>/dev/null || true
-"""
-            subprocess.run(create_package_cmd, shell=True, check=True)
-            package_path = temp_package
+            try:
+                subprocess.run(
+                    [
+                        'tar', '-czf', temp_package,
+                        '--exclude=node_modules',
+                        '--exclude=dist',
+                        '--exclude=.git',
+                        '--exclude=__pycache__',
+                        '--exclude=*.pyc',
+                        '--exclude=venv',
+                        '-C', '/home/administrator/depl0y',
+                        'backend/', 'frontend/', 'install.sh', 'uninstall.sh',
+                        'deploy.sh', 'nginx-depl0y.conf', 'scripts/', 'docs/', '.github/'
+                    ],
+                    check=True,
+                    capture_output=True,
+                    timeout=60
+                )
+                package_path = temp_package
+            except subprocess.CalledProcessError as e:
+                logger.error(f"Failed to create package: {e.stderr.decode() if e.stderr else e}")
+                raise HTTPException(status_code=500, detail="Failed to create update package")
 
         if not os.path.exists(package_path):
             raise HTTPException(status_code=500, detail="Failed to find or create update package")
@@ -170,10 +180,18 @@ def apply_update(current_user=Depends(get_current_user)):
         os.chmod(installer_path, 0o755)
         
         logger.info("Installer downloaded, starting update in background...")
-        
+
         # Run installer in background (it will detect existing installation and upgrade)
-        update_script = f"/usr/bin/sudo /opt/depl0y/scripts/update-wrapper.sh {installer_path}"
-        subprocess.Popen(update_script, shell=True)
+        # SECURITY: Use argument list instead of shell=True, validate path
+        import re
+        if not re.match(r'^/tmp/[a-zA-Z0-9._-]+$', installer_path):
+            raise HTTPException(status_code=400, detail="Invalid installer path")
+
+        subprocess.Popen(
+            ['/usr/bin/sudo', '/opt/depl0y/scripts/update-wrapper.sh', installer_path],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
         
         return {
             "success": True,

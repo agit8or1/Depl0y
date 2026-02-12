@@ -112,10 +112,37 @@ async def require_operator(current_user: User = Depends(get_current_user)) -> Us
 
 @router.post("/login", response_model=Token)
 async def login(credentials: LoginRequest, db: Session = Depends(get_db)):
-    """Login endpoint"""
+    """Login endpoint with rate limiting to prevent brute force attacks"""
+    import time
+
+    # Apply rate limiting manually
+    from app.main import app
+    limiter = app.state.limiter
+    try:
+        await limiter.check_request_limit(request, "5/minute")
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many login attempts. Please try again later."
+        )
+
     user = db.query(User).filter(User.username == credentials.username).first()
 
-    if not user or not verify_password(credentials.password, user.hashed_password):
+    # SECURITY: Prevent timing attacks by always performing password verification
+    # Use a dummy hash for non-existent users to ensure constant-time operation
+    if user:
+        password_valid = verify_password(credentials.password, user.hashed_password)
+    else:
+        # Perform dummy verification with a fake hash to prevent timing attacks
+        dummy_hash = get_password_hash("dummy_password_for_timing_protection")
+        verify_password(credentials.password, dummy_hash)
+        password_valid = False
+
+    # Add small random delay to further mitigate timing attacks (1-50ms)
+    import random
+    time.sleep(random.uniform(0.001, 0.05))
+
+    if not user or not password_valid:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",

@@ -272,7 +272,7 @@
     <div class="card">
       <div class="card-header">
         <h3>🔄 System Updates</h3>
-        <p>Keep Depl0y up to date from deploy.agit8or.net</p>
+        <p>Keep Depl0y up to date from GitHub (github.com/agit8or1/Depl0y)</p>
       </div>
       <div class="card-body">
         <div v-if="checkingUpdates && !updateInfo" class="info-box">

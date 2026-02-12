@@ -2,6 +2,7 @@
 from pydantic_settings import BaseSettings
 from typing import Optional
 import os
+from cryptography.fernet import Fernet
 
 
 def get_app_version():
@@ -25,7 +26,7 @@ def get_app_version():
         # Fallback to hardcoded version if database query fails
         pass
 
-    return "1.3.7"
+    return "1.3.8"  # Security hardening release
 
 
 class Settings(BaseSettings):
@@ -74,7 +75,9 @@ class Settings(BaseSettings):
     PROXMOX_POLL_INTERVAL: int = 60  # seconds
 
     # Encryption key for sensitive data
-    ENCRYPTION_KEY: Optional[str] = os.getenv("ENCRYPTION_KEY")
+    # SECURITY: Auto-generate strong encryption key if not set via environment
+    # This prevents application crashes when encrypting/decrypting credentials
+    ENCRYPTION_KEY: str = os.getenv("ENCRYPTION_KEY") or Fernet.generate_key().decode()
 
     # Cloud-init
     CLOUDINIT_TEMPLATE_PATH: str = os.getenv(

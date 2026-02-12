@@ -2,9 +2,10 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 from app.api.auth import get_current_user
 from app.core.config import settings
+from app.services.github_updates import GitHubUpdateService
 import logging
 import subprocess
 import os
@@ -14,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# Update server configuration
+# Legacy update server configuration (fallback)
 UPDATE_SERVER = "http://deploy.agit8or.net"
 UPDATE_ENDPOINT = f"{UPDATE_SERVER}/api/v1/system-updates/version"
 
@@ -29,38 +30,36 @@ class UpdateCheckResponse(BaseModel):
 
 @router.get("/check")
 def check_for_updates(current_user=Depends(get_current_user)):
-    """Check if updates are available from the main server"""
+    """Check if updates are available from GitHub releases"""
     try:
-        # Get current version
-        current_version = settings.APP_VERSION
+        # Use GitHub as primary source
+        github_service = GitHubUpdateService()
+        update_info = github_service.check_for_updates()
 
-        # Query update server for latest version
-        try:
-            response = requests.get(UPDATE_ENDPOINT, timeout=10)
-            if response.status_code == 200:
-                update_info = response.json()
-                latest_version = update_info.get("version", current_version)
+        if update_info.get("error"):
+            # Fallback to legacy update server
+            logger.info("GitHub check failed, trying legacy update server")
+            try:
+                response = requests.get(UPDATE_ENDPOINT, timeout=10)
+                if response.status_code == 200:
+                    legacy_info = response.json()
+                    return UpdateCheckResponse(
+                        current_version=settings.APP_VERSION,
+                        latest_version=legacy_info.get("version", settings.APP_VERSION),
+                        update_available=legacy_info.get("version") != settings.APP_VERSION,
+                        download_url=legacy_info.get("download_url"),
+                        release_notes=legacy_info.get("release_notes")
+                    )
+            except Exception as e:
+                logger.warning(f"Legacy update server also failed: {e}")
 
-                # Simple version comparison (assumes semantic versioning)
-                update_available = latest_version != current_version
-
-                return UpdateCheckResponse(
-                    current_version=current_version,
-                    latest_version=latest_version,
-                    update_available=update_available,
-                    download_url=update_info.get("download_url") if update_available else None,
-                    release_notes=update_info.get("release_notes")
-                )
-            else:
-                raise Exception(f"Update server returned {response.status_code}")
-        except requests.RequestException as e:
-            logger.warning(f"Could not reach update server: {e}")
-            return UpdateCheckResponse(
-                current_version=current_version,
-                latest_version=current_version,
-                update_available=False,
-                release_notes="Could not reach update server"
-            )
+        return UpdateCheckResponse(
+            current_version=update_info["current_version"],
+            latest_version=update_info["latest_version"],
+            update_available=update_info["update_available"],
+            download_url=update_info.get("package_url") or update_info.get("download_url"),
+            release_notes=update_info.get("release_notes")
+        )
 
     except Exception as e:
         logger.error(f"Failed to check for updates: {e}")
@@ -75,24 +74,44 @@ def get_version_info():
     """
     Serve version information for update clients
     This endpoint is called BY OTHER INSTANCES to check for updates
+    Now uses GitHub as the source of truth
     """
+    from app.services.github_updates import GitHubUpdateService
+
+    github_service = GitHubUpdateService()
+    latest_release = github_service.get_latest_release()
+
+    if latest_release:
+        return {
+            "version": latest_release.get("version", settings.APP_VERSION),
+            "download_url": latest_release.get("tarball_url"),
+            "install_url": "https://raw.githubusercontent.com/agit8or1/Depl0y/main/install.sh",
+            "release_notes": latest_release.get("body", f"Depl0y {settings.APP_VERSION}")
+        }
+
+    # Fallback if GitHub is unavailable
     return {
         "version": settings.APP_VERSION,
         "download_url": f"{UPDATE_SERVER}/api/v1/system-updates/download",
         "install_url": f"{UPDATE_SERVER}/install.sh",
         "release_notes": f"""
-Depl0y {settings.APP_VERSION} Release Notes:
+Depl0y {settings.APP_VERSION} - Security Hardening Release
 
-✨ New in v1.3.7:
-- Cloud image enable now works completely - removed redundant sudo commands
-- Fixed mkdir permission errors - backend runs directly as depl0y user
-- Resolved SSH key generation and copy errors
+🔒 Security Fixes:
+- Fixed 5 CRITICAL vulnerabilities (command injection, timing attacks, encryption)
+- Added security headers (X-Frame-Options, CSP, XSS protection)
+- Implemented rate limiting infrastructure
+- GitHub update integration
+- Auto-generate encryption keys
 
-✨ Recent versions:
-- Fixed sshpass installation and DEBIAN_FRONTEND error (v1.3.6)
-- Fixed installer tarball structure for clean installs (v1.3.5)
-- ISO downloads with real-time status and background processing (v1.3.4)
-- Auto-populate 7 popular cloud images (v1.2.2)
+✨ New Features:
+- GitHub integration for updates
+- Security database models for account lockout and token revocation
+- Enhanced audit logging infrastructure
+
+⚠️ Breaking Changes: None - fully backward compatible
+
+For full details, see SECURITY_AUDIT_REPORT.md
         """.strip()
     }
 

@@ -9,9 +9,8 @@ from cryptography.fernet import Fernet
 from app.core.config import settings
 
 # Encryption for sensitive data
-cipher_suite = None
-if settings.ENCRYPTION_KEY:
-    cipher_suite = Fernet(settings.ENCRYPTION_KEY.encode())
+# ENCRYPTION_KEY is now always set (auto-generated if not provided)
+cipher_suite = Fernet(settings.ENCRYPTION_KEY.encode())
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -78,15 +77,11 @@ def verify_totp_code(secret: str, code: str) -> bool:
 # Encryption functions for sensitive data
 def encrypt_data(data: str) -> str:
     """Encrypt sensitive data"""
-    if not cipher_suite:
-        raise ValueError("ENCRYPTION_KEY not configured")
     return cipher_suite.encrypt(data.encode()).decode()
 
 
 def decrypt_data(encrypted_data: str) -> str:
     """Decrypt sensitive data"""
-    if not cipher_suite:
-        raise ValueError("ENCRYPTION_KEY not configured")
     return cipher_suite.decrypt(encrypted_data.encode()).decode()
 
 

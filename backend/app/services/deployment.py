@@ -1100,26 +1100,46 @@ runcmd:
                     f.write(user_data)
                     temp_file = f.name
 
-                # Get node IP
-                dollar_two = '\\$2'
-                get_ip_cmd = f"ssh -o StrictHostKeyChecking=no root@{host.hostname} \"grep -A3 'name: {node.node_name}' /etc/pve/corosync.conf | grep ring0_addr | awk '{{print {dollar_two}}}'\""
-                ip_result = subprocess.run(get_ip_cmd, shell=True, capture_output=True, text=True)
+                # Get node IP - SECURITY FIX: Remove shell=True
+                # Build safe command as argument list
+                safe_node_name = shlex.quote(node.node_name)
+                remote_cmd = f"grep -A3 'name: {safe_node_name}' /etc/pve/corosync.conf | grep ring0_addr | awk '{{print $2}}'"
+                ip_result = subprocess.run(
+                    ['ssh', '-o', 'StrictHostKeyChecking=no', f'root@{host.hostname}', remote_cmd],
+                    capture_output=True,
+                    text=True,
+                    timeout=10
+                )
 
                 if ip_result.returncode == 0 and ip_result.stdout.strip():
                     node_ip = ip_result.stdout.strip()
 
                     # Create snippets directory on target node
+                    # SECURITY FIX: Remove shell=True
                     snippet_path = f"/var/lib/vz/snippets/cloud-init-{vmid}.yml"
-                    mkdir_cmd = f"ssh -o StrictHostKeyChecking=no root@{host.hostname} 'ssh -o StrictHostKeyChecking=no root@{node_ip} \"mkdir -p /var/lib/vz/snippets\"'"
-                    mkdir_result = subprocess.run(mkdir_cmd, shell=True, capture_output=True, text=True)
+                    mkdir_result = subprocess.run(
+                        ['ssh', '-o', 'StrictHostKeyChecking=no', f'root@{host.hostname}',
+                         f'ssh -o StrictHostKeyChecking=no root@{node_ip} "mkdir -p /var/lib/vz/snippets"'],
+                        capture_output=True,
+                        text=True,
+                        timeout=10
+                    )
 
                     if mkdir_result.returncode != 0:
                         logger.error(f"Failed to create snippets directory: {mkdir_result.stderr}")
                         raise Exception(f"Failed to create snippets directory: {mkdir_result.stderr}")
 
                     # Upload snippet file using ProxyJump to go directly to target node
-                    scp_cmd = f"scp -o StrictHostKeyChecking=no -o ProxyJump=root@{host.hostname} {temp_file} root@{node_ip}:{snippet_path}"
-                    scp_result = subprocess.run(scp_cmd, shell=True, capture_output=True, text=True)
+                    # SECURITY FIX: Remove shell=True - use argument list
+                    scp_result = subprocess.run(
+                        ['scp', '-o', 'StrictHostKeyChecking=no',
+                         '-o', f'ProxyJump=root@{host.hostname}',
+                         temp_file,
+                         f'root@{node_ip}:{snippet_path}'],
+                        capture_output=True,
+                        text=True,
+                        timeout=30
+                    )
 
                     if scp_result.returncode != 0:
                         logger.error(f"Failed to upload snippet file: {scp_result.stderr}")
@@ -1128,8 +1148,14 @@ runcmd:
                     logger.info(f"Uploaded cloud-init snippet to {node_ip}:{snippet_path}")
 
                     # Verify the file exists
-                    verify_cmd = f"ssh -o StrictHostKeyChecking=no root@{host.hostname} 'ssh -o StrictHostKeyChecking=no root@{node_ip} \"test -f {snippet_path} && echo EXISTS\"'"
-                    verify_result = subprocess.run(verify_cmd, shell=True, capture_output=True, text=True)
+                    # SECURITY FIX: Remove shell=True
+                    verify_result = subprocess.run(
+                        ['ssh', '-o', 'StrictHostKeyChecking=no', f'root@{host.hostname}',
+                         f'ssh -o StrictHostKeyChecking=no root@{node_ip} "test -f {snippet_path} && echo EXISTS"'],
+                        capture_output=True,
+                        text=True,
+                        timeout=10
+                    )
 
                     if "EXISTS" not in verify_result.stdout:
                         logger.error(f"Snippet file verification failed - file does not exist at {snippet_path}")
@@ -1212,10 +1238,15 @@ runcmd:
             import os
             os.makedirs(os.path.dirname(cloud_image_path), exist_ok=True)
 
-            download_cmd = f"wget -q -O {cloud_image_path} {cloud_image.download_url}"
-            result = subprocess.run(download_cmd, shell=True, capture_output=True)
+            # SECURITY FIX: Remove shell=True - use argument list
+            result = subprocess.run(
+                ['wget', '-q', '-O', cloud_image_path, cloud_image.download_url],
+                capture_output=True,
+                timeout=300
+            )
             if result.returncode != 0:
-                raise Exception(f"Failed to download cloud image: {result.stderr.decode()}")
+                stderr_msg = result.stderr.decode() if result.stderr else "Unknown error"
+                raise Exception(f"Failed to download cloud image: {stderr_msg}")
 
             cloud_image.is_downloaded = True
             cloud_image.download_status = 'completed'
@@ -1292,11 +1323,17 @@ scp -o StrictHostKeyChecking=no -o BatchMode=yes {cloud_image_path} {ssh_host}:/
             raise Exception(f"Failed to upload to cluster host: {result.stderr.decode()}")
 
         # Step 3: Get node IP address from corosync config
+        # SECURITY FIX: Remove shell=True
         logger.info(f"Getting IP address for node {target_node}...")
-        get_ip_cmd = f"""
-ssh -o StrictHostKeyChecking=no -o BatchMode=yes {ssh_host} "grep -A3 'name: {target_node}' /etc/pve/corosync.conf | grep ring0_addr | awk '{{print \\$2}}'"
-"""
-        ip_result = subprocess.run(get_ip_cmd, shell=True, capture_output=True, text=True)
+        safe_target_node = shlex.quote(target_node)
+        remote_cmd = f"grep -A3 'name: {safe_target_node}' /etc/pve/corosync.conf | grep ring0_addr | awk '{{print $2}}'"
+        ip_result = subprocess.run(
+            ['ssh', '-o', 'StrictHostKeyChecking=no', '-o', 'BatchMode=yes',
+             ssh_host, remote_cmd],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
         if ip_result.returncode != 0 or not ip_result.stdout.strip():
             raise Exception(f"Failed to get IP for node {target_node}")
 

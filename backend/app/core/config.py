@@ -26,7 +26,7 @@ def get_app_version():
         # Fallback to hardcoded version if database query fails
         pass
 
-    return "1.3.8"  # Security hardening release
+    return "1.3.9"  # Minor update - README improvements
 
 
 class Settings(BaseSettings):

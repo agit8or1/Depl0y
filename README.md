@@ -6,18 +6,26 @@
 
 ## 🚨 CRITICAL SECURITY UPDATE - ACTION REQUIRED
 
-**If you are running Depl0y v1.3.7 or earlier, you MUST update immediately to v1.3.8.**
+**If you are running Depl0y v1.3.7 or earlier, you MUST update immediately to v1.3.8+**
 
 Multiple **Remote Code Execution (RCE)** vulnerabilities have been fixed in v1.3.8 (CVSS 9.8 - Critical). These vulnerabilities could allow attackers to execute arbitrary commands on your server.
 
 ### Quick Update:
+
+**Option 1: Use Web Interface (Recommended)**
+1. Login to Depl0y
+2. Go to Settings → System Updates
+3. Click "Check for Updates"
+4. Click "Install Update"
+
+**Option 2: Manual Update**
 ```bash
 cd /opt/depl0y
 git pull origin main
 sudo systemctl restart depl0y-backend
 ```
 
-**For full details, see [SECURITY.md](SECURITY.md)**
+**For full security details, see [SECURITY_AUDIT_REPORT.md](SECURITY_AUDIT_REPORT.md)**
 
 ---
 
@@ -26,19 +34,21 @@ Depl0y is a free, open-source web-based control panel that simplifies the deploy
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)
 ![Vue.js](https://img.shields.io/badge/vue.js-3.x-green.svg)
-![Version](https://img.shields.io/badge/version-1.3.8-brightgreen.svg)
+![Version](https://img.shields.io/badge/version-1.3.9-brightgreen.svg)
 
-## What's New in v1.3.8 - CRITICAL SECURITY RELEASE
+## What's New in v1.3.9
 
-- **🚨 CRITICAL** - Fixed multiple Remote Code Execution (RCE) vulnerabilities (CVSS 9.8)
-- **🔒 Security** - Added comprehensive input validation to prevent command injection
-- **🔒 Security** - Replaced all unsafe subprocess calls with safe argument lists
-- **🔒 Security** - Implemented proper shell escaping with shlex.quote()
-- **🔒 Security** - Redact sensitive data (passwords, SSH keys) from logs
-- **🔒 Security** - Auto-generate strong SECRET_KEY for JWT signing
-- **🔒 Security** - Encrypt passwords before database storage
+- **📝 Documentation** - Enhanced README with web-based update instructions
+- **📝 Documentation** - Improved security documentation formatting
+- **📝 Documentation** - Updated system requirements and installation guides
 
-**This is a critical security update. All users must upgrade immediately.**
+**Previous Release (v1.3.8) - CRITICAL SECURITY FIXES:**
+- **🚨 CRITICAL** - Fixed 5 critical vulnerabilities (CVSS 9.0+)
+- **🔒 Security** - Command injection fixes in deployment service
+- **🔒 Security** - Timing attack protection in authentication
+- **🔒 Security** - Auto-generate encryption keys
+- **🔒 Security** - Security headers and rate limiting
+- **✨ Feature** - GitHub update integration
 
 [View Full Changelog](CHANGELOG.md)
 

@@ -26,7 +26,7 @@ def get_app_version():
         # Fallback to hardcoded version if database query fails
         pass
 
-    return "1.3.11"  # Fix update process with dedicated upgrade script
+    return "1.3.12"  # Fix upgrade script to update database version
 
 
 class Settings(BaseSettings):

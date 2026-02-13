@@ -63,6 +63,14 @@ echo "🗑️  Clearing Python cache..."
 find "$INSTALL_DIR/backend" -type d -name '__pycache__' -exec rm -rf {} + 2>/dev/null || true
 find "$INSTALL_DIR/backend" -type f -name '*.pyc' -delete 2>/dev/null || true
 
+# Update version in database
+echo "📝 Updating version in database..."
+NEW_VERSION=$(grep -o 'return "[0-9]\+\.[0-9]\+\.[0-9]\+"' "$INSTALL_DIR/backend/app/core/config.py" | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+' | head -1)
+if [ -n "$NEW_VERSION" ]; then
+    sudo -u depl0y sqlite3 /var/lib/depl0y/db/depl0y.db "UPDATE system_settings SET value = '$NEW_VERSION' WHERE key = 'app_version';" || true
+    echo "✓ Version set to $NEW_VERSION"
+fi
+
 # Restart services
 echo "🔄 Restarting services..."
 systemctl daemon-reload

@@ -24,7 +24,7 @@ fi
 
 # Stop backend service
 echo "🛑 Stopping backend service..."
-systemctl stop depl0y-backend || true
+sudo systemctl stop depl0y-backend || true
 
 # Backup current installation
 BACKUP_DIR="/tmp/depl0y-backup-$(date +%Y%m%d-%H%M%S)"
@@ -35,24 +35,24 @@ cp -r "$INSTALL_DIR/frontend" "$BACKUP_DIR/" || true
 
 # Copy new files
 echo "📦 Copying new backend files..."
-rsync -av --exclude='*.pyc' --exclude='__pycache__' --exclude='venv' --exclude='.env' \
+sudo rsync -av --exclude='*.pyc' --exclude='__pycache__' --exclude='venv' --exclude='.env' \
     "$EXTRACT_DIR/backend/" "$INSTALL_DIR/backend/"
 
 echo "📦 Copying new frontend files..."
-rsync -av "$EXTRACT_DIR/frontend/dist/" "$INSTALL_DIR/frontend/dist/"
+sudo rsync -av "$EXTRACT_DIR/frontend/dist/" "$INSTALL_DIR/frontend/dist/"
 
 echo "📦 Copying scripts..."
-cp -r "$EXTRACT_DIR/scripts/"* "$INSTALL_DIR/scripts/" 2>/dev/null || true
+sudo cp -r "$EXTRACT_DIR/scripts/"* "$INSTALL_DIR/scripts/" 2>/dev/null || true
 
 echo "📦 Copying config files..."
-cp "$EXTRACT_DIR/nginx-depl0y.conf" /etc/nginx/sites-available/depl0y.conf || true
-cp "$EXTRACT_DIR/deploy.sh" "$INSTALL_DIR/" || true
+sudo cp "$EXTRACT_DIR/nginx-depl0y.conf" /etc/nginx/sites-available/depl0y.conf || true
+sudo cp "$EXTRACT_DIR/deploy.sh" "$INSTALL_DIR/" || true
 
 # Set correct permissions
 echo "🔒 Setting permissions..."
-chown -R depl0y:depl0y "$INSTALL_DIR/backend"
-chown -R depl0y:depl0y "$INSTALL_DIR/frontend"
-chown -R root:root "$INSTALL_DIR/scripts"
+sudo chown -R depl0y:depl0y "$INSTALL_DIR/backend"
+sudo chown -R depl0y:depl0y "$INSTALL_DIR/frontend"
+sudo chown -R root:root "$INSTALL_DIR/scripts"
 
 # Install Python dependencies
 echo "📦 Installing Python dependencies..."
@@ -80,16 +80,16 @@ fi
 
 # Restart services
 echo "🔄 Restarting services..."
-systemctl daemon-reload
-systemctl restart depl0y-backend
-systemctl reload nginx || systemctl restart nginx
+sudo systemctl daemon-reload
+sudo systemctl restart depl0y-backend
+sudo systemctl reload nginx || sudo systemctl restart nginx
 
 # Wait for backend to start
 echo "⏳ Waiting for backend to start..."
 sleep 8
 
 # Check if backend is running
-if systemctl is-active --quiet depl0y-backend; then
+if sudo systemctl is-active --quiet depl0y-backend; then
     echo "✅ Backend service is running"
 
     # Get new version from API (try multiple times with increasing delays)

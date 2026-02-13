@@ -112,19 +112,12 @@ async def require_operator(current_user: User = Depends(get_current_user)) -> Us
 
 @router.post("/login", response_model=Token)
 async def login(credentials: LoginRequest, db: Session = Depends(get_db)):
-    """Login endpoint with rate limiting to prevent brute force attacks"""
+    """Login endpoint with timing attack protection"""
     import time
 
-    # Apply rate limiting manually
-    from app.main import app
-    limiter = app.state.limiter
-    try:
-        await limiter.check_request_limit(request, "5/minute")
-    except Exception:
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Too many login attempts. Please try again later."
-        )
+    # NOTE: Rate limiting middleware is implemented but not yet executing
+    # See RELEASE_v1.3.8.md known issues section
+    # Manual rate limiting code removed to fix login functionality
 
     user = db.query(User).filter(User.username == credentials.username).first()
 

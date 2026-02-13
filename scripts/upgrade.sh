@@ -66,9 +66,16 @@ find "$INSTALL_DIR/backend" -type f -name '*.pyc' -delete 2>/dev/null || true
 # Update version in database
 echo "📝 Updating version in database..."
 NEW_VERSION=$(grep -o 'return "[0-9]\+\.[0-9]\+\.[0-9]\+"' "$INSTALL_DIR/backend/app/core/config.py" | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+' | head -1)
+echo "   Extracted version: $NEW_VERSION"
 if [ -n "$NEW_VERSION" ]; then
-    sudo -u depl0y sqlite3 /var/lib/depl0y/db/depl0y.db "UPDATE system_settings SET value = '$NEW_VERSION' WHERE key = 'app_version';" || true
-    echo "✓ Version set to $NEW_VERSION"
+    # Run sqlite3 as depl0y user (database is owned by depl0y)
+    if sudo -u depl0y sqlite3 /var/lib/depl0y/db/depl0y.db "UPDATE system_settings SET value = '$NEW_VERSION' WHERE key = 'app_version';" 2>&1; then
+        echo "   ✓ Database version updated to $NEW_VERSION"
+    else
+        echo "   ⚠ Warning: Failed to update database version"
+    fi
+else
+    echo "   ⚠ Warning: Could not extract version from config.py"
 fi
 
 # Restart services
@@ -79,14 +86,26 @@ systemctl reload nginx || systemctl restart nginx
 
 # Wait for backend to start
 echo "⏳ Waiting for backend to start..."
-sleep 5
+sleep 8
 
 # Check if backend is running
 if systemctl is-active --quiet depl0y-backend; then
     echo "✅ Backend service is running"
 
-    # Get new version
-    NEW_VERSION=$(curl -s http://localhost:8000/ | grep -o '"version":"[^"]*"' | cut -d'"' -f4 || echo "unknown")
+    # Get new version from API (try multiple times with increasing delays)
+    for i in {1..5}; do
+        NEW_VERSION=$(curl -s --max-time 3 http://localhost:8000/ 2>/dev/null | grep -o '"version":"[^"]*"' | cut -d'"' -f4 || echo "")
+        if [ -n "$NEW_VERSION" ]; then
+            break
+        fi
+        echo "   Waiting for API to respond (attempt $i/5)..."
+        sleep 2
+    done
+
+    if [ -z "$NEW_VERSION" ]; then
+        NEW_VERSION="unknown (API not responding)"
+    fi
+
     echo "✅ Upgrade complete! New version: $NEW_VERSION"
     echo ""
     echo "Backup stored at: $BACKUP_DIR"

@@ -225,19 +225,18 @@ def apply_update(current_user=Depends(get_current_user)):
             timeout=60
         )
 
-        # Find the install.sh script
-        installer_path = os.path.join(extract_path, 'install.sh')
-        if not os.path.exists(installer_path):
-            raise Exception(f"Installer script not found in downloaded package")
+        # Find the upgrade script
+        upgrade_script_path = os.path.join(extract_path, 'scripts', 'upgrade.sh')
+        if not os.path.exists(upgrade_script_path):
+            raise Exception(f"Upgrade script not found in downloaded package")
 
-        os.chmod(installer_path, 0o755)
+        os.chmod(upgrade_script_path, 0o755)
 
-        logger.info("Starting installer in background...")
+        logger.info("Starting upgrade in background...")
 
-        # Run installer via at daemon to detach from backend process
+        # Run upgrade script via at daemon to detach from backend process
         update_script = f"""#!/bin/bash
-cd {extract_path}
-/bin/bash {installer_path} > /tmp/depl0y-update.log 2>&1
+/bin/bash {upgrade_script_path} {extract_path} > /tmp/depl0y-update.log 2>&1
 """
         script_path = "/tmp/depl0y-update-runner.sh"
         with open(script_path, 'w') as f:

@@ -64,6 +64,11 @@ logs/
 *.temp
 temp/
 tmp/
+SESSION_PROGRESS*.md
+VERSION_UPDATE*.md
+DEPLOYMENT_SUMMARY.txt
+*_COMPLETE.md
+URGENT*.md
 
 # Storage
 storage/

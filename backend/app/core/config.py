@@ -26,7 +26,7 @@ def get_app_version():
         # Fallback to hardcoded version if database query fails
         pass
 
-    return "1.3.10"  # Fix update system to use GitHub
+    return "1.3.11"  # Fix update process with dedicated upgrade script
 
 
 class Settings(BaseSettings):

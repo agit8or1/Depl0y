@@ -5,6 +5,26 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.11] - 2026-02-13
+
+### Fixed
+- **Updates now actually apply!** - install.sh was trying to download from broken server during upgrades
+- Added dedicated `scripts/upgrade.sh` for in-place upgrades from extracted files
+- No more 502 errors from deploy.agit8or.net during updates
+- No more hanging on password reset prompts
+
+### Added
+- `scripts/upgrade.sh` - Purpose-built upgrade script that uses already-extracted files
+- Automatic backup creation before upgrades
+- Better error handling and status reporting during updates
+
+### Changed
+- Update process now uses upgrade.sh instead of install.sh
+- Upgrade script designed specifically for existing installations
+- Faster updates (no download during upgrade, files already extracted)
+
+---
+
 ## [1.3.10] - 2026-02-13
 
 ### Fixed

@@ -56,7 +56,7 @@ sudo chown -R root:root "$INSTALL_DIR/scripts"
 
 # Install Python dependencies
 echo "📦 Installing Python dependencies..."
-sudo -u depl0y "$INSTALL_DIR/backend/venv/bin/pip" install -q -r "$INSTALL_DIR/backend/requirements.txt"
+"$INSTALL_DIR/backend/venv/bin/pip" install -q -r "$INSTALL_DIR/backend/requirements.txt"
 
 # Clear Python cache
 echo "🗑️  Clearing Python cache..."
@@ -68,8 +68,8 @@ echo "📝 Updating version in database..."
 NEW_VERSION=$(grep -o 'return "[0-9]\+\.[0-9]\+\.[0-9]\+"' "$INSTALL_DIR/backend/app/core/config.py" | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+' | head -1)
 echo "   Extracted version: $NEW_VERSION"
 if [ -n "$NEW_VERSION" ]; then
-    # Run sqlite3 as depl0y user (database is owned by depl0y)
-    if sudo -u depl0y sqlite3 /var/lib/depl0y/db/depl0y.db "UPDATE system_settings SET value = '$NEW_VERSION' WHERE key = 'app_version';" 2>&1; then
+    # Run sqlite3 (database is owned by depl0y, script runs as depl0y)
+    if sqlite3 /var/lib/depl0y/db/depl0y.db "UPDATE system_settings SET value = '$NEW_VERSION' WHERE key = 'app_version';" 2>&1; then
         echo "   ✓ Database version updated to $NEW_VERSION"
     else
         echo "   ⚠ Warning: Failed to update database version"

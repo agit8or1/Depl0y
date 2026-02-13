@@ -177,52 +177,97 @@ def download_update():
 
 @router.post("/apply")
 def apply_update(current_user=Depends(get_current_user)):
-    """Apply update by downloading and running the installer script"""
+    """Apply update by downloading from GitHub and running the installer"""
     try:
-        logger.info("Starting update process via installer...")
-        
-        # Download installer script
-        installer_url = f"{UPDATE_SERVER}/downloads/install.sh"
-        installer_path = "/tmp/depl0y-update-install.sh"
-        
-        logger.info(f"Downloading installer from {installer_url}")
-        
-        response = requests.get(installer_url, timeout=30)
+        logger.info("Starting update process from GitHub...")
+
+        # Get latest release from GitHub
+        github_service = GitHubUpdateService()
+        update_info = github_service.check_for_updates()
+
+        if not update_info.get("update_available"):
+            raise HTTPException(status_code=400, detail="No update available")
+
+        download_url = update_info.get("download_url")
+        if not download_url:
+            raise HTTPException(status_code=500, detail="No download URL found")
+
+        logger.info(f"Downloading update from GitHub: {download_url}")
+
+        # Download tarball from GitHub
+        tarball_path = "/tmp/depl0y-update.tar.gz"
+        extract_path = "/tmp/depl0y-update"
+
+        # Download the release tarball
+        response = requests.get(download_url, timeout=300, stream=True)
         if response.status_code != 200:
-            raise Exception(f"Failed to download installer: HTTP {response.status_code}")
-        
-        # Save installer
-        with open(installer_path, 'wb') as f:
-            f.write(response.content)
-        
-        # Make executable
-        os.chmod(installer_path, 0o755)
-        
-        logger.info("Installer downloaded, starting update in background...")
+            raise Exception(f"Failed to download update: HTTP {response.status_code}")
 
-        # Run installer in background (it will detect existing installation and upgrade)
-        # SECURITY: Use argument list instead of shell=True, validate path
-        import re
-        if not re.match(r'^/tmp/[a-zA-Z0-9._-]+$', installer_path):
-            raise HTTPException(status_code=400, detail="Invalid installer path")
+        # Save tarball
+        with open(tarball_path, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                if chunk:
+                    f.write(chunk)
 
-        subprocess.Popen(
-            ['/usr/bin/sudo', '/opt/depl0y/scripts/update-wrapper.sh', installer_path],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
+        logger.info("Download complete, extracting files...")
+
+        # Clean up old extract directory if it exists
+        if os.path.exists(extract_path):
+            subprocess.run(['rm', '-rf', extract_path], check=True, timeout=10)
+
+        os.makedirs(extract_path, exist_ok=True)
+
+        # Extract tarball
+        subprocess.run(
+            ['tar', '-xzf', tarball_path, '-C', extract_path, '--strip-components=1'],
+            check=True,
+            capture_output=True,
+            timeout=60
         )
-        
+
+        # Find the install.sh script
+        installer_path = os.path.join(extract_path, 'install.sh')
+        if not os.path.exists(installer_path):
+            raise Exception(f"Installer script not found in downloaded package")
+
+        os.chmod(installer_path, 0o755)
+
+        logger.info("Starting installer in background...")
+
+        # Run installer via at daemon to detach from backend process
+        update_script = f"""#!/bin/bash
+cd {extract_path}
+/bin/bash {installer_path} > /tmp/depl0y-update.log 2>&1
+"""
+        script_path = "/tmp/depl0y-update-runner.sh"
+        with open(script_path, 'w') as f:
+            f.write(update_script)
+        os.chmod(script_path, 0o755)
+
+        # Schedule via at
+        proc = subprocess.Popen(
+            ['/usr/bin/at', 'now'],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+        stdout, stderr = proc.communicate(input=script_path, timeout=5)
+        if proc.returncode != 0:
+            raise Exception(f"Failed to schedule update: {stderr}")
+
         return {
             "success": True,
-            "message": "Update is being applied. The installer will upgrade your installation while preserving your data. The service will restart automatically.",
+            "message": "Update is being applied from GitHub. The service will restart automatically when complete.",
+            "version": update_info.get("latest_version"),
             "log_file": "/tmp/depl0y-update.log"
         }
-        
+
     except Exception as e:
-        logger.error(f"Failed to start update: {e}")
+        logger.error(f"Failed to apply update: {e}")
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to start update: {str(e)}"
+            detail=f"Failed to apply update: {str(e)}"
         )
 
 

@@ -5,6 +5,21 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.10] - 2026-02-13
+
+### Fixed
+- **Update system now pulls from GitHub releases** - Update apply was downloading from old server (deploy.agit8or.net)
+- **Login endpoint 500 error** - Removed non-functional rate limiting code causing KeyError crashes
+- **APT sources error** - Removed broken github-cli.list file preventing system updates
+
+### Changed
+- Update process completely rewritten to use GitHub Releases API
+- Downloads tarball directly from GitHub release assets
+- Improved error handling and logging during updates
+- Update now runs in detached process via 'at' daemon
+
+---
+
 ## [1.3.9] - 2026-02-12
 
 ### Changed

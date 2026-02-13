@@ -11,9 +11,10 @@ from app.models import (
 )
 from app.services.proxmox import ProxmoxService
 from app.services.cloudinit import CloudInitService
-from app.core.security import encrypt_data
+from app.core.security import encrypt_data, decrypt_data
 import logging
 import time
+import shlex
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
@@ -1046,11 +1047,13 @@ class DeploymentService:
                 nameserver = vm.dns_servers.replace(",", " ")
 
             # Apply cloud-init config to VM
+            # Decrypt password before passing to Proxmox
+            plain_password = decrypt_data(vm.password) if vm.password else None
             proxmox.configure_cloud_init(
                 node_name=node.node_name,
                 vmid=vmid,
                 user=vm.username,
-                password=vm.password,
+                password=plain_password,
                 ssh_keys=vm.ssh_key if vm.ssh_key else None,
                 ip_config=ip_config,
                 nameserver=nameserver
@@ -1065,6 +1068,8 @@ class DeploymentService:
 
                 # Create user-data with user, packages and SSH configuration
                 # Create the specified user with proper home directory and password
+                # Decrypt password from database
+                plain_password = decrypt_data(vm.password) if vm.password else None
                 user_data = f"""#cloud-config
 users:
   - name: {vm.username}
@@ -1075,7 +1080,7 @@ users:
     lock_passwd: false
 chpasswd:
   list: |
-    {vm.username}:{vm.password}
+    {vm.username}:{plain_password}
   expire: false
 disable_root: false
 ssh_pwauth: true

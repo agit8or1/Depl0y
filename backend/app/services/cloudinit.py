@@ -59,7 +59,11 @@ class CloudInitService:
         }
 
         if password:
-            user_config["password"] = password
+            # Use chpasswd for plain text password
+            config["chpasswd"] = {
+                "expire": False,
+                "list": [f"{username}:{password}"]
+            }
             user_config["lock_passwd"] = False
         else:
             user_config["lock_passwd"] = True

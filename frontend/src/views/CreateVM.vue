@@ -752,9 +752,9 @@ export default {
 
     // Computed properties for sorted lists
     const sortedStorageList = computed(() => {
-      return [...storageList.value].sort((a, b) =>
-        a.storage.localeCompare(b.storage, undefined, { numeric: true, sensitivity: 'base' })
-      )
+      return [...storageList.value]
+        .filter(s => s.content && s.content.includes('images'))
+        .sort((a, b) => a.storage.localeCompare(b.storage, undefined, { numeric: true, sensitivity: 'base' }))
     })
 
     const sortedISOStorageList = computed(() => {
@@ -865,18 +865,23 @@ export default {
     }
 
     const loadStorage = async (nodeId) => {
+      console.log('[DEBUG] loadStorage START, nodeId:', nodeId)
       loadingStorage.value = true
+      console.log('[DEBUG] loadingStorage set to true')
       try {
+        console.log('[DEBUG] Calling API...')
         const response = await api.proxmox.getNodeStorage(nodeId)
-        storageList.value = response.data.storage
-          .filter(s => s.content && s.content.includes('images'))
-          .sort((a, b) => a.storage.localeCompare(b.storage, undefined, { numeric: true, sensitivity: 'base' }))
+        console.log('[DEBUG] API response received:', response.data)
+        console.log('[DEBUG] Setting storageList.value...')
+        storageList.value = response.data.storage || []
+        console.log('[DEBUG] storageList.value set, length:', storageList.value.length)
 
         // Auto-select first available storage for VM disks
         if (storageList.value.length > 0) {
           const firstStorage = storageList.value.find(s => s.enabled && s.active) || storageList.value[0]
           selectedStorage.value = firstStorage.storage
           formData.value.storage = firstStorage.storage
+          console.log('[DEBUG] Auto-selected storage:', firstStorage.storage)
         }
 
         // Auto-select first available ISO storage
@@ -885,12 +890,17 @@ export default {
           .sort((a, b) => a.storage.localeCompare(b.storage, undefined, { numeric: true, sensitivity: 'base' }))
         if (isoStorages.length > 0) {
           formData.value.iso_storage = isoStorages[0].storage
+          console.log('[DEBUG] Auto-selected ISO storage:', isoStorages[0].storage)
         }
+        console.log('[DEBUG] loadStorage completing successfully')
       } catch (error) {
+        console.error('[DEBUG] loadStorage ERROR:', error)
         console.error('Failed to load storage:', error)
         toast.error('Failed to load storage pools')
       } finally {
+        console.log('[DEBUG] loadStorage FINALLY block, setting loadingStorage to false')
         loadingStorage.value = false
+        console.log('[DEBUG] loadStorage END')
       }
     }
 

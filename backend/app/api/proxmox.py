@@ -11,7 +11,9 @@ from app.models import ProxmoxHost, ProxmoxNode
 from app.api.auth import get_current_user, require_admin
 from app.models import User
 from app.services.proxmox import ProxmoxService, poll_proxmox_resources
+import logging
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 

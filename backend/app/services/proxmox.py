@@ -116,42 +116,31 @@ class ProxmoxService:
             return 100
 
     def get_storage_list(self, node_name: str) -> List[Dict[str, Any]]:
-        """Get storage list for a node with detailed information"""
+        """Get storage list for a node using basic info (fast, no extra queries)"""
         try:
             storages = self.proxmox.nodes(node_name).storage.get()
-            detailed_storages = []
+            storage_list = []
 
             for storage in storages:
                 storage_name = storage.get('storage')
-                try:
-                    # Get detailed storage info
-                    storage_status = self.proxmox.nodes(node_name).storage(storage_name).status.get()
-                    detailed_storages.append({
-                        'storage': storage_name,
-                        'type': storage.get('type'),
-                        'content': storage.get('content', ''),
-                        'active': storage.get('active', 0) == 1,
-                        'enabled': storage.get('enabled', 0) == 1,
-                        'total': storage_status.get('total', 0),
-                        'used': storage_status.get('used', 0),
-                        'available': storage_status.get('avail', 0),
-                        'shared': storage.get('shared', 0) == 1,
-                    })
-                except Exception as e:
-                    logger.warning(f"Failed to get detailed info for storage {storage_name}: {e}")
-                    detailed_storages.append({
-                        'storage': storage_name,
-                        'type': storage.get('type'),
-                        'content': storage.get('content', ''),
-                        'active': storage.get('active', 0) == 1,
-                        'enabled': storage.get('enabled', 0) == 1,
-                        'total': 0,
-                        'used': 0,
-                        'available': 0,
-                        'shared': storage.get('shared', 0) == 1,
-                    })
+                content_value = storage.get('content', '')
+                is_active = storage.get('active', 0) == 1
+                is_enabled = storage.get('enabled', 0) == 1
 
-            return detailed_storages
+                # The basic storage list already includes size info, use it directly
+                storage_list.append({
+                    'storage': storage_name,
+                    'type': storage.get('type'),
+                    'content': content_value,
+                    'active': is_active,
+                    'enabled': is_enabled,
+                    'total': storage.get('total', 0),
+                    'used': storage.get('used', 0),
+                    'available': storage.get('avail', 0),
+                    'shared': storage.get('shared', 0) == 1,
+                })
+
+            return storage_list
         except ResourceException as e:
             logger.error(f"Failed to get storage list: {e}")
             return []

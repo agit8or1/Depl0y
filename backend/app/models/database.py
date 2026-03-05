@@ -300,6 +300,65 @@ class SystemSettings(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
 
+class ScanType(str, enum.Enum):
+    """VM scan type enumeration"""
+    OS_UPDATES = "os_updates"
+    SECURITY = "security"
+    DEPENDENCIES = "dependencies"
+    AI_ANALYSIS = "ai_analysis"
+
+
+class ScanStatus(str, enum.Enum):
+    """VM scan status enumeration"""
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class ScanSeverity(str, enum.Enum):
+    """VM scan severity enumeration"""
+    INFO = "info"
+    WARNING = "warning"
+    CRITICAL = "critical"
+
+
+class VmAgent(Base):
+    """Push agent installed on managed Linux VMs"""
+    __tablename__ = "vm_agents"
+
+    id = Column(Integer, primary_key=True, index=True)
+    vm_id = Column(Integer, ForeignKey("virtual_machines.id"), nullable=True)
+    token = Column(String(36), unique=True, nullable=False, index=True)
+    hostname = Column(String(255), nullable=True)
+    os_info = Column(String(255), nullable=True)
+    agent_version = Column(String(50), nullable=True)
+    enabled = Column(Boolean, default=True, nullable=False)
+    last_seen = Column(DateTime, nullable=True)
+    registered_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relationships
+    vm = relationship("VirtualMachine")
+    scan_results = relationship("VmScanResult", back_populates="agent", cascade="all, delete-orphan")
+
+
+class VmScanResult(Base):
+    """Scan results reported by VM agents"""
+    __tablename__ = "vm_scan_results"
+
+    id = Column(Integer, primary_key=True, index=True)
+    vm_agent_id = Column(Integer, ForeignKey("vm_agents.id"), nullable=False)
+    scan_type = Column(Enum(ScanType), nullable=False)
+    status = Column(Enum(ScanStatus), default=ScanStatus.PENDING, nullable=False)
+    result_json = Column(Text, nullable=True)
+    summary = Column(Text, nullable=True)
+    severity = Column(Enum(ScanSeverity), default=ScanSeverity.INFO, nullable=False)
+    scanned_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relationships
+    agent = relationship("VmAgent", back_populates="scan_results")
+
+
 class LLMDeployment(Base):
     """LLM deployment record - tracks VMs deployed as LLM inference servers"""
     __tablename__ = "llm_deployments"

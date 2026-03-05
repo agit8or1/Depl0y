@@ -83,10 +83,28 @@ const router = createRouter({
       meta: { requiresAuth: true }
     },
     {
+      path: '/about',
+      name: 'About',
+      component: () => import('@/views/About.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
       path: '/bug-report',
       name: 'BugReport',
       component: () => import('@/views/BugReport.vue'),
       meta: { requiresAuth: true }
+    },
+    {
+      path: '/support',
+      name: 'Support',
+      component: () => import('@/views/Support.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/linux-vms',
+      name: 'LinuxVMManagement',
+      component: () => import('@/views/LinuxVMManagement.vue'),
+      meta: { requiresAuth: true, requiresAdmin: true }
     },
     {
       path: '/:pathMatch(.*)*',

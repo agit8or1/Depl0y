@@ -1,5 +1,6 @@
 """LLM cloud-init configuration generator"""
 import base64
+import json
 import logging
 from typing import Any, Dict, List
 
@@ -264,17 +265,151 @@ class LLMCloudInitService:
             }
             model_url = sd_model_urls.get(model, sd_model_urls["sd-v1.5"])
             model_filename = model_url.split("/")[-1]
+            image_size = 1024 if model == "sdxl" else 512
+
+            # Build SD-compatible ComfyUI default workflow
+            sd_workflow = {
+                "last_node_id": 9,
+                "last_link_id": 9,
+                "nodes": [
+                    {
+                        "id": 4,
+                        "type": "CheckpointLoaderSimple",
+                        "pos": [26, 474],
+                        "size": [315, 98],
+                        "flags": {},
+                        "order": 0,
+                        "mode": 0,
+                        "outputs": [
+                            {"name": "MODEL", "type": "MODEL", "links": [1], "slot_index": 0},
+                            {"name": "CLIP", "type": "CLIP", "links": [3, 5], "slot_index": 1},
+                            {"name": "VAE", "type": "VAE", "links": [8], "slot_index": 2},
+                        ],
+                        "properties": {"Node name for S&R": "CheckpointLoaderSimple"},
+                        "widgets_values": [model_filename],
+                    },
+                    {
+                        "id": 6,
+                        "type": "CLIPTextEncode",
+                        "pos": [415, 186],
+                        "size": [422, 164],
+                        "flags": {},
+                        "order": 2,
+                        "mode": 0,
+                        "inputs": [{"name": "clip", "type": "CLIP", "link": 3}],
+                        "outputs": [
+                            {"name": "CONDITIONING", "type": "CONDITIONING", "links": [4], "slot_index": 0}
+                        ],
+                        "properties": {"Node name for S&R": "CLIPTextEncode"},
+                        "widgets_values": ["masterpiece, best quality, beautiful scenery"],
+                    },
+                    {
+                        "id": 7,
+                        "type": "CLIPTextEncode",
+                        "pos": [415, 378],
+                        "size": [422, 164],
+                        "flags": {},
+                        "order": 3,
+                        "mode": 0,
+                        "inputs": [{"name": "clip", "type": "CLIP", "link": 5}],
+                        "outputs": [
+                            {"name": "CONDITIONING", "type": "CONDITIONING", "links": [6], "slot_index": 0}
+                        ],
+                        "properties": {"Node name for S&R": "CLIPTextEncode"},
+                        "widgets_values": ["text, watermark, blurry, low quality"],
+                    },
+                    {
+                        "id": 5,
+                        "type": "EmptyLatentImage",
+                        "pos": [473, 609],
+                        "size": [315, 106],
+                        "flags": {},
+                        "order": 1,
+                        "mode": 0,
+                        "outputs": [
+                            {"name": "LATENT", "type": "LATENT", "links": [2], "slot_index": 0}
+                        ],
+                        "properties": {"Node name for S&R": "EmptyLatentImage"},
+                        "widgets_values": [image_size, image_size, 1],
+                    },
+                    {
+                        "id": 3,
+                        "type": "KSampler",
+                        "pos": [863, 186],
+                        "size": [315, 262],
+                        "flags": {},
+                        "order": 4,
+                        "mode": 0,
+                        "inputs": [
+                            {"name": "model", "type": "MODEL", "link": 1},
+                            {"name": "positive", "type": "CONDITIONING", "link": 4},
+                            {"name": "negative", "type": "CONDITIONING", "link": 6},
+                            {"name": "latent_image", "type": "LATENT", "link": 2},
+                        ],
+                        "outputs": [
+                            {"name": "LATENT", "type": "LATENT", "links": [7], "slot_index": 0}
+                        ],
+                        "properties": {"Node name for S&R": "KSampler"},
+                        "widgets_values": [42, "fixed", 20, 7, "euler", "normal", 1.0],
+                    },
+                    {
+                        "id": 8,
+                        "type": "VAEDecode",
+                        "pos": [1209, 188],
+                        "size": [210, 46],
+                        "flags": {},
+                        "order": 5,
+                        "mode": 0,
+                        "inputs": [
+                            {"name": "samples", "type": "LATENT", "link": 7},
+                            {"name": "vae", "type": "VAE", "link": 8},
+                        ],
+                        "outputs": [
+                            {"name": "IMAGE", "type": "IMAGE", "links": [9], "slot_index": 0}
+                        ],
+                        "properties": {"Node name for S&R": "VAEDecode"},
+                    },
+                    {
+                        "id": 9,
+                        "type": "SaveImage",
+                        "pos": [1451, 189],
+                        "size": [210, 58],
+                        "flags": {},
+                        "order": 6,
+                        "mode": 0,
+                        "inputs": [{"name": "images", "type": "IMAGE", "link": 9}],
+                        "properties": {"Node name for S&R": "SaveImage"},
+                        "widgets_values": ["ComfyUI"],
+                    },
+                ],
+                "links": [
+                    [1, 4, 0, 3, 0, "MODEL"],
+                    [2, 5, 0, 3, 3, "LATENT"],
+                    [3, 4, 1, 6, 0, "CLIP"],
+                    [4, 6, 0, 3, 1, "CONDITIONING"],
+                    [5, 4, 1, 7, 0, "CLIP"],
+                    [6, 7, 0, 3, 2, "CONDITIONING"],
+                    [7, 3, 0, 8, 0, "LATENT"],
+                    [8, 4, 2, 8, 1, "VAE"],
+                    [9, 8, 0, 9, 0, "IMAGE"],
+                ],
+                "groups": [],
+                "config": {},
+                "extra": {},
+                "version": 0.4,
+            }
+            workflow_json = json.dumps(sd_workflow)
 
             # Select PyTorch index URL based on GPU type
             if gpu_enabled and gpu_type == "nvidia":
                 torch_index = "https://download.pytorch.org/whl/cu121"
-                comfyui_args = "--listen 0.0.0.0 --port 8188"
+                comfyui_args = "--listen 0.0.0.0 --port 8188 --default-workflow /opt/comfyui/default_workflow.json"
             elif gpu_enabled and gpu_type == "amd":
                 torch_index = "https://download.pytorch.org/whl/rocm5.6"
-                comfyui_args = "--listen 0.0.0.0 --port 8188"
+                comfyui_args = "--listen 0.0.0.0 --port 8188 --default-workflow /opt/comfyui/default_workflow.json"
             else:
                 torch_index = "https://download.pytorch.org/whl/cpu"
-                comfyui_args = "--listen 0.0.0.0 --port 8188 --cpu --force-fp32"
+                comfyui_args = "--listen 0.0.0.0 --port 8188 --cpu --force-fp32 --default-workflow /opt/comfyui/default_workflow.json"
 
             lines += [
                 "# Install ComfyUI (Stable Diffusion image generation)",
@@ -301,6 +436,11 @@ class LLMCloudInitService:
                 "mkdir -p /opt/comfyui/models/checkpoints",
                 f'wget -q --show-progress -O "/opt/comfyui/models/checkpoints/{model_filename}" \\',
                 f'  "{model_url}" || echo "WARNING: Model download failed. Add model manually to /opt/comfyui/models/checkpoints/"',
+                "",
+                "# Write SD-compatible default workflow (avoids FLUX 'Missing Models' dialog)",
+                "cat > /opt/comfyui/default_workflow.json << 'WORKFLOW_EOF'",
+                workflow_json,
+                "WORKFLOW_EOF",
                 "",
                 "# Create ComfyUI systemd service",
                 "cat > /etc/systemd/system/comfyui.service << 'COMFY_SERVICE_EOF'",

@@ -41,6 +41,11 @@
         <span>HA Management</span>
       </router-link>
 
+      <router-link v-if="isAdmin && linuxAgentEnabled" to="/linux-vms" class="nav-item">
+        <span class="icon">🛡️</span>
+        <span>Linux VM Security</span>
+      </router-link>
+
       <router-link v-if="isAdmin" to="/users" class="nav-item">
         <span class="icon">👥</span>
         <span>Users</span>
@@ -56,9 +61,19 @@
         <span>Documentation</span>
       </router-link>
 
-      <router-link to="/bug-report" class="nav-item">
+      <router-link to="/about" class="nav-item">
+        <span class="icon">ℹ️</span>
+        <span>About</span>
+      </router-link>
+
+      <a href="https://github.com/agit8or1/Depl0y/issues" target="_blank" rel="noopener noreferrer" class="nav-item">
         <span class="icon">🐛</span>
         <span>Report Bug</span>
+      </a>
+
+      <router-link to="/support" class="nav-item nav-item-heart">
+        <span class="icon">❤️</span>
+        <span>Support Project</span>
       </router-link>
     </nav>
 
@@ -81,6 +96,7 @@ export default {
     const isAdmin = computed(() => authStore.isAdmin)
     const isOperator = computed(() => authStore.isOperator || authStore.isAdmin)
     const appVersion = ref('1.1.0') // Fallback version
+    const linuxAgentEnabled = ref(false)
 
     // Fetch version from API
     const fetchVersion = async () => {
@@ -94,14 +110,26 @@ export default {
       }
     }
 
+    const fetchLinuxAgentEnabled = async () => {
+      if (!authStore.isAdmin) return
+      try {
+        const response = await api.vmAgent.getSettings()
+        linuxAgentEnabled.value = response.data.enabled
+      } catch {
+        // ignore
+      }
+    }
+
     onMounted(() => {
       fetchVersion()
+      fetchLinuxAgentEnabled()
     })
 
     return {
       isAdmin,
       isOperator,
-      appVersion
+      appVersion,
+      linuxAgentEnabled
     }
   }
 }
@@ -173,6 +201,14 @@ export default {
 
 .icon {
   font-size: 1.25rem;
+}
+
+.nav-item-heart {
+  color: rgba(255, 200, 200, 0.85);
+}
+
+.nav-item-heart:hover {
+  color: #fca5a5;
 }
 
 .sidebar-footer {

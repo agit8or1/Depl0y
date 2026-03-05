@@ -5,6 +5,13 @@
       <p class="subtitle">Help us improve Depl0y by reporting issues you encounter</p>
     </div>
 
+    <div class="github-banner">
+      <span>💡 Prefer GitHub?</span>
+      <a href="https://github.com/agit8or1/Depl0y/issues" target="_blank" rel="noopener noreferrer" class="github-link">
+        Open an issue directly on GitHub →
+      </a>
+    </div>
+
     <div class="card">
       <form @submit.prevent="submitReport" class="bug-report-form">
         <div class="form-section">

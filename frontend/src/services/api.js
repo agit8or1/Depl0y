@@ -251,5 +251,17 @@ export default {
     deploy: (data) => api.post('/llm/deploy', data),
     listDeployments: () => api.get('/llm/deployments'),
     getDeployment: (id) => api.get(`/llm/deployments/${id}`)
+  },
+
+  // VM Agent
+  vmAgent: {
+    register: (data) => api.post('/vm-agent/register', data),
+    list: () => api.get('/vm-agent/'),
+    get: (id) => api.get(`/vm-agent/${id}`),
+    getScans: (id, limit = 50) => api.get(`/vm-agent/${id}/scans`, { params: { limit } }),
+    delete: (id) => api.delete(`/vm-agent/${id}`),
+    getInstallCommand: (id) => api.get(`/vm-agent/${id}/install-command`),
+    getSettings: () => api.get('/vm-agent/settings/linux-agent'),
+    updateSettings: (data) => api.put('/vm-agent/settings/linux-agent', data)
   }
 }

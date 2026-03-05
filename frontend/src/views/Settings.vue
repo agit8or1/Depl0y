@@ -445,6 +445,64 @@
       </div>
     </div>
 
+    <!-- Linux VM Agent Section (Admin Only) -->
+    <div class="card" v-if="user && user.role === 'admin'">
+      <div class="card-header">
+        <h3>Linux VM Security Agent</h3>
+        <p>Install a lightweight push agent on managed Linux VMs to run automated security scans</p>
+      </div>
+      <div class="card-body">
+        <div class="info-box">
+          <p><strong>What does it do?</strong> The agent runs on each VM, performs OS update checks, security hardening scans, and dependency audits, then POSTs results back to Depl0y.</p>
+          <ul class="feature-list text-sm">
+            <li>OS package update detection</li>
+            <li>Open port and failed login checks</li>
+            <li>Python dependency audit</li>
+            <li>Runs every 12 hours via systemd timer</li>
+          </ul>
+        </div>
+
+        <div v-if="linuxAgentLoading" class="loading-message">
+          <div class="loading-spinner"></div>
+          <p>Loading settings...</p>
+        </div>
+
+        <div v-else class="linux-agent-settings">
+          <div class="toggle-row">
+            <div>
+              <strong>Enable Linux VM Agent</strong>
+              <p class="text-sm text-muted">Allow VMs to register agents and report scan results</p>
+            </div>
+            <label class="toggle-switch">
+              <input
+                type="checkbox"
+                v-model="linuxAgentEnabled"
+                @change="saveLinuxAgentSettings"
+                :disabled="savingLinuxAgent"
+              />
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+
+          <div v-if="linuxAgentEnabled" class="agent-stats">
+            <div class="info-item">
+              <span class="info-label">Registered Agents</span>
+              <span class="info-value">{{ agentCount }}</span>
+            </div>
+            <div style="margin-top: 1rem;">
+              <router-link to="/linux-vms" class="btn btn-primary">
+                Manage Agents
+              </router-link>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="linuxAgentError" class="error-message" style="margin-top: 1rem;">
+          {{ linuxAgentError }}
+        </div>
+      </div>
+    </div>
+
     <!-- About Section -->
     <div class="card">
       <div class="card-header">
@@ -768,6 +826,13 @@ export default {
     const applyingUpdate = ref(false)
     const updateError = ref(null)
     const updateSuccess = ref(null)
+
+    // Linux VM Agent
+    const linuxAgentEnabled = ref(false)
+    const linuxAgentLoading = ref(false)
+    const savingLinuxAgent = ref(false)
+    const linuxAgentError = ref(null)
+    const agentCount = ref(0)
 
     // High Availability
     const haStatus = ref(null)
@@ -1128,6 +1193,36 @@ export default {
       showHAManagement.value = true
     }
 
+    const fetchLinuxAgentSettings = async () => {
+      linuxAgentLoading.value = true
+      try {
+        const [settingsRes, agentsRes] = await Promise.all([
+          api.vmAgent.getSettings(),
+          api.vmAgent.list()
+        ])
+        linuxAgentEnabled.value = settingsRes.data.enabled
+        agentCount.value = agentsRes.data.length
+      } catch (error) {
+        // Non-admin or feature not yet configured — silently ignore
+      } finally {
+        linuxAgentLoading.value = false
+      }
+    }
+
+    const saveLinuxAgentSettings = async () => {
+      savingLinuxAgent.value = true
+      linuxAgentError.value = null
+      try {
+        await api.vmAgent.updateSettings({ enabled: linuxAgentEnabled.value, ai_enabled: false })
+        toast.success(`Linux VM Agent ${linuxAgentEnabled.value ? 'enabled' : 'disabled'}`)
+      } catch (error) {
+        linuxAgentError.value = error.response?.data?.detail || 'Failed to save settings'
+        toast.error('Failed to save Linux Agent settings')
+      } finally {
+        savingLinuxAgent.value = false
+      }
+    }
+
     onMounted(() => {
       fetchUser()
       fetchSystemInfo()
@@ -1135,6 +1230,7 @@ export default {
       checkClusterSSHStatus()
       checkForUpdates()
       checkHAStatus()
+      fetchLinuxAgentSettings()
     })
 
     return {
@@ -1197,7 +1293,13 @@ export default {
       showHAManagement,
       checkHAStatus,
       enableHA,
-      manageHAGroups
+      manageHAGroups,
+      linuxAgentEnabled,
+      linuxAgentLoading,
+      savingLinuxAgent,
+      linuxAgentError,
+      agentCount,
+      saveLinuxAgentSettings
     }
   }
 }
@@ -1747,6 +1849,67 @@ export default {
   padding: 0.875rem 1.75rem;
   font-size: 1.125rem;
   font-weight: 600;
+}
+
+.toggle-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 0;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 52px;
+  height: 28px;
+  flex-shrink: 0;
+}
+
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background-color: #cbd5e1;
+  border-radius: 28px;
+  transition: 0.2s;
+}
+
+.toggle-slider:before {
+  position: absolute;
+  content: "";
+  height: 20px;
+  width: 20px;
+  left: 4px;
+  bottom: 4px;
+  background-color: white;
+  border-radius: 50%;
+  transition: 0.2s;
+}
+
+.toggle-switch input:checked + .toggle-slider {
+  background-color: #3b82f6;
+}
+
+.toggle-switch input:checked + .toggle-slider:before {
+  transform: translateX(24px);
+}
+
+.linux-agent-settings {
+  margin-top: 1rem;
+}
+
+.agent-stats {
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border-color);
 }
 
 .error-message {

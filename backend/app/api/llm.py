@@ -977,6 +977,16 @@ async def ai_tune_vm(
             "ollama_models": run("ollama list 2>/dev/null | tail -n +2 || echo 'N/A'"),
             "comfyui_installed": run("[ -d /opt/comfyui ] && echo yes || echo no"),
             "ollama_installed": run("which ollama 2>/dev/null && echo yes || echo no"),
+            # State checks — skip actions already applied
+            "comfyui_lowvram_set": run(
+                "grep -q -- '--lowvram' /etc/systemd/system/comfyui.service 2>/dev/null && echo yes || echo no"
+            ),
+            "xformers_installed": run(
+                "(/opt/comfyui/venv/bin/pip show xformers 2>/dev/null || pip3 show xformers 2>/dev/null) | grep -q 'Name: xformers' && echo yes || echo no"
+            ),
+            "ollama_perf_set": run(
+                "grep -q 'OLLAMA_NUM_PARALLEL' /etc/systemd/system/ollama.service 2>/dev/null && echo yes || echo no"
+            ),
         }
         client.close()
 
@@ -1155,24 +1165,34 @@ def _generate_ai_tune_recommendations(diag: dict) -> dict:
         actions.append({**_TUNE_ACTIONS["update_nvidia_drivers"], "id": "update_nvidia_drivers"})
 
     if has_ollama:
-        recs += [
-            "",
-            "Ollama tuning:",
-            "  OLLAMA_NUM_PARALLEL=2      # allow 2 concurrent requests",
-            "  OLLAMA_MAX_LOADED_MODELS=1 # prevent VRAM fragmentation",
-            "  Apply via: systemctl daemon-reload && systemctl restart ollama",
-        ]
-        actions.append({**_TUNE_ACTIONS["ollama_perf_env"], "id": "ollama_perf_env"})
+        ollama_perf_set = diag.get("ollama_perf_set") == "yes"
+        if not ollama_perf_set:
+            recs += [
+                "",
+                "Ollama tuning:",
+                "  OLLAMA_NUM_PARALLEL=2      # allow 2 concurrent requests",
+                "  OLLAMA_MAX_LOADED_MODELS=1 # prevent VRAM fragmentation",
+                "  Apply via: systemctl daemon-reload && systemctl restart ollama",
+            ]
+            actions.append({**_TUNE_ACTIONS["ollama_perf_env"], "id": "ollama_perf_env"})
+        else:
+            recs += ["", "Ollama: performance env vars already applied. ✓"]
 
     if has_comfyui:
-        recs += [
-            "",
-            "ComfyUI tuning:",
-            "• Low VRAM mode: add --lowvram to ExecStart in /etc/systemd/system/comfyui.service",
-            "• Install xformers for faster attention: pip install xformers",
-        ]
-        actions.append({**_TUNE_ACTIONS["comfyui_lowvram"], "id": "comfyui_lowvram"})
-        actions.append({**_TUNE_ACTIONS["install_xformers"], "id": "install_xformers"})
+        lowvram_set = diag.get("comfyui_lowvram_set") == "yes"
+        xformers_ok = diag.get("xformers_installed") == "yes"
+        comfyui_recs = []
+        if not lowvram_set:
+            comfyui_recs.append("• Low VRAM mode: add --lowvram to ExecStart in /etc/systemd/system/comfyui.service")
+            actions.append({**_TUNE_ACTIONS["comfyui_lowvram"], "id": "comfyui_lowvram"})
+        else:
+            comfyui_recs.append("• Low VRAM mode: already enabled. ✓")
+        if not xformers_ok:
+            comfyui_recs.append("• Install xformers for faster attention: pip install xformers")
+            actions.append({**_TUNE_ACTIONS["install_xformers"], "id": "install_xformers"})
+        else:
+            comfyui_recs.append("• xformers: already installed. ✓")
+        recs += ["", "ComfyUI tuning:"] + comfyui_recs
 
     if not recs:
         recs.append("No running LLM services detected. Ensure Ollama/llama.cpp/ComfyUI is running.")

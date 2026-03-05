@@ -273,6 +273,7 @@ export default {
     getSettings: () => api.get('/vm-agent/settings/linux-agent'),
     updateSettings: (data) => api.put('/vm-agent/settings/linux-agent', data),
     runAITune: (vmId) => api.post(`/llm/ai-tune/${vmId}`),
-    applyTuneAction: (vmId, actionId) => api.post(`/llm/ai-tune/${vmId}/apply`, { action_id: actionId })
+    applyTuneAction: (vmId, actionId) => api.post(`/llm/ai-tune/${vmId}/apply`, { action_id: actionId }),
+    getApplyJobStatus: (vmId, jobId) => api.get(`/llm/ai-tune/${vmId}/apply/${jobId}`)
   }
 }

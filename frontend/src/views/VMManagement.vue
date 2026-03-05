@@ -579,6 +579,26 @@
                     {{ applyingAction[vm.vmid] === action.id ? 'Applying...' : applyResults[vm.vmid]?.[action.id]?.ok ? 'Applied' : 'Apply' }}
                   </button>
                 </div>
+                <!-- Live apply terminal -->
+                <div v-if="tuneApplyJobs[vm.vmid]" class="live-log-panel" style="margin-top:0.75rem">
+                  <div class="live-log-header">
+                    <span class="live-log-title">
+                      <span v-if="tuneApplyJobs[vm.vmid].status === 'running'" class="live-dot"></span>
+                      {{ tuneApplyJobs[vm.vmid].action || 'Applying…' }}
+                    </span>
+                    <div class="live-log-meta">
+                      <span v-if="tuneApplyJobs[vm.vmid].status === 'completed'" class="text-success text-sm">✅ Done</span>
+                      <span v-else-if="tuneApplyJobs[vm.vmid].status === 'failed'" class="text-danger text-sm">
+                        ❌ {{ tuneApplyJobs[vm.vmid].error || 'Failed' }}
+                      </span>
+                      <span :class="['badge', tuneApplyJobs[vm.vmid].status === 'completed' ? 'badge-success' : tuneApplyJobs[vm.vmid].status === 'failed' ? 'badge-danger' : 'badge-warning']">
+                        {{ tuneApplyJobs[vm.vmid].status }}
+                      </span>
+                      <button class="btn btn-xs" @click="closeTuneApplyLog(vm.vmid)" style="margin-left:0.5rem">✕</button>
+                    </div>
+                  </div>
+                  <pre class="live-log-output" :id="`tuneapply-${vm.vmid}`">{{ tuneApplyJobs[vm.vmid].output || 'Starting…' }}</pre>
+                </div>
               </div>
             </div>
           </div>
@@ -611,8 +631,10 @@ export default {
     const loadingHistory = ref({})
     const tuningVM = ref(null)
     const tuningResults = ref({})
-    const applyingAction = ref({})  // vmid → action_id being applied
-    const applyResults = ref({})    // vmid → { action_id → { ok, error } }
+    const applyingAction = ref({})   // vmid → action_id being applied
+    const applyResults = ref({})     // vmid → { action_id → { ok, error } }
+    const tuneApplyJobs = ref({})    // vmid → { jobId, status, output, error, actionId }
+    const tuneApplyPollers = ref({}) // vmid → interval ID
     const liveLog = ref({})         // vmid → { status, output, packages_updated, error_message }
     const liveLogPollers = ref({})  // vmid → interval ID
     const schedule = ref({
@@ -682,24 +704,52 @@ export default {
       }
     }
 
+    const closeTuneApplyLog = (vmid) => {
+      if (tuneApplyPollers.value[vmid]) {
+        clearInterval(tuneApplyPollers.value[vmid])
+        delete tuneApplyPollers.value[vmid]
+      }
+      delete tuneApplyJobs.value[vmid]
+    }
+
     const applyTuneAction = async (vm, actionId) => {
       const managed = getManagedVM(vm.vmid)
       if (!managed) return
       applyingAction.value = { ...applyingAction.value, [vm.vmid]: actionId }
+      // Clear any previous log for this VM
+      closeTuneApplyLog(vm.vmid)
       try {
-        await api.vmAgent.applyTuneAction(managed.id, actionId)
-        applyResults.value = {
-          ...applyResults.value,
-          [vm.vmid]: { ...(applyResults.value[vm.vmid] || {}), [actionId]: { ok: true } }
-        }
-        toast.success('Tuning action applied successfully')
+        const res = await api.vmAgent.applyTuneAction(managed.id, actionId)
+        const jobId = res.data.job_id
+        // Open live terminal immediately
+        tuneApplyJobs.value[vm.vmid] = { jobId, actionId, status: 'running', output: '', error: null }
+        // Poll for progress
+        tuneApplyPollers.value[vm.vmid] = setInterval(async () => {
+          try {
+            const poll = await api.vmAgent.getApplyJobStatus(managed.id, jobId)
+            tuneApplyJobs.value[vm.vmid] = { ...tuneApplyJobs.value[vm.vmid], ...poll.data }
+            if (poll.data.status === 'completed') {
+              clearInterval(tuneApplyPollers.value[vm.vmid])
+              delete tuneApplyPollers.value[vm.vmid]
+              applyingAction.value = { ...applyingAction.value, [vm.vmid]: null }
+              applyResults.value = {
+                ...applyResults.value,
+                [vm.vmid]: { ...(applyResults.value[vm.vmid] || {}), [actionId]: { ok: true } }
+              }
+              toast.success('Tuning action applied successfully')
+            } else if (poll.data.status === 'failed') {
+              clearInterval(tuneApplyPollers.value[vm.vmid])
+              delete tuneApplyPollers.value[vm.vmid]
+              applyingAction.value = { ...applyingAction.value, [vm.vmid]: null }
+            }
+          } catch { /* poll error — keep trying */ }
+        }, 1200)
       } catch (err) {
         const msg = err.response?.data?.detail || 'Apply failed'
         applyResults.value = {
           ...applyResults.value,
           [vm.vmid]: { ...(applyResults.value[vm.vmid] || {}), [actionId]: { ok: false, error: msg } }
         }
-      } finally {
         applyingAction.value = { ...applyingAction.value, [vm.vmid]: null }
       }
     }
@@ -1017,8 +1067,19 @@ export default {
     }, { deep: true })
 
     // Clean up pollers on unmount
+    // Auto-scroll tune apply terminal
+    watch(tuneApplyJobs, () => {
+      nextTick(() => {
+        Object.keys(tuneApplyJobs.value).forEach(vmid => {
+          const el = document.getElementById(`tuneapply-${vmid}`)
+          if (el) el.scrollTop = el.scrollHeight
+        })
+      })
+    }, { deep: true })
+
     onUnmounted(() => {
       Object.values(liveLogPollers.value).forEach(id => clearInterval(id))
+      Object.values(tuneApplyPollers.value).forEach(id => clearInterval(id))
     })
 
     onMounted(() => {
@@ -1031,6 +1092,7 @@ export default {
       expandedVM, updatingVM, updateAction, updateChecks,
       updateHistory, loadingHistory, tuningVM, tuningResults, llmVMs,
       applyingAction, applyResults, applyTuneAction,
+      tuneApplyJobs, closeTuneApplyLog,
       liveLog, closeLiveLog,
       loadVMs, loadMonitoring, checkUpdates, installUpdates,
       toggleHistory, runAITune, getManagedVM,

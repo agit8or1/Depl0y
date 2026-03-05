@@ -1054,6 +1054,64 @@ _TUNE_ACTIONS = {
 }
 
 
+# ── Apply job store (in-memory, keyed by uuid) ─────────────────────────────
+import uuid as _uuid_mod
+import threading as _threading
+import time as _time
+
+_apply_jobs: dict = {}  # job_id → {status, output, error, created_at}
+
+
+def _run_apply_job(job_id: str, commands: list, ip: str, username: str, password):
+    """Execute tuning commands via SSH, streaming output to the job store."""
+    import paramiko, shlex
+    job = _apply_jobs[job_id]
+    try:
+        client = paramiko.SSHClient()
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        client.connect(ip, username=username, password=password, timeout=30)
+
+        for cmd in commands:
+            job["output"] += f"$ {cmd}\n"
+            stdin, stdout, stderr = client.exec_command(
+                f"sudo -S bash -c {shlex.quote(cmd)}"
+            )
+            if password:
+                stdin.write((password + "\n").encode())
+                stdin.flush()
+                stdin.channel.shutdown_write()
+            # Stream stdout line-by-line so the frontend sees progress in real time
+            for line in stdout:
+                job["output"] += line
+            err = stderr.read().decode("utf-8", errors="replace").strip()
+            exit_code = stdout.channel.recv_exit_status()
+            real_err = "\n".join(
+                l for l in err.splitlines()
+                if l.strip() and not l.startswith("[sudo]") and "password for" not in l.lower()
+            )
+            if exit_code != 0 and real_err:
+                job["status"] = "failed"
+                job["error"] = f"Command failed (exit {exit_code}): {real_err}"
+                client.close()
+                return
+
+        client.close()
+        job["status"] = "completed"
+
+    except Exception as e:
+        job["status"] = "failed"
+        job["error"] = str(e)
+
+
+def _cleanup_apply_jobs():
+    """Drop completed/failed jobs older than 10 minutes."""
+    cutoff = _time.time() - 600
+    stale = [jid for jid, j in list(_apply_jobs.items())
+             if j.get("created_at", 0) < cutoff and j["status"] != "running"]
+    for jid in stale:
+        _apply_jobs.pop(jid, None)
+
+
 @router.post("/ai-tune/{vm_id}/apply")
 async def apply_ai_tune_action(
     vm_id: int,
@@ -1061,14 +1119,10 @@ async def apply_ai_tune_action(
     current_user: User = Depends(require_operator),
     db: Session = Depends(get_db),
 ):
-    """Execute a pre-approved tuning action on an LLM VM via SSH"""
-    import paramiko
-
+    """Start a tuning action in a background thread; returns job_id for polling."""
     action_id = body.get("action_id")
     if action_id not in _TUNE_ACTIONS:
         raise HTTPException(status_code=400, detail=f"Unknown action '{action_id}'")
-
-    action = _TUNE_ACTIONS[action_id]
 
     from app.models import VirtualMachine
     vm = db.query(VirtualMachine).filter(VirtualMachine.id == vm_id).first()
@@ -1085,50 +1139,35 @@ async def apply_ai_tune_action(
         except Exception:
             password = vm.password
 
-    try:
-        client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        client.connect(vm.ip_address, username=vm.username, password=password, timeout=30)
+    _cleanup_apply_jobs()
+    job_id = str(_uuid_mod.uuid4())
+    _apply_jobs[job_id] = {
+        "status": "running",
+        "output": "",
+        "error": None,
+        "action": _TUNE_ACTIONS[action_id]["label"],
+        "created_at": _time.time(),
+    }
+    t = _threading.Thread(
+        target=_run_apply_job,
+        args=(job_id, _TUNE_ACTIONS[action_id]["commands"], vm.ip_address, vm.username, password),
+        daemon=True,
+    )
+    t.start()
+    return {"job_id": job_id, "status": "started"}
 
-        import shlex
-        outputs = []
-        for cmd in action["commands"]:
-            # Wrap in bash -c so compound commands (||, &&) all run under sudo
-            stdin, stdout, stderr = client.exec_command(f"sudo -S bash -c {shlex.quote(cmd)}")
-            if password:
-                stdin.write((password + "\n").encode())
-                stdin.flush()
-                stdin.channel.shutdown_write()
-            out = stdout.read().decode("utf-8", errors="replace").strip()
-            err = stderr.read().decode("utf-8", errors="replace").strip()
-            exit_code = stdout.channel.recv_exit_status()
-            # Filter sudo password prompt from stderr
-            real_err = "\n".join(
-                l for l in err.splitlines()
-                if l.strip() and not l.startswith("[sudo]") and "password for" not in l.lower()
-            )
-            if exit_code != 0 and real_err:
-                client.close()
-                raise HTTPException(
-                    status_code=500,
-                    detail=f"Command failed (exit {exit_code}): {real_err}",
-                )
-            if out:
-                outputs.append(out)
 
-        client.close()
-        return {
-            "status": "applied",
-            "action": action["label"],
-            "output": "\n".join(outputs) if outputs else "Done",
-        }
-
-    except HTTPException:
-        raise
-    except paramiko.AuthenticationException:
-        raise HTTPException(status_code=401, detail="SSH authentication failed")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Apply failed: {str(e)}")
+@router.get("/ai-tune/{vm_id}/apply/{job_id}")
+async def get_apply_job_status(
+    vm_id: int,
+    job_id: str,
+    current_user: User = Depends(require_operator),
+):
+    """Poll for apply-action progress."""
+    job = _apply_jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found or expired")
+    return job
 
 
 def _generate_ai_tune_recommendations(diag: dict) -> dict:

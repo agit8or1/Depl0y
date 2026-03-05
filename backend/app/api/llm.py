@@ -1039,14 +1039,14 @@ _TUNE_ACTIONS = {
         ],
     },
     "install_xformers": {
-        "label": "Install xformers",
-        "description": "Installs xformers for faster attention operations and restarts ComfyUI",
+        "label": "Install xformers (GPU only)",
+        "description": "Installs xformers for faster GPU attention operations and restarts ComfyUI. Requires CUDA.",
         "commands": [
             # Prefer ComfyUI venv; fall back to system pip3 with --break-system-packages
             # (required on Ubuntu 24.04+ due to PEP 668 externally-managed-environment)
             "if [ -f /opt/comfyui/venv/bin/pip ]; then"
-            " /opt/comfyui/venv/bin/pip install xformers --quiet;"
-            " else pip3 install xformers --quiet --break-system-packages; fi",
+            " /opt/comfyui/venv/bin/pip install xformers --quiet --timeout 120;"
+            " else pip3 install xformers --quiet --break-system-packages --timeout 120; fi",
             "systemctl restart comfyui",
         ],
     },
@@ -1094,9 +1094,22 @@ def _run_apply_job(job_id: str, commands: list, ip: str, username: str, password
                 job["output"] += line
             err = stderr.read().decode("utf-8", errors="replace").strip()
             exit_code = stdout.channel.recv_exit_status()
+            # -1 means the channel closed without a status (connection dropped);
+            # treat as a transient failure rather than a hard error
+            if exit_code == -1:
+                job["output"] += "\n[connection lost or command timed out]\n"
+                job["status"] = "failed"
+                job["error"] = "SSH channel closed before command finished (connection lost or timeout)"
+                client.close()
+                return
+            # Filter noise from stderr: sudo prompts, pip WARNING lines, blank lines
             real_err = "\n".join(
                 l for l in err.splitlines()
-                if l.strip() and not l.startswith("[sudo]") and "password for" not in l.lower()
+                if l.strip()
+                and not l.startswith("[sudo]")
+                and "password for" not in l.lower()
+                and not l.startswith("WARNING:")
+                and not l.startswith("DEPRECATION:")
             )
             if exit_code != 0 and real_err:
                 job["status"] = "failed"
@@ -1239,8 +1252,11 @@ def _generate_ai_tune_recommendations(diag: dict) -> dict:
             actions.append({**_TUNE_ACTIONS["comfyui_lowvram"], "id": "comfyui_lowvram"})
         else:
             comfyui_recs.append("• Low VRAM mode: already enabled. ✓")
-        if not xformers_ok:
-            comfyui_recs.append("• Install xformers for faster attention: pip install xformers")
+        # xformers requires CUDA — pointless (and hangs) on CPU-only deployments
+        if cpu_mode:
+            comfyui_recs.append("• xformers: not applicable in CPU mode (requires CUDA).")
+        elif not xformers_ok:
+            comfyui_recs.append("• Install xformers for faster attention (GPU only)")
             actions.append({**_TUNE_ACTIONS["install_xformers"], "id": "install_xformers"})
         else:
             comfyui_recs.append("• xformers: already installed. ✓")

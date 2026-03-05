@@ -977,9 +977,14 @@ async def ai_tune_vm(
             "ollama_models": run("ollama list 2>/dev/null | tail -n +2 || echo 'N/A'"),
             "comfyui_installed": run("[ -d /opt/comfyui ] && echo yes || echo no"),
             "ollama_installed": run("which ollama 2>/dev/null && echo yes || echo no"),
-            # State checks — skip actions already applied
+            # State checks — skip actions already applied / not applicable
             "comfyui_lowvram_set": run(
                 "grep -q -- '--lowvram' /etc/systemd/system/comfyui.service 2>/dev/null && echo yes || echo no"
+            ),
+            # --lowvram is mutually exclusive with --cpu in ComfyUI's arg parser;
+            # never offer it on CPU-only deployments
+            "comfyui_cpu_mode": run(
+                "grep -q -- '--cpu' /etc/systemd/system/comfyui.service 2>/dev/null && echo yes || echo no"
             ),
             "xformers_installed": run(
                 "(/opt/comfyui/venv/bin/pip show xformers 2>/dev/null || pip3 show xformers 2>/dev/null) | grep -q 'Name: xformers' && echo yes || echo no"
@@ -1020,9 +1025,13 @@ _TUNE_ACTIONS = {
     },
     "comfyui_lowvram": {
         "label": "Enable ComfyUI low VRAM mode",
-        "description": "Adds --lowvram to ComfyUI's ExecStart in systemd and restarts the service",
+        "description": "Adds --lowvram to ComfyUI's ExecStart in systemd and restarts the service (GPU deployments only)",
         "commands": [
-            # Match any ExecStart= line (not just ones containing 'comfyui')
+            # Guard: --lowvram is mutually exclusive with --cpu in ComfyUI's arg parser.
+            # Abort with a clear error if --cpu is present rather than corrupting the service file.
+            "grep -q -- '--cpu' /etc/systemd/system/comfyui.service && "
+            "{ echo 'ERROR: --lowvram conflicts with --cpu (CPU-only deployment). Skipping.'; exit 1; } || true",
+            # Only add if not already present
             "grep -q -- '--lowvram' /etc/systemd/system/comfyui.service || "
             "sed -i '/^ExecStart=/ s/$/ --lowvram/' /etc/systemd/system/comfyui.service",
             "systemctl daemon-reload",
@@ -1218,10 +1227,14 @@ def _generate_ai_tune_recommendations(diag: dict) -> dict:
             recs += ["", "Ollama: performance env vars already applied. ✓"]
 
     if has_comfyui:
+        cpu_mode = diag.get("comfyui_cpu_mode") == "yes"
         lowvram_set = diag.get("comfyui_lowvram_set") == "yes"
         xformers_ok = diag.get("xformers_installed") == "yes"
         comfyui_recs = []
-        if not lowvram_set:
+        # --lowvram is mutually exclusive with --cpu; only suggest it for GPU deployments
+        if cpu_mode:
+            comfyui_recs.append("• Running in CPU mode (--cpu) — --lowvram is not applicable here.")
+        elif not lowvram_set:
             comfyui_recs.append("• Low VRAM mode: add --lowvram to ExecStart in /etc/systemd/system/comfyui.service")
             actions.append({**_TUNE_ACTIONS["comfyui_lowvram"], "id": "comfyui_lowvram"})
         else:

@@ -1023,8 +1023,11 @@ _TUNE_ACTIONS = {
         "label": "Install xformers",
         "description": "Installs xformers for faster attention operations and restarts ComfyUI",
         "commands": [
-            # Use the ComfyUI venv pip if it exists, otherwise fall back to pip3
-            "/opt/comfyui/venv/bin/pip install xformers --quiet 2>/dev/null || pip3 install xformers --quiet",
+            # Prefer ComfyUI venv; fall back to system pip3 with --break-system-packages
+            # (required on Ubuntu 24.04+ due to PEP 668 externally-managed-environment)
+            "if [ -f /opt/comfyui/venv/bin/pip ]; then"
+            " /opt/comfyui/venv/bin/pip install xformers --quiet;"
+            " else pip3 install xformers --quiet --break-system-packages; fi",
             "systemctl restart comfyui",
         ],
     },

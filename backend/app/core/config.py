@@ -26,7 +26,7 @@ def get_app_version():
         # Fallback to hardcoded version if database query fails
         pass
 
-    return "1.5.3"  # nginx cache headers, login autocomplete fix
+    return "1.5.4"  # IP auto-fetch, sortable/searchable columns
 
 
 class Settings(BaseSettings):

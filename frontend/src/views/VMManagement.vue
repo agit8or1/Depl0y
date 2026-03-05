@@ -27,6 +27,11 @@
           <button @click="loadVMs" class="btn btn-outline" :disabled="loadingVMs">Refresh</button>
         </div>
 
+        <div class="table-toolbar">
+          <input v-model="search" class="search-input" placeholder="Search VMs, VMID, IP, OS..." />
+          <span class="text-sm text-muted">{{ filteredVMs.length }} of {{ vms.length }} VMs</span>
+        </div>
+
         <div v-if="loadingVMs" class="loading-row">
           <div class="loading-spinner"></div>
           <span>Loading VMs...</span>
@@ -36,20 +41,24 @@
           <p>No virtual machines found.</p>
         </div>
 
+        <div v-else-if="filteredVMs.length === 0" class="empty-state">
+          <p>No VMs match "{{ search }}"</p>
+        </div>
+
         <div v-else class="table-wrapper">
           <table class="mgmt-table">
             <thead>
               <tr>
-                <th>VM</th>
+                <th class="th-sortable" @click="setSort('name')">VM <span class="sort-icon">{{ sortIcon('name') }}</span></th>
                 <th>OS</th>
-                <th>IP Address</th>
-                <th>Status</th>
+                <th class="th-sortable" @click="setSort('ip')">IP Address <span class="sort-icon">{{ sortIcon('ip') }}</span></th>
+                <th class="th-sortable" @click="setSort('status')">Status <span class="sort-icon">{{ sortIcon('status') }}</span></th>
                 <th>Last Update Check</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
-              <template v-for="vm in vms" :key="vm.vmid">
+              <template v-for="vm in filteredVMs" :key="vm.vmid">
                 <tr :class="{ 'row-expanded': expandedVM === vm.vmid }">
                   <td>
                     <div class="vm-name">
@@ -171,8 +180,11 @@
         <div class="cred-modal-body">
           <p class="cred-note">These credentials are used to SSH into the VM for update and security scan operations.</p>
           <div class="form-group">
-            <label class="form-label">IP Address</label>
-            <input v-model="credForm.ip_address" class="form-control" placeholder="192.168.1.100" autocomplete="off" />
+            <label class="form-label">
+              IP Address
+              <span v-if="fetchingIP" class="fetching-ip">fetching from agent...</span>
+            </label>
+            <input v-model="credForm.ip_address" class="form-control" placeholder="192.168.1.100" autocomplete="off" :disabled="fetchingIP" />
           </div>
           <div class="form-group">
             <label class="form-label">Username</label>
@@ -220,15 +232,15 @@
           <table class="mgmt-table">
             <thead>
               <tr>
-                <th>VM</th>
-                <th>IP Address</th>
-                <th>Status</th>
+                <th class="th-sortable" @click="setSort('name')">VM <span class="sort-icon">{{ sortIcon('name') }}</span></th>
+                <th class="th-sortable" @click="setSort('ip')">IP Address <span class="sort-icon">{{ sortIcon('ip') }}</span></th>
+                <th class="th-sortable" @click="setSort('status')">Status <span class="sort-icon">{{ sortIcon('status') }}</span></th>
                 <th>Last Scan</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
-              <template v-for="vm in vms" :key="vm.vmid">
+              <template v-for="vm in filteredVMs" :key="vm.vmid">
                 <tr>
                   <td>
                     <div class="vm-name">
@@ -497,14 +509,61 @@ export default {
     const credModal = ref({ show: false, vm: null })
     const credForm = ref({ ip_address: '', username: '', password: '', saveToDb: true })
     const savingCreds = ref(false)
+    const fetchingIP = ref(false)
     const sessionCreds = ref({})   // vmid → { ip_address, username, password } for session-only creds
     const scanResults = ref({})    // vmid → scan result object
     const scanning = ref(null)     // vmid currently being scanned
     const scanExpanded = ref({})   // vmid → bool
+    const search = ref('')
+    const sortKey = ref('name')
+    const sortDir = ref('asc')
 
     // Returns the DB-managed VM matching a Proxmox vmid (for update/SSH ops)
-    const getManagedVM = (vmid) => managedVMs.value.find(m => m.vmid === vmid) || null
+    // Uses Number() to safely compare regardless of whether vmid is string or integer
+    const getManagedVM = (vmid) => {
+      const id = Number(vmid)
+      return managedVMs.value.find(m => Number(m.vmid) === id) || null
+    }
 
+
+    const setSort = (key) => {
+      if (sortKey.value === key) {
+        sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc'
+      } else {
+        sortKey.value = key
+        sortDir.value = 'asc'
+      }
+    }
+
+    const filteredVMs = computed(() => {
+      const q = search.value.toLowerCase().trim()
+      let list = q
+        ? vms.value.filter(vm =>
+            vm.name?.toLowerCase().includes(q) ||
+            String(vm.vmid).includes(q) ||
+            vm.node?.toLowerCase().includes(q) ||
+            getManagedVM(vm.vmid)?.ip_address?.includes(q) ||
+            getManagedVM(vm.vmid)?.os_type?.toLowerCase().includes(q)
+          )
+        : [...vms.value]
+
+      list.sort((a, b) => {
+        let av, bv
+        if (sortKey.value === 'vmid') { av = Number(a.vmid); bv = Number(b.vmid) }
+        else if (sortKey.value === 'ip') { av = getManagedVM(a.vmid)?.ip_address || ''; bv = getManagedVM(b.vmid)?.ip_address || '' }
+        else if (sortKey.value === 'status') { av = a.status || ''; bv = b.status || '' }
+        else { av = (a.name || '').toLowerCase(); bv = (b.name || '').toLowerCase() }
+        if (av < bv) return sortDir.value === 'asc' ? -1 : 1
+        if (av > bv) return sortDir.value === 'asc' ? 1 : -1
+        return 0
+      })
+      return list
+    })
+
+    const sortIcon = (key) => {
+      if (sortKey.value !== key) return '↕'
+      return sortDir.value === 'asc' ? '↑' : '↓'
+    }
 
     const tabs = computed(() => [
       { id: 'updates', label: 'Updates', icon: '🔄', badge: null },
@@ -539,9 +598,8 @@ export default {
       }
     }
 
-    const openCredModal = (vm) => {
+    const openCredModal = async (vm) => {
       const managed = getManagedVM(vm.vmid)
-      // Pre-fill: managed DB record first, then session creds
       const sess = sessionCreds.value[vm.vmid]
       credModal.value = { show: true, vm, managed }
       credForm.value = {
@@ -549,6 +607,17 @@ export default {
         username: managed?.username || sess?.username || '',
         password: '',
         saveToDb: true,
+      }
+      // If no IP stored anywhere and VM is running, auto-fetch from QEMU guest agent
+      if (!credForm.value.ip_address && vm.status === 'running' && vm.node) {
+        fetchingIP.value = true
+        try {
+          const res = await api.vms.getAgentIP(vm.node, vm.vmid)
+          if (res.data?.ip_address) {
+            credForm.value.ip_address = res.data.ip_address
+          }
+        } catch { /* agent not available or not running — field stays blank */ }
+        finally { fetchingIP.value = false }
       }
     }
 
@@ -729,7 +798,8 @@ export default {
       toggleHistory, runAITune, getManagedVM,
       runScan, scanResults, scanning, scanExpanded,
       getVMStatusBadge, formatDate, formatBytes, formatMB,
-      credModal, credForm, savingCreds, openCredModal, saveCredentials, sessionCreds,
+      credModal, credForm, savingCreds, fetchingIP, openCredModal, saveCredentials, sessionCreds,
+      search, sortKey, sortDir, filteredVMs, setSort, sortIcon,
     }
   }
 }
@@ -792,8 +862,43 @@ export default {
   font-weight: 700;
 }
 
+/* Toolbar */
+.table-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.search-input {
+  flex: 1;
+  max-width: 320px;
+  padding: 0.45rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  background: var(--card-bg, #fff);
+  color: var(--text-primary);
+  outline: none;
+}
+
+.search-input:focus { border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59,130,246,0.15); }
+
 /* Table */
 .table-wrapper { overflow-x: auto; }
+
+.th-sortable {
+  cursor: pointer;
+  user-select: none;
+}
+.th-sortable:hover { color: var(--text-primary); }
+
+.sort-icon {
+  font-size: 0.7rem;
+  opacity: 0.6;
+  margin-left: 0.2rem;
+}
 
 .mgmt-table {
   width: 100%;
@@ -1102,6 +1207,13 @@ export default {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+}
+
+.fetching-ip {
+  font-size: 0.75rem;
+  color: #3b82f6;
+  font-weight: 400;
+  margin-left: 0.5rem;
 }
 
 .cred-note {

@@ -149,7 +149,8 @@ export default {
     stopByVmid: (vmid, node) => api.post(`/vms/control/${node}/${vmid}/stop`),
     powerOffByVmid: (vmid, node) => api.post(`/vms/control/${node}/${vmid}/shutdown`),
     restartByVmid: (vmid, node) => api.post(`/vms/control/${node}/${vmid}/restart`),
-    deleteByVmid: (vmid, node) => api.delete(`/vms/control/${node}/${vmid}/delete`)
+    deleteByVmid: (vmid, node) => api.delete(`/vms/control/${node}/${vmid}/delete`),
+    getAgentIP: (node, vmid) => api.get(`/vms/control/${node}/${vmid}/ip`)
   },
 
   // ISOs

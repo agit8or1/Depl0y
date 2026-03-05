@@ -5,6 +5,20 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.4] - 2026-03-05 🔍 IP Auto-Fetch + Sortable/Searchable VM Table
+
+### Added
+- **QEMU agent IP fetch**: when the SSH credentials modal opens for a running VM with no stored IP, Depl0y automatically queries the QEMU guest agent (`GET /vms/control/{node}/{vmid}/ip`) and pre-fills the IP field — shows "fetching from agent..." while loading
+- **`ProxmoxService.get_vm_agent_ip()`**: reads `/agent/network-get-interfaces`, returns first non-loopback IPv4 address
+- **Search bar** on Updates and Security Scan tables — filters by VM name, VMID, IP address, node, or OS type
+- **Sortable columns** — click VM, IP Address, or Status column headers to sort ascending/descending (toggle with second click); sort icon shows current direction
+
+### Fixed
+- **`getManagedVM` type safety**: changed `===` to `Number()` comparison so vmid matches correctly regardless of whether Proxmox returns it as integer or string
+- Credential modal pre-fills IP from stored DB record → session credentials → QEMU agent (in that priority order)
+
+---
+
 ## [1.5.3] - 2026-03-05 🏗️ Cache & Autocomplete Fixes
 
 ### Fixed

@@ -786,6 +786,21 @@ class ProxmoxService:
             logger.error(f"Failed to get all VMs: {e}")
             return []
 
+    def get_vm_agent_ip(self, node_name: str, vmid: int) -> Optional[str]:
+        """Get first non-loopback IPv4 address from QEMU guest agent network interfaces"""
+        try:
+            result = self.proxmox.nodes(node_name).qemu(vmid).agent.get('network-get-interfaces')
+            for iface in result.get('result', []):
+                for addr in iface.get('ip-addresses', []):
+                    if addr.get('ip-address-type') == 'ipv4':
+                        ip = addr.get('ip-address', '')
+                        # Skip loopback and link-local
+                        if ip and not ip.startswith('127.') and not ip.startswith('169.254.'):
+                            return ip
+            return None
+        except Exception:
+            return None
+
     def execute_qemu_agent_command(
         self, node_name: str, vmid: int, command: str
     ) -> Optional[Dict[str, Any]]:

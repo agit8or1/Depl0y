@@ -471,6 +471,28 @@ async def get_vm_progress(
     }
 
 
+@router.get("/control/{node_name}/{vmid}/ip")
+async def get_vm_agent_ip(
+    node_name: str,
+    vmid: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Fetch VM IP address via QEMU guest agent (requires agent to be running)"""
+    from app.services.proxmox import ProxmoxService
+    from app.models import ProxmoxHost
+    active_hosts = db.query(ProxmoxHost).filter(ProxmoxHost.is_active == True).all()
+    for host in active_hosts:
+        try:
+            service = ProxmoxService(host)
+            ip = service.get_vm_agent_ip(node_name, vmid)
+            if ip:
+                return {"ip_address": ip}
+        except Exception:
+            pass
+    raise HTTPException(status_code=404, detail="Could not fetch IP — ensure QEMU guest agent is running on the VM")
+
+
 @router.post("/control/{node_name}/{vmid}/start")
 async def start_vm_by_vmid(
     node_name: str,

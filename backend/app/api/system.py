@@ -19,7 +19,7 @@ def get_system_info(db: Session = Depends(get_db)) -> Dict[str, str]:
         version_setting = db.query(SystemSettings).filter(SystemSettings.key == "app_version").first()
         app_name_setting = db.query(SystemSettings).filter(SystemSettings.key == "app_name").first()
         
-        version = version_setting.value if version_setting else "1.1.3"
+        version = version_setting.value if version_setting else "1.5.0"
         app_name = app_name_setting.value if app_name_setting else "Depl0y"
         
         return {

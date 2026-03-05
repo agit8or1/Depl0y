@@ -26,7 +26,7 @@ def get_app_version():
         # Fallback to hardcoded version if database query fails
         pass
 
-    return "1.4.0"  # LLM deployment wizard with auto-tuning, real-time progress, storage tiles
+    return "1.5.0"  # Linux VM agent, ComfyUI workflow fix, About/Support pages
 
 
 class Settings(BaseSettings):

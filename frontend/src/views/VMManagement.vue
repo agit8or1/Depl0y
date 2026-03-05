@@ -2,7 +2,7 @@
   <div class="vm-management-page">
     <div class="page-header">
       <h2>VM Management</h2>
-      <p class="text-muted">Updates, monitoring, and AI tuning for your virtual machines</p>
+      <p class="text-muted">Updates, security scanning, monitoring, and AI tuning for your virtual machines</p>
     </div>
 
     <!-- Tab Nav -->
@@ -169,25 +169,172 @@
           <button @click="credModal.show = false" class="btn-close-sm">×</button>
         </div>
         <div class="cred-modal-body">
-          <p class="cred-note">These credentials are used to SSH into the VM for update management.</p>
+          <p class="cred-note">These credentials are used to SSH into the VM for update and security scan operations.</p>
           <div class="form-group">
             <label class="form-label">IP Address</label>
-            <input v-model="credForm.ip_address" class="form-control" placeholder="192.168.1.100" />
+            <input v-model="credForm.ip_address" class="form-control" placeholder="192.168.1.100" autocomplete="off" />
           </div>
           <div class="form-group">
             <label class="form-label">Username</label>
-            <input v-model="credForm.username" class="form-control" placeholder="ubuntu" />
+            <input v-model="credForm.username" class="form-control" placeholder="ubuntu" autocomplete="off" />
           </div>
-          <div class="form-group">
-            <label class="form-label">Password</label>
-            <input v-model="credForm.password" type="password" class="form-control" placeholder="Leave blank to keep existing" />
-          </div>
+          <form @submit.prevent>
+            <div class="form-group">
+              <label class="form-label">Password</label>
+              <input v-model="credForm.password" type="password" class="form-control" placeholder="Leave blank to keep existing" autocomplete="new-password" />
+            </div>
+          </form>
+          <label class="cred-save-row">
+            <input type="checkbox" v-model="credForm.saveToDb" />
+            <span>Save credentials (encrypted)</span>
+            <span class="cred-save-hint">Uncheck to use for this session only</span>
+          </label>
         </div>
         <div class="cred-modal-footer">
           <button @click="credModal.show = false" class="btn btn-outline">Cancel</button>
           <button @click="saveCredentials" class="btn btn-primary" :disabled="savingCreds">
-            {{ savingCreds ? 'Saving...' : 'Save' }}
+            {{ savingCreds ? 'Saving...' : credForm.saveToDb ? 'Save' : 'Use for Session' }}
           </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── SECURITY TAB ── -->
+    <div v-if="activeTab === 'security'">
+      <div class="card">
+        <div class="card-header">
+          <h3>Security &amp; Dependency Scan</h3>
+          <span class="text-sm text-muted">SSH-based scan: OS security updates, open ports, failed login attempts, outdated packages</span>
+        </div>
+
+        <div v-if="loadingVMs" class="loading-row">
+          <div class="loading-spinner"></div>
+          <span>Loading VMs...</span>
+        </div>
+
+        <div v-else-if="vms.length === 0" class="empty-state">
+          <p>No virtual machines found.</p>
+        </div>
+
+        <div v-else class="table-wrapper">
+          <table class="mgmt-table">
+            <thead>
+              <tr>
+                <th>VM</th>
+                <th>IP Address</th>
+                <th>Status</th>
+                <th>Last Scan</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <template v-for="vm in vms" :key="vm.vmid">
+                <tr>
+                  <td>
+                    <div class="vm-name">
+                      <strong>{{ vm.name }}</strong>
+                      <span class="text-sm text-muted">VMID: {{ vm.vmid }}</span>
+                    </div>
+                  </td>
+                  <td class="text-sm mono">{{ getManagedVM(vm.vmid)?.ip_address || '—' }}</td>
+                  <td>
+                    <span :class="['badge', getVMStatusBadge(vm.status)]">{{ vm.status }}</span>
+                  </td>
+                  <td class="text-sm text-muted">
+                    <span v-if="scanResults[vm.vmid]">
+                      <span :class="['badge', scanResults[vm.vmid].severity === 'critical' ? 'badge-danger' : scanResults[vm.vmid].severity === 'warning' ? 'badge-warning' : 'badge-success']">
+                        {{ scanResults[vm.vmid].severity }}
+                      </span>
+                      &nbsp;{{ formatDate(scanResults[vm.vmid].scanned_at) }}
+                    </span>
+                    <span v-else>Never</span>
+                  </td>
+                  <td>
+                    <button
+                      @click="runScan(vm)"
+                      class="btn btn-sm btn-outline"
+                      :disabled="scanning === vm.vmid || vm.status !== 'running' || !getManagedVM(vm.vmid)?.ip_address"
+                      :title="!getManagedVM(vm.vmid) ? 'Not managed by Depl0y' : !getManagedVM(vm.vmid)?.ip_address ? 'No IP — set SSH credentials first' : vm.status !== 'running' ? 'VM must be running' : 'Run security scan'"
+                    >
+                      {{ scanning === vm.vmid ? 'Scanning...' : 'Scan' }}
+                    </button>
+                    <button
+                      v-if="scanResults[vm.vmid]"
+                      @click="scanExpanded[vm.vmid] = !scanExpanded[vm.vmid]"
+                      class="btn btn-sm btn-secondary"
+                      style="margin-left: 0.4rem"
+                    >
+                      {{ scanExpanded[vm.vmid] ? 'Hide' : 'Details' }}
+                    </button>
+                  </td>
+                </tr>
+
+                <!-- Scan results panel -->
+                <tr v-if="scanResults[vm.vmid] && scanExpanded[vm.vmid]" class="history-row">
+                  <td colspan="5">
+                    <div class="history-panel scan-panel">
+                      <div class="scan-grid">
+                        <!-- OS Updates -->
+                        <div class="scan-card">
+                          <div class="scan-card-title">OS Updates</div>
+                          <div class="scan-stat" :class="scanResults[vm.vmid].os_updates?.security_updates > 0 ? 'scan-stat-warn' : 'scan-stat-ok'">
+                            {{ scanResults[vm.vmid].os_updates?.security_updates ?? '—' }}
+                            <span class="scan-stat-label">security</span>
+                          </div>
+                          <div class="scan-sub text-muted">{{ scanResults[vm.vmid].os_updates?.total_upgradable ?? 0 }} total upgradable</div>
+                          <div v-if="scanResults[vm.vmid].os_updates?.security_packages?.length" class="scan-pkg-list">
+                            <div v-for="pkg in scanResults[vm.vmid].os_updates.security_packages.slice(0,8)" :key="pkg" class="scan-pkg">{{ pkg }}</div>
+                          </div>
+                        </div>
+
+                        <!-- Failed SSH -->
+                        <div class="scan-card">
+                          <div class="scan-card-title">Failed SSH Logins</div>
+                          <div class="scan-stat" :class="scanResults[vm.vmid].failed_ssh_attempts > 100 ? 'scan-stat-crit' : scanResults[vm.vmid].failed_ssh_attempts > 10 ? 'scan-stat-warn' : 'scan-stat-ok'">
+                            {{ scanResults[vm.vmid].failed_ssh_attempts ?? 0 }}
+                          </div>
+                          <div class="scan-sub text-muted">attempts in auth.log</div>
+                        </div>
+
+                        <!-- Open Ports -->
+                        <div class="scan-card scan-card-wide">
+                          <div class="scan-card-title">Open Listening Ports</div>
+                          <div v-if="scanResults[vm.vmid].open_ports?.length" class="scan-ports">
+                            <pre class="scan-pre">{{ scanResults[vm.vmid].open_ports.join('\n') }}</pre>
+                          </div>
+                          <div v-else class="text-muted text-sm">None detected</div>
+                        </div>
+
+                        <!-- Python outdated -->
+                        <div class="scan-card">
+                          <div class="scan-card-title">Outdated Python Packages</div>
+                          <div class="scan-stat" :class="scanResults[vm.vmid].python_outdated?.count > 0 ? 'scan-stat-warn' : 'scan-stat-ok'">
+                            {{ scanResults[vm.vmid].python_outdated?.count ?? 0 }}
+                          </div>
+                          <div v-if="scanResults[vm.vmid].python_outdated?.packages?.length" class="scan-pkg-list">
+                            <div v-for="pkg in scanResults[vm.vmid].python_outdated.packages.slice(0,5)" :key="pkg" class="scan-pkg">{{ pkg }}</div>
+                          </div>
+                          <div v-else class="scan-sub text-muted">pip3 not found or all current</div>
+                        </div>
+
+                        <!-- npm outdated -->
+                        <div class="scan-card">
+                          <div class="scan-card-title">Outdated npm (global)</div>
+                          <div class="scan-stat" :class="scanResults[vm.vmid].npm_outdated?.count > 0 ? 'scan-stat-warn' : 'scan-stat-ok'">
+                            {{ scanResults[vm.vmid].npm_outdated?.count ?? 0 }}
+                          </div>
+                          <div v-if="scanResults[vm.vmid].npm_outdated?.packages?.length" class="scan-pkg-list">
+                            <div v-for="pkg in scanResults[vm.vmid].npm_outdated.packages.slice(0,5)" :key="pkg" class="scan-pkg">{{ pkg }}</div>
+                          </div>
+                          <div v-else class="scan-sub text-muted">npm not found or all current</div>
+                        </div>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
@@ -348,8 +495,12 @@ export default {
     const tuningVM = ref(null)
     const tuningResults = ref({})
     const credModal = ref({ show: false, vm: null })
-    const credForm = ref({ ip_address: '', username: '', password: '' })
+    const credForm = ref({ ip_address: '', username: '', password: '', saveToDb: true })
     const savingCreds = ref(false)
+    const sessionCreds = ref({})   // vmid → { ip_address, username, password } for session-only creds
+    const scanResults = ref({})    // vmid → scan result object
+    const scanning = ref(null)     // vmid currently being scanned
+    const scanExpanded = ref({})   // vmid → bool
 
     // Returns the DB-managed VM matching a Proxmox vmid (for update/SSH ops)
     const getManagedVM = (vmid) => managedVMs.value.find(m => m.vmid === vmid) || null
@@ -357,6 +508,7 @@ export default {
 
     const tabs = computed(() => [
       { id: 'updates', label: 'Updates', icon: '🔄', badge: null },
+      { id: 'security', label: 'Security Scan', icon: '🔒', badge: null },
       { id: 'monitoring', label: 'Monitoring', icon: '📊', badge: null },
       { id: 'ai-tuning', label: 'AI Tuning', icon: '🤖', badge: null },
     ])
@@ -389,32 +541,48 @@ export default {
 
     const openCredModal = (vm) => {
       const managed = getManagedVM(vm.vmid)
+      // Pre-fill: managed DB record first, then session creds
+      const sess = sessionCreds.value[vm.vmid]
       credModal.value = { show: true, vm, managed }
       credForm.value = {
-        ip_address: managed?.ip_address || '',
-        username: managed?.username || '',
-        password: ''
+        ip_address: managed?.ip_address || sess?.ip_address || '',
+        username: managed?.username || sess?.username || '',
+        password: '',
+        saveToDb: true,
       }
     }
 
     const saveCredentials = async () => {
-      const managed = credModal.value.managed
-      if (!managed) {
-        toast.error('This VM is not managed by Depl0y — deploy it via Depl0y to store credentials')
-        return
-      }
-      savingCreds.value = true
-      try {
-        const payload = { ip_address: credForm.value.ip_address, username: credForm.value.username }
-        if (credForm.value.password) payload.password = credForm.value.password
-        await api.vms.update(managed.id, payload)
-        toast.success('Credentials saved')
+      const { vm, managed } = credModal.value
+      const { ip_address, username, password, saveToDb } = credForm.value
+
+      if (saveToDb) {
+        if (!managed) {
+          toast.error('This VM is not managed by Depl0y — uncheck "Save credentials" to use for this session only')
+          return
+        }
+        savingCreds.value = true
+        try {
+          const payload = { ip_address, username }
+          if (password) payload.password = password
+          await api.vms.update(managed.id, payload)
+          toast.success('Credentials saved (encrypted)')
+          credModal.value.show = false
+          await loadVMs()
+        } catch {
+          toast.error('Failed to save credentials')
+        } finally {
+          savingCreds.value = false
+        }
+      } else {
+        // Session-only: store in memory, never sent to DB
+        sessionCreds.value[vm.vmid] = {
+          ip_address,
+          username,
+          password: password || undefined,
+        }
+        toast.success('Credentials stored for this session only')
         credModal.value.show = false
-        await loadVMs()
-      } catch {
-        toast.error('Failed to save credentials')
-      } finally {
-        savingCreds.value = false
       }
     }
 
@@ -424,13 +592,19 @@ export default {
       loadingMonitor.value = false
     }
 
+    const getSessionCreds = (vmid) => {
+      const s = sessionCreds.value[vmid]
+      if (!s) return null
+      return { ip_address: s.ip_address || undefined, username: s.username || undefined, password: s.password || undefined }
+    }
+
     const checkUpdates = async (vm) => {
       const managed = getManagedVM(vm.vmid)
       if (!managed) return
       updatingVM.value = vm.vmid
       updateAction.value = 'check'
       try {
-        const response = await api.updates.check(managed.id)
+        const response = await api.updates.check(managed.id, getSessionCreds(vm.vmid))
         updateChecks.value[vm.vmid] = response.data
         toast.success(`Update check complete for ${vm.name}`)
       } catch {
@@ -447,13 +621,32 @@ export default {
       updatingVM.value = vm.vmid
       updateAction.value = 'install'
       try {
-        await api.updates.install(managed.id)
+        await api.updates.install(managed.id, getSessionCreds(vm.vmid))
         toast.success(`Update started for ${vm.name} — check history for progress`)
       } catch {
         toast.error(`Failed to start updates for ${vm.name}`)
       } finally {
         updatingVM.value = null
         updateAction.value = null
+      }
+    }
+
+    const runScan = async (vm) => {
+      const managed = getManagedVM(vm.vmid)
+      if (!managed) return
+      scanning.value = vm.vmid
+      try {
+        const response = await api.updates.scanSecurity(managed.id, getSessionCreds(vm.vmid))
+        scanResults.value[vm.vmid] = response.data
+        scanExpanded.value[vm.vmid] = true
+        const sev = response.data.severity
+        if (sev === 'critical') toast.error(`${vm.name}: critical security issues found`)
+        else if (sev === 'warning') toast.warning(`${vm.name}: security warnings found`)
+        else toast.success(`${vm.name}: scan complete — no critical issues`)
+      } catch {
+        toast.error(`Security scan failed for ${vm.name}`)
+      } finally {
+        scanning.value = null
       }
     }
 
@@ -534,8 +727,9 @@ export default {
       updateHistory, loadingHistory, tuningVM, tuningResults, llmVMs,
       loadVMs, loadMonitoring, checkUpdates, installUpdates,
       toggleHistory, runAITune, getManagedVM,
+      runScan, scanResults, scanning, scanExpanded,
       getVMStatusBadge, formatDate, formatBytes, formatMB,
-      credModal, credForm, savingCreds, openCredModal, saveCredentials,
+      credModal, credForm, savingCreds, openCredModal, saveCredentials, sessionCreds,
     }
   }
 }
@@ -779,6 +973,83 @@ export default {
   font-size: 0.8rem;
   white-space: pre-wrap;
   max-height: 300px;
+  overflow-y: auto;
+}
+
+/* Credentials save row */
+.cred-save-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  cursor: pointer;
+  margin-top: 0.25rem;
+}
+
+.cred-save-hint {
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+}
+
+/* Security Scan */
+.scan-panel { padding: 1rem 1.5rem; background: var(--background); }
+
+.scan-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+.scan-card {
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.scan-card-wide { grid-column: span 2; }
+
+.scan-card-title {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.scan-stat {
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1;
+  display: flex;
+  align-items: baseline;
+  gap: 0.3rem;
+}
+
+.scan-stat-label { font-size: 0.8rem; font-weight: 400; color: var(--text-secondary); }
+.scan-stat-ok { color: #059669; }
+.scan-stat-warn { color: #d97706; }
+.scan-stat-crit { color: #dc2626; }
+
+.scan-sub { font-size: 0.8rem; color: var(--text-secondary); }
+
+.scan-pkg-list { display: flex; flex-direction: column; gap: 0.15rem; margin-top: 0.25rem; }
+.scan-pkg { font-size: 0.75rem; font-family: monospace; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.scan-ports { overflow-x: auto; }
+.scan-pre {
+  font-size: 0.72rem;
+  font-family: monospace;
+  background: #1e293b;
+  color: #e2e8f0;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.25rem;
+  margin: 0;
+  white-space: pre;
+  overflow-x: auto;
+  max-height: 160px;
   overflow-y: auto;
 }
 

@@ -341,7 +341,8 @@ async def update_vm(
         vm.username = vm_data.username
 
     if vm_data.password is not None:
-        vm.password = vm_data.password
+        from app.core.security import encrypt_data
+        vm.password = encrypt_data(vm_data.password)
 
     vm.last_updated = datetime.utcnow()
     db.commit()

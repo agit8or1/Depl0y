@@ -924,3 +924,108 @@ def get_llm_deployment(
         "access_url": access_url,
         "created_at": dep.created_at.isoformat(),
     }
+
+
+@router.post("/ai-tune/{vm_id}")
+async def ai_tune_vm(
+    vm_id: int,
+    current_user: User = Depends(require_operator),
+    db: Session = Depends(get_db),
+):
+    """Run AI performance tuning diagnostics on an LLM VM"""
+    import paramiko
+    from app.models import VirtualMachine
+
+    vm = db.query(VirtualMachine).filter(VirtualMachine.id == vm_id).first()
+    if not vm:
+        raise HTTPException(status_code=404, detail="VM not found")
+
+    if not vm.ip_address:
+        raise HTTPException(
+            status_code=400,
+            detail="VM has no IP address — open SSH credentials and set the IP first",
+        )
+
+    # Decrypt password
+    password = None
+    if vm.password:
+        try:
+            from app.core.security import decrypt_data
+            password = decrypt_data(vm.password)
+        except Exception:
+            password = vm.password
+
+    try:
+        client = paramiko.SSHClient()
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        client.connect(vm.ip_address, username=vm.username, password=password, timeout=30)
+
+        def run(cmd):
+            try:
+                _, stdout, _ = client.exec_command(cmd, timeout=20)
+                out = stdout.read().decode("utf-8", errors="replace").strip()
+                stdout.channel.recv_exit_status()
+                return out or "N/A"
+            except Exception:
+                return "N/A"
+
+        diag = {
+            "gpu": run("nvidia-smi --query-gpu=name,memory.total,memory.used --format=csv,noheader 2>/dev/null || echo 'no_gpu'"),
+            "ram": run("free -h 2>/dev/null | grep Mem || echo 'N/A'"),
+            "cpu": run("nproc 2>/dev/null; grep 'model name' /proc/cpuinfo 2>/dev/null | head -1 | cut -d: -f2"),
+            "model_service": run("systemctl list-units --state=running 2>/dev/null | grep -E 'ollama|llama|vllm|localai|comfyui' | head -5 || echo 'none'"),
+            "ollama_models": run("ollama list 2>/dev/null | tail -n +2 || echo 'N/A'"),
+        }
+        client.close()
+
+        recommendations = _generate_ai_tune_recommendations(diag)
+        return {"diagnostics": diag, "recommendations": recommendations, "status": "complete"}
+
+    except paramiko.AuthenticationException:
+        raise HTTPException(status_code=401, detail="SSH authentication failed — check credentials")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI tune failed: {str(e)}")
+
+
+def _generate_ai_tune_recommendations(diag: dict) -> str:
+    recs = []
+    gpu = diag.get("gpu", "")
+    model_service = diag.get("model_service", "")
+    ollama_models = diag.get("ollama_models", "")
+
+    if "no_gpu" in gpu or gpu in ("N/A", ""):
+        recs += [
+            "CPU-only inference detected.",
+            "• Use quantized GGUF models (Q4_K_M or Q5_K_S) to reduce RAM and maximise CPU throughput.",
+            "• Set num_thread in Ollama to match your vCPU count for best single-request performance.",
+        ]
+    else:
+        recs += [
+            f"GPU detected: {gpu}",
+            "• Verify VRAM offloading: run `ollama ps` and confirm layers are on GPU.",
+            "• Keep NVIDIA drivers current: `apt-get install --only-upgrade nvidia-driver-*`",
+        ]
+
+    if "ollama" in model_service.lower() or "ollama" in ollama_models.lower():
+        recs += [
+            "",
+            "Ollama tuning:",
+            "  OLLAMA_NUM_PARALLEL=2      # allow 2 concurrent requests",
+            "  OLLAMA_MAX_LOADED_MODELS=1 # prevent VRAM fragmentation",
+            "Add to /etc/systemd/system/ollama.service [Service] section, then:",
+            "  systemctl daemon-reload && systemctl restart ollama",
+        ]
+
+    if "comfyui" in model_service.lower():
+        recs += [
+            "",
+            "ComfyUI tuning:",
+            "• Low VRAM mode: add --lowvram to ExecStart in /etc/systemd/system/comfyui.service",
+            "• Install xformers for faster attention: pip install xformers",
+            "• Restart: systemctl daemon-reload && systemctl restart comfyui",
+        ]
+
+    if not recs:
+        recs.append("No running LLM services detected. Ensure Ollama/llama.cpp/ComfyUI is running.")
+
+    return "\n".join(recs)

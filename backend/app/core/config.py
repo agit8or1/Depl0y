@@ -26,7 +26,7 @@ def get_app_version():
         # Fallback to hardcoded version if database query fails
         pass
 
-    return "1.5.1"  # VM Management Proxmox live data, getManagedVM fix
+    return "1.5.2"  # Security scan, credential encryption fix, AI tune endpoint
 
 
 class Settings(BaseSettings):

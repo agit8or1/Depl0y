@@ -5,6 +5,22 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.2] - 2026-03-05 🔒 Security Scan + Credential Encryption
+
+### Added
+- **Security Scan tab** in VM Management — SSH-based scan per VM reporting: OS security update count, total upgradable packages, open listening ports, failed SSH login attempts, outdated Python (pip3) packages, outdated npm global packages; colour-coded severity (ok/warning/critical)
+- **`POST /updates/vm/{vm_id}/scan-security`** backend endpoint wired to new `UpdateService.scan_security()` method
+- **AI Tune endpoint** (`POST /llm/ai-tune/{vm_id}`) — previously 404; now SSHes into LLM VM, collects GPU/RAM/CPU/model-service diagnostics, returns rule-based tuning recommendations for Ollama and ComfyUI
+- **"Save credentials" checkbox** in SSH Credentials modal — checked (default): encrypts and saves to DB; unchecked: stores credentials in session memory only (never persisted)
+- **Session-only credentials** (`sessionCreds` keyed by vmid) — passed as request body to check/install/scan endpoints; cleared on page refresh
+
+### Fixed
+- **Password not encrypted on credential update** — `update_vm()` in `vms.py` was storing plaintext; now calls `encrypt_data()` before save
+- **SSH client used raw encrypted blob** — `UpdateService._get_ssh_client()` now calls `_get_ssh_password()` which decrypts via `decrypt_data()` with fallback for legacy unencrypted records
+- Password input field wrapped in `<form @submit.prevent>` to suppress browser DOM warning
+
+---
+
 ## [1.5.1] - 2026-03-05 🔧 VM Management Fix
 
 ### Fixed

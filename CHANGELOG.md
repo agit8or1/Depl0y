@@ -5,6 +5,72 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.1] - 2026-03-05 🎨 Stable Diffusion Image Generation
+
+### Added
+- **Humor & Memes → AI image generation**: selecting the Memes use case now deploys **Stable Diffusion** (via ComfyUI) instead of a text LLM — generates actual meme images from text prompts
+- **ComfyUI engine** (`stable-diffusion` engine ID): new engine in the catalog that deploys ComfyUI on port 8188
+- **SD model catalog**: SD v1.5, DreamShaper 8, SDXL 1.0 — each with appropriate RAM/disk requirements
+- **ComfyUI cloud-init setup script** (`llm_cloudinit.py`): installs ComfyUI from GitHub, installs PyTorch (CPU, NVIDIA CUDA 12.1, or AMD ROCm), downloads the selected checkpoint from HuggingFace, creates a systemd service
+- **`comfyui` UI type** added to the catalog and API; access URL resolves to port 8188
+- **Wizard adaptive UI**: S1 quality step shows SD-specific model descriptions when memes is selected; S3 web UI step shows ComfyUI option instead of Open WebUI/API for memes
+- **Access URL port helper** (`_access_port()` in `llm.py`): centralises port logic for all engines/UI types
+
+### Fixed
+- "Humor & Memes" previously deployed llama3.1:8b which cannot generate images; now deploys Stable Diffusion
+- `applySimpleRec()` hardcoded `engine = 'ollama'` — now reads `rec.engine` from the recommendation table
+- Review step showed hardcoded "Ollama" as engine — now shows `engineLabel` computed value
+- Simple mode feature list said "Always uses Ollama" — updated to "Best engine auto-selected for your use case"
+
+---
+
+## [1.4.0] - 2026-03-05 🤖 LLM Deployment
+
+### Added
+
+#### Deploy LLM Wizard
+- **New "Deploy LLM" page** accessible from the sidebar — provisions a complete self-hosted AI inference VM on any Proxmox node
+- **Simple Mode** — 4-question guided wizard: use case → quality tier → GPU availability → web UI; auto-selects model, engine, and resource sizing with no AI knowledge required
+- **Advanced Mode** — full control across 8 steps: engine, model, hardware profile, GPU device passthrough, UI options, storage, networking, credentials, and review
+- **Use cases**: Chat & Q&A, Coding Helper, Document Analysis, Research & Reasoning, Humor & Memes (text-based captions, not image generation)
+- **Supported engines**: Ollama (recommended), llama.cpp, vLLM (OpenAI-compatible, GPU), LocalAI (Docker-based)
+- **Model catalog**: 15+ models — Llama 3.1/3.2, Mistral, Phi-4, Gemma, Qwen 2.5, DeepSeek, Code Llama, Nomic Embed; per-model RAM/VRAM/disk requirements displayed
+- **GPU passthrough**: NVIDIA (CUDA auto-install) and AMD (ROCm) with live PCI device enumeration from the selected Proxmox node; IOMMU group info included
+- **Open WebUI**: optional ChatGPT-like browser interface deployed via Docker on port 3000
+- **Real-time deployment progress**: stage timeline (Queued → Provisioning → Cloning → Starting → LLM Setup) with live status messages and access URL
+- **`LLMDeployment` database model** to track engine, model, UI type, and GPU config per deployment
+- **`GET /api/v1/llm/catalog`** — returns full engine/model/OS/UI catalog
+- **`GET /api/v1/llm/gpu-devices`** — enumerates GPU PCI devices on a Proxmox node
+- **`POST /api/v1/llm/deploy`** — deploys an LLM inference VM (creates VM + LLMDeployment record, runs cloud-init setup in background)
+- **`GET /api/v1/llm/deployments`** and **`GET /api/v1/llm/deployments/{id}`** — list and inspect LLM deployments
+- **Storage pool tiles**: visual tile cards with usage bars and type badges replace text inputs in both wizards (matching CreateVM.vue style)
+
+#### Ollama Performance (llm_cloudinit.py)
+- **Systemd drop-in override** (`ollama.service.d/override.conf`) configures OLLAMA_MODELS, OLLAMA_KEEP_ALIVE=60m, OLLAMA_FLASH_ATTENTION=1, OLLAMA_MAX_LOADED_MODELS=1 — avoids clobbering the installer-managed service file
+- **Auto-tuning script**: after model pull, benchmarks candidate thread counts (scaled to vCPU count: 4–16) via the Ollama REST API, picks the fastest, and writes `PARAMETER num_thread <N>` into the Modelfile; on E5-2690 v4 (56 vCPU, AVX2) this raised throughput from 1.37 tok/s (default 56 threads) to 4.25 tok/s (optimal 12 threads)
+- **Root cause**: `OLLAMA_NUM_THREAD` is not a recognised env var in Ollama 0.17+; thread count must be set via Modelfile `PARAMETER`
+- **Tuning report** saved to `/var/log/llm-tuning.log` on each deployed VM
+
+### Fixed
+- Default storage fallback changed from `"local-lvm"` to `"local"` in `deployment.py` (fixes deployment failure when `local-lvm` doesn't exist on the target node)
+- `$HOME` not set panic when Ollama pulls a model in cloud-init environment — fixed by adding `export HOME=/root` to the generated setup script
+- Open WebUI listening on port 8080 instead of 3000 — fixed by adding `-e PORT=3000` to the docker run command (`--network=host` disables port mapping)
+- "Memes" use case label updated to "Humor & Memes" with description clarifying it generates meme captions and text — not images
+
+### Changed
+- Version bumped to **1.4.0**
+
+---
+
+## [1.3.17] - 2026-03-01
+
+### Fixed
+- Storage loading performance improvements
+- VM password decryption fixes
+- shlex import corrections
+
+---
+
 ## [1.3.11] - 2026-02-13
 
 ### Fixed

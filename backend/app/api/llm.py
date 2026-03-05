@@ -56,6 +56,12 @@ LLM_CATALOG: Dict[str, Any] = {
             "description": "Drop-in OpenAI API replacement. Runs on CPU or GPU. Great for apps already using the OpenAI SDK.",
             "recommended": False,
         },
+        {
+            "id": "stable-diffusion",
+            "name": "Stable Diffusion (ComfyUI)",
+            "description": "AI image generation engine. Deploys ComfyUI on port 8188. Generates images from text prompts. GPU strongly recommended.",
+            "recommended": False,
+        },
     ],
     "models": {
         "ollama": [
@@ -311,6 +317,47 @@ LLM_CATALOG: Dict[str, Any] = {
                 "gpu_optional": False,
             },
         ],
+        "stable-diffusion": [
+            {
+                "id": "sd-v1.5",
+                "name": "Stable Diffusion v1.5",
+                "category": "image",
+                "description": "Classic SD 1.5. CPU-capable but slow. Fast with GPU. Good starting point for meme generation.",
+                "size_gb": 2.0,
+                "min_ram_gb": 8,
+                "recommended_ram_gb": 12,
+                "min_vram_gb": 4,
+                "min_cpu_cores": 4,
+                "min_disk_gb": 30,
+                "gpu_optional": True,
+            },
+            {
+                "id": "dreamshaper-8",
+                "name": "DreamShaper 8",
+                "category": "image",
+                "description": "Highly capable fine-tuned SD model. Excellent for creative, stylized, and meme images.",
+                "size_gb": 2.0,
+                "min_ram_gb": 12,
+                "recommended_ram_gb": 16,
+                "min_vram_gb": 4,
+                "min_cpu_cores": 4,
+                "min_disk_gb": 40,
+                "gpu_optional": True,
+            },
+            {
+                "id": "sdxl",
+                "name": "Stable Diffusion XL 1.0",
+                "category": "image",
+                "description": "High-resolution image generation (1024×1024). Best quality but needs significant VRAM. GPU recommended.",
+                "size_gb": 6.6,
+                "min_ram_gb": 16,
+                "recommended_ram_gb": 24,
+                "min_vram_gb": 8,
+                "min_cpu_cores": 8,
+                "min_disk_gb": 60,
+                "gpu_optional": True,
+            },
+        ],
         "localai": [
             {
                 "id": "llama3.2:1b",
@@ -423,8 +470,33 @@ LLM_CATALOG: Dict[str, Any] = {
             "recommended": False,
             "port": 11434,
         },
+        {
+            "id": "comfyui",
+            "name": "ComfyUI",
+            "description": "Node-based image generation interface for Stable Diffusion. Runs on port 8188. Automatically deployed with image generation engines.",
+            "recommended": False,
+            "port": 8188,
+        },
     ],
 }
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _access_port(engine: str, ui_type: str) -> int:
+    """Return the primary access port for a given engine/UI combination."""
+    if ui_type == "open-webui":
+        return 3000
+    if ui_type == "comfyui" or engine == "stable-diffusion":
+        return 8188
+    if engine == "vllm":
+        return 8000
+    if engine == "localai":
+        return 8080
+    return 11434  # ollama default
+
 
 # ---------------------------------------------------------------------------
 # Pydantic schemas
@@ -702,7 +774,7 @@ async def deploy_llm(
 
     # Build access URL for response
     ip = deploy_data.ip_address or "YOUR_VM_IP"
-    port = 3000 if deploy_data.ui_type == "open-webui" else 11434
+    port = _access_port(deploy_data.engine, deploy_data.ui_type)
     access_url = f"http://{ip}:{port}"
 
     return {
@@ -797,7 +869,7 @@ def list_llm_deployments(
     for dep in deps:
         vm = db.query(VirtualMachine).filter(VirtualMachine.id == dep.vm_id).first()
         ip = vm.ip_address if vm else None
-        port = 3000 if dep.ui_type == "open-webui" else 11434
+        port = _access_port(dep.engine, dep.ui_type)
         access_url = f"http://{ip}:{port}" if ip else None
 
         result.append(
@@ -832,7 +904,7 @@ def get_llm_deployment(
 
     vm = db.query(VirtualMachine).filter(VirtualMachine.id == dep.vm_id).first()
     ip = vm.ip_address if vm else None
-    port = 3000 if dep.ui_type == "open-webui" else 11434
+    port = _access_port(dep.engine, dep.ui_type)
     access_url = f"http://{ip}:{port}" if ip else None
 
     return {

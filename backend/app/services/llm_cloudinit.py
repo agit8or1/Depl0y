@@ -246,6 +246,90 @@ class LLMCloudInitService:
                 "",
             ]
 
+        elif engine == "stable-diffusion":
+            # Map model IDs to HuggingFace download URLs
+            sd_model_urls = {
+                "sd-v1.5": (
+                    "https://huggingface.co/runwayml/stable-diffusion-v1-5"
+                    "/resolve/main/v1-5-pruned-emaonly.safetensors"
+                ),
+                "dreamshaper-8": (
+                    "https://huggingface.co/Lykon/DreamShaper"
+                    "/resolve/main/DreamShaper_8_pruned.safetensors"
+                ),
+                "sdxl": (
+                    "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0"
+                    "/resolve/main/sd_xl_base_1.0.safetensors"
+                ),
+            }
+            model_url = sd_model_urls.get(model, sd_model_urls["sd-v1.5"])
+            model_filename = model_url.split("/")[-1]
+
+            # Select PyTorch index URL based on GPU type
+            if gpu_enabled and gpu_type == "nvidia":
+                torch_index = "https://download.pytorch.org/whl/cu121"
+                comfyui_args = "--listen 0.0.0.0 --port 8188"
+            elif gpu_enabled and gpu_type == "amd":
+                torch_index = "https://download.pytorch.org/whl/rocm5.6"
+                comfyui_args = "--listen 0.0.0.0 --port 8188"
+            else:
+                torch_index = "https://download.pytorch.org/whl/cpu"
+                comfyui_args = "--listen 0.0.0.0 --port 8188 --cpu --force-fp32"
+
+            lines += [
+                "# Install ComfyUI (Stable Diffusion image generation)",
+                "echo 'Installing ComfyUI and dependencies...'",
+                "apt-get update -qq",
+                "DEBIAN_FRONTEND=noninteractive apt-get install -y python3-pip python3-venv git wget",
+                "",
+                "# Clone ComfyUI",
+                "git clone --depth 1 https://github.com/comfyanonymous/ComfyUI /opt/comfyui",
+                "",
+                "# Create venv",
+                "python3 -m venv /opt/comfyui-env",
+                "/opt/comfyui-env/bin/pip install --upgrade pip",
+                "",
+                "# Install PyTorch (hardware-specific)",
+                f"echo 'Installing PyTorch from {torch_index}...'",
+                f"/opt/comfyui-env/bin/pip install torch torchvision torchaudio --index-url {torch_index}",
+                "",
+                "# Install ComfyUI requirements",
+                "/opt/comfyui-env/bin/pip install -r /opt/comfyui/requirements.txt",
+                "",
+                "# Download SD model checkpoint",
+                f'echo "Downloading model: {model} ({model_filename}) ..."',
+                "mkdir -p /opt/comfyui/models/checkpoints",
+                f'wget -q --show-progress -O "/opt/comfyui/models/checkpoints/{model_filename}" \\',
+                f'  "{model_url}" || echo "WARNING: Model download failed. Add model manually to /opt/comfyui/models/checkpoints/"',
+                "",
+                "# Create ComfyUI systemd service",
+                "cat > /etc/systemd/system/comfyui.service << 'COMFY_SERVICE_EOF'",
+                "[Unit]",
+                "Description=ComfyUI Stable Diffusion Web Interface",
+                "After=network.target",
+                "",
+                "[Service]",
+                "Type=simple",
+                "User=root",
+                "WorkingDirectory=/opt/comfyui",
+                f"ExecStart=/opt/comfyui-env/bin/python main.py {comfyui_args}",
+                "Restart=on-failure",
+                "RestartSec=10",
+                "StandardOutput=journal",
+                "StandardError=journal",
+                "",
+                "[Install]",
+                "WantedBy=multi-user.target",
+                "COMFY_SERVICE_EOF",
+                "",
+                "systemctl daemon-reload",
+                "systemctl enable comfyui",
+                "systemctl start comfyui",
+                f'echo "ComfyUI started on port 8188 with model: {model}"',
+                'echo "Web UI: http://$(hostname -I | awk \'{print $1}\'):8188"',
+                "",
+            ]
+
         # Web UI installation
         if ui_type == "open-webui":
             lines += [
@@ -295,6 +379,10 @@ class LLMCloudInitService:
             lines.append(
                 "echo \"  API     : http://$(hostname -I | awk '{print $1}'):8080  (OpenAI-compatible)\""
             )
+        elif engine == "stable-diffusion":
+            lines.append(
+                "echo \"  ComfyUI : http://$(hostname -I | awk '{print $1}'):8188\""
+            )
 
         return "\n".join(lines) + "\n"
 
@@ -321,6 +409,8 @@ class LLMCloudInitService:
         elif engine == "localai":
             # Docker is installed by the setup script via get.docker.com
             extra_packages += ["ca-certificates", "gnupg"]
+        elif engine == "stable-diffusion":
+            extra_packages += ["python3-pip", "python3-venv", "git", "wget"]
 
         script_content = LLMCloudInitService.generate_setup_script(
             engine=engine,

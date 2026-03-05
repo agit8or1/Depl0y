@@ -34,25 +34,37 @@ Depl0y is a free, open-source web-based control panel that simplifies the deploy
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)
 ![Vue.js](https://img.shields.io/badge/vue.js-3.x-green.svg)
-![Version](https://img.shields.io/badge/version-1.3.9-brightgreen.svg)
+![Version](https://img.shields.io/badge/version-1.4.0-brightgreen.svg)
 
-## What's New in v1.3.9
+## ✨ What's New in v1.4.0 — Deploy LLM
 
-- **📝 Documentation** - Enhanced README with web-based update instructions
-- **📝 Documentation** - Improved security documentation formatting
-- **📝 Documentation** - Updated system requirements and installation guides
+**Deploy a self-hosted AI inference server in minutes, directly from the Depl0y interface.**
 
-**Previous Release (v1.3.8) - CRITICAL SECURITY FIXES:**
-- **🚨 CRITICAL** - Fixed 5 critical vulnerabilities (CVSS 9.0+)
-- **🔒 Security** - Command injection fixes in deployment service
-- **🔒 Security** - Timing attack protection in authentication
-- **🔒 Security** - Auto-generate encryption keys
-- **🔒 Security** - Security headers and rate limiting
-- **✨ Feature** - GitHub update integration
+- **🤖 Deploy LLM** — New wizard to provision a full LLM inference VM on any Proxmox node
+- **⚡ Simple Mode** — 4 questions, auto-selected model and resources, no AI knowledge required
+- **⚙️ Advanced Mode** — Full control: engine, model, GPU passthrough, OS, networking, storage
+- **🔧 4 Engines** — Ollama (recommended), llama.cpp, vLLM (OpenAI-compatible), LocalAI
+- **🧠 15+ Models** — Llama 3.x, Mistral, Phi-4, Gemma, Qwen, DeepSeek, Code Llama and more
+- **🖥️ GPU Support** — NVIDIA CUDA and AMD ROCm passthrough with automatic driver installation
+- **🌐 Open WebUI** — Optionally deploy a ChatGPT-like browser interface alongside the engine
+- **📊 Auto-Tuning** — After model pull, benchmarks thread counts and selects the fastest setting
+- **📡 Real-Time Progress** — Live deployment stage tracker from provisioning to LLM ready
 
 [View Full Changelog](CHANGELOG.md)
 
 ## Features
+
+### 🤖 LLM Deployment (New in v1.4.0)
+- **Deploy LLM Wizard** — Guided Simple and Advanced modes for deploying self-hosted AI inference VMs
+- **Simple Mode** — Answer 4 questions (use case, quality, GPU, UI); Depl0y handles everything else
+- **Advanced Mode** — Choose engine, model, GPU passthrough, OS, storage, networking, and every resource parameter
+- **Supported Engines** — Ollama, llama.cpp (GGUF), vLLM (OpenAI-compatible, GPU), LocalAI (Docker)
+- **Model Catalog** — 15+ models: Llama 3.x, Mistral, Phi-4, Gemma, Qwen, DeepSeek, Code Llama, Nomic Embed
+- **GPU Passthrough** — NVIDIA (CUDA) and AMD (ROCm) with automatic driver installation and device selection
+- **Open WebUI** — Optional ChatGPT-like browser interface (port 3000) deployed alongside the engine
+- **Auto-Tuning** — Benchmarks thread counts post-install and bakes the optimal value into the model config
+- **Use Cases** — Chat & Q&A, Coding, Document Analysis, Research & Reasoning, Humor & Memes (text)
+- **Live Progress** — Stage-by-stage deployment tracker: Provisioning → Cloning → Starting → LLM Setup
 
 ### Core Functionality
 - **Automated VM Deployment** - Deploy Ubuntu, Debian, CentOS, Rocky Linux, Alma Linux, and Windows VMs with a few clicks
@@ -82,6 +94,22 @@ Depl0y is a free, open-source web-based control panel that simplifies the deploy
 - **RESTful API** - Complete API for automation and integration
 
 ## Screenshots
+
+### 🤖 Deploy LLM — Mode Selection *(New in v1.4.0)*
+![Deploy LLM Home](screenshots/13-deploy-llm-home.png)
+*Choose Simple Mode (4 questions, auto-configured) or Advanced Mode (full control over engine, model, GPU, and resources)*
+
+### Deploy LLM — Simple Mode Use Case
+![Simple Mode](screenshots/14-deploy-llm-simple-usecase.png)
+*Pick your use case and Depl0y selects the right model and hardware profile automatically*
+
+### Deploy LLM — Advanced Engine Selection
+![Advanced Engine](screenshots/17-deploy-llm-advanced-engine.png)
+*Choose from Ollama, llama.cpp, vLLM (OpenAI-compatible), or LocalAI*
+
+### Deploy LLM — Model Catalog
+![Model Catalog](screenshots/18-deploy-llm-advanced-models.png)
+*15+ models with RAM/VRAM/disk requirements shown for every option*
 
 ### Dashboard
 ![Dashboard](screenshots/01-dashboard.png)
@@ -362,15 +390,18 @@ See [SECURITY.md](SECURITY.md) for our complete security policy.
 
 - [x] Cloud images for ultra-fast deployment
 - [x] Template-based VM cloning
+- [x] **LLM deployment wizard** — self-hosted AI inference with auto-tuning
+- [x] GPU passthrough support (NVIDIA/AMD)
+- [x] Open WebUI integration
 - [ ] Scheduled deployments
 - [ ] VM snapshots management
 - [ ] Backup automation
 - [ ] Integration with monitoring tools (Prometheus, Grafana)
+- [ ] Image generation support (Stable Diffusion)
 - [ ] Multi-language support
 - [ ] Mobile app
 - [ ] Ansible playbook execution
 - [ ] Cost tracking and reporting
-- [ ] API rate limiting
 
 ## Troubleshooting
 

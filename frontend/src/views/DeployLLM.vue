@@ -32,7 +32,7 @@
               <ul class="mode-features">
                 <li>4 clicks to configure</li>
                 <li>Auto-selected model &amp; resources</li>
-                <li>Always uses Ollama + Ubuntu 24.04</li>
+                <li>Best engine auto-selected for your use case</li>
               </ul>
               <div class="mode-cta">Get Started →</div>
             </div>
@@ -119,9 +119,9 @@
                 :class="['simple-card', { selected: simpleAnswers.useCase === 'memes' }]"
                 @click="simpleAnswers.useCase = 'memes'; simpleNext()"
               >
-                <div class="simple-icon">&#129315;</div>
-                <div class="simple-label">Memes</div>
-                <div class="simple-desc">Generate captions, jokes, and cursed content</div>
+                <div class="simple-icon">&#127912;</div>
+                <div class="simple-label">Humor &amp; Memes</div>
+                <div class="simple-desc">Generate meme images using Stable Diffusion AI (ComfyUI on port 8188)</div>
               </div>
             </div>
           </div>
@@ -130,8 +130,17 @@
         <!-- S1: Quality -->
         <div v-if="simpleStep === 1" class="wizard-step">
           <div class="card">
-            <div class="card-header"><h3>Response quality?</h3></div>
-            <p class="step-desc">Higher quality needs more RAM and disk. All options run without a GPU.</p>
+            <div class="card-header">
+              <h3>{{ simpleAnswers.useCase === 'memes' ? 'Image quality?' : 'Response quality?' }}</h3>
+            </div>
+            <p class="step-desc">
+              <template v-if="simpleAnswers.useCase === 'memes'">
+                Higher image quality uses a larger model and needs more RAM. A GPU is strongly recommended for Stable Diffusion.
+              </template>
+              <template v-else>
+                Higher quality needs more RAM and disk. All options run without a GPU.
+              </template>
+            </p>
             <div class="simple-grid">
               <div
                 :class="['simple-card', { selected: simpleAnswers.quality === 'light' }]"
@@ -139,7 +148,10 @@
               >
                 <div class="simple-icon">&#9889;</div>
                 <div class="simple-label">Fast &amp; Light</div>
-                <div class="simple-desc">1–3B models · 4–8 GB RAM · Instant responses</div>
+                <div class="simple-desc">
+                  <template v-if="simpleAnswers.useCase === 'memes'">SD v1.5 · 8 GB RAM · CPU-capable, GPU faster</template>
+                  <template v-else>1–3B models · 4–8 GB RAM · Instant responses</template>
+                </div>
               </div>
               <div
                 :class="['simple-card simple-card-recommended', { selected: simpleAnswers.quality === 'balanced' }]"
@@ -147,7 +159,10 @@
               >
                 <div class="simple-icon">&#9878;&#65039;</div>
                 <div class="simple-label">Balanced <span class="badge-recommended">Recommended</span></div>
-                <div class="simple-desc">7–8B models · 12–16 GB RAM · Best quality/speed ratio</div>
+                <div class="simple-desc">
+                  <template v-if="simpleAnswers.useCase === 'memes'">DreamShaper 8 · 12 GB RAM · Better quality, GPU recommended</template>
+                  <template v-else>7–8B models · 12–16 GB RAM · Best quality/speed ratio</template>
+                </div>
               </div>
               <div
                 :class="['simple-card', { selected: simpleAnswers.quality === 'quality' }]"
@@ -155,7 +170,10 @@
               >
                 <div class="simple-icon">&#127775;</div>
                 <div class="simple-label">High Quality</div>
-                <div class="simple-desc">14B+ models · 24+ GB RAM · Best results</div>
+                <div class="simple-desc">
+                  <template v-if="simpleAnswers.useCase === 'memes'">SDXL · 24 GB RAM · Best image quality, GPU required</template>
+                  <template v-else>14B+ models · 24+ GB RAM · Best results</template>
+                </div>
               </div>
             </div>
           </div>
@@ -204,26 +222,44 @@
         <!-- S3: Web UI -->
         <div v-if="simpleStep === 3" class="wizard-step">
           <div class="card">
-            <div class="card-header"><h3>Do you want a web interface?</h3></div>
-            <p class="step-desc">Open WebUI gives you a ChatGPT-like browser interface. API-only is for developers.</p>
-            <div class="simple-grid simple-grid-2">
-              <div
-                :class="['simple-card', { selected: simpleAnswers.webui === 'yes' }]"
-                @click="simpleAnswers.webui = 'yes'; simpleNext()"
-              >
-                <div class="simple-icon">&#127760;</div>
-                <div class="simple-label">Yes, Open WebUI</div>
-                <div class="simple-desc">Browser chat interface on port 3000. No coding needed.</div>
+            <!-- Memes/SD: ComfyUI is always included -->
+            <template v-if="simpleAnswers.useCase === 'memes'">
+              <div class="card-header"><h3>Web Interface</h3></div>
+              <p class="step-desc">Stable Diffusion includes ComfyUI — a powerful node-based image generation interface.</p>
+              <div class="simple-grid simple-grid-2">
+                <div
+                  :class="['simple-card', { selected: simpleAnswers.webui === 'comfyui' }]"
+                  @click="simpleAnswers.webui = 'comfyui'; simpleNext()"
+                >
+                  <div class="simple-icon">&#127912;</div>
+                  <div class="simple-label">ComfyUI Web Interface</div>
+                  <div class="simple-desc">Node-based image generation UI on port 8188. Included automatically.</div>
+                </div>
               </div>
-              <div
-                :class="['simple-card', { selected: simpleAnswers.webui === 'no' }]"
-                @click="simpleAnswers.webui = 'no'; simpleNext()"
-              >
-                <div class="simple-icon">&#128279;</div>
-                <div class="simple-label">No, API Only</div>
-                <div class="simple-desc">REST API on port 11434. For custom integrations.</div>
+            </template>
+            <!-- All other use cases: Open WebUI vs API -->
+            <template v-else>
+              <div class="card-header"><h3>Do you want a web interface?</h3></div>
+              <p class="step-desc">Open WebUI gives you a ChatGPT-like browser interface. API-only is for developers.</p>
+              <div class="simple-grid simple-grid-2">
+                <div
+                  :class="['simple-card', { selected: simpleAnswers.webui === 'yes' }]"
+                  @click="simpleAnswers.webui = 'yes'; simpleNext()"
+                >
+                  <div class="simple-icon">&#127760;</div>
+                  <div class="simple-label">Yes, Open WebUI</div>
+                  <div class="simple-desc">Browser chat interface on port 3000. No coding needed.</div>
+                </div>
+                <div
+                  :class="['simple-card', { selected: simpleAnswers.webui === 'no' }]"
+                  @click="simpleAnswers.webui = 'no'; simpleNext()"
+                >
+                  <div class="simple-icon">&#128279;</div>
+                  <div class="simple-label">No, API Only</div>
+                  <div class="simple-desc">REST API on port 11434. For custom integrations.</div>
+                </div>
               </div>
-            </div>
+            </template>
           </div>
           <div class="wizard-nav">
             <button class="btn btn-secondary" @click="simpleStep--">← Back</button>
@@ -242,11 +278,15 @@
               </div>
               <div class="summary-item">
                 <span class="summary-label">Engine</span>
-                <span class="summary-value">Ollama</span>
+                <span class="summary-value">{{ simpleAnswers.useCase === 'memes' ? 'Stable Diffusion (ComfyUI)' : 'Ollama' }}</span>
               </div>
               <div class="summary-item">
                 <span class="summary-label">Interface</span>
-                <span class="summary-value">{{ simpleAnswers.webui === 'yes' ? 'Open WebUI (port 3000)' : 'API only (port 11434)' }}</span>
+                <span class="summary-value">
+                  <template v-if="simpleAnswers.useCase === 'memes'">ComfyUI (port 8188)</template>
+                  <template v-else-if="simpleAnswers.webui === 'yes'">Open WebUI (port 3000)</template>
+                  <template v-else>API only (port 11434)</template>
+                </span>
               </div>
               <div class="summary-item">
                 <span class="summary-label">Hardware</span>
@@ -457,7 +497,7 @@
               <div class="review-section">
                 <h4>AI Stack</h4>
                 <table class="review-table">
-                  <tr><td>Engine</td><td>Ollama</td></tr>
+                  <tr><td>Engine</td><td>{{ engineLabel }}</td></tr>
                   <tr><td>Model</td><td>{{ form.model }}</td></tr>
                   <tr><td>Interface</td><td>{{ uiLabel }}</td></tr>
                   <tr><td>GPU</td><td>{{ form.gpu_enabled ? (form.gpu_type || 'enabled') : 'CPU only' }}</td></tr>
@@ -486,11 +526,19 @@
 
             <div class="info-box">
               <strong>What happens after deploy:</strong> The VM will be created and booted. On first boot,
-              Ollama installs and pulls the model automatically. This may take 10–30 minutes depending on
-              network speed. Check progress at <code>/var/log/llm-setup.log</code> inside the VM.
-              <span v-if="form.ui_type === 'open-webui'">
-                Open WebUI will be available on port 3000 once setup completes.
-              </span>
+              <template v-if="simpleAnswers.useCase === 'memes'">
+                ComfyUI and Stable Diffusion install automatically, then the model checkpoint downloads.
+                This may take 20–60 minutes depending on model size and network speed.
+                Access ComfyUI on port 8188 once setup completes.
+              </template>
+              <template v-else>
+                the engine installs and pulls the model automatically. This may take 10–30 minutes depending on
+                network speed.
+                <span v-if="form.ui_type === 'open-webui'">
+                  Open WebUI will be available on port 3000 once setup completes.
+                </span>
+              </template>
+              Check progress at <code>/var/log/llm-setup.log</code> inside the VM.
             </div>
 
             <div v-if="deployError" class="error-box">{{ deployError }}</div>
@@ -1133,9 +1181,9 @@ const SIMPLE_RECS = {
   'reasoning-light':    { model: 'deepseek-r1:7b', modelName: 'DeepSeek R1 7B',       cpu_cores: 8,  memory: 16384, disk_size: 40 },
   'reasoning-balanced': { model: 'deepseek-r1:7b', modelName: 'DeepSeek R1 7B',       cpu_cores: 8,  memory: 16384, disk_size: 40 },
   'reasoning-quality':  { model: 'deepseek-r1:7b', modelName: 'DeepSeek R1 7B',       cpu_cores: 8,  memory: 16384, disk_size: 40 },
-  'memes-light':        { model: 'llama3.2:1b',    modelName: 'Llama 3.2 1B',         cpu_cores: 2,  memory: 6144,  disk_size: 20 },
-  'memes-balanced':     { model: 'llama3.2:3b',    modelName: 'Llama 3.2 3B',         cpu_cores: 4,  memory: 12288, disk_size: 25 },
-  'memes-quality':      { model: 'llama3.1:8b',    modelName: 'Llama 3.1 8B',         cpu_cores: 8,  memory: 16384, disk_size: 40 },
+  'memes-light':        { engine: 'stable-diffusion', model: 'sd-v1.5',       modelName: 'SD v1.5',        cpu_cores: 4,  memory: 8192,  disk_size: 30 },
+  'memes-balanced':     { engine: 'stable-diffusion', model: 'dreamshaper-8', modelName: 'DreamShaper 8',  cpu_cores: 4,  memory: 12288, disk_size: 40 },
+  'memes-quality':      { engine: 'stable-diffusion', model: 'sdxl',          modelName: 'SDXL 1.0',       cpu_cores: 8,  memory: 24576, disk_size: 60 },
 }
 
 export default {
@@ -1355,7 +1403,7 @@ export default {
     // Apply simple recommendation to shared form before infrastructure step
     function applySimpleRec() {
       const rec = simpleRec.value
-      form.value.engine = 'ollama'
+      form.value.engine = rec.engine || 'ollama'
       form.value.model = rec.model
       form.value.os_variant = 'ubuntu2404'
       form.value.cpu_cores = rec.cpu_cores
@@ -1374,8 +1422,12 @@ export default {
         form.value.gpu_device_id = null
       }
 
-      // Web UI
-      form.value.ui_type = simpleAnswers.value.webui === 'yes' ? 'open-webui' : 'api-only'
+      // Web UI — SD/memes always uses ComfyUI; others follow wizard answer
+      if (simpleAnswers.value.useCase === 'memes') {
+        form.value.ui_type = 'comfyui'
+      } else {
+        form.value.ui_type = simpleAnswers.value.webui === 'yes' ? 'open-webui' : 'api-only'
+      }
     }
 
     // ── advanced wizard navigation ────────────────────────────────

@@ -81,6 +81,7 @@ export default {
   flex-direction: column;
   gap: 2rem;
   max-width: 1000px;
+  margin: 0 auto;
 }
 
 .page-header h2 {

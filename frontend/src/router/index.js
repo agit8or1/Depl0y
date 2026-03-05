@@ -53,16 +53,18 @@ const router = createRouter({
       meta: { requiresAuth: true }
     },
     {
-      path: '/isos',
-      name: 'ISOImages',
-      component: () => import('@/views/ISOImages.vue'),
+      path: '/images',
+      name: 'Images',
+      component: () => import('@/views/Images.vue'),
       meta: { requiresAuth: true }
     },
     {
+      path: '/isos',
+      redirect: '/images'
+    },
+    {
       path: '/cloud-images',
-      name: 'CloudImages',
-      component: () => import('@/views/CloudImages.vue'),
-      meta: { requiresAuth: true }
+      redirect: '/images'
     },
     {
       path: '/ha-management',

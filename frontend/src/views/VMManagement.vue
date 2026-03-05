@@ -49,55 +49,62 @@
               </tr>
             </thead>
             <tbody>
-              <template v-for="vm in vms" :key="vm.id">
-                <tr :class="{ 'row-expanded': expandedVM === vm.id }">
+              <template v-for="vm in vms" :key="vm.vmid">
+                <tr :class="{ 'row-expanded': expandedVM === vm.vmid }">
                   <td>
                     <div class="vm-name">
                       <strong>{{ vm.name }}</strong>
-                      <span class="text-sm text-muted">VMID: {{ vm.vmid || '—' }}</span>
+                      <span class="text-sm text-muted">VMID: {{ vm.vmid }}</span>
                     </div>
                   </td>
-                  <td class="text-sm">{{ vm.os_type }}</td>
-                  <td class="text-sm mono">{{ vm.ip_address || '—' }}</td>
+                  <td class="text-sm">{{ getManagedVM(vm.vmid)?.os_type || '—' }}</td>
+                  <td class="text-sm mono">{{ getManagedVM(vm.vmid)?.ip_address || '—' }}</td>
                   <td>
                     <span :class="['badge', getVMStatusBadge(vm.status)]">{{ vm.status }}</span>
                   </td>
-                  <td class="text-sm text-muted">{{ updateChecks[vm.id]?.checked_at ? formatDate(updateChecks[vm.id].checked_at) : 'Never' }}</td>
+                  <td class="text-sm text-muted">{{ updateChecks[vm.vmid]?.checked_at ? formatDate(updateChecks[vm.vmid].checked_at) : 'Never' }}</td>
                   <td>
                     <div class="action-btns">
                       <button
                         @click="checkUpdates(vm)"
                         class="btn btn-sm btn-outline"
-                        :disabled="updatingVM === vm.id || vm.status !== 'running'"
-                        :title="vm.status !== 'running' ? 'VM must be running' : 'Check for updates'"
+                        :disabled="updatingVM === vm.vmid || vm.status !== 'running' || !getManagedVM(vm.vmid)?.ip_address"
+                        :title="!getManagedVM(vm.vmid) ? 'Not managed by Depl0y' : !getManagedVM(vm.vmid)?.ip_address ? 'No IP — set SSH credentials first' : vm.status !== 'running' ? 'VM must be running' : 'Check for updates'"
                       >
-                        {{ updatingVM === vm.id && updateAction === 'check' ? '...' : 'Check' }}
+                        {{ updatingVM === vm.vmid && updateAction === 'check' ? '...' : 'Check' }}
                       </button>
                       <button
                         @click="installUpdates(vm)"
                         class="btn btn-sm btn-primary"
-                        :disabled="updatingVM === vm.id || vm.status !== 'running'"
-                        :title="vm.status !== 'running' ? 'VM must be running' : 'Install updates'"
+                        :disabled="updatingVM === vm.vmid || vm.status !== 'running' || !getManagedVM(vm.vmid)?.ip_address"
+                        :title="!getManagedVM(vm.vmid) ? 'Not managed by Depl0y' : !getManagedVM(vm.vmid)?.ip_address ? 'No IP — set SSH credentials first' : vm.status !== 'running' ? 'VM must be running' : 'Install updates'"
                       >
-                        {{ updatingVM === vm.id && updateAction === 'install' ? 'Installing...' : 'Update' }}
+                        {{ updatingVM === vm.vmid && updateAction === 'install' ? 'Installing...' : 'Update' }}
                       </button>
                       <button
-                        @click="toggleHistory(vm.id)"
+                        @click="toggleHistory(vm.vmid)"
                         class="btn btn-sm btn-secondary"
-                        :disabled="vm.status === 'creating'"
                       >
                         History
+                      </button>
+                      <button
+                        @click="openCredModal(vm)"
+                        class="btn btn-sm btn-outline"
+                        :disabled="!getManagedVM(vm.vmid)"
+                        :title="!getManagedVM(vm.vmid) ? 'Not managed by Depl0y' : 'Edit SSH credentials'"
+                      >
+                        🔑
                       </button>
                     </div>
                   </td>
                 </tr>
 
                 <!-- Update check result -->
-                <tr v-if="updateChecks[vm.id] && expandedVM !== vm.id" class="result-row">
+                <tr v-if="updateChecks[vm.vmid] && expandedVM !== vm.vmid" class="result-row">
                   <td colspan="6">
-                    <div :class="['update-result', updateChecks[vm.id].updates_available > 0 ? 'has-updates' : 'up-to-date']">
-                      <span v-if="updateChecks[vm.id].updates_available > 0">
-                        ⚠️ <strong>{{ updateChecks[vm.id].updates_available }}</strong> update(s) available
+                    <div :class="['update-result', updateChecks[vm.vmid].updates_available > 0 ? 'has-updates' : 'up-to-date']">
+                      <span v-if="updateChecks[vm.vmid].updates_available > 0">
+                        ⚠️ <strong>{{ updateChecks[vm.vmid].updates_available }}</strong> update(s) available
                       </span>
                       <span v-else>✅ Up to date</span>
                     </div>
@@ -105,14 +112,14 @@
                 </tr>
 
                 <!-- Update history panel -->
-                <tr v-if="expandedVM === vm.id" class="history-row">
+                <tr v-if="expandedVM === vm.vmid" class="history-row">
                   <td colspan="6">
                     <div class="history-panel">
-                      <div v-if="loadingHistory[vm.id]" class="loading-row">
+                      <div v-if="loadingHistory[vm.vmid]" class="loading-row">
                         <div class="loading-spinner"></div>
                         <span>Loading history...</span>
                       </div>
-                      <div v-else-if="!updateHistory[vm.id] || updateHistory[vm.id].length === 0" class="history-empty">
+                      <div v-else-if="!updateHistory[vm.vmid] || updateHistory[vm.vmid].length === 0" class="history-empty">
                         No update history for this VM.
                       </div>
                       <div v-else>
@@ -126,7 +133,7 @@
                             </tr>
                           </thead>
                           <tbody>
-                            <tr v-for="log in updateHistory[vm.id]" :key="log.id">
+                            <tr v-for="log in updateHistory[vm.vmid]" :key="log.id">
                               <td class="text-sm">{{ formatDate(log.started_at) }}</td>
                               <td>
                                 <span :class="['badge', log.status === 'completed' ? 'badge-success' : log.status === 'failed' ? 'badge-danger' : 'badge-warning']">
@@ -154,6 +161,37 @@
       </div>
     </div>
 
+    <!-- SSH Credentials Modal -->
+    <div v-if="credModal.show" class="modal-overlay" @click="credModal.show = false">
+      <div class="cred-modal" @click.stop>
+        <div class="cred-modal-header">
+          <h3>SSH Credentials — {{ credModal.vm?.name }}</h3>
+          <button @click="credModal.show = false" class="btn-close-sm">×</button>
+        </div>
+        <div class="cred-modal-body">
+          <p class="cred-note">These credentials are used to SSH into the VM for update management.</p>
+          <div class="form-group">
+            <label class="form-label">IP Address</label>
+            <input v-model="credForm.ip_address" class="form-control" placeholder="192.168.1.100" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Username</label>
+            <input v-model="credForm.username" class="form-control" placeholder="ubuntu" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Password</label>
+            <input v-model="credForm.password" type="password" class="form-control" placeholder="Leave blank to keep existing" />
+          </div>
+        </div>
+        <div class="cred-modal-footer">
+          <button @click="credModal.show = false" class="btn btn-outline">Cancel</button>
+          <button @click="saveCredentials" class="btn btn-primary" :disabled="savingCreds">
+            {{ savingCreds ? 'Saving...' : 'Save' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- ── MONITORING TAB ── -->
     <div v-if="activeTab === 'monitoring'">
       <div class="card">
@@ -172,55 +210,47 @@
         </div>
 
         <div v-else class="monitor-grid">
-          <div v-for="vm in vms" :key="vm.id" class="monitor-card">
+          <div v-for="vm in vms" :key="vm.vmid" class="monitor-card">
             <div class="monitor-header">
               <div>
                 <strong>{{ vm.name }}</strong>
-                <span class="text-sm text-muted"> · {{ vm.os_type }}</span>
+                <span class="text-sm text-muted" v-if="getManagedVM(vm.vmid)?.os_type"> · {{ getManagedVM(vm.vmid).os_type }}</span>
               </div>
               <span :class="['badge', getVMStatusBadge(vm.status)]">{{ vm.status }}</span>
             </div>
 
             <div class="monitor-specs">
-              <div class="spec-item">
+              <div class="spec-row">
+                <span class="spec-label">VMID</span>
+                <span class="spec-value mono">{{ vm.vmid }}</span>
+              </div>
+              <div class="spec-row">
+                <span class="spec-label">Node</span>
+                <span class="spec-value mono">{{ vm.node || '—' }}</span>
+              </div>
+              <div class="spec-row">
                 <span class="spec-label">CPU</span>
-                <div class="spec-bar-wrap">
-                  <div class="spec-bar">
-                    <div class="spec-fill cpu-fill" :style="{ width: getRandomUsage(vm.id, 'cpu') + '%' }"></div>
-                  </div>
-                  <span class="spec-value text-sm">{{ vm.cpu_cores }} cores</span>
-                </div>
+                <span class="spec-value">{{ vm.cpus || '—' }} cores</span>
               </div>
-              <div class="spec-item">
+              <div class="spec-row">
                 <span class="spec-label">RAM</span>
-                <div class="spec-bar-wrap">
-                  <div class="spec-bar">
-                    <div class="spec-fill ram-fill" :style="{ width: getRandomUsage(vm.id, 'ram') + '%' }"></div>
-                  </div>
-                  <span class="spec-value text-sm">{{ formatMB(vm.memory) }}</span>
-                </div>
+                <span class="spec-value">{{ formatBytes(vm.maxmem) }}</span>
               </div>
-              <div class="spec-item">
+              <div class="spec-row">
                 <span class="spec-label">Disk</span>
-                <div class="spec-bar-wrap">
-                  <div class="spec-bar">
-                    <div class="spec-fill disk-fill" :style="{ width: getRandomUsage(vm.id, 'disk') + '%' }"></div>
-                  </div>
-                  <span class="spec-value text-sm">{{ vm.disk_size }} GB</span>
-                </div>
+                <span class="spec-value">{{ formatBytes(vm.maxdisk) }}</span>
               </div>
-            </div>
-
-            <div class="monitor-meta text-sm text-muted">
-              <span>{{ vm.ip_address || 'No IP' }}</span>
-              <span>Node: {{ vm.node_name || '—' }}</span>
+              <div class="spec-row">
+                <span class="spec-label">IP</span>
+                <span class="spec-value mono">{{ getManagedVM(vm.vmid)?.ip_address || '—' }}</span>
+              </div>
             </div>
           </div>
         </div>
 
-        <div class="monitor-note info-box" style="margin: 1rem; font-size: 0.8rem;">
-          Live CPU/RAM metrics require the QEMU Guest Agent to be installed and running on each VM.
-          Usage bars show last-known values from Proxmox. Install the agent via VM Actions → Install QEMU Agent.
+        <div class="monitor-note info-box" style="margin: 0 1rem 1rem; font-size: 0.8rem;">
+          Live CPU/RAM usage metrics require the QEMU Guest Agent on each VM and are available in the Proxmox web UI.
+          The <router-link to="/proxmox">Proxmox Hosts</router-link> page shows node-level resource usage.
         </div>
       </div>
     </div>
@@ -251,39 +281,40 @@
         </div>
 
         <div v-else class="llm-vm-list">
-          <div v-for="vm in llmVMs" :key="vm.id" class="llm-vm-card">
+          <div v-for="vm in llmVMs" :key="vm.vmid" class="llm-vm-card">
             <div class="llm-vm-header">
               <div>
                 <strong>{{ vm.name }}</strong>
-                <span class="text-sm text-muted"> · {{ vm.ip_address || 'No IP' }}</span>
+                <span class="text-sm text-muted"> · {{ getManagedVM(vm.vmid)?.ip_address || 'No IP' }}</span>
               </div>
               <span :class="['badge', getVMStatusBadge(vm.status)]">{{ vm.status }}</span>
             </div>
             <div class="llm-vm-specs text-sm text-muted">
-              {{ vm.cpu_cores }} CPU · {{ formatMB(vm.memory) }} RAM · {{ vm.disk_size }} GB disk
+              {{ vm.cpus || '—' }} CPU · {{ formatBytes(vm.maxmem) }} RAM · {{ formatBytes(vm.maxdisk) }} disk
             </div>
             <div class="llm-vm-actions">
               <button
                 @click="runAITune(vm)"
                 class="btn btn-primary"
-                :disabled="tuningVM === vm.id || vm.status !== 'running'"
+                :disabled="tuningVM === vm.vmid || vm.status !== 'running' || !getManagedVM(vm.vmid)"
+                :title="!getManagedVM(vm.vmid) ? 'Not managed by Depl0y' : ''"
               >
-                <span v-if="tuningVM === vm.id">Analyzing...</span>
+                <span v-if="tuningVM === vm.vmid">Analyzing...</span>
                 <span v-else>Run AI Tune</span>
               </button>
             </div>
 
             <!-- Tuning results -->
-            <div v-if="tuningResults[vm.id]" class="tuning-results">
-              <div :class="['tuning-status', tuningResults[vm.id].error ? 'tuning-error' : 'tuning-success']">
-                <span v-if="tuningResults[vm.id].error">
-                  ❌ {{ tuningResults[vm.id].error }}
+            <div v-if="tuningResults[vm.vmid]" class="tuning-results">
+              <div :class="['tuning-status', tuningResults[vm.vmid].error ? 'tuning-error' : 'tuning-success']">
+                <span v-if="tuningResults[vm.vmid].error">
+                  ❌ {{ tuningResults[vm.vmid].error }}
                 </span>
                 <span v-else>✅ Analysis complete</span>
               </div>
-              <div v-if="tuningResults[vm.id].recommendations" class="tuning-recs">
+              <div v-if="tuningResults[vm.vmid].recommendations" class="tuning-recs">
                 <h4>Recommendations</h4>
-                <pre class="tuning-output">{{ tuningResults[vm.id].recommendations }}</pre>
+                <pre class="tuning-output">{{ tuningResults[vm.vmid].recommendations }}</pre>
               </div>
             </div>
           </div>
@@ -304,7 +335,8 @@ export default {
     const toast = useToast()
 
     const activeTab = ref('updates')
-    const vms = ref([])
+    const vms = ref([])          // Proxmox live VMs (display)
+    const managedVMs = ref([])   // Depl0y DB VMs (for update/credential operations)
     const loadingVMs = ref(false)
     const loadingMonitor = ref(false)
     const expandedVM = ref(null)
@@ -315,14 +347,13 @@ export default {
     const loadingHistory = ref({})
     const tuningVM = ref(null)
     const tuningResults = ref({})
+    const credModal = ref({ show: false, vm: null })
+    const credForm = ref({ ip_address: '', username: '', password: '' })
+    const savingCreds = ref(false)
 
-    // Stable mock usage values per VM so bars don't flicker
-    const usageCache = {}
-    const getRandomUsage = (vmId, type) => {
-      const key = `${vmId}-${type}`
-      if (!usageCache[key]) usageCache[key] = Math.floor(Math.random() * 60) + 10
-      return usageCache[key]
-    }
+    // Returns the DB-managed VM matching a Proxmox vmid (for update/SSH ops)
+    const getManagedVM = (vmid) => managedVMs.value.find(m => m.vmid === vmid) || null
+
 
     const tabs = computed(() => [
       { id: 'updates', label: 'Updates', icon: '🔄', badge: null },
@@ -332,24 +363,58 @@ export default {
 
     const llmVMs = computed(() =>
       vms.value.filter(vm =>
-        vm.tags?.includes('llm') ||
-        vm.description?.toLowerCase().includes('llm') ||
         vm.name?.toLowerCase().includes('llm') ||
         vm.name?.toLowerCase().includes('ollama') ||
         vm.name?.toLowerCase().includes('comfyui') ||
-        vm.name?.toLowerCase().includes('stable-diffusion')
+        vm.name?.toLowerCase().includes('stable-diffusion') ||
+        vm.tags?.includes('llm')
       )
     )
 
     const loadVMs = async () => {
       loadingVMs.value = true
       try {
-        const response = await api.vms.list()
-        vms.value = response.data?.items || response.data || []
+        const [proxmoxRes, managedRes] = await Promise.all([
+          api.vms.list().catch(() => ({ data: [] })),
+          api.vms.listManaged().catch(() => ({ data: [] }))
+        ])
+        vms.value = proxmoxRes.data || []
+        managedVMs.value = managedRes.data || []
       } catch {
         toast.error('Failed to load VMs')
       } finally {
         loadingVMs.value = false
+      }
+    }
+
+    const openCredModal = (vm) => {
+      const managed = getManagedVM(vm.vmid)
+      credModal.value = { show: true, vm, managed }
+      credForm.value = {
+        ip_address: managed?.ip_address || '',
+        username: managed?.username || '',
+        password: ''
+      }
+    }
+
+    const saveCredentials = async () => {
+      const managed = credModal.value.managed
+      if (!managed) {
+        toast.error('This VM is not managed by Depl0y — deploy it via Depl0y to store credentials')
+        return
+      }
+      savingCreds.value = true
+      try {
+        const payload = { ip_address: credForm.value.ip_address, username: credForm.value.username }
+        if (credForm.value.password) payload.password = credForm.value.password
+        await api.vms.update(managed.id, payload)
+        toast.success('Credentials saved')
+        credModal.value.show = false
+        await loadVMs()
+      } catch {
+        toast.error('Failed to save credentials')
+      } finally {
+        savingCreds.value = false
       }
     }
 
@@ -360,11 +425,13 @@ export default {
     }
 
     const checkUpdates = async (vm) => {
-      updatingVM.value = vm.id
+      const managed = getManagedVM(vm.vmid)
+      if (!managed) return
+      updatingVM.value = vm.vmid
       updateAction.value = 'check'
       try {
-        const response = await api.updates.check(vm.id)
-        updateChecks.value[vm.id] = response.data
+        const response = await api.updates.check(managed.id)
+        updateChecks.value[vm.vmid] = response.data
         toast.success(`Update check complete for ${vm.name}`)
       } catch {
         toast.error(`Failed to check updates for ${vm.name}`)
@@ -375,10 +442,12 @@ export default {
     }
 
     const installUpdates = async (vm) => {
-      updatingVM.value = vm.id
+      const managed = getManagedVM(vm.vmid)
+      if (!managed) return
+      updatingVM.value = vm.vmid
       updateAction.value = 'install'
       try {
-        await api.updates.install(vm.id)
+        await api.updates.install(managed.id)
         toast.success(`Update started for ${vm.name} — check history for progress`)
       } catch {
         toast.error(`Failed to start updates for ${vm.name}`)
@@ -388,34 +457,41 @@ export default {
       }
     }
 
-    const toggleHistory = async (vmId) => {
-      if (expandedVM.value === vmId) {
+    const toggleHistory = async (vmid) => {
+      if (expandedVM.value === vmid) {
         expandedVM.value = null
         return
       }
-      expandedVM.value = vmId
-      if (!updateHistory.value[vmId]) {
-        loadingHistory.value[vmId] = true
+      expandedVM.value = vmid
+      const managed = getManagedVM(vmid)
+      if (!managed) {
+        updateHistory.value[vmid] = []
+        return
+      }
+      if (!updateHistory.value[vmid]) {
+        loadingHistory.value[vmid] = true
         try {
-          const response = await api.updates.getHistory(vmId)
-          updateHistory.value[vmId] = response.data
+          const response = await api.updates.getHistory(managed.id)
+          updateHistory.value[vmid] = response.data
         } catch {
-          updateHistory.value[vmId] = []
+          updateHistory.value[vmid] = []
         } finally {
-          loadingHistory.value[vmId] = false
+          loadingHistory.value[vmid] = false
         }
       }
     }
 
     const runAITune = async (vm) => {
-      tuningVM.value = vm.id
-      tuningResults.value[vm.id] = null
+      const managed = getManagedVM(vm.vmid)
+      if (!managed) return
+      tuningVM.value = vm.vmid
+      tuningResults.value[vm.vmid] = null
       try {
-        const response = await api.vmAgent.runAITune(vm.id)
-        tuningResults.value[vm.id] = response.data
+        const response = await api.vmAgent.runAITune(managed.id)
+        tuningResults.value[vm.vmid] = response.data
         toast.success(`AI Tuning complete for ${vm.name}`)
       } catch (error) {
-        tuningResults.value[vm.id] = {
+        tuningResults.value[vm.vmid] = {
           error: error.response?.data?.detail || 'Tuning failed — ensure the VM is running and SSH is accessible'
         }
       } finally {
@@ -436,6 +512,15 @@ export default {
 
     const formatDate = (dt) => dt ? new Date(dt).toLocaleString() : '—'
 
+    // For Proxmox live data (maxmem, maxdisk are in bytes)
+    const formatBytes = (bytes) => {
+      if (!bytes) return '—'
+      const gb = bytes / (1024 * 1024 * 1024)
+      if (gb >= 1) return `${gb.toFixed(1)} GB`
+      return `${(bytes / (1024 * 1024)).toFixed(0)} MB`
+    }
+
+    // Legacy: for DB VMs that store memory in MB
     const formatMB = (mb) => {
       if (!mb) return '—'
       return mb >= 1024 ? `${(mb / 1024).toFixed(0)} GB` : `${mb} MB`
@@ -448,8 +533,9 @@ export default {
       expandedVM, updatingVM, updateAction, updateChecks,
       updateHistory, loadingHistory, tuningVM, tuningResults, llmVMs,
       loadVMs, loadMonitoring, checkUpdates, installUpdates,
-      toggleHistory, runAITune, getRandomUsage,
-      getVMStatusBadge, formatDate, formatMB,
+      toggleHistory, runAITune, getManagedVM,
+      getVMStatusBadge, formatDate, formatBytes, formatMB,
+      credModal, credForm, savingCreds, openCredModal, saveCredentials,
     }
   }
 }
@@ -622,38 +708,18 @@ export default {
   align-items: flex-start;
 }
 
-.monitor-specs { display: flex; flex-direction: column; gap: 0.6rem; }
+.monitor-specs { display: flex; flex-direction: column; gap: 0.4rem; }
 
-.spec-item {
-  display: grid;
-  grid-template-columns: 40px 1fr;
+.spec-row {
+  display: flex;
+  justify-content: space-between;
   align-items: center;
-  gap: 0.5rem;
+  font-size: 0.85rem;
 }
 
-.spec-label { font-size: 0.75rem; color: var(--text-secondary); font-weight: 600; }
+.spec-label { color: var(--text-secondary); font-weight: 500; }
 
-.spec-bar-wrap { display: flex; align-items: center; gap: 0.5rem; }
-
-.spec-bar {
-  flex: 1;
-  height: 6px;
-  background: var(--border-color);
-  border-radius: 3px;
-  overflow: hidden;
-}
-
-.spec-fill {
-  height: 100%;
-  border-radius: 3px;
-  transition: width 0.5s ease;
-}
-
-.cpu-fill { background: #3b82f6; }
-.ram-fill { background: #8b5cf6; }
-.disk-fill { background: #10b981; }
-
-.spec-value { font-size: 0.75rem; color: var(--text-secondary); white-space: nowrap; }
+.spec-value { color: var(--text-primary); }
 
 .monitor-meta {
   display: flex;
@@ -714,6 +780,71 @@ export default {
   white-space: pre-wrap;
   max-height: 300px;
   overflow-y: auto;
+}
+
+/* SSH Credentials Modal */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.cred-modal {
+  background: var(--card-bg, #fff);
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+  width: 90%;
+  max-width: 440px;
+  box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+}
+
+.cred-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.cred-modal-header h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.btn-close-sm {
+  background: none;
+  border: none;
+  font-size: 1.25rem;
+  cursor: pointer;
+  color: var(--text-secondary);
+  padding: 0 0.25rem;
+  line-height: 1;
+}
+
+.cred-modal-body {
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.cred-note {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin: 0 0 0.25rem;
+}
+
+.cred-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding: 1rem 1.25rem;
+  border-top: 1px solid var(--border-color);
 }
 
 /* Shared */

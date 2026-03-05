@@ -5,6 +5,35 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.1] - 2026-03-05 🔧 VM Management Fix
+
+### Fixed
+- `getManagedVM` not exposed to template — caused `TypeError: r.getManagedVM is not a function` on VM Management page load
+- VM Management now correctly shows all Proxmox VMs (live data) with DB-matched credentials, IP, and OS type displayed per VM
+
+---
+
+## [1.5.0] - 2026-03-05 🛡️ Linux VM Agent + UI Consolidation
+
+### Added
+- **Linux VM Agent**: push-based security scanning agent for managed Linux VMs — OS update checks, dependency scanning, AI analysis; new `LinuxVMManagement` page shows registered agents and scan results with severity badges
+- **VM Agent API**: `POST /vm-agent/register`, `POST /vm-agent/report`, `GET /vm-agent/`, `GET /vm-agent/{id}`, `DELETE /vm-agent/{id}`, `GET /vm-agent/{id}/install-command`; agent authentication via per-VM Bearer token
+- **SSH Credentials modal** on VM Management page — store IP, username, password per VM for update/SSH operations
+- **About page** and **Support page** added to sidebar
+- **System Update** check/apply flow in Settings
+
+### Changed
+- **Images page**: combined ISO Images and Cloud Images into a single tabbed `/images` page (sidebar now shows one "Images" entry); `/isos` and `/cloud-images` redirect to `/images`
+- **VM Management** now loads VMs from Proxmox live feed (same as Virtual Machines page) instead of the Depl0y DB, preventing stale/failed deployment records from appearing; DB VMs are loaded in parallel for credential/update operations
+- **HA Management**: removed HA Groups section (not supported on Proxmox 8.x — replaced by rules); updated help text to reflect Proxmox 8+ rules-based HA
+
+### Fixed
+- `POST /updates/vm/undefined/check` 422 error — VM Management was using `vm.id` (undefined for Proxmox live VMs) instead of the Depl0y DB primary key
+- Monitoring tab removed fake `Math.random()` usage bars; now shows real VM specs (VMID, node, CPU, RAM, disk)
+- Images tab contrast issue — tabs now use CSS variables matching the app's light theme
+
+---
+
 ## [1.4.1] - 2026-03-05 🎨 Stable Diffusion Image Generation
 
 ### Added

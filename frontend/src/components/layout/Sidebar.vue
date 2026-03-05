@@ -17,7 +17,7 @@
       </router-link>
 
       <router-link v-if="isOperator" to="/vm-management" class="nav-item">
-        <span class="icon">⚙️</span>
+        <span class="icon">🛠️</span>
         <span>VM Management</span>
       </router-link>
 
@@ -26,14 +26,9 @@
         <span>Proxmox Hosts</span>
       </router-link>
 
-      <router-link to="/isos" class="nav-item">
+      <router-link to="/images" class="nav-item">
         <span class="icon">💿</span>
-        <span>ISO Images</span>
-      </router-link>
-
-      <router-link to="/cloud-images" class="nav-item">
-        <span class="icon">☁️</span>
-        <span>Cloud Images</span>
+        <span>Images</span>
       </router-link>
 
       <router-link v-if="isOperator" to="/llm-deploy" class="nav-item">

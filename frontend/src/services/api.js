@@ -136,6 +136,7 @@ export default {
   // Virtual Machines
   vms: {
     list: (params) => api.get('/vms/', { params }),
+    listManaged: () => api.get('/vms/managed'),
     get: (id) => api.get(`/vms/${id}`),
     create: (data) => api.post('/vms/', data),
     update: (id, data) => api.put(`/vms/${id}`, data),

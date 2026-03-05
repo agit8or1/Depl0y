@@ -110,6 +110,7 @@ export default {
   flex-direction: column;
   gap: 1.5rem;
   max-width: 860px;
+  margin: 0 auto;
 }
 
 .hero-card {

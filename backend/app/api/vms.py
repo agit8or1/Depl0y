@@ -78,6 +78,8 @@ class VMUpdate(BaseModel):
     name: Optional[str] = None
     status: Optional[VMStatus] = None
     ip_address: Optional[str] = None
+    username: Optional[str] = None
+    password: Optional[str] = None
 
 
 class VMResponse(BaseModel):
@@ -277,6 +279,24 @@ async def create_vm(
     return new_vm
 
 
+@router.get("/managed", response_model=List[VMResponse])
+async def list_managed_vms(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """List VMs managed by Depl0y that have been successfully deployed (have a Proxmox vmid)"""
+    vms = (
+        db.query(VirtualMachine)
+        .filter(
+            VirtualMachine.vmid.isnot(None),
+            VirtualMachine.status.notin_([VMStatus.CREATING, VMStatus.DELETING])
+        )
+        .order_by(VirtualMachine.name)
+        .all()
+    )
+    return vms
+
+
 @router.get("/{vm_id}", response_model=VMResponse)
 async def get_vm(
     vm_id: int,
@@ -316,6 +336,12 @@ async def update_vm(
 
     if vm_data.ip_address is not None:
         vm.ip_address = vm_data.ip_address
+
+    if vm_data.username is not None:
+        vm.username = vm_data.username
+
+    if vm_data.password is not None:
+        vm.password = vm_data.password
 
     vm.last_updated = datetime.utcnow()
     db.commit()

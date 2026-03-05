@@ -3,7 +3,7 @@
     <div class="page-header">
       <div>
         <h1>High Availability Management</h1>
-        <p class="subtitle">Manage Proxmox HA groups and resources</p>
+        <p class="subtitle">Manage Proxmox HA resources and monitor failover status</p>
       </div>
       <button @click="showWizard = true" class="btn btn-primary btn-wizard">
         <span class="icon">✨</span> Setup Wizard
@@ -11,50 +11,6 @@
     </div>
 
     <div class="ha-content">
-      <!-- HA Groups Section -->
-      <div class="card">
-        <div class="card-header">
-          <h2>HA Groups</h2>
-          <button @click="loadHAGroups" class="btn btn-secondary">
-            <span class="icon">🔄</span> Refresh
-          </button>
-        </div>
-
-        <div v-if="loading" class="loading">Loading HA groups...</div>
-
-        <div v-else-if="error" class="error-message">
-          {{ error }}
-        </div>
-
-        <div v-else-if="haGroups.length === 0" class="empty-state">
-          <p>No HA groups configured</p>
-          <p class="help-text">HA groups define which nodes VMs can fail over to</p>
-        </div>
-
-        <div v-else class="table-responsive">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>Group ID</th>
-                <th>Nodes</th>
-                <th>Restricted</th>
-                <th>No Failback</th>
-                <th>Comment</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="group in haGroups" :key="group.group">
-                <td><strong>{{ group.group }}</strong></td>
-                <td>{{ group.nodes }}</td>
-                <td>{{ group.restricted ? 'Yes' : 'No' }}</td>
-                <td>{{ group.nofailback ? 'Yes' : 'No' }}</td>
-                <td>{{ group.comment || '-' }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
       <!-- HA Resources Section -->
       <div class="card">
         <div class="card-header">
@@ -143,11 +99,6 @@
             <div class="status-label">Total Resources</div>
             <div class="status-value">{{ haResources.length }}</div>
           </div>
-
-          <div class="status-item">
-            <div class="status-label">Total Groups</div>
-            <div class="status-value">{{ haGroups.length }}</div>
-          </div>
         </div>
       </div>
 
@@ -159,13 +110,12 @@
           VMs are automatically restarted on other available nodes in the HA group.
         </p>
         <ul>
-          <li><strong>HA Groups:</strong> Define which nodes VMs can run on</li>
-          <li><strong>HA Resources:</strong> VMs that are protected by HA</li>
+          <li><strong>HA Resources:</strong> VMs that are protected by HA and will automatically failover</li>
           <li><strong>Manager Status:</strong> Shows if the HA manager service is running</li>
         </ul>
         <p class="help-text">
-          Configure HA groups and resources using the Proxmox web interface or command line.
-          This page provides read-only monitoring of your HA configuration.
+          In Proxmox 8.x, HA groups have been replaced by HA rules. Manage groups and rules
+          directly in the Proxmox web interface. This page monitors your HA resource configuration.
         </p>
       </div>
     </div>
@@ -190,30 +140,13 @@ export default {
     HAWizard
   },
   setup() {
-    const haGroups = ref([])
     const haResources = ref([])
     const haStatus = ref({})
-    const loading = ref(false)
     const loadingResources = ref(false)
     const loadingStatus = ref(false)
-    const error = ref(null)
     const resourceError = ref(null)
     const statusError = ref(null)
     const showWizard = ref(false)
-
-    const loadHAGroups = async () => {
-      loading.value = true
-      error.value = null
-      try {
-        const response = await api.ha.listGroups()
-        haGroups.value = response.data.groups || []
-      } catch (err) {
-        error.value = err.response?.data?.detail || 'Failed to load HA groups'
-        console.error('Error loading HA groups:', err)
-      } finally {
-        loading.value = false
-      }
-    }
 
     const loadHAResources = async () => {
       loadingResources.value = true
@@ -254,30 +187,23 @@ export default {
     }
 
     const onWizardComplete = () => {
-      // Reload data after wizard completes
-      loadHAGroups()
       loadHAResources()
       loadHAStatus()
     }
 
     onMounted(() => {
-      loadHAGroups()
       loadHAResources()
       loadHAStatus()
     })
 
     return {
-      haGroups,
       haResources,
       haStatus,
-      loading,
       loadingResources,
       loadingStatus,
-      error,
       resourceError,
       statusError,
       showWizard,
-      loadHAGroups,
       loadHAResources,
       loadHAStatus,
       getStatusClass,

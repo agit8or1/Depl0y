@@ -26,7 +26,7 @@ def get_app_version():
         # Fallback to hardcoded version if database query fails
         pass
 
-    return "1.5.0"  # Linux VM agent, ComfyUI workflow fix, About/Support pages
+    return "1.5.1"  # VM Management Proxmox live data, getManagedVM fix
 
 
 class Settings(BaseSettings):

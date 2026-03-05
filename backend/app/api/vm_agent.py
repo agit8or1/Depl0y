@@ -206,7 +206,7 @@ mkdir -p /opt/depl0y-agent
 
 cat > "$AGENT_SCRIPT" << 'AGENT_SCRIPT_EOF'
 #!/usr/bin/env python3
-"""Depl0y VM Agent — runs scans and reports results."""
+# Depl0y VM Agent - runs scans and reports results
 import json, os, subprocess, urllib.request, urllib.error
 
 DEPL0Y_HOST = os.environ.get("DEPL0Y_HOST", "{depl0y_host}")

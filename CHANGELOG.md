@@ -5,6 +5,15 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.5] - 2026-03-05 🔑 Credentials Button Always Accessible
+
+### Fixed
+- **SSH credentials button (🔑) was greyed out** for all VMs not tracked in the Depl0y database — removed the `:disabled="!getManagedVM(vmid)"` condition so the button is always clickable for any VM
+- **Credential modal** now handles managed vs unmanaged VMs gracefully: the "Save credentials" checkbox is disabled (and auto-unchecked) for VMs not managed by Depl0y, with a hint message "Not managed by Depl0y — session only"; session-only credentials still work for update checks and scans
+- `credForm.saveToDb` defaults to `true` only when a managed DB record exists, preventing accidental save attempts on unmanaged VMs
+
+---
+
 ## [1.5.4] - 2026-03-05 🔍 IP Auto-Fetch + Sortable/Searchable VM Table
 
 ### Added

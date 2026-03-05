@@ -26,7 +26,7 @@ def get_app_version():
         # Fallback to hardcoded version if database query fails
         pass
 
-    return "1.5.4"  # IP auto-fetch, sortable/searchable columns
+    return "1.5.5"  # credentials button fix — always clickable
 
 
 class Settings(BaseSettings):

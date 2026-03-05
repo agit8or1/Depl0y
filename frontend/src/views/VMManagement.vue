@@ -99,8 +99,7 @@
                       <button
                         @click="openCredModal(vm)"
                         class="btn btn-sm btn-outline"
-                        :disabled="!getManagedVM(vm.vmid)"
-                        :title="!getManagedVM(vm.vmid) ? 'Not managed by Depl0y' : 'Edit SSH credentials'"
+                        title="Set SSH credentials"
                       >
                         🔑
                       </button>
@@ -197,9 +196,15 @@
             </div>
           </form>
           <label class="cred-save-row">
-            <input type="checkbox" v-model="credForm.saveToDb" />
-            <span>Save credentials (encrypted)</span>
-            <span class="cred-save-hint">Uncheck to use for this session only</span>
+            <input
+              type="checkbox"
+              v-model="credForm.saveToDb"
+              :disabled="!credModal.managed"
+            />
+            <span :class="{ 'text-muted': !credModal.managed }">Save credentials (encrypted)</span>
+            <span class="cred-save-hint">
+              {{ credModal.managed ? 'Uncheck to use for this session only' : 'Not managed by Depl0y — session only' }}
+            </span>
           </label>
         </div>
         <div class="cred-modal-footer">
@@ -606,7 +611,7 @@ export default {
         ip_address: managed?.ip_address || sess?.ip_address || '',
         username: managed?.username || sess?.username || '',
         password: '',
-        saveToDb: true,
+        saveToDb: !!managed,  // can only save to DB if there's a managed record
       }
       // If no IP stored anywhere and VM is running, auto-fetch from QEMU guest agent
       if (!credForm.value.ip_address && vm.status === 'running' && vm.node) {

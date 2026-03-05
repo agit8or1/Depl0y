@@ -98,6 +98,7 @@
               v-model="createForm.password"
               type="password"
               id="password"
+              autocomplete="new-password"
               class="form-control"
               required
               minlength="8"

@@ -39,17 +39,17 @@
             <form @submit.prevent="changePassword" class="password-form">
               <div class="form-group">
                 <label class="form-label">Current Password</label>
-                <input v-model="passwordForm.current_password" type="password" class="form-control" required />
+                <input v-model="passwordForm.current_password" type="password" autocomplete="current-password" class="form-control" required />
               </div>
 
               <div class="form-group">
                 <label class="form-label">New Password</label>
-                <input v-model="passwordForm.new_password" type="password" class="form-control" required />
+                <input v-model="passwordForm.new_password" type="password" autocomplete="new-password" class="form-control" required />
               </div>
 
               <div class="form-group">
                 <label class="form-label">Confirm New Password</label>
-                <input v-model="passwordForm.confirm_password" type="password" class="form-control" required />
+                <input v-model="passwordForm.confirm_password" type="password" autocomplete="new-password" class="form-control" required />
               </div>
 
               <button type="submit" class="btn btn-primary" :disabled="changingPassword">

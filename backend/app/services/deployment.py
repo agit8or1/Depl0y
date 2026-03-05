@@ -415,7 +415,7 @@ class DeploymentService:
             logger.info(f"Creating VM {vmid} on node {node.node_name}")
 
             # Use selected storage or default to local-lvm
-            storage = vm.storage if vm.storage else "local-lvm"
+            storage = vm.storage if vm.storage else "local"
             network_bridge = vm.network_bridge if vm.network_bridge else "vmbr0"
             logger.info(f"Using storage: {storage}, network bridge: {network_bridge} for VM {vmid}")
 
@@ -572,7 +572,7 @@ class DeploymentService:
             logger.info(f"Creating Windows VM {vmid} on node {node.node_name}")
 
             # Use selected storage or default to local-lvm
-            storage = vm.storage if vm.storage else "local-lvm"
+            storage = vm.storage if vm.storage else "local"
             network_bridge = vm.network_bridge if vm.network_bridge else "vmbr0"
             logger.info(f"Using storage: {storage}, network bridge: {network_bridge} for Windows VM {vmid}")
 
@@ -666,7 +666,7 @@ class DeploymentService:
             logger.info(f"Deploying VM {vmid} from cloud image {cloud_image.name}")
 
             # Use selected storage or default to local-lvm
-            storage = vm.storage if vm.storage else "local-lvm"
+            storage = vm.storage if vm.storage else "local"
             network_bridge = vm.network_bridge if vm.network_bridge else "vmbr0"
             logger.info(f"Using storage: {storage}, network bridge: {network_bridge} for VM {vmid}")
 
@@ -1070,6 +1070,36 @@ class DeploymentService:
                 # Create the specified user with proper home directory and password
                 # Decrypt password from database
                 plain_password = decrypt_data(vm.password) if vm.password else None
+
+                # Merge any extra cloud-init config stored on the VM
+                # (e.g. LLM deployment adds extra packages, write_files, and runcmd)
+                _extra_packages_str = ""
+                _extra_runcmd_str = ""
+                _write_files_section = ""
+
+                if vm.cloud_init_config and isinstance(vm.cloud_init_config, dict):
+                    _extra_pkgs = vm.cloud_init_config.get("extra_packages", [])
+                    _extra_cmds = vm.cloud_init_config.get("extra_runcmd", [])
+                    _write_files = vm.cloud_init_config.get("write_files", [])
+
+                    for pkg in _extra_pkgs:
+                        _extra_packages_str += f"\n  - {pkg}"
+
+                    for cmd in _extra_cmds:
+                        # Escape any double-quotes inside the command string
+                        _escaped = cmd.replace("\\", "\\\\").replace('"', '\\"')
+                        _extra_runcmd_str += f'\n  - "{_escaped}"'
+
+                    if _write_files:
+                        _write_files_section = "\nwrite_files:"
+                        for wf in _write_files:
+                            _write_files_section += f"\n  - path: {wf['path']}"
+                            if wf.get("permissions"):
+                                _write_files_section += f"\n    permissions: '{wf['permissions']}'"
+                            if wf.get("encoding"):
+                                _write_files_section += f"\n    encoding: {wf['encoding']}"
+                            _write_files_section += f"\n    content: {wf['content']}"
+
                 user_data = f"""#cloud-config
 users:
   - name: {vm.username}
@@ -1088,7 +1118,7 @@ package_update: true
 package_upgrade: true
 packages:
   - qemu-guest-agent
-  - openssh-server
+  - openssh-server{_extra_packages_str}
 runcmd:
   - systemctl enable qemu-guest-agent
   - systemctl start qemu-guest-agent
@@ -1097,7 +1127,7 @@ runcmd:
   - sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
   - sed -i 's/^#*PubkeyAuthentication.*/PubkeyAuthentication yes/' /etc/ssh/sshd_config
   - sed -i 's/^#*PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
-  - systemctl restart ssh || systemctl restart sshd
+  - systemctl restart ssh || systemctl restart sshd{_extra_runcmd_str}{_write_files_section}
 """
 
                 # Create temporary file

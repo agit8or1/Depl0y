@@ -628,7 +628,7 @@
 
             <div class="form-group">
               <label class="form-label">Password *</label>
-              <input v-model="formData.password" type="password" class="form-control" required />
+              <input v-model="formData.password" type="password" class="form-control" autocomplete="new-password" required />
             </div>
           </div>
 

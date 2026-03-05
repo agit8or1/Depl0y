@@ -12,6 +12,7 @@ from .database import (
     OSType,
     UpdateLog,
     AuditLog,
+    LLMDeployment,
 )
 
 __all__ = [
@@ -27,4 +28,5 @@ __all__ = [
     "OSType",
     "UpdateLog",
     "AuditLog",
+    "LLMDeployment",
 ]

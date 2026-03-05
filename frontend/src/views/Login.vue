@@ -24,7 +24,7 @@
           <input
             id="password"
             v-model="credentials.password"
-            type="password"
+            type="password" autocomplete="current-password"
             class="form-control"
             required
           />

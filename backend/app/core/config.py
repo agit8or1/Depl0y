@@ -26,7 +26,7 @@ def get_app_version():
         # Fallback to hardcoded version if database query fails
         pass
 
-    return "1.3.17"  # Fix storage loading, VM password decryption, shlex import
+    return "1.4.0"  # LLM deployment wizard with auto-tuning, real-time progress, storage tiles
 
 
 class Settings(BaseSettings):

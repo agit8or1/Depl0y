@@ -242,5 +242,14 @@ export default {
   // System
   system: {
     getInfo: () => api.get('/system/info')
+  },
+
+  // LLM Deployment
+  llm: {
+    getCatalog: () => api.get('/llm/catalog'),
+    getGpuDevices: (hostId, nodeId) => api.get('/llm/gpu-devices', { params: { host_id: hostId, node_id: nodeId } }),
+    deploy: (data) => api.post('/llm/deploy', data),
+    listDeployments: () => api.get('/llm/deployments'),
+    getDeployment: (id) => api.get(`/llm/deployments/${id}`)
   }
 }

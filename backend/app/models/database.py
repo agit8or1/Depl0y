@@ -298,3 +298,23 @@ class SystemSettings(Base):
     value = Column(Text, nullable=False)
     description = Column(Text, nullable=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class LLMDeployment(Base):
+    """LLM deployment record - tracks VMs deployed as LLM inference servers"""
+    __tablename__ = "llm_deployments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    vm_id = Column(Integer, ForeignKey("virtual_machines.id"), nullable=False)
+    engine = Column(String(50), nullable=False)       # ollama, llama.cpp
+    model = Column(String(100), nullable=False)       # llama3.1:8b, mistral:7b, etc.
+    ui_type = Column(String(50), nullable=False)      # open-webui, api-only
+    gpu_enabled = Column(Boolean, default=False, nullable=False)
+    gpu_type = Column(String(50), nullable=True)      # nvidia, amd
+    gpu_device_id = Column(String(100), nullable=True)  # PCI device ID for passthrough
+    os_variant = Column(String(50), nullable=False)   # ubuntu2404, ubuntu2204
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relationships
+    vm = relationship("VirtualMachine")

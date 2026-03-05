@@ -31,6 +31,11 @@
         <span>Cloud Images</span>
       </router-link>
 
+      <router-link v-if="isOperator" to="/llm-deploy" class="nav-item">
+        <span class="icon">🤖</span>
+        <span>Deploy LLM</span>
+      </router-link>
+
       <router-link v-if="isAdmin" to="/ha-management" class="nav-item">
         <span class="icon">🔄</span>
         <span>HA Management</span>
@@ -74,6 +79,7 @@ export default {
   setup() {
     const authStore = useAuthStore()
     const isAdmin = computed(() => authStore.isAdmin)
+    const isOperator = computed(() => authStore.isOperator || authStore.isAdmin)
     const appVersion = ref('1.1.0') // Fallback version
 
     // Fetch version from API
@@ -94,6 +100,7 @@ export default {
 
     return {
       isAdmin,
+      isOperator,
       appVersion
     }
   }

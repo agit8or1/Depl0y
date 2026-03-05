@@ -973,8 +973,10 @@ async def ai_tune_vm(
             "gpu": run("nvidia-smi --query-gpu=name,memory.total,memory.used --format=csv,noheader 2>/dev/null || echo 'no_gpu'"),
             "ram": run("free -h 2>/dev/null | grep Mem || echo 'N/A'"),
             "cpu": run("nproc 2>/dev/null; grep 'model name' /proc/cpuinfo 2>/dev/null | head -1 | cut -d: -f2"),
-            "model_service": run("systemctl list-units --state=running 2>/dev/null | grep -E 'ollama|llama|vllm|localai|comfyui' | head -5 || echo 'none'"),
+            "model_service": run("systemctl list-units 2>/dev/null | grep -E 'ollama|llama|vllm|localai|comfyui' | head -5 || echo 'none'"),
             "ollama_models": run("ollama list 2>/dev/null | tail -n +2 || echo 'N/A'"),
+            "comfyui_installed": run("[ -d /opt/comfyui ] && echo yes || echo no"),
+            "ollama_installed": run("which ollama 2>/dev/null && echo yes || echo no"),
         }
         client.close()
 
@@ -1010,8 +1012,9 @@ _TUNE_ACTIONS = {
         "label": "Enable ComfyUI low VRAM mode",
         "description": "Adds --lowvram to ComfyUI's ExecStart in systemd and restarts the service",
         "commands": [
+            # Match any ExecStart= line (not just ones containing 'comfyui')
             "grep -q -- '--lowvram' /etc/systemd/system/comfyui.service || "
-            "sed -i '/ExecStart=.*comfyui/ s/$/ --lowvram/' /etc/systemd/system/comfyui.service",
+            "sed -i '/^ExecStart=/ s/$/ --lowvram/' /etc/systemd/system/comfyui.service",
             "systemctl daemon-reload",
             "systemctl restart comfyui",
         ],
@@ -1020,7 +1023,8 @@ _TUNE_ACTIONS = {
         "label": "Install xformers",
         "description": "Installs xformers for faster attention operations and restarts ComfyUI",
         "commands": [
-            "pip install xformers --quiet",
+            # Use the ComfyUI venv pip if it exists, otherwise fall back to pip3
+            "/opt/comfyui/venv/bin/pip install xformers --quiet 2>/dev/null || pip3 install xformers --quiet",
             "systemctl restart comfyui",
         ],
     },
@@ -1121,8 +1125,16 @@ def _generate_ai_tune_recommendations(diag: dict) -> dict:
     ollama_models = diag.get("ollama_models", "")
 
     has_gpu = not ("no_gpu" in gpu or gpu in ("N/A", ""))
-    has_ollama = "ollama" in model_service.lower() or "ollama" in ollama_models.lower()
-    has_comfyui = "comfyui" in model_service.lower()
+    # Detect via running service OR installed binary/directory
+    has_ollama = (
+        "ollama" in model_service.lower()
+        or "ollama" in ollama_models.lower()
+        or diag.get("ollama_installed") == "yes"
+    )
+    has_comfyui = (
+        "comfyui" in model_service.lower()
+        or diag.get("comfyui_installed") == "yes"
+    )
 
     if not has_gpu:
         recs += [

@@ -188,6 +188,7 @@ export default {
     check: (vmId, creds = null) => api.post(`/updates/vm/${vmId}/check`, creds || {}),
     install: (vmId, creds = null) => api.post(`/updates/vm/${vmId}/install`, creds || {}),
     scanSecurity: (vmId, creds = null) => api.post(`/updates/vm/${vmId}/scan-security`, creds || {}),
+    currentLog: (vmId) => api.get(`/updates/vm/${vmId}/current-log`),
     getHistory: (vmId, params) => api.get(`/updates/vm/${vmId}/history`, { params }),
     getLog: (logId) => api.get(`/updates/log/${logId}`),
     installQemuAgent: (vmId) => api.post(`/updates/vm/${vmId}/install-qemu-agent`),

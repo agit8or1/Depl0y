@@ -174,7 +174,23 @@ class UpdateService:
 
                 logger.info(f"Installing updates on VM {vm_id}")
                 _, stdout, stderr = self._sudo_exec(client, commands["upgrade"], actual_password)
-                output = stdout.read().decode()
+
+                # Stream output line-by-line and commit incrementally so the
+                # frontend polling endpoint can show real-time progress.
+                output_lines = []
+                flush_count = 0
+                for line in stdout:
+                    output_lines.append(line)
+                    flush_count += 1
+                    if flush_count >= 4:
+                        update_log.output = "".join(output_lines)
+                        try:
+                            self.db.commit()
+                        except Exception:
+                            pass
+                        flush_count = 0
+
+                output = "".join(output_lines)
                 error_output = stderr.read().decode()
                 exit_status = stdout.channel.recv_exit_status()
                 client.close()

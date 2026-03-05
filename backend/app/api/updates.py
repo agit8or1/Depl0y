@@ -152,6 +152,33 @@ async def scan_vm_security(
     return result
 
 
+@router.get("/vm/{vm_id}/current-log")
+async def get_current_log(
+    vm_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Return the most recent update log for a VM (may be in-progress).
+    Frontend polls this endpoint to drive the real-time progress display."""
+    log = (
+        db.query(UpdateLog)
+        .filter(UpdateLog.vm_id == vm_id)
+        .order_by(UpdateLog.started_at.desc())
+        .first()
+    )
+    if not log:
+        raise HTTPException(status_code=404, detail="No update log found")
+    return {
+        "id": log.id,
+        "status": log.status,
+        "output": log.output or "",
+        "error_message": log.error_message,
+        "packages_updated": log.packages_updated,
+        "started_at": log.started_at.isoformat(),
+        "completed_at": log.completed_at.isoformat() if log.completed_at else None,
+    }
+
+
 @router.get("/vm/{vm_id}/history", response_model=List[UpdateLogResponse])
 async def get_vm_update_history(
     vm_id: int,

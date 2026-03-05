@@ -145,6 +145,36 @@
                   </td>
                 </tr>
 
+                <!-- Live update progress -->
+                <tr v-if="liveLog[vm.vmid]" class="live-log-row">
+                  <td colspan="6">
+                    <div class="live-log-panel">
+                      <div class="live-log-header">
+                        <span class="live-log-title">
+                          <span v-if="liveLog[vm.vmid].status === 'running'" class="live-dot"></span>
+                          Installing updates on <strong>{{ vm.name }}</strong>
+                        </span>
+                        <div class="live-log-meta">
+                          <span v-if="liveLog[vm.vmid].status === 'completed'" class="text-success text-sm">
+                            ✅ {{ liveLog[vm.vmid].packages_updated }} package(s) updated
+                          </span>
+                          <span v-else-if="liveLog[vm.vmid].status === 'failed'" class="text-danger text-sm">
+                            ❌ {{ liveLog[vm.vmid].error_message || 'Update failed' }}
+                          </span>
+                          <span :class="['badge', liveLog[vm.vmid].status === 'completed' ? 'badge-success' : liveLog[vm.vmid].status === 'failed' ? 'badge-danger' : 'badge-warning']">
+                            {{ liveLog[vm.vmid].status }}
+                          </span>
+                          <button @click="closeLiveLog(vm.vmid)" class="btn-close-sm" title="Dismiss">×</button>
+                        </div>
+                      </div>
+                      <pre class="live-log-output" :id="`livelog-${vm.vmid}`">{{ liveLog[vm.vmid].output || 'Starting…' }}</pre>
+                      <div v-if="liveLog[vm.vmid].output?.includes('deferred due to phasing')" class="phasing-note">
+                        <strong>Phased update:</strong> some packages are held back by Ubuntu's gradual rollout system — this is normal. They install automatically when your system's turn comes. To force-install now, run <code>apt-get dist-upgrade</code> on the VM.
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+
                 <!-- Update history panel -->
                 <tr v-if="expandedVM === vm.vmid" class="history-row">
                   <td colspan="6">
@@ -559,7 +589,7 @@
 </template>
 
 <script>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import api from '@/services/api'
 import { useToast } from 'vue-toastification'
 
@@ -583,6 +613,8 @@ export default {
     const tuningResults = ref({})
     const applyingAction = ref({})  // vmid → action_id being applied
     const applyResults = ref({})    // vmid → { action_id → { ok, error } }
+    const liveLog = ref({})         // vmid → { status, output, packages_updated, error_message }
+    const liveLogPollers = ref({})  // vmid → interval ID
     const schedule = ref({
       auto_update_check_enabled: false,
       auto_update_check_interval_hours: 24,
@@ -830,6 +862,46 @@ export default {
       }
     }
 
+    const closeLiveLog = (vmid) => {
+      if (liveLogPollers.value[vmid]) {
+        clearInterval(liveLogPollers.value[vmid])
+        delete liveLogPollers.value[vmid]
+      }
+      delete liveLog.value[vmid]
+    }
+
+    const startLiveMonitor = (vm, managedId) => {
+      closeLiveLog(vm.vmid)
+      liveLog.value[vm.vmid] = { status: 'running', output: '', packages_updated: 0, error_message: null }
+      const poll = async () => {
+        try {
+          const res = await api.updates.currentLog(managedId)
+          liveLog.value[vm.vmid] = res.data
+          if (res.data.status === 'completed' || res.data.status === 'failed') {
+            clearInterval(liveLogPollers.value[vm.vmid])
+            delete liveLogPollers.value[vm.vmid]
+            // Refresh history if it was already open
+            if (expandedVM.value === vm.vmid) {
+              loadingHistory.value[vm.vmid] = true
+              try {
+                const h = await api.updates.getHistory(managedId)
+                updateHistory.value[vm.vmid] = h.data
+              } finally {
+                loadingHistory.value[vm.vmid] = false
+              }
+            }
+            if (res.data.status === 'completed') {
+              toast.success(`Updates installed on ${vm.name} (${res.data.packages_updated} packages)`)
+            } else {
+              toast.error(`Update failed on ${vm.name} — see log below`)
+            }
+          }
+        } catch { /* polling errors are non-fatal */ }
+      }
+      liveLogPollers.value[vm.vmid] = setInterval(poll, 1500)
+      poll()
+    }
+
     const installUpdates = async (vm) => {
       const managed = getManagedVM(vm.vmid)
       if (!managed) return
@@ -837,7 +909,7 @@ export default {
       updateAction.value = 'install'
       try {
         await api.updates.install(managed.id, getSessionCreds(vm.vmid))
-        toast.success(`Update started for ${vm.name} — check history for progress`)
+        startLiveMonitor(vm, managed.id)
       } catch {
         toast.error(`Failed to start updates for ${vm.name}`)
       } finally {
@@ -934,6 +1006,21 @@ export default {
       return mb >= 1024 ? `${(mb / 1024).toFixed(0)} GB` : `${mb} MB`
     }
 
+    // Auto-scroll live log terminals to bottom when output updates
+    watch(liveLog, () => {
+      nextTick(() => {
+        Object.keys(liveLog.value).forEach(vmid => {
+          const el = document.getElementById(`livelog-${vmid}`)
+          if (el) el.scrollTop = el.scrollHeight
+        })
+      })
+    }, { deep: true })
+
+    // Clean up pollers on unmount
+    onUnmounted(() => {
+      Object.values(liveLogPollers.value).forEach(id => clearInterval(id))
+    })
+
     onMounted(() => {
       loadVMs()
       loadScheduleAndCache()
@@ -944,6 +1031,7 @@ export default {
       expandedVM, updatingVM, updateAction, updateChecks,
       updateHistory, loadingHistory, tuningVM, tuningResults, llmVMs,
       applyingAction, applyResults, applyTuneAction,
+      liveLog, closeLiveLog,
       loadVMs, loadMonitoring, checkUpdates, installUpdates,
       toggleHistory, runAITune, getManagedVM,
       runScan, scanResults, scanning, scanExpanded,
@@ -1240,6 +1328,72 @@ export default {
   font-size: 0.875rem;
   cursor: pointer;
   margin-top: 0.25rem;
+}
+
+/* Live update progress terminal */
+.live-log-row td { padding: 0; }
+.live-log-panel {
+  background: #0d1117;
+  border-radius: 0;
+  border-top: 2px solid var(--primary, #4f8ef7);
+}
+.live-log-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 1rem;
+  background: #161b22;
+  border-bottom: 1px solid #30363d;
+}
+.live-log-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #c9d1d9;
+  font-size: 0.875rem;
+}
+.live-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #3fb950;
+  animation: pulse 1.2s infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+.live-log-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.live-log-output {
+  margin: 0;
+  padding: 0.75rem 1rem;
+  max-height: 280px;
+  overflow-y: auto;
+  font-family: 'Courier New', monospace;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: #c9d1d9;
+  white-space: pre-wrap;
+  word-break: break-all;
+  background: transparent;
+}
+.phasing-note {
+  padding: 0.5rem 1rem;
+  background: #1c2333;
+  border-top: 1px solid #30363d;
+  color: #8b949e;
+  font-size: 0.8rem;
+}
+.phasing-note code {
+  background: #30363d;
+  padding: 1px 5px;
+  border-radius: 3px;
+  color: #e3b341;
 }
 
 /* Auto-check schedule bar */

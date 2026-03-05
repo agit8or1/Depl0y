@@ -5,6 +5,20 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.7] - 2026-03-05 ⚡ Real-Time Update Monitor + AI Tune Apply Fixes
+
+### Added
+- **Real-time update progress monitor** — after clicking Install Updates, a live terminal-style panel appears below the VM row streaming apt/dnf output line-by-line as it runs; auto-scrolls and closes on completion
+- **Phasing note** — if output contains "deferred due to phasing", an informational callout explains Ubuntu phased rollouts (not an error)
+
+### Fixed
+- **AI Tune: ComfyUI low-VRAM mode** — fixed sed pattern from `'/ExecStart=.*comfyui/ s/$/ --lowvram/'` to `'/^ExecStart=/ s/$/ --lowvram/'` so it reliably matches any ExecStart line
+- **AI Tune: xformers install** — now uses ComfyUI's own venv pip (`/opt/comfyui/venv/bin/pip`) with fallback to system pip3
+- **AI Tune: service detection** — previously required service to be actively running; now also checks filesystem (`/opt/comfyui` dir, `which ollama`) so Apply buttons appear even when services are stopped
+- **AI Tune: `systemctl list-units`** — changed from `--state=running` to show all states, catching stopped/loaded services
+
+---
+
 ## [1.5.6] - 2026-03-05 📅 Auto-Check Scheduler + Install Fix + AI Tune Apply
 
 ### Added

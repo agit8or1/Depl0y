@@ -5,6 +5,7 @@ from app.api.auth import get_current_user, require_admin
 from app.core.database import get_db
 from sqlalchemy.orm import Session
 import logging
+import re
 import subprocess
 
 logger = logging.getLogger(__name__)
@@ -35,10 +36,14 @@ def check_ha_status(current_user=Depends(get_current_user), db: Session = Depend
             }
 
         # Check if HA is enabled using pvesh
+        if not re.match(r'^[a-zA-Z0-9.\-_]+$', host.hostname):
+            raise HTTPException(status_code=400, detail="Invalid Proxmox hostname")
         ssh_host = f"root@{host.hostname}"
-        check_ha = f"ssh -o StrictHostKeyChecking=no -o BatchMode=yes {ssh_host} 'pvesh get /cluster/ha/status/manager_status --output-format json 2>/dev/null'"
-
-        result = subprocess.run(check_ha, shell=True, capture_output=True, timeout=10, text=True)
+        result = subprocess.run(
+            ['ssh', '-o', 'StrictHostKeyChecking=no', '-o', 'BatchMode=yes',
+             ssh_host, 'pvesh get /cluster/ha/status/manager_status --output-format json 2>/dev/null'],
+            capture_output=True, timeout=10, text=True
+        )
 
         manager_status = "unknown"
         quorum = False
@@ -68,8 +73,11 @@ def check_ha_status(current_user=Depends(get_current_user), db: Session = Depend
                         manager_status = "active"
 
                 # Get number of protected resources
-                get_resources = f"ssh -o StrictHostKeyChecking=no -o BatchMode=yes {ssh_host} 'pvesh get /cluster/ha/resources --output-format json 2>/dev/null'"
-                resources_result = subprocess.run(get_resources, shell=True, capture_output=True, timeout=10, text=True)
+                resources_result = subprocess.run(
+                    ['ssh', '-o', 'StrictHostKeyChecking=no', '-o', 'BatchMode=yes',
+                     ssh_host, 'pvesh get /cluster/ha/resources --output-format json 2>/dev/null'],
+                    capture_output=True, timeout=10, text=True
+                )
 
                 if resources_result.returncode == 0:
                     try:
@@ -121,34 +129,23 @@ def enable_ha(
         if not host:
             raise HTTPException(status_code=400, detail="No Proxmox hosts configured")
 
+        if not re.match(r'^[a-zA-Z0-9.\-_]+$', host.hostname):
+            raise HTTPException(status_code=400, detail="Invalid Proxmox hostname")
         ssh_host = f"root@{host.hostname}"
         logger.info(f"Enabling HA on {ssh_host}")
 
-        # Enable HA Manager
-        # This requires the cluster to have a quorum
-        enable_script = f"""
-ssh -o StrictHostKeyChecking=no -o BatchMode=yes {ssh_host} '
-# Check if cluster has quorum
-if ! pvesh get /cluster/status 2>/dev/null | grep -q "quorate.*1"; then
-    echo "ERROR: Cluster does not have quorum. HA requires a multi-node cluster with quorum."
-    exit 1
-fi
-
-# HA Manager is usually enabled by default if cluster exists
-# Just verify it is running
-if ! systemctl is-active --quiet pve-ha-lrm && ! systemctl is-active --quiet pve-ha-crm; then
-    echo "Starting HA services..."
-    systemctl start pve-ha-lrm
-    systemctl start pve-ha-crm
-    systemctl enable pve-ha-lrm
-    systemctl enable pve-ha-crm
-fi
-
-echo "HA services are running"
-'
-"""
-
-        result = subprocess.run(enable_script, shell=True, capture_output=True, timeout=30)
+        remote_script = (
+            'if ! pvesh get /cluster/status 2>/dev/null | grep -q "quorate.*1"; then '
+            'echo "ERROR: Cluster does not have quorum."; exit 1; fi; '
+            'if ! systemctl is-active --quiet pve-ha-lrm && ! systemctl is-active --quiet pve-ha-crm; then '
+            'systemctl start pve-ha-lrm; systemctl start pve-ha-crm; '
+            'systemctl enable pve-ha-lrm; systemctl enable pve-ha-crm; fi; '
+            'echo "HA services are running"'
+        )
+        result = subprocess.run(
+            ['ssh', '-o', 'StrictHostKeyChecking=no', '-o', 'BatchMode=yes', ssh_host, remote_script],
+            capture_output=True, timeout=30
+        )
 
         if result.returncode != 0:
             error_msg = result.stderr.decode() if result.stderr else result.stdout.decode()
@@ -185,11 +182,15 @@ def list_ha_groups(
         if not host:
             return {"groups": [], "message": "No Proxmox hosts configured"}
 
+        if not re.match(r'^[a-zA-Z0-9.\-_]+$', host.hostname):
+            return {"groups": [], "message": "Invalid Proxmox hostname"}
         ssh_host = f"root@{host.hostname}"
 
-        # Get HA groups - handle migration to rules
-        get_groups = f"ssh -o StrictHostKeyChecking=no -o BatchMode=yes {ssh_host} 'pvesh get /cluster/ha/groups --output-format json 2>&1'"
-        result = subprocess.run(get_groups, shell=True, capture_output=True, timeout=10, text=True)
+        result = subprocess.run(
+            ['ssh', '-o', 'StrictHostKeyChecking=no', '-o', 'BatchMode=yes',
+             ssh_host, 'pvesh get /cluster/ha/groups --output-format json 2>&1'],
+            capture_output=True, timeout=10, text=True
+        )
 
         # Check if groups migrated to rules (Proxmox 8+)
         if "migrated to rules" in result.stderr or "migrated to rules" in result.stdout:
@@ -226,20 +227,19 @@ def disable_ha(
         if not host:
             raise HTTPException(status_code=400, detail="No Proxmox hosts configured")
 
+        if not re.match(r'^[a-zA-Z0-9.\-_]+$', host.hostname):
+            raise HTTPException(status_code=400, detail="Invalid Proxmox hostname")
         ssh_host = f"root@{host.hostname}"
 
-        # Stop HA services
-        disable_script = f"""
-ssh -o StrictHostKeyChecking=no -o BatchMode=yes {ssh_host} '
-systemctl stop pve-ha-lrm
-systemctl stop pve-ha-crm
-systemctl disable pve-ha-lrm
-systemctl disable pve-ha-crm
-echo "HA services stopped"
-'
-"""
-
-        result = subprocess.run(disable_script, shell=True, capture_output=True, timeout=30)
+        remote_script = (
+            'systemctl stop pve-ha-lrm; systemctl stop pve-ha-crm; '
+            'systemctl disable pve-ha-lrm; systemctl disable pve-ha-crm; '
+            'echo "HA services stopped"'
+        )
+        result = subprocess.run(
+            ['ssh', '-o', 'StrictHostKeyChecking=no', '-o', 'BatchMode=yes', ssh_host, remote_script],
+            capture_output=True, timeout=30
+        )
 
         if result.returncode != 0:
             error_msg = result.stderr.decode() if result.stderr else "Unknown error"
@@ -279,19 +279,25 @@ def create_ha_group(
         if not host:
             raise HTTPException(status_code=400, detail="No Proxmox hosts configured")
 
+        if not re.match(r'^[a-zA-Z0-9.\-_]+$', host.hostname):
+            raise HTTPException(status_code=400, detail="Invalid Proxmox hostname")
         ssh_host = f"root@{host.hostname}"
 
-        # Build pvesh command to create HA group
-        cmd = f"pvesh create /cluster/ha/groups -group {request.group} -nodes {request.nodes}"
+        import shlex
+        cmd_parts = ['pvesh', 'create', '/cluster/ha/groups',
+                     '-group', request.group, '-nodes', request.nodes]
         if request.restricted:
-            cmd += f" -restricted {request.restricted}"
+            cmd_parts += ['-restricted', str(request.restricted)]
         if request.nofailback:
-            cmd += f" -nofailback {request.nofailback}"
+            cmd_parts += ['-nofailback', str(request.nofailback)]
         if request.comment:
-            cmd += f" -comment '{request.comment}'"
+            cmd_parts += ['-comment', request.comment]
 
-        create_cmd = f"ssh -o StrictHostKeyChecking=no -o BatchMode=yes {ssh_host} '{cmd}'"
-        result = subprocess.run(create_cmd, shell=True, capture_output=True, timeout=10)
+        result = subprocess.run(
+            ['ssh', '-o', 'StrictHostKeyChecking=no', '-o', 'BatchMode=yes',
+             ssh_host, ' '.join(shlex.quote(p) for p in cmd_parts)],
+            capture_output=True, timeout=10
+        )
 
         if result.returncode != 0:
             error_msg = result.stderr.decode() if result.stderr else "Unknown error"

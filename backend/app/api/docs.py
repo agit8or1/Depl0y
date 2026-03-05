@@ -63,7 +63,9 @@ def get_documentation(
         raise HTTPException(status_code=404, detail="Documentation not found")
 
     filename = DOCS_FILES[doc_id]
-    filepath = os.path.join(DOCS_DIR, filename)
+    filepath = os.path.normpath(os.path.join(DOCS_DIR, filename))
+    if not filepath.startswith(os.path.normpath(DOCS_DIR)):
+        raise HTTPException(status_code=403, detail="Access denied")
 
     if not os.path.exists(filepath):
         raise HTTPException(

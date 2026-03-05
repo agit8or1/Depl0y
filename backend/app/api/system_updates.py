@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # Legacy update server configuration (fallback)
-UPDATE_SERVER = "http://deploy.agit8or.net"
+UPDATE_SERVER = "https://deploy.agit8or.net"
 UPDATE_ENDPOINT = f"{UPDATE_SERVER}/api/v1/system-updates/version"
 
 

@@ -73,12 +73,14 @@ api.interceptors.response.use(
       }
     }
 
-    console.error('API Error Details:', {
-      status: error.response?.status,
-      statusText: error.response?.statusText,
-      data: error.response?.data,
-      headers: error.response?.headers
-    })
+    if (import.meta.env.DEV) {
+      console.error('API Error Details:', {
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data,
+        headers: error.response?.headers
+      })
+    }
 
     // Don't show toast for login endpoint errors (auth store handles them)
     // This prevents duplicate error messages during login/2FA

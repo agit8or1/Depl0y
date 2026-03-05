@@ -1,5 +1,5 @@
 """Dashboard API routes"""
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from pydantic import BaseModel
@@ -154,7 +154,7 @@ async def get_resource_stats(
 
 @router.get("/activity")
 async def get_recent_activity(
-    limit: int = 10,
+    limit: int = Query(10, ge=1, le=100),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):

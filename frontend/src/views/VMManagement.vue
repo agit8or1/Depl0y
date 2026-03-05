@@ -27,6 +27,22 @@
           <button @click="loadVMs" class="btn btn-outline" :disabled="loadingVMs">Refresh</button>
         </div>
 
+        <!-- Auto-check schedule -->
+        <div class="auto-check-bar">
+          <label class="auto-check-toggle">
+            <input type="checkbox" v-model="schedule.auto_update_check_enabled" @change="saveSchedule" />
+            Auto-check every
+          </label>
+          <select v-model="schedule.auto_update_check_interval_hours" @change="saveSchedule" class="interval-select">
+            <option :value="6">6 hours</option>
+            <option :value="12">12 hours</option>
+            <option :value="24">24 hours</option>
+            <option :value="48">48 hours</option>
+            <option :value="168">7 days</option>
+          </select>
+          <span class="text-sm text-muted">— runs on all managed VMs with saved credentials</span>
+        </div>
+
         <div class="table-toolbar">
           <input v-model="search" class="search-input" placeholder="Search VMs, VMID, IP, OS..." />
           <span class="text-sm text-muted">{{ filteredVMs.length }} of {{ vms.length }} VMs</span>
@@ -64,6 +80,8 @@
                     <div class="vm-name">
                       <strong>{{ vm.name }}</strong>
                       <span class="text-sm text-muted">VMID: {{ vm.vmid }}</span>
+                      <span v-if="getManagedVM(vm.vmid)?.ip_address" class="cred-indicator cred-saved" title="SSH credentials saved">🔑</span>
+                      <span v-else-if="sessionCreds[vm.vmid]?.ip_address" class="cred-indicator cred-session" title="Session credentials (not saved)">🔑</span>
                     </div>
                   </td>
                   <td class="text-sm">{{ getManagedVM(vm.vmid)?.os_type || '—' }}</td>
@@ -71,7 +89,14 @@
                   <td>
                     <span :class="['badge', getVMStatusBadge(vm.status)]">{{ vm.status }}</span>
                   </td>
-                  <td class="text-sm text-muted">{{ updateChecks[vm.vmid]?.checked_at ? formatDate(updateChecks[vm.vmid].checked_at) : 'Never' }}</td>
+                  <td class="text-sm text-muted">
+                    <span v-if="updateChecks[vm.vmid]?.checked_at">{{ formatDate(updateChecks[vm.vmid].checked_at) }}</span>
+                    <span v-else-if="getCacheEntry(getManagedVM(vm.vmid)?.id, 'updates')">
+                      {{ formatDate(getCacheEntry(getManagedVM(vm.vmid)?.id, 'updates').scanned_at) }}
+                      <span class="auto-badge">auto</span>
+                    </span>
+                    <span v-else>Never</span>
+                  </td>
                   <td>
                     <div class="action-btns">
                       <button
@@ -107,12 +132,13 @@
                   </td>
                 </tr>
 
-                <!-- Update check result -->
-                <tr v-if="updateChecks[vm.vmid] && expandedVM !== vm.vmid" class="result-row">
+                <!-- Update check result (manual or cached) -->
+                <tr v-if="getUpdateResult(vm) && expandedVM !== vm.vmid" class="result-row">
                   <td colspan="6">
-                    <div :class="['update-result', updateChecks[vm.vmid].updates_available > 0 ? 'has-updates' : 'up-to-date']">
-                      <span v-if="updateChecks[vm.vmid].updates_available > 0">
-                        ⚠️ <strong>{{ updateChecks[vm.vmid].updates_available }}</strong> update(s) available
+                    <div :class="['update-result', getUpdateResult(vm).updates_available > 0 ? 'has-updates' : 'up-to-date']">
+                      <span v-if="getUpdateResult(vm).updates_available > 0">
+                        ⚠️ <strong>{{ getUpdateResult(vm).updates_available }}</strong> update(s) available
+                        <span v-if="!updateChecks[vm.vmid] && getCacheEntry(getManagedVM(vm.vmid)?.id, 'updates')" class="auto-badge">auto-check</span>
                       </span>
                       <span v-else>✅ Up to date</span>
                     </div>
@@ -224,6 +250,22 @@
           <span class="text-sm text-muted">SSH-based scan: OS security updates, open ports, failed login attempts, outdated packages</span>
         </div>
 
+        <!-- Auto-scan schedule -->
+        <div class="auto-check-bar">
+          <label class="auto-check-toggle">
+            <input type="checkbox" v-model="schedule.auto_security_scan_enabled" @change="saveSchedule" />
+            Auto-scan every
+          </label>
+          <select v-model="schedule.auto_security_scan_interval_hours" @change="saveSchedule" class="interval-select">
+            <option :value="6">6 hours</option>
+            <option :value="12">12 hours</option>
+            <option :value="24">24 hours</option>
+            <option :value="48">48 hours</option>
+            <option :value="168">7 days</option>
+          </select>
+          <span class="text-sm text-muted">— runs on all managed VMs with saved credentials</span>
+        </div>
+
         <div v-if="loadingVMs" class="loading-row">
           <div class="loading-spinner"></div>
           <span>Loading VMs...</span>
@@ -251,6 +293,8 @@
                     <div class="vm-name">
                       <strong>{{ vm.name }}</strong>
                       <span class="text-sm text-muted">VMID: {{ vm.vmid }}</span>
+                      <span v-if="getManagedVM(vm.vmid)?.ip_address" class="cred-indicator cred-saved" title="SSH credentials saved">🔑</span>
+                      <span v-else-if="sessionCreds[vm.vmid]?.ip_address" class="cred-indicator cred-session" title="Session credentials (not saved)">🔑</span>
                     </div>
                   </td>
                   <td class="text-sm mono">{{ getManagedVM(vm.vmid)?.ip_address || '—' }}</td>
@@ -263,6 +307,13 @@
                         {{ scanResults[vm.vmid].severity }}
                       </span>
                       &nbsp;{{ formatDate(scanResults[vm.vmid].scanned_at) }}
+                    </span>
+                    <span v-else-if="getCacheEntry(getManagedVM(vm.vmid)?.id, 'security')">
+                      <span :class="['badge', getCacheEntry(getManagedVM(vm.vmid)?.id, 'security').severity === 'critical' ? 'badge-danger' : getCacheEntry(getManagedVM(vm.vmid)?.id, 'security').severity === 'warning' ? 'badge-warning' : 'badge-success']">
+                        {{ getCacheEntry(getManagedVM(vm.vmid)?.id, 'security').severity }}
+                      </span>
+                      &nbsp;{{ formatDate(getCacheEntry(getManagedVM(vm.vmid)?.id, 'security').scanned_at) }}
+                      <span class="auto-badge">auto</span>
                     </span>
                     <span v-else>Never</span>
                   </td>
@@ -471,14 +522,33 @@
             <!-- Tuning results -->
             <div v-if="tuningResults[vm.vmid]" class="tuning-results">
               <div :class="['tuning-status', tuningResults[vm.vmid].error ? 'tuning-error' : 'tuning-success']">
-                <span v-if="tuningResults[vm.vmid].error">
-                  ❌ {{ tuningResults[vm.vmid].error }}
-                </span>
+                <span v-if="tuningResults[vm.vmid].error">❌ {{ tuningResults[vm.vmid].error }}</span>
                 <span v-else>✅ Analysis complete</span>
               </div>
               <div v-if="tuningResults[vm.vmid].recommendations" class="tuning-recs">
                 <h4>Recommendations</h4>
                 <pre class="tuning-output">{{ tuningResults[vm.vmid].recommendations }}</pre>
+              </div>
+              <!-- Applicable actions -->
+              <div v-if="tuningResults[vm.vmid].actions?.length" class="tuning-actions">
+                <h4>Apply Recommendations</h4>
+                <div v-for="action in tuningResults[vm.vmid].actions" :key="action.id" class="tune-action-card">
+                  <div class="tune-action-info">
+                    <strong>{{ action.label }}</strong>
+                    <p class="text-sm text-muted">{{ action.description }}</p>
+                  </div>
+                  <div class="tune-action-result" v-if="applyResults[vm.vmid]?.[action.id]">
+                    <span v-if="applyResults[vm.vmid][action.id].ok" class="text-success text-sm">✅ Applied</span>
+                    <span v-else class="text-danger text-sm">❌ {{ applyResults[vm.vmid][action.id].error }}</span>
+                  </div>
+                  <button
+                    @click="applyTuneAction(vm, action.id)"
+                    class="btn btn-sm btn-primary"
+                    :disabled="applyingAction[vm.vmid] === action.id || applyResults[vm.vmid]?.[action.id]?.ok"
+                  >
+                    {{ applyingAction[vm.vmid] === action.id ? 'Applying...' : applyResults[vm.vmid]?.[action.id]?.ok ? 'Applied' : 'Apply' }}
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -511,6 +581,15 @@ export default {
     const loadingHistory = ref({})
     const tuningVM = ref(null)
     const tuningResults = ref({})
+    const applyingAction = ref({})  // vmid → action_id being applied
+    const applyResults = ref({})    // vmid → { action_id → { ok, error } }
+    const schedule = ref({
+      auto_update_check_enabled: false,
+      auto_update_check_interval_hours: 24,
+      auto_security_scan_enabled: false,
+      auto_security_scan_interval_hours: 24,
+    })
+    const scanCache = ref([])       // flat array from /updates/cache
     const credModal = ref({ show: false, vm: null })
     const credForm = ref({ ip_address: '', username: '', password: '', saveToDb: true })
     const savingCreds = ref(false)
@@ -530,6 +609,68 @@ export default {
       return managedVMs.value.find(m => Number(m.vmid) === id) || null
     }
 
+    // Returns the scan cache entry for a DB vm id + scan type ("updates" or "security")
+    const getCacheEntry = (vmDbId, scanType) => {
+      if (!vmDbId) return null
+      return scanCache.value.find(c => c.vm_id === vmDbId && c.scan_type === scanType) || null
+    }
+
+    // Returns the most recent update check result for display (manual check takes priority)
+    const getUpdateResult = (vm) => {
+      if (updateChecks.value[vm.vmid]) return updateChecks.value[vm.vmid]
+      const managed = getManagedVM(vm.vmid)
+      if (!managed) return null
+      const cache = getCacheEntry(managed.id, 'updates')
+      if (!cache) return null
+      try { return JSON.parse(cache.result_json || '{}') } catch { return null }
+    }
+
+    const loadScheduleAndCache = async () => {
+      try {
+        const [schedRes, cacheRes] = await Promise.all([
+          api.updates.getSchedule().catch(() => null),
+          api.updates.getCache().catch(() => ({ data: [] })),
+        ])
+        if (schedRes?.data) Object.assign(schedule.value, schedRes.data)
+        scanCache.value = cacheRes?.data || []
+      } catch { /* non-critical */ }
+    }
+
+    const saveSchedule = async () => {
+      try {
+        await api.updates.saveSchedule({
+          auto_update_check_enabled: schedule.value.auto_update_check_enabled,
+          auto_update_check_interval_hours: schedule.value.auto_update_check_interval_hours,
+          auto_security_scan_enabled: schedule.value.auto_security_scan_enabled,
+          auto_security_scan_interval_hours: schedule.value.auto_security_scan_interval_hours,
+        })
+        toast.success('Schedule saved')
+      } catch {
+        toast.error('Failed to save schedule')
+      }
+    }
+
+    const applyTuneAction = async (vm, actionId) => {
+      const managed = getManagedVM(vm.vmid)
+      if (!managed) return
+      applyingAction.value = { ...applyingAction.value, [vm.vmid]: actionId }
+      try {
+        await api.vmAgent.applyTuneAction(managed.id, actionId)
+        applyResults.value = {
+          ...applyResults.value,
+          [vm.vmid]: { ...(applyResults.value[vm.vmid] || {}), [actionId]: { ok: true } }
+        }
+        toast.success('Tuning action applied successfully')
+      } catch (err) {
+        const msg = err.response?.data?.detail || 'Apply failed'
+        applyResults.value = {
+          ...applyResults.value,
+          [vm.vmid]: { ...(applyResults.value[vm.vmid] || {}), [actionId]: { ok: false, error: msg } }
+        }
+      } finally {
+        applyingAction.value = { ...applyingAction.value, [vm.vmid]: null }
+      }
+    }
 
     const setSort = (key) => {
       if (sortKey.value === key) {
@@ -793,18 +934,23 @@ export default {
       return mb >= 1024 ? `${(mb / 1024).toFixed(0)} GB` : `${mb} MB`
     }
 
-    onMounted(loadVMs)
+    onMounted(() => {
+      loadVMs()
+      loadScheduleAndCache()
+    })
 
     return {
       activeTab, tabs, vms, loadingVMs, loadingMonitor,
       expandedVM, updatingVM, updateAction, updateChecks,
       updateHistory, loadingHistory, tuningVM, tuningResults, llmVMs,
+      applyingAction, applyResults, applyTuneAction,
       loadVMs, loadMonitoring, checkUpdates, installUpdates,
       toggleHistory, runAITune, getManagedVM,
       runScan, scanResults, scanning, scanExpanded,
       getVMStatusBadge, formatDate, formatBytes, formatMB,
       credModal, credForm, savingCreds, fetchingIP, openCredModal, saveCredentials, sessionCreds,
       search, sortKey, sortDir, filteredVMs, setSort, sortIcon,
+      schedule, saveSchedule, scanCache, getCacheEntry, getUpdateResult,
     }
   }
 }
@@ -1095,6 +1241,77 @@ export default {
   cursor: pointer;
   margin-top: 0.25rem;
 }
+
+/* Auto-check schedule bar */
+.auto-check-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.6rem 1.25rem;
+  background: var(--bg-secondary, #f8f9fa);
+  border-bottom: 1px solid var(--border-color, #e0e0e0);
+  font-size: 0.875rem;
+}
+.auto-check-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+.interval-select {
+  padding: 0.2rem 0.5rem;
+  border: 1px solid var(--border-color, #ccc);
+  border-radius: 4px;
+  font-size: 0.85rem;
+  background: var(--bg-primary, #fff);
+}
+
+/* Credential indicator icon in VM name */
+.cred-indicator {
+  font-size: 0.7rem;
+  margin-left: 0.3rem;
+  opacity: 0.5;
+}
+.cred-saved { opacity: 1; }
+.cred-session { opacity: 0.65; filter: sepia(1) hue-rotate(30deg); }
+
+/* Auto-check badge on cached results */
+.auto-badge {
+  display: inline-block;
+  font-size: 0.65rem;
+  background: var(--bg-secondary, #e8e8e8);
+  color: var(--text-secondary, #666);
+  border-radius: 3px;
+  padding: 0 4px;
+  margin-left: 4px;
+  vertical-align: middle;
+}
+
+/* AI Tune action cards */
+.tuning-actions {
+  margin-top: 1rem;
+}
+.tuning-actions h4 {
+  margin: 0 0 0.75rem;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.tune-action-card {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  background: var(--bg-secondary, #f8f9fa);
+  border: 1px solid var(--border-color, #e0e0e0);
+  border-radius: 6px;
+  margin-bottom: 0.5rem;
+}
+.tune-action-info { flex: 1; }
+.tune-action-info p { margin: 0.2rem 0 0; }
+.tune-action-result { font-size: 0.85rem; white-space: nowrap; }
 
 .cred-save-hint {
   color: var(--text-secondary);

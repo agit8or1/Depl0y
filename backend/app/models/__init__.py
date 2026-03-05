@@ -13,6 +13,13 @@ from .database import (
     UpdateLog,
     AuditLog,
     LLMDeployment,
+    VmScanCache,
+    SystemSettings,
+    VmAgent,
+    VmScanResult,
+    ScanType,
+    ScanStatus,
+    ScanSeverity,
 )
 
 __all__ = [
@@ -29,4 +36,11 @@ __all__ = [
     "UpdateLog",
     "AuditLog",
     "LLMDeployment",
+    "VmScanCache",
+    "SystemSettings",
+    "VmAgent",
+    "VmScanResult",
+    "ScanType",
+    "ScanStatus",
+    "ScanSeverity",
 ]

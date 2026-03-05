@@ -2,7 +2,7 @@
 Database models for Depl0y
 """
 from datetime import datetime
-from sqlalchemy import Boolean, Column, Integer, String, DateTime, ForeignKey, Text, Enum, JSON
+from sqlalchemy import Boolean, Column, Integer, String, DateTime, ForeignKey, Text, Enum, JSON, UniqueConstraint
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 import enum
@@ -357,6 +357,23 @@ class VmScanResult(Base):
 
     # Relationships
     agent = relationship("VmAgent", back_populates="scan_results")
+
+
+class VmScanCache(Base):
+    """Cached results of automated or manual update/security checks"""
+    __tablename__ = "vm_scan_cache"
+
+    id = Column(Integer, primary_key=True, index=True)
+    vm_id = Column(Integer, ForeignKey("virtual_machines.id"), nullable=False)
+    scan_type = Column(String(20), nullable=False)   # "updates" or "security"
+    result_json = Column(Text, nullable=True)
+    scanned_at = Column(DateTime, nullable=True)
+    severity = Column(String(20), nullable=True)     # ok / warning / critical
+    summary = Column(String(500), nullable=True)
+
+    __table_args__ = (UniqueConstraint("vm_id", "scan_type", name="uq_vm_scan_cache"),)
+
+    vm = relationship("VirtualMachine")
 
 
 class LLMDeployment(Base):

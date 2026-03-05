@@ -5,6 +5,25 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.6] - 2026-03-05 📅 Auto-Check Scheduler + Install Fix + AI Tune Apply
+
+### Added
+- **APScheduler background scheduler** — auto-checks all managed VMs on a configurable interval (6h / 12h / 24h / 48h / 7d); results cached per-VM in new `vm_scan_cache` table and shown in the UI with an "auto" badge
+- **Auto-check toggle in Updates tab** — enable/disable + interval selector; saves to DB and immediately reschedules jobs
+- **Auto-scan toggle in Security tab** — same pattern for security scans
+- **Cached results displayed** — if a VM has been auto-checked, the last check time and result appear in the table even before a manual check is run
+- **AI Tune "Apply Recommendations" section** — each applicable tuning action (Ollama perf env vars, ComfyUI low-VRAM mode, xformers install, NVIDIA driver update) now appears as a card with an **Apply** button that SSHes into the VM and executes pre-approved commands
+- **`POST /api/v1/llm/ai-tune/{vm_id}/apply`** endpoint with `action_id` body — executes one of four safe tuning actions via SSH
+- **Credential indicator** on VM name — green 🔑 if credentials are saved to DB, dimmed 🔑 if session-only; no icon if none
+
+### Fixed
+- **Update install not running** — two root causes fixed:
+  1. `sudo` commands now use `sudo -S` with password piped via stdin (`stdin.write(password)`), fixing the "sudo requires a terminal" failure on non-NOPASSWD systems
+  2. Background task now uses a dedicated `SessionLocal()` session instead of sharing the request thread's session, preventing SQLite thread-safety errors
+- **SQLite thread safety** — `database.py` now adds `check_same_thread=False` for SQLite connections (required when background threads access the DB)
+
+---
+
 ## [1.5.5] - 2026-03-05 🔑 Credentials Button Always Accessible
 
 ### Fixed

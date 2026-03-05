@@ -26,7 +26,7 @@ def get_app_version():
         # Fallback to hardcoded version if database query fails
         pass
 
-    return "1.5.5"  # credentials button fix — always clickable
+    return "1.5.6"  # auto-check scheduler, install sudo fix, AI tune apply
 
 
 class Settings(BaseSettings):

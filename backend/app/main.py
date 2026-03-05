@@ -72,6 +72,25 @@ async def startup_event():
     init_db()
     logger.info("Database initialized")
 
+    # Start background scheduler for auto-checks
+    from app.core.database import SessionLocal
+    from app.models import SystemSettings
+    from app.services.scheduler import start_scheduler
+    db = SessionLocal()
+    try:
+        def _get(key, default):
+            row = db.query(SystemSettings).filter(SystemSettings.key == key).first()
+            try:
+                return int(row.value) if row else default
+            except (TypeError, ValueError):
+                return default
+        update_h = _get("auto_update_check_interval_hours", 24)
+        scan_h = _get("auto_security_scan_interval_hours", 24)
+    finally:
+        db.close()
+    start_scheduler(update_h, scan_h)
+    logger.info("Background scheduler started")
+
 
 @app.get("/")
 async def root():

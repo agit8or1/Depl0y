@@ -190,7 +190,10 @@ export default {
     scanSecurity: (vmId, creds = null) => api.post(`/updates/vm/${vmId}/scan-security`, creds || {}),
     getHistory: (vmId, params) => api.get(`/updates/vm/${vmId}/history`, { params }),
     getLog: (logId) => api.get(`/updates/log/${logId}`),
-    installQemuAgent: (vmId) => api.post(`/updates/vm/${vmId}/install-qemu-agent`)
+    installQemuAgent: (vmId) => api.post(`/updates/vm/${vmId}/install-qemu-agent`),
+    getSchedule: () => api.get('/updates/schedule'),
+    saveSchedule: (data) => api.put('/updates/schedule', data),
+    getCache: () => api.get('/updates/cache'),
   },
 
   // Dashboard
@@ -268,6 +271,7 @@ export default {
     getInstallCommand: (id) => api.get(`/vm-agent/${id}/install-command`),
     getSettings: () => api.get('/vm-agent/settings/linux-agent'),
     updateSettings: (data) => api.put('/vm-agent/settings/linux-agent', data),
-    runAITune: (vmId) => api.post(`/llm/ai-tune/${vmId}`)
+    runAITune: (vmId) => api.post(`/llm/ai-tune/${vmId}`),
+    applyTuneAction: (vmId, actionId) => api.post(`/llm/ai-tune/${vmId}/apply`, { action_id: actionId })
   }
 }

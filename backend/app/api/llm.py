@@ -3,7 +3,7 @@ import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -978,8 +978,13 @@ async def ai_tune_vm(
         }
         client.close()
 
-        recommendations = _generate_ai_tune_recommendations(diag)
-        return {"diagnostics": diag, "recommendations": recommendations, "status": "complete"}
+        rec_data = _generate_ai_tune_recommendations(diag)
+        return {
+            "diagnostics": diag,
+            "recommendations": rec_data["text"],
+            "actions": rec_data["actions"],
+            "status": "complete",
+        }
 
     except paramiko.AuthenticationException:
         raise HTTPException(status_code=401, detail="SSH authentication failed — check credentials")
@@ -987,13 +992,139 @@ async def ai_tune_vm(
         raise HTTPException(status_code=500, detail=f"AI tune failed: {str(e)}")
 
 
-def _generate_ai_tune_recommendations(diag: dict) -> str:
+# Pre-approved tuning actions (SSH commands run server-side)
+_TUNE_ACTIONS = {
+    "ollama_perf_env": {
+        "label": "Apply Ollama performance settings",
+        "description": "Adds OLLAMA_NUM_PARALLEL=2 and OLLAMA_MAX_LOADED_MODELS=1 to the Ollama systemd service, then restarts Ollama",
+        "commands": [
+            "grep -q 'OLLAMA_NUM_PARALLEL' /etc/systemd/system/ollama.service || "
+            "sed -i '/^\\[Service\\]/a Environment=\"OLLAMA_NUM_PARALLEL=2\"' /etc/systemd/system/ollama.service",
+            "grep -q 'OLLAMA_MAX_LOADED_MODELS' /etc/systemd/system/ollama.service || "
+            "sed -i '/^\\[Service\\]/a Environment=\"OLLAMA_MAX_LOADED_MODELS=1\"' /etc/systemd/system/ollama.service",
+            "systemctl daemon-reload",
+            "systemctl restart ollama",
+        ],
+    },
+    "comfyui_lowvram": {
+        "label": "Enable ComfyUI low VRAM mode",
+        "description": "Adds --lowvram to ComfyUI's ExecStart in systemd and restarts the service",
+        "commands": [
+            "grep -q -- '--lowvram' /etc/systemd/system/comfyui.service || "
+            "sed -i '/ExecStart=.*comfyui/ s/$/ --lowvram/' /etc/systemd/system/comfyui.service",
+            "systemctl daemon-reload",
+            "systemctl restart comfyui",
+        ],
+    },
+    "install_xformers": {
+        "label": "Install xformers",
+        "description": "Installs xformers for faster attention operations and restarts ComfyUI",
+        "commands": [
+            "pip install xformers --quiet",
+            "systemctl restart comfyui",
+        ],
+    },
+    "update_nvidia_drivers": {
+        "label": "Update NVIDIA drivers",
+        "description": "Runs apt-get to upgrade NVIDIA driver packages to the latest available version",
+        "commands": [
+            "apt-get update -qq",
+            "apt-get install --only-upgrade -y 'nvidia-driver-*' 2>/dev/null || "
+            "apt-get install --only-upgrade -y 'nvidia-*' 2>/dev/null || "
+            "echo 'No NVIDIA packages found to upgrade'",
+        ],
+    },
+}
+
+
+@router.post("/ai-tune/{vm_id}/apply")
+async def apply_ai_tune_action(
+    vm_id: int,
+    body: dict = Body(...),
+    current_user: User = Depends(require_operator),
+    db: Session = Depends(get_db),
+):
+    """Execute a pre-approved tuning action on an LLM VM via SSH"""
+    import paramiko
+
+    action_id = body.get("action_id")
+    if action_id not in _TUNE_ACTIONS:
+        raise HTTPException(status_code=400, detail=f"Unknown action '{action_id}'")
+
+    action = _TUNE_ACTIONS[action_id]
+
+    from app.models import VirtualMachine
+    vm = db.query(VirtualMachine).filter(VirtualMachine.id == vm_id).first()
+    if not vm:
+        raise HTTPException(status_code=404, detail="VM not found")
+    if not vm.ip_address:
+        raise HTTPException(status_code=400, detail="VM has no IP address — set SSH credentials first")
+
+    password = None
+    if vm.password:
+        try:
+            from app.core.security import decrypt_data
+            password = decrypt_data(vm.password)
+        except Exception:
+            password = vm.password
+
+    try:
+        client = paramiko.SSHClient()
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        client.connect(vm.ip_address, username=vm.username, password=password, timeout=30)
+
+        outputs = []
+        for cmd in action["commands"]:
+            stdin, stdout, stderr = client.exec_command(f"sudo -S {cmd}")
+            if password:
+                stdin.write((password + "\n").encode())
+                stdin.flush()
+                stdin.channel.shutdown_write()
+            out = stdout.read().decode("utf-8", errors="replace").strip()
+            err = stderr.read().decode("utf-8", errors="replace").strip()
+            exit_code = stdout.channel.recv_exit_status()
+            # Filter sudo password prompt from stderr
+            real_err = "\n".join(
+                l for l in err.splitlines()
+                if l.strip() and not l.startswith("[sudo]") and "password for" not in l.lower()
+            )
+            if exit_code != 0 and real_err:
+                client.close()
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Command failed (exit {exit_code}): {real_err}",
+                )
+            if out:
+                outputs.append(out)
+
+        client.close()
+        return {
+            "status": "applied",
+            "action": action["label"],
+            "output": "\n".join(outputs) if outputs else "Done",
+        }
+
+    except HTTPException:
+        raise
+    except paramiko.AuthenticationException:
+        raise HTTPException(status_code=401, detail="SSH authentication failed")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Apply failed: {str(e)}")
+
+
+def _generate_ai_tune_recommendations(diag: dict) -> dict:
+    """Return both a human-readable text summary and structured applicable actions."""
     recs = []
+    actions = []
     gpu = diag.get("gpu", "")
     model_service = diag.get("model_service", "")
     ollama_models = diag.get("ollama_models", "")
 
-    if "no_gpu" in gpu or gpu in ("N/A", ""):
+    has_gpu = not ("no_gpu" in gpu or gpu in ("N/A", ""))
+    has_ollama = "ollama" in model_service.lower() or "ollama" in ollama_models.lower()
+    has_comfyui = "comfyui" in model_service.lower()
+
+    if not has_gpu:
         recs += [
             "CPU-only inference detected.",
             "• Use quantized GGUF models (Q4_K_M or Q5_K_S) to reduce RAM and maximise CPU throughput.",
@@ -1003,29 +1134,30 @@ def _generate_ai_tune_recommendations(diag: dict) -> str:
         recs += [
             f"GPU detected: {gpu}",
             "• Verify VRAM offloading: run `ollama ps` and confirm layers are on GPU.",
-            "• Keep NVIDIA drivers current: `apt-get install --only-upgrade nvidia-driver-*`",
         ]
+        actions.append({**_TUNE_ACTIONS["update_nvidia_drivers"], "id": "update_nvidia_drivers"})
 
-    if "ollama" in model_service.lower() or "ollama" in ollama_models.lower():
+    if has_ollama:
         recs += [
             "",
             "Ollama tuning:",
             "  OLLAMA_NUM_PARALLEL=2      # allow 2 concurrent requests",
             "  OLLAMA_MAX_LOADED_MODELS=1 # prevent VRAM fragmentation",
-            "Add to /etc/systemd/system/ollama.service [Service] section, then:",
-            "  systemctl daemon-reload && systemctl restart ollama",
+            "  Apply via: systemctl daemon-reload && systemctl restart ollama",
         ]
+        actions.append({**_TUNE_ACTIONS["ollama_perf_env"], "id": "ollama_perf_env"})
 
-    if "comfyui" in model_service.lower():
+    if has_comfyui:
         recs += [
             "",
             "ComfyUI tuning:",
             "• Low VRAM mode: add --lowvram to ExecStart in /etc/systemd/system/comfyui.service",
             "• Install xformers for faster attention: pip install xformers",
-            "• Restart: systemctl daemon-reload && systemctl restart comfyui",
         ]
+        actions.append({**_TUNE_ACTIONS["comfyui_lowvram"], "id": "comfyui_lowvram"})
+        actions.append({**_TUNE_ACTIONS["install_xformers"], "id": "install_xformers"})
 
     if not recs:
         recs.append("No running LLM services detected. Ensure Ollama/llama.cpp/ComfyUI is running.")
 
-    return "\n".join(recs)
+    return {"text": "\n".join(recs), "actions": actions}

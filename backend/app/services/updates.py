@@ -53,33 +53,45 @@ class UpdateService:
             return None
         return self._connect_ssh(ip, username, password, vm.ssh_key if not override_pass else None)
 
+    def _sudo_exec(self, client: paramiko.SSHClient, cmd: str, password: Optional[str] = None):
+        """Execute a sudo command, supplying password via stdin (sudo -S) when available.
+
+        Works with both NOPASSWD sudo (password is ignored) and password-required sudo.
+        """
+        stdin, stdout, stderr = client.exec_command(f"sudo -S {cmd}")
+        if password:
+            stdin.write((password + "\n").encode())
+            stdin.flush()
+            stdin.channel.shutdown_write()
+        return stdin, stdout, stderr
+
     def _get_update_commands(self, os_type: OSType) -> Dict[str, str]:
-        """Get update commands for different OS types"""
+        """Get update commands for different OS types (without sudo prefix — use _sudo_exec)"""
         commands = {
             OSType.UBUNTU: {
-                "update": "sudo apt-get update",
-                "upgrade": "sudo DEBIAN_FRONTEND=noninteractive apt-get upgrade -y",
-                "check": "apt list --upgradable",
+                "update": "apt-get update -qq 2>/dev/null",
+                "upgrade": "DEBIAN_FRONTEND=noninteractive apt-get upgrade -y",
+                "check": "apt list --upgradable 2>/dev/null",
             },
             OSType.DEBIAN: {
-                "update": "sudo apt-get update",
-                "upgrade": "sudo DEBIAN_FRONTEND=noninteractive apt-get upgrade -y",
-                "check": "apt list --upgradable",
+                "update": "apt-get update -qq 2>/dev/null",
+                "upgrade": "DEBIAN_FRONTEND=noninteractive apt-get upgrade -y",
+                "check": "apt list --upgradable 2>/dev/null",
             },
             OSType.CENTOS: {
-                "update": "sudo yum check-update",
-                "upgrade": "sudo yum update -y",
-                "check": "yum list updates",
+                "update": "yum check-update 2>/dev/null; true",
+                "upgrade": "yum update -y",
+                "check": "yum list updates 2>/dev/null",
             },
             OSType.ROCKY: {
-                "update": "sudo dnf check-update",
-                "upgrade": "sudo dnf update -y",
-                "check": "dnf list updates",
+                "update": "dnf check-update 2>/dev/null; true",
+                "upgrade": "dnf update -y",
+                "check": "dnf list updates 2>/dev/null",
             },
             OSType.ALMA: {
-                "update": "sudo dnf check-update",
-                "upgrade": "sudo dnf update -y",
-                "check": "dnf list updates",
+                "update": "dnf check-update 2>/dev/null; true",
+                "upgrade": "dnf update -y",
+                "check": "dnf list updates 2>/dev/null",
             },
         }
         return commands.get(os_type, commands[OSType.UBUNTU])
@@ -96,18 +108,21 @@ class UpdateService:
             if not client:
                 return None
 
+            actual_password = override_pass or self._get_ssh_password(vm)
             commands = self._get_update_commands(vm.os_type)
 
-            stdin, stdout, stderr = client.exec_command(commands["update"])
+            # Refresh package cache
+            _, stdout, _ = self._sudo_exec(client, commands["update"], actual_password)
             stdout.channel.recv_exit_status()
 
-            stdin, stdout, stderr = client.exec_command(commands["check"])
+            # List upgradable (no sudo needed)
+            _, stdout, _ = client.exec_command(commands["check"])
             output = stdout.read().decode()
             stdout.channel.recv_exit_status()
             client.close()
 
-            lines = output.strip().split("\n")
-            update_count = len([line for line in lines if line.strip()])
+            lines = [l for l in output.strip().split("\n") if l.strip() and not l.startswith("Listing...")]
+            update_count = len(lines)
 
             return {
                 "updates_available": update_count,
@@ -120,7 +135,10 @@ class UpdateService:
             return None
 
     def install_updates(self, vm_id: int, user_id: int, override_ip: str = None, override_user: str = None, override_pass: str = None) -> Optional[int]:
-        """Install updates on a VM"""
+        """Install updates on a VM.
+
+        NOTE: Intended to be called from a background task that owns its own DB session.
+        """
         try:
             vm = self.db.query(VirtualMachine).filter(VirtualMachine.id == vm_id).first()
             if not vm:
@@ -140,27 +158,35 @@ class UpdateService:
             )
             self.db.add(update_log)
             self.db.commit()
+            self.db.refresh(update_log)
 
             try:
+                actual_password = override_pass or self._get_ssh_password(vm)
                 client = self._get_ssh_client(vm, override_ip, override_user, override_pass)
                 if not client:
                     raise Exception("Failed to connect via SSH")
 
                 commands = self._get_update_commands(vm.os_type)
 
-                logger.info(f"Updating package lists on VM {vm_id}")
-                stdin, stdout, stderr = client.exec_command(commands["update"])
+                logger.info(f"Refreshing package lists on VM {vm_id}")
+                _, stdout, _ = self._sudo_exec(client, commands["update"], actual_password)
                 stdout.channel.recv_exit_status()
 
                 logger.info(f"Installing updates on VM {vm_id}")
-                stdin, stdout, stderr = client.exec_command(commands["upgrade"])
+                _, stdout, stderr = self._sudo_exec(client, commands["upgrade"], actual_password)
                 output = stdout.read().decode()
                 error_output = stderr.read().decode()
                 exit_status = stdout.channel.recv_exit_status()
                 client.close()
 
+                # sudo -S writes a password prompt to stderr even on success — filter it
+                real_errors = "\n".join(
+                    l for l in error_output.splitlines()
+                    if l.strip() and not l.startswith("[sudo]") and "password for" not in l.lower()
+                )
+
                 if exit_status != 0:
-                    raise Exception(f"Update failed with exit code {exit_status}")
+                    raise Exception(f"Update failed (exit {exit_status}): {real_errors or 'check VM logs'}")
 
                 update_log.status = "completed"
                 update_log.output = output
@@ -174,11 +200,11 @@ class UpdateService:
                 update_log.packages_updated = packages_updated
                 self.db.commit()
 
-                logger.info(f"Successfully installed updates on VM {vm_id}")
+                logger.info(f"Successfully installed updates on VM {vm_id} ({packages_updated} packages)")
                 return update_log.id
 
             except Exception as e:
-                logger.error(f"Failed to install updates: {e}")
+                logger.error(f"Failed to install updates on VM {vm_id}: {e}")
                 update_log.status = "failed"
                 update_log.error_message = str(e)
                 update_log.completed_at = datetime.utcnow()
@@ -186,7 +212,7 @@ class UpdateService:
                 return None
 
         except Exception as e:
-            logger.error(f"Failed to create update log: {e}")
+            logger.error(f"Failed to create update log for VM {vm_id}: {e}")
             return None
 
     def scan_security(self, vm_id: int, override_ip: str = None, override_user: str = None, override_pass: str = None) -> Dict[str, Any]:
@@ -211,7 +237,7 @@ class UpdateService:
                 except Exception:
                     return ""
 
-            # OS security updates (apt-based; graceful for other distros)
+            # OS security updates
             run("apt-get update -qq 2>/dev/null; true")
             upgradable_raw = run("apt list --upgradable 2>/dev/null | tail -n +2")
             pkgs = [l.strip() for l in upgradable_raw.split("\n") if l.strip()]
@@ -251,7 +277,6 @@ class UpdateService:
 
             client.close()
 
-            # Overall severity
             sec = results["os_updates"]["security_updates"]
             failed = results["failed_ssh_attempts"]
             if sec > 10 or failed > 100:
@@ -294,30 +319,26 @@ class UpdateService:
             if not client:
                 return False
 
+            actual_password = self._get_ssh_password(vm)
+
             if vm.os_type in [OSType.UBUNTU, OSType.DEBIAN]:
-                install_cmd = "sudo apt-get install -y qemu-guest-agent"
-                start_cmd = "sudo systemctl start qemu-guest-agent"
-                enable_cmd = "sudo systemctl enable qemu-guest-agent"
+                install_cmd = "apt-get install -y qemu-guest-agent"
             elif vm.os_type in [OSType.CENTOS]:
-                install_cmd = "sudo yum install -y qemu-guest-agent"
-                start_cmd = "sudo systemctl start qemu-guest-agent"
-                enable_cmd = "sudo systemctl enable qemu-guest-agent"
+                install_cmd = "yum install -y qemu-guest-agent"
             elif vm.os_type in [OSType.ROCKY, OSType.ALMA]:
-                install_cmd = "sudo dnf install -y qemu-guest-agent"
-                start_cmd = "sudo systemctl start qemu-guest-agent"
-                enable_cmd = "sudo systemctl enable qemu-guest-agent"
+                install_cmd = "dnf install -y qemu-guest-agent"
             else:
                 logger.error(f"Unsupported OS type for QEMU agent: {vm.os_type}")
                 return False
 
-            stdin, stdout, stderr = client.exec_command(install_cmd)
+            _, stdout, stderr = self._sudo_exec(client, install_cmd, actual_password)
             exit_status = stdout.channel.recv_exit_status()
             if exit_status != 0:
                 logger.error(f"Failed to install QEMU agent: {stderr.read().decode()}")
                 return False
 
-            client.exec_command(start_cmd)[1].channel.recv_exit_status()
-            client.exec_command(enable_cmd)[1].channel.recv_exit_status()
+            self._sudo_exec(client, "systemctl start qemu-guest-agent", actual_password)[1].channel.recv_exit_status()
+            self._sudo_exec(client, "systemctl enable qemu-guest-agent", actual_password)[1].channel.recv_exit_status()
             client.close()
             logger.info(f"Successfully installed QEMU guest agent on VM {vm_id}")
             return True

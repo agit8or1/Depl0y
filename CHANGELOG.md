@@ -5,6 +5,15 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.3] - 2026-03-05 🏗️ Cache & Autocomplete Fixes
+
+### Fixed
+- **Stale chunk 404 on login** — browser cached old `index.html` referencing previous build's hashed chunk filenames; nginx now sends `no-cache, no-store` for all HTML/SPA routes so `index.html` is always fetched fresh after a deploy
+- **Hashed assets** (`/assets/*.js`, `/assets/*.css`) now served with `Cache-Control: public, max-age=31536000, immutable` — safe because the content hash changes with each build, giving optimal caching for unchanged files
+- **Login username autocomplete warning** — added `autocomplete="username"` to the username input field
+
+---
+
 ## [1.5.2] - 2026-03-05 🔒 Security Scan + Credential Encryption
 
 ### Added

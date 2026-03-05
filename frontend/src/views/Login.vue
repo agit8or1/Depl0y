@@ -14,6 +14,7 @@
             v-model="credentials.username"
             type="text"
             class="form-control"
+            autocomplete="username"
             required
             autofocus
           />

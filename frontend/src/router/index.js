@@ -41,6 +41,12 @@ const router = createRouter({
       meta: { requiresAuth: true }
     },
     {
+      path: '/vm-management',
+      name: 'VMManagement',
+      component: () => import('@/views/VMManagement.vue'),
+      meta: { requiresAuth: true, requiresOperator: true }
+    },
+    {
       path: '/proxmox',
       name: 'ProxmoxHosts',
       component: () => import('@/views/ProxmoxHosts.vue'),

@@ -264,6 +264,7 @@ export default {
     delete: (id) => api.delete(`/vm-agent/${id}`),
     getInstallCommand: (id) => api.get(`/vm-agent/${id}/install-command`),
     getSettings: () => api.get('/vm-agent/settings/linux-agent'),
-    updateSettings: (data) => api.put('/vm-agent/settings/linux-agent', data)
+    updateSettings: (data) => api.put('/vm-agent/settings/linux-agent', data),
+    runAITune: (vmId) => api.post(`/llm/ai-tune/${vmId}`)
   }
 }

@@ -16,6 +16,11 @@
         <span>Virtual Machines</span>
       </router-link>
 
+      <router-link v-if="isOperator" to="/vm-management" class="nav-item">
+        <span class="icon">⚙️</span>
+        <span>VM Management</span>
+      </router-link>
+
       <router-link to="/proxmox" class="nav-item">
         <span class="icon">🌐</span>
         <span>Proxmox Hosts</span>

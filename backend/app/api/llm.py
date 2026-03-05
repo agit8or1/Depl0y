@@ -1077,9 +1077,11 @@ async def apply_ai_tune_action(
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         client.connect(vm.ip_address, username=vm.username, password=password, timeout=30)
 
+        import shlex
         outputs = []
         for cmd in action["commands"]:
-            stdin, stdout, stderr = client.exec_command(f"sudo -S {cmd}")
+            # Wrap in bash -c so compound commands (||, &&) all run under sudo
+            stdin, stdout, stderr = client.exec_command(f"sudo -S bash -c {shlex.quote(cmd)}")
             if password:
                 stdin.write((password + "\n").encode())
                 stdin.flush()

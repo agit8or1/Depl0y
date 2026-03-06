@@ -29,6 +29,12 @@ const router = createRouter({
       meta: { requiresAuth: true, requiresOperator: true }
     },
     {
+      path: '/deploy',
+      name: 'Deploy',
+      component: () => import('@/views/Deploy.vue'),
+      meta: { requiresAuth: true, requiresOperator: true }
+    },
+    {
       path: '/llm-deploy',
       name: 'DeployLLM',
       component: () => import('@/views/DeployLLM.vue'),

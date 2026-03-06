@@ -11,6 +11,56 @@
         <span>Dashboard</span>
       </router-link>
 
+      <router-link v-if="isOperator" to="/deploy" class="nav-item">
+        <span class="icon">🚀</span>
+        <span>Deploy VM</span>
+      </router-link>
+
+      <router-link to="/documentation" class="nav-item">
+        <span class="icon">📖</span>
+        <span>Documentation</span>
+      </router-link>
+
+      <router-link v-if="isAdmin" to="/ha-management" class="nav-item">
+        <span class="icon">🔄</span>
+        <span>HA Management</span>
+      </router-link>
+
+      <router-link to="/images" class="nav-item">
+        <span class="icon">💿</span>
+        <span>Images</span>
+      </router-link>
+
+      <router-link v-if="isAdmin && linuxAgentEnabled" to="/linux-vms" class="nav-item">
+        <span class="icon">🛡️</span>
+        <span>Linux VM Security</span>
+      </router-link>
+
+      <router-link to="/proxmox" class="nav-item">
+        <span class="icon">🌐</span>
+        <span>Proxmox Hosts</span>
+      </router-link>
+
+      <a href="https://github.com/agit8or1/Depl0y/issues" target="_blank" rel="noopener noreferrer" class="nav-item">
+        <span class="icon">🐛</span>
+        <span>Report Bug</span>
+      </a>
+
+      <router-link to="/settings" class="nav-item">
+        <span class="icon">⚙️</span>
+        <span>Settings</span>
+      </router-link>
+
+      <router-link to="/support" class="nav-item nav-item-heart">
+        <span class="icon">❤️</span>
+        <span>Support Project</span>
+      </router-link>
+
+      <router-link v-if="isAdmin" to="/users" class="nav-item">
+        <span class="icon">👥</span>
+        <span>Users</span>
+      </router-link>
+
       <router-link to="/vms" class="nav-item">
         <span class="icon">🖥️</span>
         <span>Virtual Machines</span>
@@ -21,59 +71,9 @@
         <span>VM Management</span>
       </router-link>
 
-      <router-link to="/proxmox" class="nav-item">
-        <span class="icon">🌐</span>
-        <span>Proxmox Hosts</span>
-      </router-link>
-
-      <router-link to="/images" class="nav-item">
-        <span class="icon">💿</span>
-        <span>Images</span>
-      </router-link>
-
-      <router-link v-if="isOperator" to="/llm-deploy" class="nav-item">
-        <span class="icon">🤖</span>
-        <span>Deploy LLM</span>
-      </router-link>
-
-      <router-link v-if="isAdmin" to="/ha-management" class="nav-item">
-        <span class="icon">🔄</span>
-        <span>HA Management</span>
-      </router-link>
-
-      <router-link v-if="isAdmin && linuxAgentEnabled" to="/linux-vms" class="nav-item">
-        <span class="icon">🛡️</span>
-        <span>Linux VM Security</span>
-      </router-link>
-
-      <router-link v-if="isAdmin" to="/users" class="nav-item">
-        <span class="icon">👥</span>
-        <span>Users</span>
-      </router-link>
-
-      <router-link to="/settings" class="nav-item">
-        <span class="icon">⚙️</span>
-        <span>Settings</span>
-      </router-link>
-
-      <router-link to="/documentation" class="nav-item">
-        <span class="icon">📖</span>
-        <span>Documentation</span>
-      </router-link>
-
       <router-link to="/about" class="nav-item">
         <span class="icon">ℹ️</span>
         <span>About</span>
-      </router-link>
-
-      <a href="https://github.com/agit8or1/Depl0y/issues" target="_blank" rel="noopener noreferrer" class="nav-item">
-        <span class="icon">🐛</span>
-        <span>Report Bug</span>
-      </a>
-
-      <router-link to="/support" class="nav-item nav-item-heart">
-        <span class="icon">❤️</span>
-        <span>Support Project</span>
       </router-link>
     </nav>
 

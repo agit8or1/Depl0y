@@ -500,6 +500,215 @@
       </div>
     </div>
 
+    <!-- ── CONV LOGS TAB ── -->
+    <div v-if="activeTab === 'conv-logs'">
+      <div class="card">
+        <div class="card-header">
+          <h3>Conversation Logs</h3>
+          <span class="text-sm text-muted">Intercepts and logs all Ollama API calls for analysis, fine-tuning, and auditing</span>
+        </div>
+
+        <div v-if="llmOllamaVMs.length === 0" class="empty-state">
+          <p>No Ollama LLM VMs found.</p>
+          <p class="text-sm text-muted">Deploy an Ollama VM via <router-link to="/llm-deploy">Deploy LLM</router-link>.</p>
+        </div>
+
+        <div v-else class="conv-layout">
+          <!-- VM selector sidebar -->
+          <div class="conv-vm-list">
+            <div
+              v-for="vm in llmOllamaVMs"
+              :key="vm.vmid"
+              :class="['conv-vm-item', { active: convLogVM?.vmid === vm.vmid }]"
+              @click="selectConvLogVM(vm)"
+            >
+              <strong>{{ vm.name }}</strong>
+              <span class="text-sm text-muted">{{ getManagedVM(vm.vmid)?.ip_address || 'No IP' }}</span>
+              <span v-if="convLogStatus[vm.vmid]?.active" class="badge badge-success" style="font-size:0.65rem">logging</span>
+              <span v-else-if="convLogStatus[vm.vmid]?.installed" class="badge badge-warning" style="font-size:0.65rem">stopped</span>
+            </div>
+          </div>
+
+          <!-- Main panel -->
+          <div class="conv-main" v-if="convLogVM">
+            <div class="conv-controls">
+              <div v-if="!convLogStatus[convLogVM.vmid]?.installed" class="info-box" style="margin-bottom:1rem">
+                <p class="text-sm">The conversation logger proxy is not installed on this VM. Install it to start capturing all Ollama API calls.</p>
+                <button @click="installConvLogger(convLogVM)" class="btn btn-primary" style="margin-top:0.75rem">
+                  Install Logger
+                </button>
+              </div>
+              <div v-else class="conv-status-bar">
+                <span v-if="convLogStatus[convLogVM.vmid]?.active" class="text-success text-sm">● Logger active</span>
+                <span v-else class="text-danger text-sm">● Logger stopped</span>
+                <span class="text-sm text-muted" style="margin-left:1rem">
+                  {{ convLogStatus[convLogVM.vmid]?.log_entries || 0 }} entries
+                </span>
+                <div style="margin-left:auto;display:flex;gap:0.5rem">
+                  <button @click="loadConvLogs" class="btn btn-sm btn-outline" :disabled="convLogLoading">
+                    {{ convLogLoading ? 'Loading...' : 'Refresh' }}
+                  </button>
+                  <button @click="clearConvLogs(convLogVM)" class="btn btn-sm btn-danger-outline">Clear All</button>
+                </div>
+              </div>
+
+              <!-- Live install terminal -->
+              <div v-if="tuneApplyJobs[convLogVM.vmid]" class="live-log-panel" style="margin-top:0.75rem">
+                <div class="live-log-header">
+                  <span class="live-log-title">
+                    <span v-if="tuneApplyJobs[convLogVM.vmid].status === 'running'" class="live-dot"></span>
+                    {{ tuneApplyJobs[convLogVM.vmid].action }}
+                  </span>
+                  <div class="live-log-meta">
+                    <span v-if="tuneApplyJobs[convLogVM.vmid].status === 'completed'" class="text-success text-sm">✅ Done</span>
+                    <span v-else-if="tuneApplyJobs[convLogVM.vmid].status === 'failed'" class="text-danger text-sm">❌ Failed</span>
+                    <button class="btn btn-xs" @click="closeTuneApplyLog(convLogVM.vmid)" style="margin-left:0.5rem">✕</button>
+                  </div>
+                </div>
+                <pre class="live-log-output" :id="`tuneapply-${convLogVM.vmid}`">{{ tuneApplyJobs[convLogVM.vmid].output || 'Starting...' }}</pre>
+              </div>
+            </div>
+
+            <!-- Log entries -->
+            <div v-if="convLogEntries.length" class="conv-entries">
+              <div v-for="(entry, i) in convLogEntries" :key="i" class="conv-entry">
+                <div class="conv-entry-meta">
+                  <span class="conv-model badge badge-info">{{ entry.model }}</span>
+                  <span class="text-sm text-muted">{{ entry.ts }}</span>
+                </div>
+                <div class="conv-bubble conv-user">{{ entry.user || '(empty)' }}</div>
+                <div class="conv-bubble conv-assistant">{{ entry.assistant || '(empty)' }}</div>
+              </div>
+            </div>
+            <div v-else-if="convLogStatus[convLogVM.vmid]?.installed" class="empty-state">
+              <p>No conversations logged yet.</p>
+              <p class="text-sm text-muted">Click Refresh after making some Ollama API calls.</p>
+            </div>
+          </div>
+          <div v-else class="conv-main empty-state">
+            <p>Select a VM from the left to view conversation logs.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── RAG TAB ── -->
+    <div v-if="activeTab === 'rag'">
+      <div class="card">
+        <div class="card-header">
+          <h3>RAG — Knowledge Base</h3>
+          <span class="text-sm text-muted">ChromaDB vector store + Ollama embeddings for retrieval-augmented generation</span>
+        </div>
+
+        <div v-if="llmOllamaVMs.length === 0" class="empty-state">
+          <p>No Ollama LLM VMs found.</p>
+        </div>
+
+        <div v-else class="conv-layout">
+          <!-- VM selector -->
+          <div class="conv-vm-list">
+            <div
+              v-for="vm in llmOllamaVMs"
+              :key="vm.vmid"
+              :class="['conv-vm-item', { active: ragVM?.vmid === vm.vmid }]"
+              @click="selectRagVM(vm)"
+            >
+              <strong>{{ vm.name }}</strong>
+              <span class="text-sm text-muted">{{ getManagedVM(vm.vmid)?.ip_address || 'No IP' }}</span>
+              <span v-if="ragStatus[vm.vmid]?.active" class="badge badge-success" style="font-size:0.65rem">active</span>
+            </div>
+          </div>
+
+          <!-- Main panel -->
+          <div class="conv-main" v-if="ragVM">
+            <!-- Install section -->
+            <div v-if="!ragStatus[ragVM.vmid]?.installed" class="info-box" style="margin-bottom:1rem">
+              <p class="text-sm">RAG service not installed. Choose an embedding model and install.</p>
+              <div style="display:flex;gap:0.5rem;margin-top:0.75rem;align-items:center;flex-wrap:wrap">
+                <select v-model="ragSelectedEmbed" class="pull-select" style="max-width:280px">
+                  <option v-for="m in (ragStatus[ragVM.vmid]?.catalog || [{id:'nomic-embed-text',name:'Nomic Embed Text'}])" :key="m.id" :value="m.id">
+                    {{ m.name }} {{ m.size ? '(' + m.size + ')' : '' }}
+                  </option>
+                </select>
+                <button @click="installRag(ragVM)" class="btn btn-primary">Install RAG</button>
+              </div>
+            </div>
+
+            <!-- Live install terminal -->
+            <div v-if="tuneApplyJobs[ragVM.vmid]" class="live-log-panel" style="margin-bottom:1rem">
+              <div class="live-log-header">
+                <span class="live-log-title">
+                  <span v-if="tuneApplyJobs[ragVM.vmid].status === 'running'" class="live-dot"></span>
+                  {{ tuneApplyJobs[ragVM.vmid].action }}
+                </span>
+                <div class="live-log-meta">
+                  <span v-if="tuneApplyJobs[ragVM.vmid].status === 'completed'" class="text-success text-sm">✅ Done</span>
+                  <span v-else-if="tuneApplyJobs[ragVM.vmid].status === 'failed'" class="text-danger text-sm">❌ Failed</span>
+                  <button class="btn btn-xs" @click="closeTuneApplyLog(ragVM.vmid)" style="margin-left:0.5rem">✕</button>
+                </div>
+              </div>
+              <pre class="live-log-output" :id="`tuneapply-${ragVM.vmid}`">{{ tuneApplyJobs[ragVM.vmid].output || 'Starting...' }}</pre>
+            </div>
+
+            <div v-if="ragStatus[ragVM.vmid]?.installed">
+              <!-- Ingest -->
+              <div class="rag-section">
+                <h4>Ingest Document</h4>
+                <div class="form-group">
+                  <label class="form-label">Source / Name</label>
+                  <input v-model="ragIngestSource" class="form-control" placeholder="e.g. company-faq.txt" />
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Text Content</label>
+                  <textarea v-model="ragIngestText" class="form-control" rows="5" placeholder="Paste document text here..." style="resize:vertical"></textarea>
+                </div>
+                <button @click="ragIngestDoc" class="btn btn-primary" :disabled="ragLoading || !ragIngestText.trim()">
+                  {{ ragLoading ? 'Ingesting...' : 'Ingest' }}
+                </button>
+              </div>
+
+              <!-- Query -->
+              <div class="rag-section">
+                <h4>Query Knowledge Base</h4>
+                <div style="display:flex;gap:0.5rem">
+                  <input v-model="ragQueryText" class="form-control" placeholder="Ask a question..." @keyup.enter="ragDoQuery" />
+                  <button @click="ragDoQuery" class="btn btn-primary" :disabled="ragLoading || !ragQueryText.trim()">Search</button>
+                </div>
+                <div v-if="ragQueryResults.length" class="rag-results">
+                  <div v-for="(r, i) in ragQueryResults" :key="i" class="rag-result">
+                    <div class="rag-result-meta text-sm text-muted">
+                      <span>{{ r.source }}</span>
+                      <span>score: {{ (1 - r.distance).toFixed(3) }}</span>
+                    </div>
+                    <p class="rag-result-text">{{ r.text }}</p>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Docs list -->
+              <div class="rag-section">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem">
+                  <h4>Ingested Documents ({{ ragDocs.length }})</h4>
+                  <button @click="loadRagDocs" class="btn btn-sm btn-outline" :disabled="ragLoading">Refresh</button>
+                </div>
+                <div v-if="ragDocs.length" class="rag-doc-list">
+                  <div v-for="doc in ragDocs" :key="doc.id" class="rag-doc-row">
+                    <span class="model-name mono text-sm">{{ doc.source }}</span>
+                    <span class="text-sm text-muted" style="flex:1">{{ doc.preview }}...</span>
+                    <button @click="ragDeleteDoc(doc.id)" class="btn btn-sm btn-danger-outline">Delete</button>
+                  </div>
+                </div>
+                <div v-else class="text-sm text-muted" style="padding:0.5rem 0">No documents ingested yet.</div>
+              </div>
+            </div>
+          </div>
+          <div v-else class="conv-main empty-state">
+            <p>Select a VM from the left to manage its knowledge base.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- ── AI TUNING TAB ── -->
     <div v-if="activeTab === 'ai-tuning'">
       <div class="card">
@@ -531,6 +740,7 @@
               <div>
                 <strong>{{ vm.name }}</strong>
                 <span class="text-sm text-muted"> · {{ getManagedVM(vm.vmid)?.ip_address || 'No IP' }}</span>
+                <span v-if="getLLMDeployment(vm.vmid)" class="text-sm text-muted"> · {{ getLLMDeployment(vm.vmid).engine }}</span>
               </div>
               <span :class="['badge', getVMStatusBadge(vm.status)]">{{ vm.status }}</span>
             </div>
@@ -546,6 +756,17 @@
               >
                 <span v-if="tuningVM === vm.vmid">Analyzing...</span>
                 <span v-else>Run AI Tune</span>
+              </button>
+
+              <!-- Open Meme Generator button for meme-maker deployments -->
+              <button
+                v-if="getLLMDeployment(vm.vmid)?.engine === 'meme-maker'"
+                @click="openMemeGenerator(vm)"
+                class="btn btn-secondary"
+                :disabled="vm.status !== 'running'"
+                title="Open Meme Generator web UI"
+              >
+                Open Meme Generator
               </button>
             </div>
 
@@ -601,6 +822,72 @@
                 </div>
               </div>
             </div>
+
+            <!-- ── Ollama Model Manager (Ollama deployments only) ── -->
+            <div v-if="getLLMDeployment(vm.vmid)?.engine === 'ollama'" class="model-manager">
+              <div class="model-section-header">
+                <h4>Installed Models</h4>
+                <button
+                  @click="loadVMModels(vm)"
+                  class="btn btn-sm btn-outline"
+                  :disabled="loadingModels[vm.vmid] || vm.status !== 'running'"
+                >{{ loadingModels[vm.vmid] ? 'Loading...' : 'Refresh' }}</button>
+              </div>
+
+              <div v-if="vmModels[vm.vmid]?.length" class="model-list">
+                <div v-for="model in vmModels[vm.vmid]" :key="model.name" class="model-row">
+                  <span class="model-name mono">{{ model.name }}</span>
+                  <span class="model-size text-sm text-muted">{{ model.size }}</span>
+                  <span class="model-modified text-sm text-muted">{{ model.modified }}</span>
+                  <button
+                    @click="deleteModel(vm, model.name)"
+                    class="btn btn-sm btn-danger-outline"
+                    :disabled="deletingModel[vm.vmid] === model.name"
+                  >{{ deletingModel[vm.vmid] === model.name ? '...' : 'Delete' }}</button>
+                </div>
+              </div>
+              <div v-else-if="loadingModels[vm.vmid]" class="text-sm text-muted model-loading">Loading models...</div>
+              <div v-else-if="vmModels[vm.vmid]" class="text-sm text-muted model-loading">No models installed.</div>
+              <div v-else class="text-sm text-muted model-loading">Click Refresh to load installed models.</div>
+
+              <div class="pull-section">
+                <h4>Pull New Model</h4>
+                <div class="pull-controls">
+                  <select v-model="selectedPullModel[vm.vmid]" class="pull-select">
+                    <option value="">Select a model...</option>
+                    <option v-for="m in ollamaCatalog" :key="m.id" :value="m.id">
+                      {{ m.name }}
+                    </option>
+                  </select>
+                  <button
+                    @click="pullModel(vm)"
+                    class="btn btn-primary"
+                    :disabled="!selectedPullModel[vm.vmid] || pullJobs[vm.vmid]?.status === 'running' || vm.status !== 'running'"
+                  >Pull Model</button>
+                </div>
+
+                <!-- Live pull terminal -->
+                <div v-if="pullJobs[vm.vmid]" class="live-log-panel" style="margin-top:0.75rem">
+                  <div class="live-log-header">
+                    <span class="live-log-title">
+                      <span v-if="pullJobs[vm.vmid].status === 'running'" class="live-dot"></span>
+                      Pulling {{ pullJobs[vm.vmid].model }}...
+                    </span>
+                    <div class="live-log-meta">
+                      <span v-if="pullJobs[vm.vmid].status === 'completed'" class="text-success text-sm">✅ Done</span>
+                      <span v-else-if="pullJobs[vm.vmid].status === 'failed'" class="text-danger text-sm">
+                        ❌ {{ pullJobs[vm.vmid].error || 'Failed' }}
+                      </span>
+                      <span :class="['badge', pullJobs[vm.vmid].status === 'completed' ? 'badge-success' : pullJobs[vm.vmid].status === 'failed' ? 'badge-danger' : 'badge-warning']">
+                        {{ pullJobs[vm.vmid].status }}
+                      </span>
+                      <button class="btn btn-xs" @click="closePullLog(vm.vmid)" style="margin-left:0.5rem">✕</button>
+                    </div>
+                  </div>
+                  <pre class="live-log-output" :id="`pulllog-${vm.vmid}`">{{ pullJobs[vm.vmid].output || 'Starting...' }}</pre>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -637,6 +924,35 @@ export default {
     const tuneApplyPollers = ref({}) // vmid → interval ID
     const liveLog = ref({})         // vmid → { status, output, packages_updated, error_message }
     const liveLogPollers = ref({})  // vmid → interval ID
+    const llmDeployments = ref([])   // LLM deployment records
+    const vmModels = ref({})         // vmid → [{name, size, modified}]
+    const loadingModels = ref({})    // vmid → bool
+    const deletingModel = ref({})    // vmid → model name being deleted
+    const pullJobs = ref({})         // vmid → {jobId, model, status, output, error}
+    const pullPollers = ref({})      // vmid → interval ID
+    const selectedPullModel = ref({})// vmid → model id string
+    const ollamaCatalog = ref([])    // populated from API
+    // Conversation Logging
+    const convLogVM = ref(null)          // selected vm for conv-log tab
+    const convLogStatus = ref({})        // vmid → {installed, active, log_entries}
+    const convLogEntries = ref([])       // entries for selected VM
+    const convLogLoading = ref(false)
+    const convLogInstallJobs = ref({})   // vmid → jobId
+    const convLogInstallPollers = ref({})
+
+    // RAG
+    const ragVM = ref(null)             // selected vm for rag tab
+    const ragStatus = ref({})           // vmid → {installed, active, doc_count, catalog}
+    const ragDocs = ref([])             // docs for selected VM
+    const ragLoading = ref(false)
+    const ragIngestText = ref('')
+    const ragIngestSource = ref('')
+    const ragQueryText = ref('')
+    const ragQueryResults = ref([])
+    const ragInstallJobs = ref({})      // vmid → jobId
+    const ragInstallPollers = ref({})
+    const ragSelectedEmbed = ref('nomic-embed-text')
+
     const schedule = ref({
       auto_update_check_enabled: false,
       auto_update_check_interval_hours: 24,
@@ -710,6 +1026,95 @@ export default {
         delete tuneApplyPollers.value[vmid]
       }
       delete tuneApplyJobs.value[vmid]
+    }
+
+    const closePullLog = (vmid) => {
+      if (pullPollers.value[vmid]) {
+        clearInterval(pullPollers.value[vmid])
+        delete pullPollers.value[vmid]
+      }
+      delete pullJobs.value[vmid]
+    }
+
+    const loadVMModels = async (vm) => {
+      const managed = getManagedVM(vm.vmid)
+      if (!managed) return
+      loadingModels.value = { ...loadingModels.value, [vm.vmid]: true }
+      try {
+        const res = await api.llm.getVMModels(managed.id)
+        vmModels.value = { ...vmModels.value, [vm.vmid]: res.data.models || [] }
+        if (res.data.catalog?.length) {
+          ollamaCatalog.value = res.data.catalog
+        }
+      } catch (err) {
+        toast.error(`Failed to load models: ${err.response?.data?.detail || err.message}`)
+      } finally {
+        loadingModels.value = { ...loadingModels.value, [vm.vmid]: false }
+      }
+    }
+
+    const pullModel = async (vm) => {
+      const managed = getManagedVM(vm.vmid)
+      if (!managed) return
+      const model = selectedPullModel.value[vm.vmid]
+      if (!model) return
+      closePullLog(vm.vmid)
+      try {
+        const res = await api.llm.pullModel(managed.id, model)
+        const jobId = res.data.job_id
+        pullJobs.value = { ...pullJobs.value, [vm.vmid]: { jobId, model, status: 'running', output: '', error: null } }
+        pullPollers.value[vm.vmid] = setInterval(async () => {
+          try {
+            const poll = await api.llm.getPullJobStatus(managed.id, jobId)
+            pullJobs.value = { ...pullJobs.value, [vm.vmid]: { ...pullJobs.value[vm.vmid], ...poll.data, model } }
+            if (poll.data.status === 'completed') {
+              clearInterval(pullPollers.value[vm.vmid])
+              delete pullPollers.value[vm.vmid]
+              toast.success(`Model ${model} pulled successfully`)
+              await loadVMModels(vm)
+            } else if (poll.data.status === 'failed') {
+              clearInterval(pullPollers.value[vm.vmid])
+              delete pullPollers.value[vm.vmid]
+              toast.error(`Failed to pull model ${model}`)
+            }
+          } catch { /* non-fatal poll error */ }
+        }, 1200)
+      } catch (err) {
+        toast.error(`Failed to start pull: ${err.response?.data?.detail || err.message}`)
+      }
+    }
+
+    const deleteModel = async (vm, modelName) => {
+      const managed = getManagedVM(vm.vmid)
+      if (!managed) return
+      deletingModel.value = { ...deletingModel.value, [vm.vmid]: modelName }
+      try {
+        await api.llm.deleteModel(managed.id, modelName)
+        toast.success(`Model ${modelName} deleted`)
+        await loadVMModels(vm)
+      } catch (err) {
+        toast.error(`Failed to delete model: ${err.response?.data?.detail || err.message}`)
+      } finally {
+        deletingModel.value = { ...deletingModel.value, [vm.vmid]: null }
+      }
+    }
+
+    const openMemeGenerator = async (vm) => {
+      const managed = getManagedVM(vm.vmid)
+      if (managed?.ip_address) {
+        window.open(`http://${managed.ip_address}:8189`, '_blank')
+        return
+      }
+      if (vm.status === 'running' && vm.node) {
+        try {
+          const res = await api.vms.getAgentIP(vm.node, vm.vmid)
+          if (res.data?.ip_address) {
+            window.open(`http://${res.data.ip_address}:8189`, '_blank')
+            return
+          }
+        } catch { /* agent not available */ }
+      }
+      toast.error('No IP address found for this VM — set SSH credentials first')
     }
 
     const applyTuneAction = async (vm, actionId) => {
@@ -798,7 +1203,15 @@ export default {
       { id: 'security', label: 'Security Scan', icon: '🔒', badge: null },
       { id: 'monitoring', label: 'Monitoring', icon: '📊', badge: null },
       { id: 'ai-tuning', label: 'AI Tuning', icon: '🤖', badge: null },
+      { id: 'conv-logs', label: 'Conv. Logs', icon: '💬', badge: null },
+      { id: 'rag', label: 'RAG', icon: '📚', badge: null },
     ])
+
+    const getLLMDeployment = (vmid) => {
+      const managed = getManagedVM(vmid)
+      if (!managed) return null
+      return llmDeployments.value.find(d => d.vm_id === managed.id) || null
+    }
 
     const llmVMs = computed(() =>
       vms.value.filter(vm =>
@@ -806,19 +1219,26 @@ export default {
         vm.name?.toLowerCase().includes('ollama') ||
         vm.name?.toLowerCase().includes('comfyui') ||
         vm.name?.toLowerCase().includes('stable-diffusion') ||
-        vm.tags?.includes('llm')
+        vm.name?.toLowerCase().includes('meme') ||
+        vm.tags?.includes('llm') ||
+        llmDeployments.value.some(d => {
+          const managed = getManagedVM(vm.vmid)
+          return managed && d.vm_id === managed.id
+        })
       )
     )
 
     const loadVMs = async () => {
       loadingVMs.value = true
       try {
-        const [proxmoxRes, managedRes] = await Promise.all([
+        const [proxmoxRes, managedRes, deplRes] = await Promise.all([
           api.vms.list().catch(() => ({ data: [] })),
-          api.vms.listManaged().catch(() => ({ data: [] }))
+          api.vms.listManaged().catch(() => ({ data: [] })),
+          api.llm.listDeployments().catch(() => ({ data: [] })),
         ])
         vms.value = proxmoxRes.data || []
         managedVMs.value = managedRes.data || []
+        llmDeployments.value = deplRes.data || []
       } catch {
         toast.error('Failed to load VMs')
       } finally {
@@ -1029,6 +1449,196 @@ export default {
       }
     }
 
+    // ── Conversation Logging ────────────────────────────────────────────────
+
+    const llmOllamaVMs = computed(() =>
+      llmVMs.value.filter(vm => {
+        const dep = getLLMDeployment(vm.vmid)
+        return dep && (dep.engine === 'ollama' || dep.engine === 'meme-maker')
+      })
+    )
+
+    const selectConvLogVM = async (vm) => {
+      convLogVM.value = vm
+      convLogEntries.value = []
+      const managed = getManagedVM(vm.vmid)
+      if (!managed) return
+      try {
+        const res = await api.llm.getConvLoggerStatus(managed.id)
+        convLogStatus.value = { ...convLogStatus.value, [vm.vmid]: res.data }
+      } catch { /* ignore */ }
+    }
+
+    const loadConvLogs = async () => {
+      const vm = convLogVM.value
+      if (!vm) return
+      const managed = getManagedVM(vm.vmid)
+      if (!managed) return
+      convLogLoading.value = true
+      try {
+        const res = await api.llm.getConvLogs(managed.id, 100)
+        convLogEntries.value = (res.data.entries || []).reverse()
+      } catch (err) {
+        toast.error(`Failed to load logs: ${err.response?.data?.detail || err.message}`)
+      } finally {
+        convLogLoading.value = false
+      }
+    }
+
+    const installConvLogger = async (vm) => {
+      const managed = getManagedVM(vm.vmid)
+      if (!managed) return
+      try {
+        const res = await api.llm.installConvLogger(managed.id)
+        const jobId = res.data.job_id
+        convLogInstallJobs.value[vm.vmid] = jobId
+        // Show job in tuneApplyJobs so the live terminal renders
+        tuneApplyJobs.value[vm.vmid] = { jobId, status: 'running', output: '', error: null, action: 'Install conversation logger' }
+        convLogInstallPollers.value[vm.vmid] = setInterval(async () => {
+          try {
+            const poll = await api.llm.getJobStatus(managed.id, jobId)
+            tuneApplyJobs.value[vm.vmid] = { ...tuneApplyJobs.value[vm.vmid], ...poll.data }
+            if (poll.data.status === 'completed' || poll.data.status === 'failed') {
+              clearInterval(convLogInstallPollers.value[vm.vmid])
+              delete convLogInstallPollers.value[vm.vmid]
+              if (poll.data.status === 'completed') {
+                toast.success('Conversation logger installed')
+                const s = await api.llm.getConvLoggerStatus(managed.id)
+                convLogStatus.value = { ...convLogStatus.value, [vm.vmid]: s.data }
+              } else {
+                toast.error('Logger installation failed')
+              }
+            }
+          } catch { /* ignore */ }
+        }, 1500)
+      } catch (err) {
+        toast.error(`Install failed: ${err.response?.data?.detail || err.message}`)
+      }
+    }
+
+    const clearConvLogs = async (vm) => {
+      const managed = getManagedVM(vm.vmid)
+      if (!managed) return
+      try {
+        await api.llm.clearConvLogs(managed.id)
+        convLogEntries.value = []
+        toast.success('Conversation logs cleared')
+        const s = await api.llm.getConvLoggerStatus(managed.id)
+        convLogStatus.value = { ...convLogStatus.value, [vm.vmid]: s.data }
+      } catch (err) {
+        toast.error(`Failed to clear: ${err.response?.data?.detail || err.message}`)
+      }
+    }
+
+    // ── RAG ─────────────────────────────────────────────────────────────────
+
+    const selectRagVM = async (vm) => {
+      ragVM.value = vm
+      ragDocs.value = []
+      ragQueryResults.value = []
+      const managed = getManagedVM(vm.vmid)
+      if (!managed) return
+      try {
+        const res = await api.llm.getRagStatus(managed.id)
+        ragStatus.value = { ...ragStatus.value, [vm.vmid]: res.data }
+      } catch { /* ignore */ }
+    }
+
+    const installRag = async (vm) => {
+      const managed = getManagedVM(vm.vmid)
+      if (!managed) return
+      try {
+        const res = await api.llm.installRag(managed.id, ragSelectedEmbed.value)
+        const jobId = res.data.job_id
+        ragInstallJobs.value[vm.vmid] = jobId
+        tuneApplyJobs.value[vm.vmid] = { jobId, status: 'running', output: '', error: null, action: 'Install RAG service' }
+        ragInstallPollers.value[vm.vmid] = setInterval(async () => {
+          try {
+            const poll = await api.llm.getJobStatus(managed.id, jobId)
+            tuneApplyJobs.value[vm.vmid] = { ...tuneApplyJobs.value[vm.vmid], ...poll.data }
+            if (poll.data.status === 'completed' || poll.data.status === 'failed') {
+              clearInterval(ragInstallPollers.value[vm.vmid])
+              delete ragInstallPollers.value[vm.vmid]
+              if (poll.data.status === 'completed') {
+                toast.success('RAG service installed')
+                const s = await api.llm.getRagStatus(managed.id)
+                ragStatus.value = { ...ragStatus.value, [vm.vmid]: s.data }
+              } else {
+                toast.error('RAG installation failed — see log')
+              }
+            }
+          } catch { /* ignore */ }
+        }, 1500)
+      } catch (err) {
+        toast.error(`Install failed: ${err.response?.data?.detail || err.message}`)
+      }
+    }
+
+    const loadRagDocs = async () => {
+      const vm = ragVM.value
+      if (!vm) return
+      const managed = getManagedVM(vm.vmid)
+      if (!managed) return
+      ragLoading.value = true
+      try {
+        const res = await api.llm.ragListDocs(managed.id)
+        ragDocs.value = res.data.docs || []
+      } catch (err) {
+        toast.error(`Failed to load docs: ${err.response?.data?.detail || err.message}`)
+      } finally {
+        ragLoading.value = false
+      }
+    }
+
+    const ragIngestDoc = async () => {
+      const vm = ragVM.value
+      if (!vm || !ragIngestText.value.trim()) return
+      const managed = getManagedVM(vm.vmid)
+      if (!managed) return
+      ragLoading.value = true
+      try {
+        await api.llm.ragIngest(managed.id, ragIngestText.value, ragIngestSource.value || 'manual', {})
+        toast.success('Document ingested into knowledge base')
+        ragIngestText.value = ''
+        ragIngestSource.value = ''
+        await loadRagDocs()
+      } catch (err) {
+        toast.error(`Ingest failed: ${err.response?.data?.detail || err.message}`)
+      } finally {
+        ragLoading.value = false
+      }
+    }
+
+    const ragDoQuery = async () => {
+      const vm = ragVM.value
+      if (!vm || !ragQueryText.value.trim()) return
+      const managed = getManagedVM(vm.vmid)
+      if (!managed) return
+      ragLoading.value = true
+      try {
+        const res = await api.llm.ragQuery(managed.id, ragQueryText.value)
+        ragQueryResults.value = res.data.results || []
+      } catch (err) {
+        toast.error(`Query failed: ${err.response?.data?.detail || err.message}`)
+      } finally {
+        ragLoading.value = false
+      }
+    }
+
+    const ragDeleteDoc = async (docId) => {
+      const vm = ragVM.value
+      if (!vm) return
+      const managed = getManagedVM(vm.vmid)
+      if (!managed) return
+      try {
+        await api.llm.ragDeleteDoc(managed.id, docId)
+        toast.success('Document removed')
+        await loadRagDocs()
+      } catch (err) {
+        toast.error(`Delete failed: ${err.response?.data?.detail || err.message}`)
+      }
+    }
+
     const getVMStatusBadge = (status) => {
       const map = {
         running: 'badge-success',
@@ -1077,9 +1687,20 @@ export default {
       })
     }, { deep: true })
 
+    // Auto-scroll pull log terminal
+    watch(pullJobs, () => {
+      nextTick(() => {
+        Object.keys(pullJobs.value).forEach(vmid => {
+          const el = document.getElementById(`pulllog-${vmid}`)
+          if (el) el.scrollTop = el.scrollHeight
+        })
+      })
+    }, { deep: true })
+
     onUnmounted(() => {
       Object.values(liveLogPollers.value).forEach(id => clearInterval(id))
       Object.values(tuneApplyPollers.value).forEach(id => clearInterval(id))
+      Object.values(pullPollers.value).forEach(id => clearInterval(id))
     })
 
     onMounted(() => {
@@ -1090,17 +1711,27 @@ export default {
     return {
       activeTab, tabs, vms, loadingVMs, loadingMonitor,
       expandedVM, updatingVM, updateAction, updateChecks,
-      updateHistory, loadingHistory, tuningVM, tuningResults, llmVMs,
+      updateHistory, loadingHistory, tuningVM, tuningResults, llmVMs, llmOllamaVMs,
       applyingAction, applyResults, applyTuneAction,
       tuneApplyJobs, closeTuneApplyLog,
       liveLog, closeLiveLog,
       loadVMs, loadMonitoring, checkUpdates, installUpdates,
-      toggleHistory, runAITune, getManagedVM,
+      toggleHistory, runAITune, getManagedVM, getLLMDeployment,
       runScan, scanResults, scanning, scanExpanded,
       getVMStatusBadge, formatDate, formatBytes, formatMB,
       credModal, credForm, savingCreds, fetchingIP, openCredModal, saveCredentials, sessionCreds,
       search, sortKey, sortDir, filteredVMs, setSort, sortIcon,
       schedule, saveSchedule, scanCache, getCacheEntry, getUpdateResult,
+      vmModels, loadingModels, deletingModel, loadVMModels,
+      pullJobs, selectedPullModel, ollamaCatalog, pullModel, deleteModel, closePullLog,
+      openMemeGenerator,
+      // Conv Logs
+      convLogVM, convLogStatus, convLogEntries, convLogLoading,
+      selectConvLogVM, loadConvLogs, installConvLogger, clearConvLogs,
+      // RAG
+      ragVM, ragStatus, ragDocs, ragLoading, ragIngestText, ragIngestSource,
+      ragQueryText, ragQueryResults, ragSelectedEmbed,
+      selectRagVM, installRag, loadRagDocs, ragIngestDoc, ragDoQuery, ragDeleteDoc,
     }
   }
 }
@@ -1666,6 +2297,185 @@ export default {
   gap: 0.5rem;
   padding: 1rem 1.25rem;
   border-top: 1px solid var(--border-color);
+}
+
+/* Ollama Model Manager */
+.model-manager {
+  margin-top: 1.25rem;
+  border-top: 1px solid var(--border-color);
+  padding-top: 1rem;
+}
+
+.model-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.model-section-header h4 {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+}
+
+.model-list { display: flex; flex-direction: column; gap: 0.4rem; margin-bottom: 1rem; }
+
+.model-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--bg-secondary, #f8f9fa);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 0.875rem;
+}
+
+.model-name { flex: 1; font-weight: 500; }
+.model-size { min-width: 70px; }
+.model-modified { flex: 1; }
+
+.btn-danger-outline {
+  padding: 0.25rem 0.6rem;
+  font-size: 0.8rem;
+  background: transparent;
+  color: #dc2626;
+  border: 1px solid #dc2626;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.btn-danger-outline:hover { background: #fee2e2; }
+.btn-danger-outline:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.model-loading { padding: 0.5rem 0; font-style: italic; }
+
+.pull-section {
+  border-top: 1px solid var(--border-color);
+  padding-top: 0.75rem;
+}
+
+.pull-section h4 {
+  margin: 0 0 0.5rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+}
+
+.pull-controls { display: flex; gap: 0.5rem; align-items: center; }
+
+.pull-select {
+  flex: 1;
+  padding: 0.45rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  background: var(--card-bg, #fff);
+  color: var(--text-primary);
+}
+
+/* Conv Logs / RAG layout */
+.conv-layout {
+  display: flex;
+  gap: 0;
+  min-height: 400px;
+}
+.conv-vm-list {
+  width: 200px;
+  min-width: 160px;
+  border-right: 1px solid var(--border-color);
+  padding: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.conv-vm-item {
+  padding: 0.6rem 0.75rem;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  border: 1px solid transparent;
+  font-size: 0.875rem;
+}
+.conv-vm-item:hover { background: var(--bg-secondary, #f8f9fa); }
+.conv-vm-item.active { background: rgba(59,130,246,0.08); border-color: rgba(59,130,246,0.3); }
+.conv-main {
+  flex: 1;
+  padding: 1rem 1.25rem;
+  overflow-y: auto;
+}
+.conv-controls { margin-bottom: 1rem; }
+.conv-status-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 0;
+  border-bottom: 1px solid var(--border-color);
+  margin-bottom: 0.75rem;
+}
+.conv-entries { display: flex; flex-direction: column; gap: 1rem; }
+.conv-entry {
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.conv-entry-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.75rem;
+  background: var(--bg-secondary, #f8f9fa);
+  border-bottom: 1px solid var(--border-color);
+  font-size: 0.8rem;
+}
+.conv-model { font-size: 0.7rem; }
+.conv-bubble {
+  padding: 0.6rem 0.75rem;
+  font-size: 0.85rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.conv-user { background: #eff6ff; border-bottom: 1px solid var(--border-color); }
+.conv-assistant { background: white; }
+
+/* RAG sections */
+.rag-section {
+  margin-bottom: 1.5rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid var(--border-color);
+}
+.rag-section:last-child { border-bottom: none; }
+.rag-section h4 { margin: 0 0 0.75rem; font-size: 0.9rem; color: var(--text-secondary); }
+.rag-results { margin-top: 0.75rem; display: flex; flex-direction: column; gap: 0.5rem; }
+.rag-result {
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 0.6rem 0.75rem;
+}
+.rag-result-meta {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 0.35rem;
+}
+.rag-result-text { font-size: 0.85rem; margin: 0; white-space: pre-wrap; }
+.rag-doc-list { display: flex; flex-direction: column; gap: 0.35rem; }
+.rag-doc-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.45rem 0.75rem;
+  background: var(--bg-secondary, #f8f9fa);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 0.875rem;
 }
 
 /* Shared */

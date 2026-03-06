@@ -127,55 +127,64 @@
           </div>
         </div>
 
-        <!-- S1: Quality -->
+        <!-- S1: Model / Quality picker -->
         <div v-if="simpleStep === 1" class="wizard-step">
           <div class="card">
-            <div class="card-header">
-              <h3>{{ simpleAnswers.useCase === 'memes' ? 'Image quality?' : 'Response quality?' }}</h3>
-            </div>
-            <p class="step-desc">
-              <template v-if="simpleAnswers.useCase === 'memes'">
-                Higher image quality uses a larger model and needs more RAM. A GPU is strongly recommended for Stable Diffusion.
-              </template>
-              <template v-else>
-                Higher quality needs more RAM and disk. All options run without a GPU.
-              </template>
-            </p>
-            <div class="simple-grid">
-              <div
-                :class="['simple-card', { selected: simpleAnswers.quality === 'light' }]"
-                @click="simpleAnswers.quality = 'light'; simpleNext()"
-              >
-                <div class="simple-icon">&#9889;</div>
-                <div class="simple-label">Fast &amp; Light</div>
-                <div class="simple-desc">
-                  <template v-if="simpleAnswers.useCase === 'memes'">SD v1.5 · 8 GB RAM · CPU-capable, GPU faster</template>
-                  <template v-else>1–3B models · 4–8 GB RAM · Instant responses</template>
+            <!-- LLM use cases: show model cards -->
+            <template v-if="simpleAnswers.useCase !== 'memes'">
+              <div class="card-header"><h3>Choose a model</h3></div>
+              <p class="step-desc">Click any model to select it and continue. All run without a GPU — GPU speeds up inference 5–20×.</p>
+
+              <div v-for="tier in ['light', 'balanced', 'quality']" :key="tier" class="model-tier-group">
+                <div class="model-tier-label">
+                  <span v-if="tier === 'light'">&#9889; Fast &amp; Light</span>
+                  <span v-else-if="tier === 'balanced'">&#9878;&#65039; Balanced</span>
+                  <span v-else>&#127775; High Quality</span>
+                </div>
+                <div class="model-pick-grid">
+                  <div
+                    v-for="m in (USE_CASE_MODELS[simpleAnswers.useCase] || []).filter(x => x.tier === tier)"
+                    :key="m.model"
+                    :class="['model-pick-card', { selected: simpleAnswers.model === m.model }]"
+                    @click="selectSimpleModel(m)"
+                  >
+                    <div class="model-pick-header">
+                      <span class="model-pick-name">{{ m.modelName }}</span>
+                      <span v-if="m.recommended" class="badge-recommended">Recommended</span>
+                      <span class="model-pick-size">{{ m.size }}</span>
+                    </div>
+                    <div class="model-pick-desc">{{ m.desc }}</div>
+                    <div class="model-pick-meta">{{ m.memory / 1024 }} GB RAM &middot; {{ m.cpu_cores }} CPU</div>
+                  </div>
                 </div>
               </div>
-              <div
-                :class="['simple-card simple-card-recommended', { selected: simpleAnswers.quality === 'balanced' }]"
-                @click="simpleAnswers.quality = 'balanced'; simpleNext()"
-              >
-                <div class="simple-icon">&#9878;&#65039;</div>
-                <div class="simple-label">Balanced <span class="badge-recommended">Recommended</span></div>
-                <div class="simple-desc">
-                  <template v-if="simpleAnswers.useCase === 'memes'">DreamShaper 8 · 12 GB RAM · Better quality, GPU recommended</template>
-                  <template v-else>7–8B models · 12–16 GB RAM · Best quality/speed ratio</template>
+            </template>
+
+            <!-- Memes: image quality tier picker -->
+            <template v-else>
+              <div class="card-header"><h3>Image quality?</h3></div>
+              <p class="step-desc">Higher quality needs more RAM and disk. A GPU is strongly recommended for image generation.</p>
+              <div class="simple-grid">
+                <div :class="['simple-card', { selected: simpleAnswers.quality === 'light' }]"
+                  @click="simpleAnswers.quality = 'light'; simpleNext()">
+                  <div class="simple-icon">&#9889;</div>
+                  <div class="simple-label">Fast &amp; Light</div>
+                  <div class="simple-desc">SD v1.5 · 8 GB RAM · CPU-capable, GPU faster</div>
+                </div>
+                <div :class="['simple-card simple-card-recommended', { selected: simpleAnswers.quality === 'balanced' }]"
+                  @click="simpleAnswers.quality = 'balanced'; simpleNext()">
+                  <div class="simple-icon">&#9878;&#65039;</div>
+                  <div class="simple-label">Balanced <span class="badge-recommended">Recommended</span></div>
+                  <div class="simple-desc">DreamShaper 8 · 12 GB RAM · GPU recommended</div>
+                </div>
+                <div :class="['simple-card', { selected: simpleAnswers.quality === 'quality' }]"
+                  @click="simpleAnswers.quality = 'quality'; simpleNext()">
+                  <div class="simple-icon">&#127775;</div>
+                  <div class="simple-label">High Quality</div>
+                  <div class="simple-desc">SDXL · 24 GB RAM · GPU required</div>
                 </div>
               </div>
-              <div
-                :class="['simple-card', { selected: simpleAnswers.quality === 'quality' }]"
-                @click="simpleAnswers.quality = 'quality'; simpleNext()"
-              >
-                <div class="simple-icon">&#127775;</div>
-                <div class="simple-label">High Quality</div>
-                <div class="simple-desc">
-                  <template v-if="simpleAnswers.useCase === 'memes'">SDXL · 24 GB RAM · Best image quality, GPU required</template>
-                  <template v-else>14B+ models · 24+ GB RAM · Best results</template>
-                </div>
-              </div>
-            </div>
+            </template>
           </div>
           <div class="wizard-nav">
             <button class="btn btn-secondary" @click="simpleStep--">← Back</button>
@@ -222,18 +231,26 @@
         <!-- S3: Web UI -->
         <div v-if="simpleStep === 3" class="wizard-step">
           <div class="card">
-            <!-- Memes/SD: ComfyUI is always included -->
+            <!-- Memes: choose between Meme Maker AI or raw ComfyUI -->
             <template v-if="simpleAnswers.useCase === 'memes'">
-              <div class="card-header"><h3>Web Interface</h3></div>
-              <p class="step-desc">Stable Diffusion includes ComfyUI — a powerful node-based image generation interface.</p>
-              <div class="simple-grid simple-grid-2">
+              <div class="card-header"><h3>How would you like to use it?</h3></div>
+              <p class="step-desc">Pick the interface that suits you. You can always SSH in to use the other one later.</p>
+              <div class="simple-grid">
+                <div
+                  :class="['simple-card simple-card-recommended', { selected: simpleAnswers.webui === 'meme-maker' }]"
+                  @click="simpleAnswers.webui = 'meme-maker'; simpleNext()"
+                >
+                  <div class="simple-icon">&#127917;</div>
+                  <div class="simple-label">Meme Maker AI <span class="badge-recommended">New</span></div>
+                  <div class="simple-desc">Simple web UI on port 8189. Enter a topic, AI suggests captions, generates the image. No technical knowledge needed. Includes ComfyUI + Ollama.</div>
+                </div>
                 <div
                   :class="['simple-card', { selected: simpleAnswers.webui === 'comfyui' }]"
                   @click="simpleAnswers.webui = 'comfyui'; simpleNext()"
                 >
                   <div class="simple-icon">&#127912;</div>
-                  <div class="simple-label">ComfyUI Web Interface</div>
-                  <div class="simple-desc">Node-based image generation UI on port 8188. Included automatically.</div>
+                  <div class="simple-label">ComfyUI (Advanced)</div>
+                  <div class="simple-desc">Professional node-based workflow editor on port 8188. Full control over the generation pipeline. Best for power users.</div>
                 </div>
               </div>
             </template>
@@ -278,12 +295,17 @@
               </div>
               <div class="summary-item">
                 <span class="summary-label">Engine</span>
-                <span class="summary-value">{{ simpleAnswers.useCase === 'memes' ? 'Stable Diffusion (ComfyUI)' : 'Ollama' }}</span>
+                <span class="summary-value">
+                  <template v-if="simpleAnswers.webui === 'meme-maker'">Meme Maker (ComfyUI + Ollama)</template>
+                  <template v-else-if="simpleAnswers.useCase === 'memes'">Stable Diffusion (ComfyUI)</template>
+                  <template v-else>Ollama</template>
+                </span>
               </div>
               <div class="summary-item">
                 <span class="summary-label">Interface</span>
                 <span class="summary-value">
-                  <template v-if="simpleAnswers.useCase === 'memes'">ComfyUI (port 8188)</template>
+                  <template v-if="simpleAnswers.webui === 'meme-maker'">Meme Maker UI (port 8189)</template>
+                  <template v-else-if="simpleAnswers.useCase === 'memes'">ComfyUI (port 8188)</template>
                   <template v-else-if="simpleAnswers.webui === 'yes'">Open WebUI (port 3000)</template>
                   <template v-else>API only (port 11434)</template>
                 </span>
@@ -465,10 +487,19 @@
 
             <!-- Resources adjustable -->
             <h4 class="section-label">Resources (auto-suggested, adjust if needed)</h4>
-            <div class="grid grid-cols-3 gap-2">
+            <div class="grid grid-cols-4 gap-2">
               <div class="form-group">
-                <label class="form-label">CPU Cores</label>
-                <input v-model.number="form.cpu_cores" type="number" min="2" class="form-control" />
+                <label class="form-label">Sockets</label>
+                <select v-model.number="form.cpu_sockets" class="form-control">
+                  <option :value="1">1</option>
+                  <option :value="2">2</option>
+                  <option :value="4">4</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Cores / socket</label>
+                <input v-model.number="form.cpu_cores" type="number" min="1" class="form-control" />
+                <small class="form-hint">{{ form.cpu_sockets * form.cpu_cores }} total</small>
               </div>
               <div class="form-group">
                 <label class="form-label">RAM (MB)</label>
@@ -479,6 +510,16 @@
                 <label class="form-label">Disk (GB)</label>
                 <input v-model.number="form.disk_size" type="number" min="20" class="form-control" />
               </div>
+            </div>
+            <div class="form-group" style="margin-top:0.5rem">
+              <label class="form-label">CPU Type</label>
+              <select v-model="form.cpu_type" class="form-control">
+                <option value="host">host (passthrough — best performance)</option>
+                <option value="x86-64-v2-AES">x86-64-v2-AES (portable)</option>
+                <option value="x86-64-v2">x86-64-v2</option>
+                <option value="kvm64">kvm64</option>
+                <option value="qemu64">qemu64</option>
+              </select>
             </div>
           </div>
           <div class="wizard-nav">
@@ -526,7 +567,11 @@
 
             <div class="info-box">
               <strong>What happens after deploy:</strong> The VM will be created and booted. On first boot,
-              <template v-if="simpleAnswers.useCase === 'memes'">
+              <template v-if="simpleAnswers.webui === 'meme-maker'">
+                ComfyUI (DreamShaper 8), Ollama (llama3.2:1b), and the Meme Maker web app install automatically.
+                This may take 20–40 minutes. Open <strong>http://&lt;vm-ip&gt;:8189</strong> once setup completes.
+              </template>
+              <template v-else-if="simpleAnswers.useCase === 'memes'">
                 ComfyUI and Stable Diffusion install automatically, then the model checkpoint downloads.
                 This may take 20–60 minutes depending on model size and network speed.
                 Access ComfyUI on port 8188 once setup completes.
@@ -945,9 +990,34 @@
 
             <div class="grid grid-cols-3 gap-2">
               <div class="form-group">
-                <label class="form-label">CPU Cores *</label>
-                <input v-model.number="form.cpu_cores" type="number" min="2" class="form-control" />
+                <label class="form-label">CPU Sockets</label>
+                <select v-model.number="form.cpu_sockets" class="form-control">
+                  <option :value="1">1 socket</option>
+                  <option :value="2">2 sockets</option>
+                  <option :value="4">4 sockets</option>
+                </select>
               </div>
+              <div class="form-group">
+                <label class="form-label">CPU Cores (per socket) *</label>
+                <input v-model.number="form.cpu_cores" type="number" min="1" class="form-control" />
+                <small class="form-hint">{{ form.cpu_sockets * form.cpu_cores }} total vCPU{{ form.cpu_sockets * form.cpu_cores !== 1 ? 's' : '' }}</small>
+              </div>
+              <div class="form-group">
+                <label class="form-label">CPU Type</label>
+                <select v-model="form.cpu_type" class="form-control">
+                  <option value="host">host (passthrough, best perf)</option>
+                  <option value="x86-64-v2-AES">x86-64-v2-AES</option>
+                  <option value="x86-64-v2">x86-64-v2</option>
+                  <option value="kvm64">kvm64</option>
+                  <option value="qemu64">qemu64</option>
+                </select>
+                <small class="form-hint">
+                  <span v-if="form.cpu_type === 'host'">Best performance; disables live migration</span>
+                  <span v-else>Portable across Proxmox hosts</span>
+                </small>
+              </div>
+            </div>
+            <div class="grid grid-cols-2 gap-2" style="margin-top:0.75rem">
               <div class="form-group">
                 <label class="form-label">RAM (MB) *</label>
                 <input v-model.number="form.memory" type="number" min="2048" step="1024" class="form-control" />
@@ -1167,7 +1237,40 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useToast } from 'vue-toastification'
 import api from '@/services/api'
 
-// Simple mode recommendation table
+// Simple mode model choices per use-case
+const USE_CASE_MODELS = {
+  chat: [
+    { model: 'llama3.2:1b',  modelName: 'Llama 3.2 1B',       tier: 'light',    desc: 'Fastest responses. Great for quick Q&A.',              size: '1.3 GB', cpu_cores: 2, memory: 6144,  disk_size: 20 },
+    { model: 'phi3',          modelName: 'Phi-3 Mini',         tier: 'light',    desc: 'Microsoft. Surprisingly capable for its size.',        size: '2.2 GB', cpu_cores: 2, memory: 8192,  disk_size: 25 },
+    { model: 'mistral',       modelName: 'Mistral 7B',         tier: 'balanced', desc: 'Fast and capable all-rounder.', size: '4.1 GB', cpu_cores: 4, memory: 12288, disk_size: 30, recommended: true },
+    { model: 'llama3.1',      modelName: 'Llama 3.1 8B',       tier: 'balanced', desc: 'Meta. Strong reasoning, long context window.',         size: '4.7 GB', cpu_cores: 4, memory: 12288, disk_size: 35 },
+    { model: 'gemma2',        modelName: 'Gemma 2 9B',         tier: 'balanced', desc: 'Google. Excellent quality-to-size ratio.',             size: '5.5 GB', cpu_cores: 4, memory: 16384, disk_size: 35 },
+    { model: 'qwen2.5',       modelName: 'Qwen 2.5 7B',        tier: 'balanced', desc: 'Multilingual, strong benchmarks.',                     size: '4.7 GB', cpu_cores: 4, memory: 12288, disk_size: 35 },
+    { model: 'llama3.1:70b',  modelName: 'Llama 3.1 70B',      tier: 'quality',  desc: 'Best-in-class quality. Requires ~48 GB RAM.',          size: '40 GB',  cpu_cores: 8, memory: 49152, disk_size: 80 },
+  ],
+  code: [
+    { model: 'phi3',          modelName: 'Phi-3 Mini',         tier: 'light',    desc: 'Microsoft. Strong at code for its size.',              size: '2.2 GB', cpu_cores: 2, memory: 8192,  disk_size: 25 },
+    { model: 'llama3.2:3b',   modelName: 'Llama 3.2 3B',       tier: 'light',    desc: 'Quick code snippets and explanations.',                size: '2 GB',   cpu_cores: 2, memory: 8192,  disk_size: 25 },
+    { model: 'codellama',     modelName: 'Code Llama 7B',      tier: 'balanced', desc: 'Meta. Purpose-built for code generation.', size: '3.8 GB', cpu_cores: 4, memory: 12288, disk_size: 30, recommended: true },
+    { model: 'qwen2.5',       modelName: 'Qwen 2.5 Coder 7B',  tier: 'balanced', desc: 'Top coding benchmark scores. Multi-language.',         size: '4.7 GB', cpu_cores: 4, memory: 12288, disk_size: 35 },
+    { model: 'llama3.1',      modelName: 'Llama 3.1 8B',       tier: 'quality',  desc: 'Broad knowledge plus strong coding ability.',          size: '4.7 GB', cpu_cores: 8, memory: 16384, disk_size: 40 },
+  ],
+  docs: [
+    { model: 'llama3.2:3b',   modelName: 'Llama 3.2 3B',       tier: 'light',    desc: 'Fast summaries of short documents.',                   size: '2 GB',   cpu_cores: 2, memory: 8192,  disk_size: 25 },
+    { model: 'mistral',       modelName: 'Mistral 7B',         tier: 'balanced', desc: 'Good at extraction and summarization.',                size: '4.1 GB', cpu_cores: 4, memory: 12288, disk_size: 30 },
+    { model: 'llama3.1',      modelName: 'Llama 3.1 8B',       tier: 'balanced', desc: 'Long context, accurate analysis.', size: '4.7 GB', cpu_cores: 4, memory: 12288, disk_size: 35, recommended: true },
+    { model: 'gemma2',        modelName: 'Gemma 2 9B',         tier: 'quality',  desc: 'Google. Thorough, structured analysis.',               size: '5.5 GB', cpu_cores: 8, memory: 16384, disk_size: 40 },
+    { model: 'llama3.1:70b',  modelName: 'Llama 3.1 70B',      tier: 'quality',  desc: 'Maximum comprehension. ~48 GB RAM.',                   size: '40 GB',  cpu_cores: 8, memory: 49152, disk_size: 80 },
+  ],
+  reasoning: [
+    { model: 'phi3',          modelName: 'Phi-3 Mini',         tier: 'light',    desc: 'Microsoft. Efficient step-by-step reasoning.',         size: '2.2 GB', cpu_cores: 2, memory: 8192,  disk_size: 25 },
+    { model: 'deepseek-r1',   modelName: 'DeepSeek R1 7B',     tier: 'balanced', desc: 'Chain-of-thought specialist. Shows its work.', size: '4.7 GB', cpu_cores: 4, memory: 12288, disk_size: 35, recommended: true },
+    { model: 'llama3.1',      modelName: 'Llama 3.1 8B',       tier: 'balanced', desc: 'Meta. Strong multi-step problem solving.',             size: '4.7 GB', cpu_cores: 4, memory: 12288, disk_size: 35 },
+    { model: 'llama3.1:70b',  modelName: 'Llama 3.1 70B',      tier: 'quality',  desc: 'Best reasoning capability. ~48 GB RAM.',               size: '40 GB',  cpu_cores: 8, memory: 49152, disk_size: 80 },
+  ],
+}
+
+// Simple mode recommendation table (used for memes + fallback)
 const SIMPLE_RECS = {
   'chat-light':      { model: 'llama3.2:1b',        modelName: 'Llama 3.2 1B',          cpu_cores: 2,  memory: 6144,  disk_size: 20 },
   'chat-balanced':   { model: 'llama3.2:3b',        modelName: 'Llama 3.2 3B',          cpu_cores: 4,  memory: 12288, disk_size: 25 },
@@ -1203,9 +1306,9 @@ export default {
     const currentStep = ref(0)
 
     // Simple wizard
-    const simpleSteps = ['Use Case', 'Quality', 'GPU', 'Web UI', 'Summary', 'Infrastructure', 'Credentials', 'Review']
+    const simpleSteps = ['Use Case', 'Model', 'GPU', 'Interface', 'Summary', 'Infrastructure', 'Credentials', 'Review']
     const simpleStep = ref(0)
-    const simpleAnswers = ref({ useCase: null, quality: null, gpu: null, webui: null })
+    const simpleAnswers = ref({ useCase: null, quality: null, gpu: null, webui: null, model: null, modelName: null, modelResources: null })
 
     const loading = ref(true)
     const deploying = ref(false)
@@ -1242,7 +1345,9 @@ export default {
       network_bridge: '',
       vm_name: '',
       hostname: '',
+      cpu_sockets: 1,
       cpu_cores: 4,
+      cpu_type: 'host',
       memory: 8192,
       disk_size: 40,
       ip_address: '',
@@ -1256,9 +1361,25 @@ export default {
 
     // ── simple mode computed ───────────────────────────────────────
     const simpleRec = computed(() => {
+      // LLM use cases: user picked a specific model card
+      if (simpleAnswers.value.useCase !== 'memes' && simpleAnswers.value.model) {
+        return {
+          model: simpleAnswers.value.model,
+          modelName: simpleAnswers.value.modelName || simpleAnswers.value.model,
+          ...(simpleAnswers.value.modelResources || { cpu_cores: 4, memory: 12288, disk_size: 35 }),
+        }
+      }
       const key = `${simpleAnswers.value.useCase}-${simpleAnswers.value.quality}`
       return SIMPLE_RECS[key] || SIMPLE_RECS['chat-balanced']
     })
+
+    function selectSimpleModel(m) {
+      simpleAnswers.value.quality = m.tier
+      simpleAnswers.value.model = m.model
+      simpleAnswers.value.modelName = m.modelName
+      simpleAnswers.value.modelResources = { cpu_cores: m.cpu_cores, memory: m.memory, disk_size: m.disk_size }
+      simpleNext()
+    }
 
     // ── advanced computed ──────────────────────────────────────────
     const sortedStorageList = computed(() =>
@@ -1388,7 +1509,7 @@ export default {
       mode.value = null
       currentStep.value = 0
       simpleStep.value = 0
-      simpleAnswers.value = { useCase: null, quality: null, gpu: null, webui: null }
+      simpleAnswers.value = { useCase: null, quality: null, gpu: null, webui: null, model: null, modelName: null, modelResources: null }
     }
 
     // ── simple wizard navigation ──────────────────────────────────
@@ -1403,12 +1524,30 @@ export default {
     // Apply simple recommendation to shared form before infrastructure step
     function applySimpleRec() {
       const rec = simpleRec.value
-      form.value.engine = rec.engine || 'ollama'
-      form.value.model = rec.model
       form.value.os_variant = 'ubuntu2404'
-      form.value.cpu_cores = rec.cpu_cores
-      form.value.memory = rec.memory
-      form.value.disk_size = rec.disk_size
+
+      if (simpleAnswers.value.useCase === 'memes' && simpleAnswers.value.webui === 'meme-maker') {
+        // Meme Maker AI stack: ComfyUI + Ollama + Flask UI on :8189
+        const memeRec = SIMPLE_RECS[`memes-${simpleAnswers.value.quality}`] || SIMPLE_RECS['memes-balanced']
+        form.value.engine = 'meme-maker'
+        form.value.model = 'meme-maker-v1'
+        form.value.ui_type = 'api-only'
+        form.value.cpu_cores = memeRec.cpu_cores
+        form.value.memory = memeRec.memory
+        form.value.disk_size = Math.max(memeRec.disk_size, 40)
+      } else {
+        form.value.engine = rec.engine || 'ollama'
+        form.value.model = rec.model
+        form.value.cpu_cores = rec.cpu_cores
+        form.value.memory = rec.memory
+        form.value.disk_size = rec.disk_size
+        // UI type
+        if (simpleAnswers.value.useCase === 'memes') {
+          form.value.ui_type = 'comfyui'
+        } else {
+          form.value.ui_type = simpleAnswers.value.webui === 'yes' ? 'open-webui' : 'api-only'
+        }
+      }
 
       // GPU settings from simple answers
       const gpuAnswer = simpleAnswers.value.gpu
@@ -1420,13 +1559,6 @@ export default {
         form.value.gpu_enabled = true
         form.value.gpu_type = gpuAnswer  // 'nvidia' | 'amd'
         form.value.gpu_device_id = null
-      }
-
-      // Web UI — SD/memes always uses ComfyUI; others follow wizard answer
-      if (simpleAnswers.value.useCase === 'memes') {
-        form.value.ui_type = 'comfyui'
-      } else {
-        form.value.ui_type = simpleAnswers.value.webui === 'yes' ? 'open-webui' : 'api-only'
       }
     }
 
@@ -1572,7 +1704,9 @@ export default {
           network_bridge: form.value.network_bridge || null,
           vm_name: form.value.vm_name,
           hostname: form.value.hostname,
+          cpu_sockets: form.value.cpu_sockets,
           cpu_cores: form.value.cpu_cores,
+          cpu_type: form.value.cpu_type || 'host',
           memory: form.value.memory,
           disk_size: form.value.disk_size,
           ip_address: useDhcp.value ? null : form.value.ip_address,
@@ -1607,7 +1741,7 @@ export default {
       mode.value = null
       currentStep.value = 0
       simpleStep.value = 0
-      simpleAnswers.value = { useCase: null, quality: null, gpu: null, webui: null }
+      simpleAnswers.value = { useCase: null, quality: null, gpu: null, webui: null, model: null, modelName: null, modelResources: null }
       form.value = {
         engine: 'ollama', model: '', ui_type: 'open-webui',
         gpu_enabled: false, gpu_type: null, gpu_device_id: null,
@@ -1630,7 +1764,7 @@ export default {
     }
 
     return {
-      mode, steps, currentStep, simpleSteps, simpleStep, simpleAnswers, simpleRec,
+      mode, steps, currentStep, simpleSteps, simpleStep, simpleAnswers, simpleRec, selectSimpleModel, USE_CASE_MODELS,
       loading, deploying, deployError, deployedAccessUrl, deployedVmId, progressData, getDeployStage,
       catalog, proxmoxHosts, nodes, nodesLoading, storageList, storageLoading, sortedStorageList, gpuDevices, gpuLoading,
       activeModelCategory, useDhcp, form,
@@ -1763,6 +1897,38 @@ export default {
   gap: 1rem;
 }
 .simple-grid-2 { grid-template-columns: 1fr 1fr; }
+
+/* Model picker grid in simple mode */
+.model-tier-group { margin-bottom: 1.5rem; }
+.model-tier-label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+  margin-bottom: 0.5rem;
+  padding-left: 2px;
+}
+.model-pick-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 0.6rem;
+}
+.model-pick-card {
+  border: 2px solid #e5e7eb;
+  border-radius: 0.75rem;
+  padding: 0.75rem 1rem;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  background: var(--card-bg, #fff);
+}
+.model-pick-card:hover { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,.08); }
+.model-pick-card.selected { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,.15); background: #f5f3ff; }
+.model-pick-header { display: flex; align-items: baseline; gap: 0.4rem; flex-wrap: wrap; margin-bottom: 0.25rem; }
+.model-pick-name { font-weight: 600; font-size: 0.9rem; }
+.model-pick-size { margin-left: auto; font-size: 0.75rem; color: var(--text-secondary); font-family: monospace; }
+.model-pick-desc { font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 0.3rem; line-height: 1.35; }
+.model-pick-meta { font-size: 0.72rem; color: #9ca3af; }
 
 .simple-card {
   border: 2px solid #e5e7eb;

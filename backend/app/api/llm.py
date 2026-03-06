@@ -62,6 +62,12 @@ LLM_CATALOG: Dict[str, Any] = {
             "description": "AI image generation engine. Deploys ComfyUI on port 8188. Generates images from text prompts. GPU strongly recommended.",
             "recommended": False,
         },
+        {
+            "id": "meme-maker",
+            "name": "Meme Maker",
+            "description": "AI-powered meme generator. Enter a topic or upload an image; the AI suggests formats and captions, then generates the image. Runs ComfyUI + Ollama on the VM.",
+            "recommended": False,
+        },
     ],
     "models": {
         "ollama": [
@@ -358,6 +364,21 @@ LLM_CATALOG: Dict[str, Any] = {
                 "gpu_optional": True,
             },
         ],
+        "meme-maker": [
+            {
+                "id": "meme-maker-v1",
+                "name": "Meme Maker v1",
+                "category": "image",
+                "description": "DreamShaper 8 for generation + Llama 3.2 1B for caption suggestions. GPU optional.",
+                "size_gb": 3.0,
+                "min_ram_gb": 12,
+                "recommended_ram_gb": 16,
+                "min_vram_gb": 4,
+                "min_cpu_cores": 4,
+                "min_disk_gb": 40,
+                "gpu_optional": True,
+            }
+        ],
         "localai": [
             {
                 "id": "llama3.2:1b",
@@ -491,6 +512,8 @@ def _access_port(engine: str, ui_type: str) -> int:
         return 3000
     if ui_type == "comfyui" or engine == "stable-diffusion":
         return 8188
+    if engine == "meme-maker":
+        return 8189
     if engine == "vllm":
         return 8000
     if engine == "localai":
@@ -527,7 +550,9 @@ class LLMDeployRequest(BaseModel):
     # VM identity & resources
     vm_name: str
     hostname: str
+    cpu_sockets: int = 1
     cpu_cores: int
+    cpu_type: str = "host"
     memory: int    # MB
     disk_size: int  # GB
 
@@ -716,9 +741,9 @@ async def deploy_llm(
         node_id=deploy_data.node_id,
         cloud_image_id=cloud_image_id,
         os_type=OSType.UBUNTU,
-        cpu_sockets=1,
+        cpu_sockets=deploy_data.cpu_sockets,
         cpu_cores=deploy_data.cpu_cores,
-        cpu_type="host",
+        cpu_type=deploy_data.cpu_type,
         memory=deploy_data.memory,
         disk_size=deploy_data.disk_size,
         storage=deploy_data.storage,
@@ -795,7 +820,7 @@ async def deploy_llm(
     }
 
 
-async def _deploy_llm_background(
+def _deploy_llm_background(
     vm_id: int,
     llm_dep_id: int,
     gpu_enabled: bool,
@@ -1073,12 +1098,15 @@ _apply_jobs: dict = {}  # job_id → {status, output, error, created_at}
 
 def _run_apply_job(job_id: str, commands: list, ip: str, username: str, password):
     """Execute tuning commands via SSH, streaming output to the job store."""
-    import paramiko, shlex
+    import paramiko, shlex, time as _t
     job = _apply_jobs[job_id]
     try:
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         client.connect(ip, username=username, password=password, timeout=30)
+        # Send SSH keepalives every 30 s so NAT/firewalls don't drop long-running
+        # transfers (e.g. ollama pull of a several-GB model).
+        client.get_transport().set_keepalive(30)
 
         for cmd in commands:
             job["output"] += f"$ {cmd}\n"
@@ -1089,10 +1117,26 @@ def _run_apply_job(job_id: str, commands: list, ip: str, username: str, password
                 stdin.write((password + "\n").encode())
                 stdin.flush()
                 stdin.channel.shutdown_write()
-            # Stream stdout line-by-line so the frontend sees progress in real time
-            for line in stdout:
-                job["output"] += line
-            err = stderr.read().decode("utf-8", errors="replace").strip()
+            # Stream raw bytes so we capture \r-terminated progress bars from
+            # commands like `ollama pull` without blocking on \n line endings.
+            chan = stdout.channel
+            while True:
+                if chan.recv_ready():
+                    chunk = chan.recv(8192).decode("utf-8", errors="replace")
+                    job["output"] += chunk
+                elif chan.exit_status_ready():
+                    # Drain any remaining buffered output
+                    while chan.recv_ready():
+                        chunk = chan.recv(8192).decode("utf-8", errors="replace")
+                        job["output"] += chunk
+                    break
+                else:
+                    _t.sleep(0.3)
+            # Read stderr (safe after stdout channel is fully drained)
+            err_bytes = b""
+            while stderr.channel.recv_stderr_ready():
+                err_bytes += stderr.channel.recv_stderr(4096)
+            err = err_bytes.decode("utf-8", errors="replace").strip()
             exit_code = stdout.channel.recv_exit_status()
             # -1 means the channel closed without a status (connection dropped);
             # treat as a transient failure rather than a hard error
@@ -1190,6 +1234,855 @@ async def get_apply_job_status(
     if not job:
         raise HTTPException(status_code=404, detail="Job not found or expired")
     return job
+
+
+# ---------------------------------------------------------------------------
+# Ollama Model Manager
+# ---------------------------------------------------------------------------
+
+OLLAMA_CATALOG = [
+    # CPU-friendly (Q4_K_M / Q5_K_S — runs on 8-16 GB RAM, no GPU needed)
+    {"id": "llama3.2:1b", "name": "Llama 3.2 1B  (CPU, ~0.8 GB)", "size": "~0.8 GB", "tier": "CPU"},
+    {"id": "llama3.2:3b", "name": "Llama 3.2 3B  (CPU, ~2.0 GB)", "size": "~2.0 GB", "tier": "CPU"},
+    {"id": "phi3:mini", "name": "Phi-3 Mini 3.8B  (CPU, ~2.2 GB)", "size": "~2.2 GB", "tier": "CPU"},
+    {"id": "deepseek-r1:7b", "name": "DeepSeek R1 7B  (CPU, ~4.7 GB)", "size": "~4.7 GB", "tier": "CPU"},
+    {"id": "qwen2.5:7b", "name": "Qwen 2.5 7B  (CPU, ~4.7 GB)", "size": "~4.7 GB", "tier": "CPU"},
+    {"id": "mistral:7b-instruct-q4_K_M", "name": "Mistral 7B Instruct Q4  (CPU, ~4.1 GB)", "size": "~4.1 GB", "tier": "CPU"},
+    {"id": "nous-hermes2", "name": "Nous Hermes 2 10.7B  (CPU*, ~6.1 GB)", "size": "~6.1 GB", "tier": "CPU"},
+    # GPU 8-12 GB VRAM
+    {"id": "llama3.1:8b", "name": "Llama 3.1 8B  (GPU 8-12 GB, ~4.7 GB)", "size": "~4.7 GB", "tier": "GPU 8-12 GB"},
+    {"id": "mistral:7b", "name": "Mistral 7B  (GPU 8-12 GB, ~4.1 GB)", "size": "~4.1 GB", "tier": "GPU 8-12 GB"},
+    {"id": "deepseek-r1:8b", "name": "DeepSeek R1 8B  (GPU 8-12 GB, ~4.9 GB)", "size": "~4.9 GB", "tier": "GPU 8-12 GB"},
+    # GPU 16 GB VRAM
+    {"id": "qwen2.5:14b", "name": "Qwen 2.5 14B  (GPU 16 GB, ~9.0 GB)", "size": "~9.0 GB", "tier": "GPU 16 GB"},
+    {"id": "llama3.1:8b-q8_0", "name": "Llama 3.1 8B Q8  (GPU 16 GB, ~8.5 GB)", "size": "~8.5 GB", "tier": "GPU 16 GB"},
+    # GPU 24 GB VRAM
+    {"id": "llama3.1:70b-q4_K_M", "name": "Llama 3.1 70B Q4  (GPU 24 GB, ~40 GB)", "size": "~40 GB", "tier": "GPU 24 GB"},
+    {"id": "qwen2.5:32b-q4_K_M", "name": "Qwen 2.5 32B Q4  (GPU 24 GB, ~20 GB)", "size": "~20 GB", "tier": "GPU 24 GB"},
+    {"id": "mixtral:8x7b-q4_K_M", "name": "Mixtral 8x7B Q4  (GPU 24 GB, ~26 GB)", "size": "~26 GB", "tier": "GPU 24 GB"},
+    # GPU 48 GB+ VRAM
+    {"id": "llama3.1:70b", "name": "Llama 3.1 70B  (GPU 48 GB+, ~47 GB)", "size": "~47 GB", "tier": "GPU 48 GB+"},
+    {"id": "qwen2.5:72b", "name": "Qwen 2.5 72B  (GPU 48 GB+, ~47 GB)", "size": "~47 GB", "tier": "GPU 48 GB+"},
+    {"id": "mixtral:8x22b", "name": "Mixtral 8x22B  (GPU 48 GB+, ~80 GB)", "size": "~80 GB", "tier": "GPU 48 GB+"},
+]
+
+
+@router.get("/ai-tune/{vm_id}/models")
+async def get_vm_models(
+    vm_id: int,
+    current_user: User = Depends(require_operator),
+    db: Session = Depends(get_db),
+):
+    """List installed Ollama models on a VM."""
+    import paramiko
+    import re as _re
+
+    vm = db.query(VirtualMachine).filter(VirtualMachine.id == vm_id).first()
+    if not vm:
+        raise HTTPException(status_code=404, detail="VM not found")
+    if not vm.ip_address:
+        raise HTTPException(status_code=400, detail="VM has no IP address")
+
+    password = None
+    if vm.password:
+        try:
+            from app.core.security import decrypt_data
+            password = decrypt_data(vm.password)
+        except Exception:
+            password = vm.password
+
+    try:
+        client = paramiko.SSHClient()
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        client.connect(vm.ip_address, username=vm.username, password=password, timeout=30)
+        _, stdout, _ = client.exec_command("ollama list 2>/dev/null", timeout=20)
+        raw = stdout.read().decode("utf-8", errors="replace")
+        stdout.channel.recv_exit_status()
+        client.close()
+
+        raw = _re.sub(r'\x1b\[[0-9;]*m', '', raw)
+        models = []
+        for line in raw.splitlines()[1:]:  # Skip header row
+            line = line.strip()
+            if not line:
+                continue
+            parts = line.split()
+            if not parts:
+                continue
+            name = parts[0]
+            # Detect if second column is a hex hash (ID column present)
+            if len(parts) >= 2 and _re.match(r'^[0-9a-f]{8,}$', parts[1]):
+                size = f"{parts[2]} {parts[3]}" if len(parts) > 3 else (parts[2] if len(parts) > 2 else "")
+                modified = " ".join(parts[4:]) if len(parts) > 4 else ""
+            elif len(parts) >= 2:
+                size = f"{parts[1]} {parts[2]}" if len(parts) > 2 else parts[1]
+                modified = " ".join(parts[3:]) if len(parts) > 3 else ""
+            else:
+                size, modified = "", ""
+            models.append({"name": name, "size": size, "modified": modified})
+
+        return {"models": models, "catalog": OLLAMA_CATALOG}
+
+    except paramiko.AuthenticationException:
+        raise HTTPException(status_code=401, detail="SSH authentication failed")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to list models: {e}")
+
+
+def _run_pull_job(job_id: str, model: str, ip: str, username: str, password):
+    """Launch `ollama pull` as a background process on the VM, then poll the log file.
+
+    Uses short, independent SSH sessions for each poll so NAT timeouts and
+    SSH keepalive issues can never stall a large model download.
+    """
+    import paramiko as _pm, shlex, time as _t, re as _re
+
+    job = _apply_jobs[job_id]
+    log_file = f"/tmp/depl0y-pull-{job_id}.log"
+
+    def _ssh_run(cmd, timeout=20):
+        c = _pm.SSHClient()
+        c.set_missing_host_key_policy(_pm.AutoAddPolicy())
+        c.connect(ip, username=username, password=password, timeout=20)
+        stdin, stdout, _ = c.exec_command(
+            f"sudo -S bash -c {shlex.quote(cmd)}", timeout=timeout
+        )
+        if password:
+            stdin.write((password + "\n").encode())
+            stdin.flush()
+            stdin.channel.shutdown_write()
+        out = stdout.read().decode("utf-8", errors="replace")
+        stdout.channel.recv_exit_status()
+        c.close()
+        return out
+
+    try:
+        # Launch the pull as a fire-and-forget background process.
+        # We append EXIT:<code> as the last line so polling can detect completion.
+        launch_cmd = (
+            f"nohup bash -c 'ollama pull {shlex.quote(model)} 2>&1; "
+            f"echo \"EXIT:$?\"' > {log_file} 2>&1 &"
+        )
+        _ssh_run(launch_cmd)
+        job["output"] = f"$ ollama pull {model}\n[Pulling in background — reading log...]\n"
+
+        # Poll the log file until the EXIT: marker appears (max 30 minutes)
+        for _ in range(600):
+            _t.sleep(3)
+            try:
+                raw = _ssh_run(f"cat {log_file} 2>/dev/null || echo ''")
+                # Strip ANSI escape codes
+                clean = _re.sub(r'\x1b\[[0-9;]*[mGKHFJA]', '', raw)
+                # Collapse \r progress bars — keep the last segment per \r group
+                lines = []
+                for segment in clean.split('\r'):
+                    stripped = segment.strip()
+                    if stripped:
+                        lines.append(stripped)
+                # Deduplicate consecutive identical lines (repeated progress bars)
+                deduped = []
+                for ln in lines:
+                    if not deduped or ln != deduped[-1]:
+                        deduped.append(ln)
+                job["output"] = f"$ ollama pull {model}\n" + "\n".join(deduped)
+
+                if "EXIT:" in raw:
+                    m = _re.search(r'EXIT:(\d+)', raw)
+                    exit_code = int(m.group(1)) if m else 0
+                    if exit_code == 0:
+                        job["status"] = "completed"
+                    else:
+                        job["status"] = "failed"
+                        job["error"] = f"ollama pull exited with code {exit_code}"
+                    # Best-effort cleanup
+                    try:
+                        _ssh_run(f"rm -f {log_file}")
+                    except Exception:
+                        pass
+                    return
+
+            except Exception as poll_err:
+                job["output"] += f"\n[poll: {poll_err}]\n"
+
+        # Timed out
+        job["status"] = "failed"
+        job["error"] = "Timed out waiting for model pull (30 minutes)"
+
+    except Exception as e:
+        job["status"] = "failed"
+        job["error"] = str(e)
+
+
+@router.post("/ai-tune/{vm_id}/models/pull")
+async def pull_ollama_model(
+    vm_id: int,
+    body: dict = Body(...),
+    current_user: User = Depends(require_operator),
+    db: Session = Depends(get_db),
+):
+    """Start an ollama pull job in background; returns job_id for polling."""
+    model = (body.get("model") or "").strip()
+    if not model:
+        raise HTTPException(status_code=400, detail="model is required")
+
+    vm = db.query(VirtualMachine).filter(VirtualMachine.id == vm_id).first()
+    if not vm:
+        raise HTTPException(status_code=404, detail="VM not found")
+    if not vm.ip_address:
+        raise HTTPException(status_code=400, detail="VM has no IP address")
+
+    password = None
+    if vm.password:
+        try:
+            from app.core.security import decrypt_data
+            password = decrypt_data(vm.password)
+        except Exception:
+            password = vm.password
+
+    _cleanup_apply_jobs()
+    job_id = str(_uuid_mod.uuid4())
+    _apply_jobs[job_id] = {
+        "status": "running",
+        "output": "",
+        "error": None,
+        "action": f"ollama pull {model}",
+        "created_at": _time.time(),
+    }
+    t = _threading.Thread(
+        target=_run_pull_job,
+        args=(job_id, model, vm.ip_address, vm.username, password),
+        daemon=True,
+    )
+    t.start()
+    return {"job_id": job_id, "status": "started"}
+
+
+@router.get("/ai-tune/{vm_id}/models/pull/{job_id}")
+async def get_pull_job_status(
+    vm_id: int,
+    job_id: str,
+    current_user: User = Depends(require_operator),
+):
+    """Poll for model pull progress."""
+    job = _apply_jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found or expired")
+    return job
+
+
+@router.delete("/ai-tune/{vm_id}/models/{model_name:path}")
+async def delete_ollama_model(
+    vm_id: int,
+    model_name: str,
+    current_user: User = Depends(require_operator),
+    db: Session = Depends(get_db),
+):
+    """Delete an Ollama model from the VM."""
+    import paramiko
+    import shlex as _shlex
+
+    vm = db.query(VirtualMachine).filter(VirtualMachine.id == vm_id).first()
+    if not vm:
+        raise HTTPException(status_code=404, detail="VM not found")
+    if not vm.ip_address:
+        raise HTTPException(status_code=400, detail="VM has no IP address")
+
+    password = None
+    if vm.password:
+        try:
+            from app.core.security import decrypt_data
+            password = decrypt_data(vm.password)
+        except Exception:
+            password = vm.password
+
+    try:
+        client = paramiko.SSHClient()
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        client.connect(vm.ip_address, username=vm.username, password=password, timeout=30)
+        cmd = f"ollama rm {_shlex.quote(model_name)}"
+        stdin, stdout, stderr = client.exec_command(
+            f"sudo -S bash -c {_shlex.quote(cmd)}", timeout=30
+        )
+        if password:
+            stdin.write((password + "\n").encode())
+            stdin.flush()
+            stdin.channel.shutdown_write()
+        stdout.channel.recv_exit_status()
+        err = stderr.read().decode("utf-8", errors="replace").strip()
+        client.close()
+        # Filter sudo prompt noise
+        real_err = "\n".join(
+            l for l in err.splitlines()
+            if l.strip() and not l.startswith("[sudo]") and "password for" not in l.lower()
+        )
+        if real_err and "deleted" not in real_err.lower() and "not found" not in real_err.lower():
+            raise HTTPException(status_code=500, detail=f"Delete failed: {real_err}")
+        return {"success": True, "model": model_name}
+
+    except HTTPException:
+        raise
+    except paramiko.AuthenticationException:
+        raise HTTPException(status_code=401, detail="SSH authentication failed")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete model: {e}")
+
+
+# ---------------------------------------------------------------------------
+# Conversation Logging
+# ---------------------------------------------------------------------------
+# The VM runs a lightweight proxy on port 11500 that intercepts Ollama API
+# calls and logs them to /var/log/depl0y/conversations.jsonl
+
+
+def _ssh_run_quick(ip: str, username: str, password: str, cmd: str, timeout: int = 15) -> str:
+    """Open a short SSH session, run one command, return stdout."""
+    import paramiko as _pm, shlex
+    c = _pm.SSHClient()
+    c.set_missing_host_key_policy(_pm.AutoAddPolicy())
+    c.connect(ip, username=username, password=password, timeout=15)
+    stdin, stdout, _ = c.exec_command(
+        f"sudo -S bash -c {shlex.quote(cmd)}", timeout=timeout
+    )
+    if password:
+        stdin.write((password + "\n").encode())
+        stdin.flush()
+        stdin.channel.shutdown_write()
+    out = stdout.read().decode("utf-8", errors="replace")
+    stdout.channel.recv_exit_status()
+    c.close()
+    return out
+
+
+def _get_vm_creds(vm_id: int, db) -> tuple:
+    """Return (vm, ip, username, password) or raise HTTPException."""
+    vm = db.query(VirtualMachine).filter(VirtualMachine.id == vm_id).first()
+    if not vm:
+        raise HTTPException(status_code=404, detail="VM not found")
+    if not vm.ip_address:
+        raise HTTPException(status_code=400, detail="VM has no IP address")
+    password = None
+    if vm.password:
+        try:
+            from app.core.security import decrypt_data
+            password = decrypt_data(vm.password)
+        except Exception:
+            password = vm.password
+    return vm, vm.ip_address, vm.username, password
+
+
+@router.get("/ai-tune/{vm_id}/conv-logs")
+async def get_conv_logs(
+    vm_id: int,
+    limit: int = 50,
+    current_user: User = Depends(require_operator),
+    db: Session = Depends(get_db),
+):
+    """Return recent conversation log entries from the VM."""
+    import json as _json
+    vm, ip, username, password = _get_vm_creds(vm_id, db)
+    try:
+        raw = _ssh_run_quick(
+            ip, username, password,
+            f"tail -n {limit} /var/log/depl0y/conversations.jsonl 2>/dev/null || echo ''"
+        )
+        entries = []
+        for line in raw.splitlines():
+            line = line.strip()
+            if line:
+                try:
+                    entries.append(_json.loads(line))
+                except Exception:
+                    pass
+        return {"entries": entries}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read logs: {e}")
+
+
+@router.get("/ai-tune/{vm_id}/conv-logs/status")
+async def get_conv_logger_status(
+    vm_id: int,
+    current_user: User = Depends(require_operator),
+    db: Session = Depends(get_db),
+):
+    """Check whether the conversation logger proxy is installed and running."""
+    vm, ip, username, password = _get_vm_creds(vm_id, db)
+    try:
+        status = _ssh_run_quick(
+            ip, username, password,
+            "systemctl is-active depl0y-logger 2>/dev/null || echo inactive"
+        ).strip()
+        installed = _ssh_run_quick(
+            ip, username, password,
+            "[ -f /opt/depl0y-logger/logger.py ] && echo yes || echo no"
+        ).strip()
+        log_size = _ssh_run_quick(
+            ip, username, password,
+            "wc -l /var/log/depl0y/conversations.jsonl 2>/dev/null | awk '{print $1}' || echo 0"
+        ).strip()
+        return {
+            "installed": installed == "yes",
+            "active": status == "active",
+            "status": status,
+            "log_entries": int(log_size) if log_size.isdigit() else 0,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to check logger status: {e}")
+
+
+@router.post("/ai-tune/{vm_id}/conv-logs/install")
+async def install_conv_logger(
+    vm_id: int,
+    current_user: User = Depends(require_operator),
+    db: Session = Depends(get_db),
+):
+    """Install/update the conversation logger proxy on the VM via background job."""
+    import json as _json
+    vm, ip, username, password = _get_vm_creds(vm_id, db)
+
+    # The logger is a simple Python proxy: listens on 11500, forwards to Ollama
+    # on 11434, logs every /api/chat and /api/generate call to JSONL
+    logger_src = r'''#!/usr/bin/env python3
+"""depl0y Conversation Logger
+Transparent proxy: port 11500 -> Ollama port 11434.
+Logs every /api/chat and /api/generate request+response pair to JSONL.
+"""
+import http.server, urllib.request, urllib.error, json, time, os, threading
+
+LOG_FILE  = "/var/log/depl0y/conversations.jsonl"
+OLLAMA    = "http://127.0.0.1:11434"
+LISTEN    = 11500
+_log_lock = threading.Lock()
+
+os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
+
+
+def _log(entry: dict):
+    with _log_lock:
+        with open(LOG_FILE, "a") as f:
+            f.write(json.dumps(entry) + "\n")
+
+
+class Handler(http.server.BaseHTTPRequestHandler):
+    def log_message(self, *a): pass  # silence access log
+
+    def _forward(self):
+        body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
+        target = OLLAMA + self.path
+        req = urllib.request.Request(
+            target, data=body or None, method=self.command,
+            headers={k: v for k, v in self.headers.items()
+                     if k.lower() not in ("host", "content-length")},
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=300) as resp:
+                resp_body = resp.read()
+                self.send_response(resp.status)
+                for k, v in resp.headers.items():
+                    if k.lower() not in ("transfer-encoding",):
+                        self.send_header(k, v)
+                self.send_header("Content-Length", str(len(resp_body)))
+                self.end_headers()
+                self.wfile.write(resp_body)
+                return body, resp_body, resp.status
+        except urllib.error.HTTPError as e:
+            rb = e.read()
+            self.send_response(e.code)
+            self.end_headers()
+            self.wfile.write(rb)
+            return body, rb, e.code
+        except Exception as e:
+            self.send_response(502)
+            self.end_headers()
+            msg = str(e).encode()
+            self.wfile.write(msg)
+            return body, msg, 502
+
+    def do_GET(self):
+        self._forward()
+
+    def do_POST(self):
+        req_body, resp_body, status = self._forward()
+        if self.path.startswith(("/api/chat", "/api/generate")):
+            try:
+                req_json  = json.loads(req_body)  if req_body  else {}
+                resp_json = json.loads(resp_body) if resp_body else {}
+                model     = req_json.get("model", "")
+                messages  = req_json.get("messages") or []
+                prompt    = req_json.get("prompt", "")
+                if messages:
+                    user_text = next(
+                        (m.get("content","") for m in reversed(messages) if m.get("role") == "user"), ""
+                    )
+                    assistant_text = resp_json.get("message", {}).get("content", "")
+                else:
+                    user_text      = prompt
+                    assistant_text = resp_json.get("response", "")
+                _log({
+                    "ts":        time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                    "model":     model,
+                    "endpoint":  self.path,
+                    "user":      user_text[:4000],
+                    "assistant": assistant_text[:4000],
+                    "status":    status,
+                })
+            except Exception:
+                pass
+
+    def do_DELETE(self): self._forward()
+    def do_PUT(self):    self._forward()
+
+
+if __name__ == "__main__":
+    server = http.server.ThreadingHTTPServer(("0.0.0.0", LISTEN), Handler)
+    print(f"depl0y-logger listening on :{LISTEN} -> {OLLAMA}", flush=True)
+    server.serve_forever()
+'''
+
+    install_cmds = [
+        "mkdir -p /opt/depl0y-logger /var/log/depl0y",
+        # Write logger.py
+        f"cat > /opt/depl0y-logger/logger.py << 'LOGGER_EOF'\n{logger_src}\nLOGGER_EOF",
+        "chmod +x /opt/depl0y-logger/logger.py",
+        # Systemd service
+        """cat > /etc/systemd/system/depl0y-logger.service << 'SVC_EOF'
+[Unit]
+Description=depl0y Conversation Logger Proxy
+After=network.target ollama.service
+Wants=ollama.service
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/bin/python3 /opt/depl0y-logger/logger.py
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+SVC_EOF""",
+        "systemctl daemon-reload",
+        "systemctl enable depl0y-logger",
+        "systemctl restart depl0y-logger",
+    ]
+
+    _cleanup_apply_jobs()
+    job_id = str(_uuid_mod.uuid4())
+    _apply_jobs[job_id] = {
+        "status": "running",
+        "output": "",
+        "error": None,
+        "action": "Install conversation logger",
+        "created_at": _time.time(),
+    }
+    t = _threading.Thread(
+        target=_run_apply_job,
+        args=(job_id, install_cmds, ip, username, password),
+        daemon=True,
+    )
+    t.start()
+    return {"job_id": job_id, "status": "started"}
+
+
+@router.delete("/ai-tune/{vm_id}/conv-logs")
+async def clear_conv_logs(
+    vm_id: int,
+    current_user: User = Depends(require_operator),
+    db: Session = Depends(get_db),
+):
+    """Clear the conversation log file on the VM."""
+    vm, ip, username, password = _get_vm_creds(vm_id, db)
+    try:
+        _ssh_run_quick(
+            ip, username, password,
+            "truncate -s 0 /var/log/depl0y/conversations.jsonl 2>/dev/null || true"
+        )
+        return {"success": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to clear logs: {e}")
+
+
+# ---------------------------------------------------------------------------
+# RAG (Retrieval-Augmented Generation)
+# ---------------------------------------------------------------------------
+
+RAG_CATALOG = [
+    {"id": "nomic-embed-text", "name": "Nomic Embed Text (recommended)", "size": "~274 MB"},
+    {"id": "mxbai-embed-large", "name": "mxbai-embed-large", "size": "~669 MB"},
+    {"id": "all-minilm", "name": "all-minilm (small/fast)", "size": "~46 MB"},
+]
+
+
+@router.get("/ai-tune/{vm_id}/rag/status")
+async def get_rag_status(
+    vm_id: int,
+    current_user: User = Depends(require_operator),
+    db: Session = Depends(get_db),
+):
+    """Check whether the RAG service is installed and return document count."""
+    vm, ip, username, password = _get_vm_creds(vm_id, db)
+    try:
+        installed = _ssh_run_quick(
+            ip, username, password,
+            "[ -f /opt/depl0y-rag/rag.py ] && echo yes || echo no"
+        ).strip()
+        active = _ssh_run_quick(
+            ip, username, password,
+            "systemctl is-active depl0y-rag 2>/dev/null || echo inactive"
+        ).strip()
+        doc_count = _ssh_run_quick(
+            ip, username, password,
+            "[ -d /var/lib/depl0y/rag-docs ] && ls /var/lib/depl0y/rag-docs | wc -l || echo 0"
+        ).strip()
+        return {
+            "installed": installed == "yes",
+            "active": active == "active",
+            "status": active,
+            "doc_count": int(doc_count) if doc_count.isdigit() else 0,
+            "catalog": RAG_CATALOG,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to check RAG status: {e}")
+
+
+@router.post("/ai-tune/{vm_id}/rag/install")
+async def install_rag(
+    vm_id: int,
+    body: dict = Body(default={}),
+    current_user: User = Depends(require_operator),
+    db: Session = Depends(get_db),
+):
+    """Install ChromaDB + embedding model for RAG on the VM."""
+    import base64 as _b64
+    embed_model = (body.get("embed_model") or "nomic-embed-text").strip()
+    vm, ip, username, password = _get_vm_creds(vm_id, db)
+
+    # RAG service script — use base64 encoding to avoid heredoc quoting issues
+    rag_py = (
+        "#!/usr/bin/env python3\n"
+        "# depl0y RAG Service — REST API on port 11501\n"
+        "import sys, json, os, hashlib\n"
+        "sys.path.insert(0, '/opt/depl0y-rag-env/lib/python3.12/site-packages')\n"
+        "import chromadb, urllib.request\n"
+        "from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer\n"
+        "\n"
+        "DB_PATH = '/var/lib/depl0y/rag-chroma'\n"
+        "OLLAMA  = 'http://127.0.0.1:11434'\n"
+        "PORT    = 11501\n"
+        "EMBED_MODEL = os.environ.get('EMBED_MODEL', 'nomic-embed-text')\n"
+        "_client     = chromadb.PersistentClient(path=DB_PATH)\n"
+        "_collection = _client.get_or_create_collection('depl0y-rag')\n"
+        "\n"
+        "def _embed(text):\n"
+        "    payload = json.dumps({'model': EMBED_MODEL, 'prompt': text}).encode()\n"
+        "    req = urllib.request.Request(OLLAMA + '/api/embeddings', data=payload,\n"
+        "                                 headers={'Content-Type': 'application/json'})\n"
+        "    with urllib.request.urlopen(req, timeout=60) as r:\n"
+        "        return json.loads(r.read())['embedding']\n"
+        "\n"
+        "class Handler(BaseHTTPRequestHandler):\n"
+        "    def log_message(self, *a): pass\n"
+        "    def _body(self):\n"
+        "        n = int(self.headers.get('Content-Length', 0))\n"
+        "        return json.loads(self.rfile.read(n)) if n else {}\n"
+        "    def _reply(self, data, code=200):\n"
+        "        body = json.dumps(data).encode()\n"
+        "        self.send_response(code)\n"
+        "        self.send_header('Content-Type', 'application/json')\n"
+        "        self.send_header('Content-Length', str(len(body)))\n"
+        "        self.end_headers()\n"
+        "        self.wfile.write(body)\n"
+        "    def do_GET(self):\n"
+        "        if self.path == '/docs':\n"
+        "            res = _collection.get()\n"
+        "            docs = [{'id': i, 'source': m.get('source',''), 'preview': d[:120]}\n"
+        "                    for i, d, m in zip(res['ids'], res['documents'], res['metadatas'])]\n"
+        "            self._reply({'docs': docs, 'count': len(docs)})\n"
+        "        else:\n"
+        "            self._reply({'error': 'not found'}, 404)\n"
+        "    def do_POST(self):\n"
+        "        b = self._body()\n"
+        "        if self.path == '/ingest':\n"
+        "            text = b.get('text', ''); source = b.get('source', 'unknown')\n"
+        "            if not text: return self._reply({'error': 'text required'}, 400)\n"
+        "            doc_id = hashlib.md5((source + text[:64]).encode()).hexdigest()\n"
+        "            emb = _embed(text)\n"
+        "            _collection.upsert(ids=[doc_id], documents=[text], embeddings=[emb],\n"
+        "                               metadatas=[{'source': source, **b.get('metadata', {})}])\n"
+        "            self._reply({'id': doc_id, 'source': source})\n"
+        "        elif self.path == '/query':\n"
+        "            query = b.get('query', ''); n = int(b.get('n_results', 5))\n"
+        "            if not query: return self._reply({'error': 'query required'}, 400)\n"
+        "            emb = _embed(query)\n"
+        "            res = _collection.query(query_embeddings=[emb], n_results=n)\n"
+        "            results = [{'id': i, 'text': d, 'source': m.get('source',''), 'distance': dist}\n"
+        "                       for i, d, m, dist in zip(res['ids'][0], res['documents'][0],\n"
+        "                                               res['metadatas'][0], res['distances'][0])]\n"
+        "            self._reply({'results': results})\n"
+        "        else:\n"
+        "            self._reply({'error': 'not found'}, 404)\n"
+        "    def do_DELETE(self):\n"
+        "        if self.path.startswith('/docs/'):\n"
+        "            _collection.delete(ids=[self.path[6:]])\n"
+        "            self._reply({'deleted': self.path[6:]})\n"
+        "        else:\n"
+        "            self._reply({'error': 'not found'}, 404)\n"
+        "\n"
+        "if __name__ == '__main__':\n"
+        "    print(f'depl0y-rag listening :{PORT}', flush=True)\n"
+        "    ThreadingHTTPServer(('0.0.0.0', PORT), Handler).serve_forever()\n"
+    )
+    rag_b64 = _b64.b64encode(rag_py.encode()).decode()
+
+    svc_content = (
+        "[Unit]\n"
+        "Description=depl0y RAG Service\n"
+        "After=network.target ollama.service\n\n"
+        "[Service]\n"
+        "Type=simple\nUser=root\n"
+        f"Environment=EMBED_MODEL={embed_model}\n"
+        "ExecStart=/usr/bin/python3 /opt/depl0y-rag/rag.py\n"
+        "Restart=on-failure\nRestartSec=5\n"
+        "StandardOutput=journal\nStandardError=journal\n\n"
+        "[Install]\nWantedBy=multi-user.target\n"
+    )
+    svc_b64 = _b64.b64encode(svc_content.encode()).decode()
+
+    install_cmds = [
+        "mkdir -p /opt/depl0y-rag /var/lib/depl0y/rag-docs /var/lib/depl0y/rag-chroma",
+        "python3 -m venv /opt/depl0y-rag-env 2>/dev/null || true",
+        "/opt/depl0y-rag-env/bin/pip install --upgrade pip --quiet",
+        "/opt/depl0y-rag-env/bin/pip install chromadb --quiet",
+        f"OLLAMA_MODELS=/usr/share/ollama/.ollama/models ollama pull {embed_model}",
+        f"echo '{rag_b64}' | base64 -d > /opt/depl0y-rag/rag.py",
+        "chmod +x /opt/depl0y-rag/rag.py",
+        f"echo '{svc_b64}' | base64 -d > /etc/systemd/system/depl0y-rag.service",
+        "systemctl daemon-reload",
+        "systemctl enable depl0y-rag",
+        "systemctl restart depl0y-rag",
+    ]
+
+    _cleanup_apply_jobs()
+    job_id = str(_uuid_mod.uuid4())
+    _apply_jobs[job_id] = {
+        "status": "running",
+        "output": "",
+        "error": None,
+        "action": f"Install RAG service (embed model: {embed_model})",
+        "created_at": _time.time(),
+    }
+    t = _threading.Thread(
+        target=_run_apply_job,
+        args=(job_id, install_cmds, ip, username, password),
+        daemon=True,
+    )
+    t.start()
+    return {"job_id": job_id, "status": "started"}
+
+
+@router.post("/ai-tune/{vm_id}/rag/ingest")
+async def rag_ingest(
+    vm_id: int,
+    body: dict = Body(...),
+    current_user: User = Depends(require_operator),
+    db: Session = Depends(get_db),
+):
+    """Ingest a text document into the VM's RAG knowledge base."""
+    import urllib.request as _ur, urllib.error as _ue
+    vm, ip, username, password = _get_vm_creds(vm_id, db)
+    payload = {
+        "text": body.get("text", ""),
+        "source": body.get("source", "manual"),
+        "metadata": body.get("metadata", {}),
+    }
+    if not payload["text"]:
+        raise HTTPException(status_code=400, detail="text is required")
+    try:
+        req = _ur.Request(
+            f"http://{ip}:11501/ingest",
+            data=__import__("json").dumps(payload).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+        with _ur.urlopen(req, timeout=60) as r:
+            return __import__("json").loads(r.read())
+    except _ue.URLError as e:
+        raise HTTPException(status_code=503, detail=f"RAG service unavailable: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/ai-tune/{vm_id}/rag/query")
+async def rag_query(
+    vm_id: int,
+    body: dict = Body(...),
+    current_user: User = Depends(require_operator),
+    db: Session = Depends(get_db),
+):
+    """Query the VM's RAG knowledge base."""
+    import urllib.request as _ur, urllib.error as _ue
+    vm, ip, username, password = _get_vm_creds(vm_id, db)
+    payload = {"query": body.get("query", ""), "n_results": body.get("n_results", 5)}
+    if not payload["query"]:
+        raise HTTPException(status_code=400, detail="query is required")
+    try:
+        req = _ur.Request(
+            f"http://{ip}:11501/query",
+            data=__import__("json").dumps(payload).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+        with _ur.urlopen(req, timeout=60) as r:
+            return __import__("json").loads(r.read())
+    except _ue.URLError as e:
+        raise HTTPException(status_code=503, detail=f"RAG service unavailable: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/ai-tune/{vm_id}/rag/docs")
+async def rag_list_docs(
+    vm_id: int,
+    current_user: User = Depends(require_operator),
+    db: Session = Depends(get_db),
+):
+    """List documents in the VM's RAG knowledge base."""
+    import urllib.request as _ur, urllib.error as _ue
+    vm, ip, username, password = _get_vm_creds(vm_id, db)
+    try:
+        with _ur.urlopen(f"http://{ip}:11501/docs", timeout=10) as r:
+            return __import__("json").loads(r.read())
+    except _ue.URLError as e:
+        raise HTTPException(status_code=503, detail=f"RAG service unavailable: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/ai-tune/{vm_id}/rag/docs/{doc_id}")
+async def rag_delete_doc(
+    vm_id: int,
+    doc_id: str,
+    current_user: User = Depends(require_operator),
+    db: Session = Depends(get_db),
+):
+    """Delete a document from the VM's RAG knowledge base."""
+    import urllib.request as _ur, urllib.error as _ue
+    vm, ip, username, password = _get_vm_creds(vm_id, db)
+    try:
+        req = _ur.Request(f"http://{ip}:11501/docs/{doc_id}", method="DELETE")
+        with _ur.urlopen(req, timeout=10) as r:
+            return __import__("json").loads(r.read())
+    except _ue.URLError as e:
+        raise HTTPException(status_code=503, detail=f"RAG service unavailable: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 def _generate_ai_tune_recommendations(diag: dict) -> dict:

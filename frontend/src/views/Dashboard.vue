@@ -85,7 +85,7 @@
           <h3>Quick Actions</h3>
         </div>
         <div class="quick-actions">
-          <router-link to="/vms/create" class="action-button">
+          <router-link to="/deploy" class="action-button">
             <span class="action-icon">➕</span>
             <div>
               <p class="action-title">Deploy New VM</p>

@@ -259,7 +259,25 @@ export default {
     getGpuDevices: (hostId, nodeId) => api.get('/llm/gpu-devices', { params: { host_id: hostId, node_id: nodeId } }),
     deploy: (data) => api.post('/llm/deploy', data),
     listDeployments: () => api.get('/llm/deployments'),
-    getDeployment: (id) => api.get(`/llm/deployments/${id}`)
+    getDeployment: (id) => api.get(`/llm/deployments/${id}`),
+    // Ollama Model Manager
+    getVMModels: (vmId) => api.get(`/llm/ai-tune/${vmId}/models`),
+    pullModel: (vmId, model) => api.post(`/llm/ai-tune/${vmId}/models/pull`, { model }),
+    getPullJobStatus: (vmId, jobId) => api.get(`/llm/ai-tune/${vmId}/models/pull/${jobId}`),
+    deleteModel: (vmId, modelName) => api.delete(`/llm/ai-tune/${vmId}/models/${encodeURIComponent(modelName)}`),
+    // Conversation Logger
+    getConvLogs: (vmId, limit = 50) => api.get(`/llm/ai-tune/${vmId}/conv-logs`, { params: { limit } }),
+    getConvLoggerStatus: (vmId) => api.get(`/llm/ai-tune/${vmId}/conv-logs/status`),
+    installConvLogger: (vmId) => api.post(`/llm/ai-tune/${vmId}/conv-logs/install`),
+    clearConvLogs: (vmId) => api.delete(`/llm/ai-tune/${vmId}/conv-logs`),
+    // RAG
+    getRagStatus: (vmId) => api.get(`/llm/ai-tune/${vmId}/rag/status`),
+    installRag: (vmId, embedModel) => api.post(`/llm/ai-tune/${vmId}/rag/install`, { embed_model: embedModel }),
+    ragIngest: (vmId, text, source, metadata) => api.post(`/llm/ai-tune/${vmId}/rag/ingest`, { text, source, metadata }),
+    ragQuery: (vmId, query, nResults = 5) => api.post(`/llm/ai-tune/${vmId}/rag/query`, { query, n_results: nResults }),
+    ragListDocs: (vmId) => api.get(`/llm/ai-tune/${vmId}/rag/docs`),
+    ragDeleteDoc: (vmId, docId) => api.delete(`/llm/ai-tune/${vmId}/rag/docs/${docId}`),
+    getJobStatus: (vmId, jobId) => api.get(`/llm/ai-tune/${vmId}/apply/${jobId}`),
   },
 
   // VM Agent

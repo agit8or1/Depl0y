@@ -550,9 +550,9 @@ _WF = {
     "7": {"class_type": "CLIPTextEncode",
           "inputs": {"text": "__NEGATIVE__", "clip": ["4", 1]}},
     "5": {"class_type": "EmptyLatentImage",
-          "inputs": {"width": 448, "height": 448, "batch_size": 1}},
+          "inputs": {"width": 320, "height": 320, "batch_size": 1}},
     "3": {"class_type": "KSampler",
-          "inputs": {"seed": 0, "steps": 8, "cfg": 6.0,
+          "inputs": {"seed": 0, "steps": 6, "cfg": 6.0,
                      "sampler_name": "dpmpp_2m", "scheduler": "karras",
                      "denoise": 1.0, "model": ["4", 0],
                      "positive": ["6", 0], "negative": ["7", 0],
@@ -1131,7 +1131,7 @@ function pollProgress(pid){
       _lockGenButtons(false);
       showStatus('Generation failed: '+(d.error||'unknown'),true);
     }else if(d.status==='running'){
-      var step=d.step||0,total=d.total||8,pct=d.pct||0;
+      var step=d.step||0,total=d.total||6,pct=d.pct||0;
       if(step>0){showProgress('Generating... Step '+step+'/'+total+' ('+pct+'%)',pct);}
       else{showProgress('Generating... '+elapsed+'s elapsed -- loading model',5);}
     }else{
@@ -1171,7 +1171,7 @@ def _submit_comfy(image_prompt):
 
 def _track_ws_progress(pid, client_id):
     import websocket as _ws
-    prog = _job_progress.setdefault(pid, {"step": 0, "total": 8, "status": "queued"})
+    prog = _job_progress.setdefault(pid, {"step": 0, "total": 6, "status": "queued"})
     def on_msg(ws, msg):
         try:
             d = json.loads(msg)
@@ -1315,7 +1315,7 @@ def generate():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     _job_captions[pid] = (top_text, bottom_text)
-    _job_progress[pid] = {"step": 0, "total": 8, "status": "queued"}
+    _job_progress[pid] = {"step": 0, "total": 6, "status": "queued"}
     threading.Thread(target=_track_ws_progress, args=(pid, client_id), daemon=True).start()
     return jsonify({"prompt_id": pid})
 

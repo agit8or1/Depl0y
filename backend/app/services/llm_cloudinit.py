@@ -93,6 +93,7 @@ class LLMCloudInitService:
                 "Environment=\"OLLAMA_KEEP_ALIVE=60m\"",
                 "Environment=\"OLLAMA_FLASH_ATTENTION=1\"",
                 "Environment=\"OLLAMA_MAX_LOADED_MODELS=1\"",
+                "Environment=\"OLLAMA_NUM_PARALLEL=1\"",
                 "OLLAMA_CONF_EOF",
                 "systemctl daemon-reload",
                 "systemctl enable ollama",
@@ -428,7 +429,7 @@ class LLMCloudInitService:
                 comfyui_args = "--listen 0.0.0.0 --port 8188 --default-workflow /opt/comfyui/default_workflow.json"
             else:
                 torch_index = "https://download.pytorch.org/whl/cpu"
-                comfyui_args = "--listen 0.0.0.0 --port 8188 --cpu --force-fp32 --default-workflow /opt/comfyui/default_workflow.json"
+                comfyui_args = "--listen 0.0.0.0 --port 8188 --cpu --default-workflow /opt/comfyui/default_workflow.json"
 
             lines += [
                 "# Install ComfyUI (Stable Diffusion image generation)",
@@ -506,7 +507,7 @@ class LLMCloudInitService:
                 comfyui_args = "--listen 0.0.0.0 --port 8188"
             else:
                 torch_index = "https://download.pytorch.org/whl/cpu"
-                comfyui_args = "--listen 0.0.0.0 --port 8188 --cpu --force-fp32"
+                comfyui_args = "--listen 0.0.0.0 --port 8188 --cpu"
 
             meme_app_src = r'''#!/usr/bin/env python3
 """Meme Maker — split-pipeline: LLM captions + textless image + Pillow overlay.
@@ -802,8 +803,10 @@ def _call_llm_captions(topic, style, model, extra=""):
 
 def _unload_model(model):
     """Evict large models from Ollama RAM so ComfyUI has headroom.
-    Small models (<=2GB) are kept loaded — they barely affect memory
-    and reloading them is expensive relative to their size."""
+    Sends keep_alive=0 then polls /api/ps until the model is gone —
+    kernel page reclaim after mmap release takes 10-30s, so we must
+    wait for confirmation before starting the memory-hungry ComfyUI job.
+    Small models (<=2GB) are skipped — cheap to reload."""
     _SMALL = {"llama3.2:1b", "llama3.2:1b-instruct-q8_0", "llama3.2:3b"}
     if model in _SMALL:
         return
@@ -815,10 +818,23 @@ def _unload_model(model):
             urllib.request.Request(
                 OLLAMA_URL + "/api/generate", data=payload,
                 headers={"Content-Type": "application/json"}
-            ), timeout=5
+            ), timeout=30
         )
     except Exception:
         pass
+    # Poll until model is no longer listed in /api/ps (max 45s)
+    deadline = time.time() + 45
+    while time.time() < deadline:
+        try:
+            with urllib.request.urlopen(OLLAMA_URL + "/api/ps", timeout=3) as r:
+                ps = json.loads(r.read())
+            loaded = [m.get("name", "") for m in ps.get("models", [])]
+            if not any(model.split(":")[0] in n for n in loaded):
+                break
+        except Exception:
+            break
+        time.sleep(2)
+    time.sleep(3)  # extra buffer for kernel to reclaim pages
 
 
 def _free_comfy():
@@ -1286,6 +1302,12 @@ def generate():
     top_text     = _wrap_text(data.get("top_text",    ""), 8)
     bottom_text  = _wrap_text(data.get("bottom_text", ""), 8)
     _unload_model(model)
+    # Explicitly drop page cache so kernel reclaims LLM pages before ComfyUI allocates
+    try:
+        with open("/proc/sys/vm/drop_caches", "w") as _f:
+            _f.write("1\n")
+    except Exception:
+        pass
     try:
         pid, client_id = _submit_comfy(image_prompt)
     except urllib.error.URLError as e:
@@ -1431,7 +1453,7 @@ if __name__ == "__main__":
                 "User=root",
                 "WorkingDirectory=/opt/comfyui",
                 "Environment=PYTHONUNBUFFERED=1",
-                f"ExecStart=/opt/comfyui-env/bin/python /opt/comfyui/run_cpu.py {comfyui_args} --disable-smart-memory",
+                f"ExecStart=/opt/comfyui-env/bin/python /opt/comfyui/run_cpu.py {comfyui_args}",
                 "Restart=on-failure",
                 "RestartSec=10",
                 "StandardOutput=journal",

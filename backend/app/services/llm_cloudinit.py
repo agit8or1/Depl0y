@@ -821,6 +821,21 @@ def _unload_model(model):
         pass
 
 
+def _free_comfy():
+    """Tell ComfyUI to release its loaded model weights from RAM.
+    Called before LLM inference so the two large models don't coexist."""
+    try:
+        payload = json.dumps({"unload_models": True, "free_memory": True}).encode()
+        urllib.request.urlopen(
+            urllib.request.Request(
+                COMFY_URL + "/free", data=payload,
+                headers={"Content-Type": "application/json"}
+            ), timeout=10
+        )
+    except Exception:
+        pass
+
+
 HTML = """<!DOCTYPE html>
 <html>
 <head>
@@ -1208,6 +1223,7 @@ def suggest_ai():
     topic = data.get("topic", "funny meme")
     style = data.get("style", "Any")
     model = data.get("model", "") or "llama3.2:1b"
+    _free_comfy()   # release ComfyUI model weights before loading LLM
     image_prompt = _build_image_prompt(topic, style)
     caption_data = _call_llm_captions(topic, style, model)
     if not caption_data:
@@ -1266,6 +1282,7 @@ def captions_regen():
         topic  = data.get("topic", "funny meme")
         style  = data.get("style", "Any")
         model  = data.get("model") or "llama3.2:1b"
+        _free_comfy()
         result = _call_llm_captions(topic, style, model)
         if not result:
             return jsonify({"error": "LLM caption generation failed"}), 500

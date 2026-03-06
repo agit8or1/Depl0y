@@ -520,7 +520,7 @@ lettering. Instead we split responsibilities:
   2. Image model generates a TEXTLESS scene (negative prompt suppresses all text).
   3. Pillow overlays Impact-style captions on the final image server-side.
 """
-import json, io, os, base64, re, random, uuid, threading, urllib.request, urllib.error
+import json, io, os, base64, re, random, uuid, threading, time, urllib.request, urllib.error
 from flask import Flask, request, jsonify
 
 try:
@@ -823,7 +823,16 @@ def _unload_model(model):
 
 def _free_comfy():
     """Tell ComfyUI to release its loaded model weights from RAM.
-    Called before LLM inference so the two large models don't coexist."""
+    Called before LLM inference so the two large models don't coexist.
+    Skipped if ComfyUI has an active or queued job (would abort it).
+    Waits up to 8s for memory to actually be released after the call."""
+    try:
+        with urllib.request.urlopen(COMFY_URL + "/queue", timeout=3) as r:
+            q = json.loads(r.read())
+        if q.get("queue_running") or q.get("queue_pending"):
+            return  # generation in progress — don't free
+    except Exception:
+        return
     try:
         payload = json.dumps({"unload_models": True, "free_memory": True}).encode()
         urllib.request.urlopen(
@@ -832,6 +841,7 @@ def _free_comfy():
                 headers={"Content-Type": "application/json"}
             ), timeout=10
         )
+        time.sleep(3)  # give ComfyUI time to actually release pages
     except Exception:
         pass
 

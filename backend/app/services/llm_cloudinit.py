@@ -988,7 +988,7 @@ async function regenCaptions(){
   showStatus('Regenerating captions...',false);
   try{
     var r=await fetch('/captions/regen',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({prompt_id:_currentPid,topic:topic,style:style,model:model||'llama3.2:1b'})});
+      body:JSON.stringify({prompt_id:_currentPid,topic:topic,style:style,model:model||'qwen2.5:7b'})});
     var d=await r.json();if(!r.ok)throw new Error(d.error||'Failed');
     _currentTop=d.caption.top_text;_currentBottom=d.caption.bottom_text;
     setResult(d.meme_b64,d.caption);hideStatus();
@@ -1161,7 +1161,7 @@ def suggest_ai():
     data  = request.get_json() or {}
     topic = data.get("topic", "funny meme")
     style = data.get("style", "Any")
-    model = data.get("model", "") or "llama3.2:1b"
+    model = data.get("model", "") or "qwen2.5:7b"
     image_prompt = _build_image_prompt(topic, style)
     caption_data = _call_llm_captions(topic, style, model)
     _unload_model(model)
@@ -1218,7 +1218,7 @@ def captions_regen():
     else:
         topic  = data.get("topic", "funny meme")
         style  = data.get("style", "Any")
-        model  = data.get("model") or "llama3.2:1b"
+        model  = data.get("model") or "qwen2.5:7b"
         result = _call_llm_captions(topic, style, model)
         _unload_model(model)
         if not result:
@@ -1345,7 +1345,7 @@ if __name__ == "__main__":
                 "systemctl enable comfyui",
                 "systemctl start comfyui",
                 "",
-                "# Install Ollama and pull llama3.2:1b",
+                "# Install Ollama and pull qwen2.5:7b (structured JSON output for captions)",
                 "echo 'Installing Ollama for meme caption suggestions...'",
                 "curl -fsSL https://ollama.ai/install.sh | sh",
                 "systemctl enable ollama",
@@ -1355,7 +1355,7 @@ if __name__ == "__main__":
                 "  ollama list >/dev/null 2>&1 && break",
                 "  sleep 2",
                 "done",
-                "OLLAMA_MODELS=/usr/share/ollama/.ollama/models ollama pull llama3.2:1b",
+                "OLLAMA_MODELS=/usr/share/ollama/.ollama/models ollama pull qwen2.5:7b",
                 "",
                 "# Install Flask + Pillow in own venv (avoids Ubuntu 24.04 externally-managed-environment error)",
                 "python3 -m venv /opt/meme-app-env",

@@ -746,7 +746,11 @@ def _call_llm_captions(topic, style, model, extra=""):
     # and never triggers a timeout, even on slow CPU-only inference.
     # We accumulate the full text then parse JSON at the end.
     # Cap at 150 tokens; the full caption JSON is ~80-120 tokens.
+    # num_ctx=2048: caps KV-cache at ~200 MB instead of the default 32k-128k
+    # context window which can consume 4-8 GB and crash a 16 GB VM when loaded
+    # alongside ComfyUI. Caption generation needs <400 tokens total, so 2048 is safe.
     NUM_PREDICT = 150
+    NUM_CTX = 2048
     for api in ("/api/chat", "/api/generate"):
         try:
             if api == "/api/chat":
@@ -757,24 +761,24 @@ def _call_llm_captions(topic, style, model, extra=""):
                         {"role": "user",   "content": user_msg},
                     ],
                     "stream": True,
-                    "options": {"temperature": 0.75, "top_p": 0.9, "num_predict": NUM_PREDICT},
+                    "options": {"temperature": 0.75, "top_p": 0.9, "num_predict": NUM_PREDICT, "num_ctx": NUM_CTX},
                 }).encode()
             else:
                 payload = json.dumps({
                     "model": model,
                     "prompt": _CAPTION_SYSTEM + "\n\n" + user_msg,
                     "stream": True,
-                    "options": {"temperature": 0.75, "num_predict": NUM_PREDICT},
+                    "options": {"temperature": 0.75, "num_predict": NUM_PREDICT, "num_ctx": NUM_CTX},
                 }).encode()
             req = urllib.request.Request(
                 OLLAMA_URL + api, data=payload,
                 headers={"Content-Type": "application/json"}
             )
             text = ""
-            # timeout=60: covers initial input-processing delay before first token
-            # arrives (can be 20-30s on CPU for a long prompt). Per-token latency
-            # once streaming starts is well under 60s.
-            with urllib.request.urlopen(req, timeout=60) as r:
+            # timeout=180: large models (e.g. qwen2.5:7b) take 60-120s to load
+            # from disk on a CPU-only VM before the first token arrives.
+            # Per-token latency once streaming starts is well under 180s.
+            with urllib.request.urlopen(req, timeout=180) as r:
                 for raw_line in r:
                     line = raw_line.strip()
                     if not line:
@@ -949,9 +953,15 @@ async function getSuggestions(){
     hideStatus();
     if(model){
       showProgress('Getting AI captions...');
+      var _aiStart=Date.now();
+      var _aiTimer=setInterval(function(){
+        var elapsed=Math.round((Date.now()-_aiStart)/1000);
+        if(elapsed>15)showProgress('Getting AI captions... (loading model, '+elapsed+'s)');
+      },3000);
       fetch('/suggest/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({topic:topic,style:style,model:model})})
         .then(function(r){return r.json();})
         .then(function(d){
+          clearInterval(_aiTimer);
           if(d.top_text){
             var items=[{top_text:d.top_text,bottom_text:d.bottom_text,image_prompt:d.image_prompt,alternatives:d.alternatives||[]}];
             (d.alternatives||[]).forEach(function(a){items.push({top_text:a.top_text,bottom_text:a.bottom_text,image_prompt:d.image_prompt,alternatives:[]});});
@@ -959,7 +969,7 @@ async function getSuggestions(){
           }
           hideStatus();
         })
-        .catch(function(){hideStatus();});
+        .catch(function(){clearInterval(_aiTimer);hideStatus();});
     }
   }catch(e){showStatus('Error: '+e.message,true);}
 }
@@ -980,11 +990,17 @@ async function generateRandom(){
   var top='',bot='',imgPrompt='';
   showProgress('Getting AI captions...');
   if(model){
+    var _rndStart=Date.now();
+    var _rndTimer=setInterval(function(){
+      var elapsed=Math.round((Date.now()-_rndStart)/1000);
+      if(elapsed>15)showProgress('Getting AI captions... (loading model, '+elapsed+'s)');
+    },3000);
     try{
       var r=await fetch('/suggest/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({topic:topic,style:style,model:model})});
       var d=await r.json();
       if(d.top_text){top=d.top_text;bot=d.bottom_text;imgPrompt=d.image_prompt||'';}
     }catch(e){}
+    clearInterval(_rndTimer);
   }
   if(!imgPrompt){
     var r2=await fetch('/suggest',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({topic:topic,style:style})});

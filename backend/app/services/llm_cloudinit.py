@@ -797,7 +797,12 @@ def _call_llm_captions(topic, style, model, extra=""):
 
 
 def _unload_model(model):
-    """Evict model from Ollama RAM so ComfyUI has headroom."""
+    """Evict large models from Ollama RAM so ComfyUI has headroom.
+    Small models (<=2GB) are kept loaded — they barely affect memory
+    and reloading them is expensive relative to their size."""
+    _SMALL = {"llama3.2:1b", "llama3.2:1b-instruct-q8_0", "llama3.2:3b"}
+    if model in _SMALL:
+        return
     try:
         payload = json.dumps(
             {"model": model, "prompt": "", "stream": False, "keep_alive": 0}
@@ -893,6 +898,7 @@ var _currentPid='';
 var _currentTop='';
 var _currentBottom='';
 var _currentImagePrompt='';
+var _currentModel='';
 
 function showStatus(msg,isErr){var el=document.getElementById('status');el.textContent=msg;el.className='status '+(isErr?'status-error':'status-info');el.style.display='block';}
 function hideStatus(){document.getElementById('status').style.display='none';document.getElementById('progWrap').style.display='none';document.getElementById('progBar').style.width='0%';}
@@ -963,7 +969,8 @@ function useSugg(i){
   var top=s.top_text||s.caption_top||'';
   var bot=s.bottom_text||s.caption_bottom||'';
   var imgPrompt=s.image_prompt||('funny meme scene about '+document.getElementById('topic').value);
-  doGenerate(imgPrompt,top,bot);
+  var model=document.getElementById('llm').value;
+  doGenerate(imgPrompt,top,bot,model);
 }
 
 async function generateRandom(){
@@ -984,16 +991,17 @@ async function generateRandom(){
     var d2=await r2.json();
     if(d2.image_prompt)imgPrompt=d2.image_prompt;
   }
-  doGenerate(imgPrompt||('high quality humorous photo of a funny scene about '+topic+', no text, no words'),top,bot);
+  doGenerate(imgPrompt||('high quality humorous photo of a funny scene about '+topic+', no text, no words'),top,bot,model);
 }
 
-async function doGenerate(imagePrompt,topText,bottomText){
+async function doGenerate(imagePrompt,topText,bottomText,model){
   if(_genPoller){clearInterval(_genPoller);_genPoller=null;}
   _currentImagePrompt=imagePrompt;_currentTop=topText;_currentBottom=bottomText;
+  if(model)_currentModel=model;
   showProgress('Submitting to image generator...',1);
   try{
     var r=await fetch('/generate',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({image_prompt:imagePrompt,top_text:topText,bottom_text:bottomText})});
+      body:JSON.stringify({image_prompt:imagePrompt,top_text:topText,bottom_text:bottomText,model:_currentModel||'llama3.2:1b'})});
     var d=await r.json();if(!r.ok)throw new Error(d.error||'Failed');
     _currentPid=d.prompt_id;
     _genStart=Date.now();
@@ -1010,7 +1018,7 @@ async function regenCaptions(){
   showStatus('Regenerating captions...',false);
   try{
     var r=await fetch('/captions/regen',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({prompt_id:_currentPid,topic:topic,style:style,model:model||'qwen2.5:7b'})});
+      body:JSON.stringify({prompt_id:_currentPid,topic:topic,style:style,model:model||'llama3.2:1b'})});
     var d=await r.json();if(!r.ok)throw new Error(d.error||'Failed');
     _currentTop=d.caption.top_text;_currentBottom=d.caption.bottom_text;
     setResult(d.meme_b64,d.caption);hideStatus();
@@ -1183,10 +1191,9 @@ def suggest_ai():
     data  = request.get_json() or {}
     topic = data.get("topic", "funny meme")
     style = data.get("style", "Any")
-    model = data.get("model", "") or "qwen2.5:7b"
+    model = data.get("model", "") or "llama3.2:1b"
     image_prompt = _build_image_prompt(topic, style)
     caption_data = _call_llm_captions(topic, style, model)
-    _unload_model(model)
     if not caption_data:
         return jsonify({"error": "LLM did not return valid captions"}), 500
     return jsonify({
@@ -1205,11 +1212,13 @@ def generate():
     Returns: {prompt_id}
     """
     data         = request.get_json() or {}
+    model        = data.get("model", "") or "llama3.2:1b"
     image_prompt = (data.get("image_prompt") or
                     _build_image_prompt(data.get("topic", "internet humor"),
                                         data.get("style", "Any")))
     top_text     = _wrap_text(data.get("top_text",    ""), 8)
     bottom_text  = _wrap_text(data.get("bottom_text", ""), 8)
+    _unload_model(model)
     try:
         pid, client_id = _submit_comfy(image_prompt)
     except urllib.error.URLError as e:
@@ -1240,9 +1249,8 @@ def captions_regen():
     else:
         topic  = data.get("topic", "funny meme")
         style  = data.get("style", "Any")
-        model  = data.get("model") or "qwen2.5:7b"
+        model  = data.get("model") or "llama3.2:1b"
         result = _call_llm_captions(topic, style, model)
-        _unload_model(model)
         if not result:
             return jsonify({"error": "LLM caption generation failed"}), 500
         top    = result["top_text"]

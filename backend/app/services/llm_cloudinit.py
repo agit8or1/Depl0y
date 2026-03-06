@@ -725,13 +725,16 @@ def _parse_caption_json(text):
     bottom = _wrap_text(str(data.get("bottom_text", "")))
     if not top or not bottom:
         return None
+    _PLACEHOLDER = {"...", "…", "...", "..."}
     alts = []
     for a in data.get("alternatives", []):
-        if isinstance(a, dict) and a.get("top_text") and a.get("bottom_text"):
-            alts.append({
-                "top_text":    _wrap_text(str(a["top_text"])),
-                "bottom_text": _wrap_text(str(a["bottom_text"])),
-            })
+        if not isinstance(a, dict):
+            continue
+        at = _wrap_text(str(a.get("top_text",    "")))
+        ab = _wrap_text(str(a.get("bottom_text", "")))
+        # Skip unfilled placeholder alternatives left by truncated output
+        if at and ab and at not in _PLACEHOLDER and ab not in _PLACEHOLDER:
+            alts.append({"top_text": at, "bottom_text": ab})
     return {"top_text": top, "bottom_text": bottom, "alternatives": alts}
 
 
@@ -739,6 +742,11 @@ def _call_llm_captions(topic, style, model, extra=""):
     user_msg = _CAPTION_USER.format(topic=topic, style=style)
     if extra:
         user_msg += "\n\n" + extra
+    # Use stream=True so each token arrives individually — the socket stays active
+    # and never triggers a timeout, even on slow CPU-only inference.
+    # We accumulate the full text then parse JSON at the end.
+    # Cap at 150 tokens; the full caption JSON is ~80-120 tokens.
+    NUM_PREDICT = 150
     for api in ("/api/chat", "/api/generate"):
         try:
             if api == "/api/chat":
@@ -748,25 +756,39 @@ def _call_llm_captions(topic, style, model, extra=""):
                         {"role": "system", "content": _CAPTION_SYSTEM},
                         {"role": "user",   "content": user_msg},
                     ],
-                    "stream": False,
-                    "options": {"temperature": 0.85, "top_p": 0.9, "num_predict": 400},
+                    "stream": True,
+                    "options": {"temperature": 0.75, "top_p": 0.9, "num_predict": NUM_PREDICT},
                 }).encode()
             else:
                 payload = json.dumps({
                     "model": model,
                     "prompt": _CAPTION_SYSTEM + "\n\n" + user_msg,
-                    "stream": False,
-                    "options": {"temperature": 0.85, "num_predict": 400},
+                    "stream": True,
+                    "options": {"temperature": 0.75, "num_predict": NUM_PREDICT},
                 }).encode()
             req = urllib.request.Request(
                 OLLAMA_URL + api, data=payload,
                 headers={"Content-Type": "application/json"}
             )
-            with urllib.request.urlopen(req, timeout=120) as r:
-                result = json.loads(r.read())
-            text = (result.get("message", {}).get("content")
-                    or result.get("response", "")).strip()
-            parsed = _parse_caption_json(text)
+            text = ""
+            # timeout=60: covers initial input-processing delay before first token
+            # arrives (can be 20-30s on CPU for a long prompt). Per-token latency
+            # once streaming starts is well under 60s.
+            with urllib.request.urlopen(req, timeout=60) as r:
+                for raw_line in r:
+                    line = raw_line.strip()
+                    if not line:
+                        continue
+                    try:
+                        chunk = json.loads(line)
+                    except Exception:
+                        continue
+                    token = (chunk.get("message", {}).get("content")
+                             or chunk.get("response", ""))
+                    text += token
+                    if chunk.get("done"):
+                        break
+            parsed = _parse_caption_json(text.strip())
             if parsed:
                 return parsed
         except Exception:

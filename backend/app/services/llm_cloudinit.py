@@ -897,8 +897,8 @@ h2{font-size:1rem;color:#8b949e;font-weight:600;margin-bottom:12px}
   <select id="llm"><option value="">Loading...</option></select>
   <div class="hint" id="llmHint"></div>
   <div class="btn-row">
-    <button class="btn-primary" onclick="getSuggestions()">Get Suggestions</button>
-    <button class="btn-secondary" onclick="generateRandom()">Generate Random</button>
+    <button id="btnSuggest" class="btn-primary" onclick="getSuggestions()">Get Suggestions</button>
+    <button id="btnRandom" class="btn-secondary" onclick="generateRandom()">Generate Random</button>
   </div>
 </div>
 <div id="status" style="display:none" class="status"></div>
@@ -984,9 +984,11 @@ async function getSuggestions(){
         if(elapsed>15)showProgress('Getting AI captions... (loading model, '+elapsed+'s)');
       },3000);
       fetch('/suggest/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({topic:topic,style:style,model:model})})
-        .then(function(r){return r.json();})
-        .then(function(d){
+        .then(function(r){return r.json().then(function(d){return {ok:r.ok,status:r.status,d:d};});})
+        .then(function(res){
           clearInterval(_aiTimer);
+          var d=res.d;
+          if(!res.ok){showStatus(d.error||'AI captions failed',true);return;}
           if(d.top_text){
             var items=[{top_text:d.top_text,bottom_text:d.bottom_text,image_prompt:d.image_prompt,alternatives:d.alternatives||[]}];
             (d.alternatives||[]).forEach(function(a){items.push({top_text:a.top_text,bottom_text:a.bottom_text,image_prompt:d.image_prompt,alternatives:[]});});
@@ -994,7 +996,7 @@ async function getSuggestions(){
           }
           hideStatus();
         })
-        .catch(function(){clearInterval(_aiTimer);hideStatus();});
+        .catch(function(e){clearInterval(_aiTimer);showStatus('AI captions error: '+e.message,true);});
     }
   }catch(e){showStatus('Error: '+e.message,true);}
 }
@@ -1039,6 +1041,7 @@ async function doGenerate(imagePrompt,topText,bottomText,model){
   if(_genPoller){clearInterval(_genPoller);_genPoller=null;}
   _currentImagePrompt=imagePrompt;_currentTop=topText;_currentBottom=bottomText;
   if(model)_currentModel=model;
+  _lockGenButtons(true);
   showProgress('Submitting to image generator...',1);
   try{
     var r=await fetch('/generate',{method:'POST',headers:{'Content-Type':'application/json'},
@@ -1048,7 +1051,7 @@ async function doGenerate(imagePrompt,topText,bottomText,model){
     _genStart=Date.now();
     showProgress('In queue...',2);
     _genPoller=setInterval(function(){pollProgress(_currentPid);},2000);
-  }catch(e){showStatus('Error: '+e.message,true);}
+  }catch(e){_lockGenButtons(false);showStatus('Error: '+e.message,true);}
 }
 
 async function regenCaptions(){
@@ -1089,6 +1092,14 @@ function setResult(b64,caption){
   img.scrollIntoView({behavior:'smooth'});
 }
 
+function _lockGenButtons(lock){
+  var s=document.getElementById('btnSuggest'),r=document.getElementById('btnRandom');
+  if(!s||!r)return;
+  s.disabled=lock;r.disabled=lock;
+  s.title=lock?'Wait for image generation to finish':'';
+  r.title=lock?'Wait for image generation to finish':'';
+}
+
 var _pollFailCount=0;
 function pollProgress(pid){
   var elapsed=Math.floor((Date.now()-_genStart)/1000);
@@ -1096,10 +1107,12 @@ function pollProgress(pid){
     _pollFailCount=0;
     if(d.status==='done'){
       clearInterval(_genPoller);_genPoller=null;hideStatus();
+      _lockGenButtons(false);
       if(d.prompt_id)_currentPid=d.prompt_id;
       setResult(d.image_b64,d.caption);
     }else if(d.status==='error'){
       clearInterval(_genPoller);_genPoller=null;
+      _lockGenButtons(false);
       showStatus('Generation failed: '+(d.error||'unknown'),true);
     }else if(d.status==='running'){
       var step=d.step||0,total=d.total||20,pct=d.pct||0;
@@ -1110,7 +1123,7 @@ function pollProgress(pid){
     }
   }).catch(function(){
     _pollFailCount++;
-    if(_pollFailCount>=5){clearInterval(_genPoller);_genPoller=null;showStatus('Lost connection after '+elapsed+'s -- refresh and retry.',true);}
+    if(_pollFailCount>=5){clearInterval(_genPoller);_genPoller=null;_lockGenButtons(false);showStatus('Lost connection after '+elapsed+'s -- refresh and retry.',true);}
   });
 }
 </script>
@@ -1226,6 +1239,16 @@ def suggest():
     return jsonify({"suggestions": suggestions, "image_prompt": image_prompt})
 
 
+def _comfy_busy():
+    """Return True if ComfyUI has a job actively running or queued."""
+    try:
+        with urllib.request.urlopen(COMFY_URL + "/queue", timeout=3) as r:
+            q = json.loads(r.read())
+        return bool(q.get("queue_running") or q.get("queue_pending"))
+    except Exception:
+        return False
+
+
 @app.route("/suggest/ai", methods=["POST"])
 def suggest_ai():
     """AI-powered caption generation. Image prompt is always textless."""
@@ -1233,6 +1256,8 @@ def suggest_ai():
     topic = data.get("topic", "funny meme")
     style = data.get("style", "Any")
     model = data.get("model", "") or "llama3.2:1b"
+    if _comfy_busy():
+        return jsonify({"error": "Image generation in progress — wait for it to finish before requesting new captions"}), 503
     _free_comfy()   # release ComfyUI model weights before loading LLM
     image_prompt = _build_image_prompt(topic, style)
     caption_data = _call_llm_captions(topic, style, model)
@@ -1292,6 +1317,8 @@ def captions_regen():
         topic  = data.get("topic", "funny meme")
         style  = data.get("style", "Any")
         model  = data.get("model") or "llama3.2:1b"
+        if _comfy_busy():
+            return jsonify({"error": "Image generation in progress — wait for it to finish"}), 503
         _free_comfy()
         result = _call_llm_captions(topic, style, model)
         if not result:

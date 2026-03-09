@@ -286,9 +286,12 @@
 
         <div v-else-if="updateInfo" class="info-box">
           <p><strong>Current Version:</strong> {{ updateInfo.current_version }}</p>
-          <p><strong>Latest Version:</strong> {{ updateInfo.latest_version }}</p>
+          <p><strong>Latest Release:</strong> {{ updateInfo.latest_version }}</p>
           <p v-if="updateInfo.update_available" class="text-success">
             ✨ Update available!
+          </p>
+          <p v-else-if="isNewerThanLatest(updateInfo.current_version, updateInfo.latest_version)" class="text-muted">
+            ✅ You're running a pre-release version (newer than {{ updateInfo.latest_version }})
           </p>
           <p v-else class="text-muted">
             ✅ You're running the latest version
@@ -1100,6 +1103,19 @@ export default {
       }
     }
 
+    const isNewerThanLatest = (current, latest) => {
+      try {
+        const parse = v => (v || '').replace(/^v/, '').split('.').map(Number)
+        const c = parse(current)
+        const l = parse(latest)
+        for (let i = 0; i < 3; i++) {
+          if ((c[i] || 0) > (l[i] || 0)) return true
+          if ((c[i] || 0) < (l[i] || 0)) return false
+        }
+        return false
+      } catch { return false }
+    }
+
     const checkForUpdates = async () => {
       checkingUpdates.value = true
       updateError.value = null
@@ -1234,6 +1250,7 @@ export default {
     })
 
     return {
+      isNewerThanLatest,
       systemInfo,
       user,
       profileForm,

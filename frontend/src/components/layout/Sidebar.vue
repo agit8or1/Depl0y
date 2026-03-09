@@ -16,6 +16,11 @@
         <span>Deploy VM</span>
       </router-link>
 
+      <router-link v-if="isOperator" to="/import-vm" class="nav-item">
+        <span class="icon">📥</span>
+        <span>Import VM</span>
+      </router-link>
+
       <router-link to="/documentation" class="nav-item">
         <span class="icon">📖</span>
         <span>Documentation</span>

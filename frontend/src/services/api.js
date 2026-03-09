@@ -280,6 +280,23 @@ export default {
     getJobStatus: (vmId, jobId) => api.get(`/llm/ai-tune/${vmId}/apply/${jobId}`),
   },
 
+  // VM Import
+  vmImport: {
+    list: () => api.get('/vm-import/'),
+    upload: (formData, onUploadProgress) => api.post('/vm-import/upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      onUploadProgress,
+      timeout: 0,  // no timeout for large uploads
+    }),
+    deploy: (jobId, data) => api.post(`/vm-import/${jobId}/deploy`, data),
+    getProgress: (jobId) => api.get(`/vm-import/${jobId}/progress`),
+    cancel: (jobId) => api.delete(`/vm-import/${jobId}`),
+    // VMware direct import
+    vmwareTest: (data) => api.post('/vm-import/vmware/test', data),
+    vmwareListVMs: (data) => api.post('/vm-import/vmware/vms', data),
+    vmwarePrepare: (data) => api.post('/vm-import/vmware/prepare', data),
+  },
+
   // VM Agent
   vmAgent: {
     register: (data) => api.post('/vm-agent/register', data),

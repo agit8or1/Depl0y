@@ -35,11 +35,14 @@
           <label for="totp" class="form-label">2FA Code</label>
           <input
             id="totp"
+            ref="totpInput"
             v-model="credentials.totp_code"
             type="text"
             class="form-control"
             placeholder="000000"
             maxlength="6"
+            inputmode="numeric"
+            autocomplete="one-time-code"
           />
         </div>
 
@@ -62,7 +65,7 @@
 </template>
 
 <script>
-import { ref } from 'vue'
+import { ref, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/store/auth'
 
@@ -80,6 +83,7 @@ export default {
 
     const loading = ref(false)
     const show2FA = ref(false)
+    const totpInput = ref(null)
 
     const handleLogin = async () => {
       loading.value = true
@@ -93,6 +97,8 @@ export default {
           // Only show 2FA field if specifically required
           if (result.error === '2FA code required') {
             show2FA.value = true
+            await nextTick()
+            totpInput.value?.focus()
           }
         }
       } catch (error) {
@@ -106,6 +112,7 @@ export default {
       credentials,
       loading,
       show2FA,
+      totpInput,
       handleLogin
     }
   }

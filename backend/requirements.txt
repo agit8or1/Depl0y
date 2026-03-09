@@ -20,6 +20,9 @@ pillow==10.1.0
 proxmoxer==2.0.1
 requests==2.31.0
 
+# VMware import
+pyvmomi
+
 # SSH and remote management
 paramiko==3.4.0
 

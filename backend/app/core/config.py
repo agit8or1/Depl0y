@@ -26,7 +26,7 @@ def get_app_version():
         # Fallback to hardcoded version if database query fails
         pass
 
-    return "1.5.7"  # real-time update monitor, AI tune apply fixes
+    return "1.6.0"  # VM import: OVA/OVF/VMDK/VHD upload + VMware ESXi/vCenter direct import
 
 
 class Settings(BaseSettings):

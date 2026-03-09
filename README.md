@@ -1,105 +1,107 @@
 # Depl0y
 
-**Automated VM Deployment Panel for Proxmox VE**
-
----
-
-## 🚨 CRITICAL SECURITY UPDATE - ACTION REQUIRED
-
-**If you are running Depl0y v1.3.7 or earlier, you MUST update immediately to v1.3.8+**
-
-Multiple **Remote Code Execution (RCE)** vulnerabilities have been fixed in v1.3.8 (CVSS 9.8 - Critical). These vulnerabilities could allow attackers to execute arbitrary commands on your server.
-
-### Quick Update:
-
-**Option 1: Use Web Interface (Recommended)**
-1. Login to Depl0y
-2. Go to Settings → System Updates
-3. Click "Check for Updates"
-4. Click "Install Update"
-
-**Option 2: Manual Update**
-```bash
-cd /opt/depl0y
-git pull origin main
-sudo systemctl restart depl0y-backend
-```
-
-**For full security details, see [SECURITY_AUDIT_REPORT.md](SECURITY_AUDIT_REPORT.md)**
-
----
-
-Depl0y is a free, open-source web-based control panel that simplifies the deployment and management of virtual machines on Proxmox VE infrastructure. With an intuitive interface and powerful automation features, Depl0y makes VM provisioning accessible to everyone.
+**Automated VM Deployment & Management Panel for Proxmox VE**
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)
 ![Vue.js](https://img.shields.io/badge/vue.js-3.x-green.svg)
 ![Version](https://img.shields.io/badge/version-1.6.0-brightgreen.svg)
 
+Depl0y is a free, open-source web-based control panel that simplifies the deployment, management, and import of virtual machines on Proxmox VE infrastructure. With an intuitive interface and powerful automation, Depl0y makes VM provisioning and day-2 operations accessible to everyone.
+
+---
+
 ## ✨ What's New in v1.6.0 — VM Import
 
-**Import virtual machines from VMware, VirtualBox, Hyper-V, or any standard format directly into Proxmox.**
+**Migrate your existing VMs into Proxmox in minutes — no manual disk juggling required.**
 
-- **📥 File Upload Import** — drag & drop OVA, OVF, VMDK, VHD, VHDX, QCOW2, or RAW disk images
-- **☁️ VMware Direct Import** — connect to ESXi or vCenter, browse all VMs, and pull them directly over the network without exporting first
-- **🔍 Auto-Parse Specs** — OVF descriptors are parsed automatically to extract VM name, CPU, RAM, disk size, and OS type
-- **🔄 Disk Conversion** — VMDK, VHD, and VHDX images are converted to qcow2 via `qemu-img` as part of the pipeline
-- **🚀 Full Proxmox Integration** — imported disk is uploaded to Proxmox storage, VM is created via API, disk imported and attached automatically
-- **📡 Live Progress** — real-time progress bar covering download → conversion → upload → deployment
+- **📥 File Upload Import** — drag & drop OVA, OVF, VMDK, VHD, VHDX, QCOW2, or RAW images
+- **☁️ VMware Direct Import** — connect to ESXi or vCenter, browse VMs in a table, and pull them directly over the network without needing ovftool or a manual export
+- **🔍 Auto-Parse Specs** — OVF/OVA descriptors parsed automatically for name, CPU, RAM, disk size, and OS type
+- **🔄 Disk Conversion** — VMDK, VHD, and VHDX converted to qcow2 via `qemu-img` automatically
+- **🚀 Full Proxmox Pipeline** — upload → convert → VM creation → `qm importdisk` → boot disk attached → VM record saved
+- **📡 Live Progress** — real-time progress bar covering every stage from download to ready
 
 [View Full Changelog](CHANGELOG.md)
 
+---
+
+## 🚨 Security Notice
+
+**If you are running Depl0y v1.3.7 or earlier, update immediately.**
+
+Multiple critical RCE vulnerabilities (CVSS 9.8) were fixed in v1.3.8. Update via **Settings → System Updates** or:
+
+```bash
+cd /opt/depl0y && git pull origin main && sudo systemctl restart depl0y-backend
+```
+
+---
+
 ## Features
 
-### 🤖 LLM Deployment (New in v1.4.0)
-- **Deploy LLM Wizard** — Guided Simple and Advanced modes for deploying self-hosted AI inference VMs
-- **Simple Mode** — Answer 4 questions (use case, quality, GPU, UI); Depl0y handles everything else
-- **Advanced Mode** — Choose engine, model, GPU passthrough, OS, storage, networking, and every resource parameter
-- **Supported Engines** — Ollama, llama.cpp (GGUF), vLLM (OpenAI-compatible, GPU), LocalAI (Docker)
-- **Model Catalog** — 15+ models: Llama 3.x, Mistral, Phi-4, Gemma, Qwen, DeepSeek, Code Llama, Nomic Embed
-- **GPU Passthrough** — NVIDIA (CUDA) and AMD (ROCm) with automatic driver installation and device selection
-- **Open WebUI** — Optional ChatGPT-like browser interface (port 3000) deployed alongside the engine
-- **Auto-Tuning** — Benchmarks thread counts post-install and bakes the optimal value into the model config
-- **Use Cases** — Chat & Q&A, Coding, Document Analysis, Research & Reasoning, Humor & Memes (text)
-- **Live Progress** — Stage-by-stage deployment tracker: Provisioning → Cloning → Starting → LLM Setup
+### 📥 VM Import *(New in v1.6.0)*
+- **File Upload** — import OVA, OVF, VMDK, VHD, VHDX, QCOW2, RAW, or ZIP archives via drag & drop
+- **VMware Direct** — connect to ESXi or vCenter; browse all VMs with CPU/RAM/disk/power info; download VMDKs directly via datastore HTTP API
+- **Auto-Parse** — OVF descriptors extracted automatically for all VM specs
+- **Disk Conversion** — automatic VMDK/VHD/VHDX → qcow2 via qemu-img
+- **SSH Fallback** — if `qm importdisk` can't run via SSH, the command is shown for manual execution
 
-### 📥 VM Import (New in v1.6.0)
-- **File Upload** — Import OVA, OVF, VMDK, VHD, VHDX, QCOW2, or RAW disk images via drag & drop
-- **VMware Direct Import** — Connect to ESXi or vCenter and pull VMs directly without manual export
-- **Auto-Parse** — OVF/OVA descriptors parsed automatically for name, CPU, RAM, disk, and OS type
-- **Disk Conversion** — Automatic VMDK/VHD/VHDX → qcow2 conversion via qemu-img
-- **Full Pipeline** — Upload → Convert → Proxmox VM creation → disk import → ready to start
+### 🤖 LLM Deployment *(v1.4.0+)*
+- **Deploy LLM Wizard** — Simple Mode (4 questions) and Advanced Mode (full control)
+- **4 Engines** — Ollama, llama.cpp (GGUF), vLLM (OpenAI-compatible), LocalAI (Docker)
+- **15+ Models** — Llama 3.x, Mistral, Phi-4, Gemma, Qwen, DeepSeek, Code Llama, Nomic Embed and more
+- **GPU Passthrough** — NVIDIA (CUDA) and AMD (ROCm) with automatic driver installation
+- **Open WebUI** — optional ChatGPT-like browser interface deployed alongside the engine
+- **ComfyUI** — optional Stable Diffusion image generation alongside the LLM
+- **AI Auto-Tuning** — after deployment, benchmarks thread counts and recommends optimal settings; apply with one click
+- **Conversation Logging** — capture and view all prompts/responses from deployed LLMs
+- **RAG Support** — ingest documents, query with semantic search via vector embeddings
 
-### Core Functionality
-- **Automated VM Deployment** - Deploy Ubuntu, Debian, CentOS, Rocky Linux, Alma Linux, and Windows VMs with a few clicks
-- **⚡ Cloud Images** - Ultra-fast 30-second deployments using pre-configured OS images (Ubuntu, Debian)
-- **Cloud-Init Integration** - Automatic configuration of Linux VMs with cloud-init
-- **Multi-Hypervisor Support** - Manage multiple Proxmox VE hosts and clusters
-- **Resource Management** - Real-time monitoring of CPU, memory, and disk usage across your infrastructure
-- **ISO Management** - 19 pre-populated ISOs or upload/download custom images with automatic checksum verification
+### 🖥️ VM Deployment & Management
+- **Automated Deployment** — Ubuntu, Debian, CentOS, Rocky Linux, AlmaLinux, Windows Server 2016/2019/2022, Windows 10/11
+- **⚡ Cloud Images** — 30-second deployments using pre-configured OS images (after one-time setup)
+- **Cloud-Init** — automatic hostname, user, SSH key, static IP, DNS, and package configuration
+- **ISO Deployment** — traditional installation with 19 pre-populated ISO types
+- **Multi-Node** — deploy to any node across multiple Proxmox hosts and clusters
+- **Full Hardware Control** — CPU type/flags/sockets, NUMA, BIOS/UEFI, VGA, hotplug, boot order, protection
 
-### Advanced Features
-- **Update Management** - One-click system updates for deployed Linux VMs
-- **QEMU Guest Agent** - Automatic installation and configuration
-- **SSH Access** - Built-in SSH key management and password-based authentication
-- **Network Configuration** - Static IP or DHCP configuration with cloud-init
-- **Partition Management** - Single large partition or custom schemes for Linux deployments
+### 🔄 Update & Security Management *(v1.5.x)*
+- **One-Click Updates** — check and install system updates on any managed Linux VM via SSH
+- **Real-Time Streaming** — live terminal-style output as apt/dnf runs, with auto-scroll
+- **Auto-Scheduled Checks** — configurable interval (6h/12h/24h/48h/7d) for automatic update checks across all VMs
+- **Security Scanning** — automated vulnerability and configuration scans per VM
+- **Linux VM Security Agent** — lightweight agent installable on managed VMs for continuous monitoring
+- **Update History** — full log of every update run per VM
 
-### Security & Access Control
-- **Multi-User Support** - Role-based access control (Admin, Operator, Viewer)
-- **2FA Authentication** - TOTP-based two-factor authentication
-- **Encrypted Credentials** - All sensitive data is encrypted at rest
-- **Audit Logging** - Track all user actions and system changes
+### 🔐 Security & Access Control
+- **Role-Based Access** — Admin, Operator, Viewer with route-level enforcement
+- **2FA / TOTP** — authenticator app support with QR code setup; cursor auto-focuses code field on login
+- **Encrypted Storage** — all passwords and API tokens encrypted at rest with Fernet
+- **Audit Logging** — every user action and system change recorded
+- **Rate Limiting** — 100 req/min globally; security headers on all responses
 
-### User Experience
-- **Modern UI** - Responsive, beautiful interface built with Vue.js
-- **Real-time Status** - Live VM status updates and resource monitoring
-- **Dashboard Analytics** - Overview of your entire virtualization infrastructure
-- **RESTful API** - Complete API for automation and integration
+### 🌐 Infrastructure
+- **Multi-Host** — add and manage multiple Proxmox VE hosts with API token or password auth
+- **High Availability** — configure HA groups and resources; automatic VM failover
+- **Resource Monitoring** — real-time CPU, memory, and disk metrics per node
+- **Network & Storage Discovery** — auto-populate bridges and storage pools when creating/importing VMs
+- **QEMU Guest Agent** — automatic installation; IP auto-fetch via agent
+
+### 🎨 User Experience
+- **Modern UI** — responsive Vue.js 3 SPA with real-time status
+- **RESTful API** — full Swagger/ReDoc documentation at `/api/v1/docs`
+- **In-App Documentation** — built-in docs and guides
+- **Version Updates** — one-click update from GitHub with live progress
+
+---
 
 ## Screenshots
 
-### 🤖 Deploy LLM — Mode Selection *(New in v1.4.0)*
+### 📥 Import VM — Source Selection *(New in v1.6.0)*
+*Upload OVA/OVF/VMDK files or connect directly to VMware ESXi/vCenter to browse and pull VMs*
+
+### 🤖 Deploy LLM — Mode Selection
 ![Deploy LLM Home](screenshots/13-deploy-llm-home.png)
 *Choose Simple Mode (4 questions, auto-configured) or Advanced Mode (full control over engine, model, GPU, and resources)*
 
@@ -139,328 +141,245 @@ Depl0y is a free, open-source web-based control panel that simplifies the deploy
 ![HA Management](screenshots/10-ha-resources.png)
 *Configure automatic VM failover for business continuity*
 
+---
+
 ## Quick Start
 
 ### Prerequisites
-- A server running Linux (Ubuntu 22.04+, Debian 11+, or similar)
-- At least 2GB RAM and 20GB disk space
-- Python 3.10+, Node.js 18+, and nginx
-- Access to one or more Proxmox VE hosts
+- Linux server (Ubuntu 22.04+, Debian 11+, or similar)
+- 2 GB RAM, 20 GB disk minimum
+- Python 3.10+, Node.js 18+, nginx
+- One or more Proxmox VE hosts
 
 ### One-Line Installation
-
-The fastest way to install Depl0y is with the automated installer:
 
 ```bash
 curl -fsSL http://deploy.agit8or.net/downloads/install.sh | sudo bash
 ```
 
-This will:
-- Install all dependencies (Python, Node.js, nginx, SQLite)
-- Set up the Depl0y backend and frontend
-- Create a systemd service for automatic startup
-- Configure nginx as a reverse proxy
-- Complete in approximately 30 seconds
+This installs all dependencies, sets up the backend and frontend, configures nginx, and creates a systemd service — ready in ~30 seconds.
 
 ### Post-Installation
 
-1. **Access the web interface**
-   - Open your browser and navigate to `http://your-server-ip`
-   - Default credentials: `admin` / `admin`
-   - **IMPORTANT**: Change the default password immediately!
+1. **Open the web interface** — `http://your-server-ip`
+   Default credentials: `admin` / `admin` — **change immediately**
 
-2. **Enable 2FA (Recommended)**
-   - Go to "User Profile" and enable TOTP authentication
-   - Scan the QR code with your authenticator app
+2. **Enable 2FA** — Settings → User Profile → Enable TOTP
 
-3. **Add your first Proxmox host**
-   - Go to "Proxmox Hosts" in the sidebar
-   - Click "Add Host" and enter your Proxmox credentials
-   - Test the connection
+3. **Add a Proxmox host** — Proxmox Hosts → Add Host → test connection
 
-4. **Deploy your first VM**
-   - Go to "Virtual Machines"
-   - Click "Create VM"
-   - Fill in the required information and deploy!
+4. **Deploy or import a VM** — Virtual Machines → Create VM, or Import VM → Upload / Connect to VMware
 
-## Manual Installation
+📖 Full guide: [docs/INSTALLATION.md](docs/INSTALLATION.md)
 
-For manual installation or to review the installer script, see the [install.sh](install.sh) file or visit the [documentation](docs/).
+---
+
+## Usage
+
+### ⚡ Cloud Image Deployment (Fastest — Recommended)
+
+**One-time setup:**
+1. Settings → Cloud Image Setup → copy the setup command
+2. Run it on your Depl0y server (enter Proxmox root password when prompted)
+
+**Deploy:**
+1. Virtual Machines → Create VM
+2. Select **Cloud Image (Fast)** installation method
+3. Pick an image (Ubuntu 24.04, Debian 12, etc.), set resources, enter credentials → Deploy
+
+First deployment: ~5–10 min (creates template). Subsequent: **~30 seconds** ⚡
+
+📖 [CLOUD_IMAGES_GUIDE.md](CLOUD_IMAGES_GUIDE.md)
+
+### 📥 Importing a VM
+
+**From a file (OVA/VMDK/VHD/QCOW2):**
+1. Sidebar → Import VM
+2. Upload File tab → drag & drop your image → Upload & Analyse
+3. Review auto-detected specs → select Proxmox target → confirm → Start Import
+
+**From VMware (ESXi or vCenter):**
+1. Sidebar → Import VM
+2. Connect to VMware tab → enter hostname/credentials → Connect & List VMs
+3. Select VM from the list → Import Selected VM (downloads VMDKs in background)
+4. Review specs → select Proxmox target → confirm → Start Import
+
+### 🤖 Deploying an LLM
+
+1. Sidebar → Deploy LLM
+2. Choose **Simple Mode** (recommended for beginners) or **Advanced Mode**
+3. Simple: select use case → quality → GPU option → deploy
+4. Advanced: pick engine, model, GPU device, OS, storage, networking → deploy
+5. Monitor live progress; VM is ready with LLM running when complete
+
+### 🔄 Managing VM Updates
+
+1. VM Management → select VMs → Check Updates
+2. Review available updates → Install Updates
+3. Watch real-time apt/dnf output stream in the UI
+4. View history in the VM's update log
+
+---
 
 ## Configuration
 
 ### Environment Variables
 
-The installer automatically configures environment variables during installation. For manual configuration, set:
-
 ```bash
-# Security (automatically generated during installation)
 SECRET_KEY=your_jwt_secret_key_minimum_32_chars
 ENCRYPTION_KEY=your_fernet_encryption_key
-
-# Database (default: SQLite)
 DATABASE_URL=sqlite:////var/lib/depl0y/db/depl0y.db
-
-# Application
 DEBUG=false
 LOG_LEVEL=INFO
 ```
 
 ### Storage Locations
 
-By default, Depl0y stores data in:
-- ISOs: `/var/lib/depl0y/isos`
-- Cloud images: `/var/lib/depl0y/cloud-images`
-- Cloud-init configs: `/var/lib/depl0y/cloud-init`
-- SSH keys: `/var/lib/depl0y/ssh_keys`
-- Logs: `/var/log/depl0y/`
+| Path | Contents |
+|------|----------|
+| `/var/lib/depl0y/db/depl0y.db` | SQLite database |
+| `/var/lib/depl0y/isos` | ISO images |
+| `/var/lib/depl0y/cloud-images` | Cloud image templates |
+| `/var/lib/depl0y/cloud-init` | Generated cloud-init configs |
+| `/var/lib/depl0y/ssh_keys` | SSH key pairs |
+| `/var/log/depl0y/` | Application logs |
+| `/tmp/depl0y-imports/` | Temporary VM import working directory |
 
-These can be customized in the `.env` file.
+---
 
 ## Architecture
 
-Depl0y consists of three main components:
+```
+┌─────────────────────────────────────┐
+│         Frontend (Vue.js 3)         │
+│   SPA · Pinia · Axios · Chart.js    │
+└──────────────┬──────────────────────┘
+               │ HTTP REST (/api/v1)
+┌──────────────▼──────────────────────┐
+│       Backend (FastAPI + Python)     │
+│  Auth · VMs · Import · LLM · HA     │
+│  Updates · Proxmox · Agent · Docs   │
+└──────┬──────────────┬───────────────┘
+       │              │
+┌──────▼──────┐ ┌────▼────────────────┐
+│   SQLite DB  │ │   Proxmox VE API    │
+│  (users/VMs/ │ │  (nodes/qemu/tasks) │
+│  settings)   │ │  + SSH for importdisk│
+└─────────────┘ └─────────────────────┘
+```
 
-1. **Backend API** (FastAPI + Python)
-   - RESTful API
-   - Proxmox integration via proxmoxer
-   - Database management with SQLAlchemy
-   - Authentication and authorization
-   - Runs as systemd service on port 8000
+**Key dependencies:** proxmoxer, pyVmomi, paramiko, SQLAlchemy, Pydantic, python-jose, APScheduler
 
-2. **Frontend** (Vue.js 3)
-   - Single-page application
-   - Responsive design
-   - Real-time updates
-   - Served by nginx as reverse proxy
-
-3. **Database** (SQLite)
-   - Stores users, VMs, hosts, and configuration
-   - Lightweight and embedded
-   - Automated backups recommended
+---
 
 ## API Documentation
 
-Once installed, API documentation is available at:
-- Swagger UI: `http://your-server-ip/api/v1/docs`
-- ReDoc: `http://your-server-ip/api/v1/redoc`
+- **Swagger UI:** `http://your-server/api/v1/docs`
+- **ReDoc:** `http://your-server/api/v1/redoc`
 
-## Usage
-
-### ⚡ Deploying with Cloud Images (Fastest - Recommended)
-
-Cloud images provide **30-second deployments** after initial setup:
-
-**One-Time Setup (1 minute):**
-1. Go to **Settings** > **Cloud Image Setup**
-2. Copy the setup command shown
-3. SSH to your Depl0y server and run: `sudo /tmp/enable_cloud_images.sh`
-4. Enter your Proxmox root password when prompted
-5. Done! All cloud images are now enabled
-
-**Creating VMs:**
-1. Navigate to "Virtual Machines" > "Create VM"
-2. Select your Proxmox host and node
-3. Choose **"Cloud Image (Fast)"** installation method
-4. Select a cloud image (Ubuntu 24.04, Debian 12, etc.)
-5. Configure resources (CPU, RAM, disk)
-6. Set network configuration (DHCP or static IP)
-7. Enter credentials for the VM
-8. Click "Deploy"
-
-**First deployment:** ~5-10 minutes (creates template)
-**All subsequent deployments:** ~30 seconds ⚡
-
-The VM will be automatically created with:
-- OS fully installed and configured
-- Your credentials already set up
-- Network configured
-- SSH server enabled
-- Ready to use immediately
-
-📖 **Full guide:** [CLOUD_IMAGES_GUIDE.md](CLOUD_IMAGES_GUIDE.md)
-
-### Deploying a Linux VM (Traditional ISO Method)
-
-1. Navigate to "Virtual Machines" > "Create VM"
-2. Select your Proxmox host and node
-3. Choose an OS type (Ubuntu, Debian, etc.)
-4. Configure resources (CPU, RAM, disk)
-5. Set network configuration (DHCP or static IP)
-6. Enter credentials for the VM
-7. Click "Deploy"
-
-The VM will be automatically created with:
-- Cloud-init configuration
-- QEMU guest agent installed
-- SSH server enabled
-- User account configured
-
-### Deploying a Windows VM
-
-1. First upload a Windows ISO to "ISO Images"
-2. Create a new VM and select Windows OS type
-3. Configure resources
-4. Deploy and complete Windows installation manually via VNC
-
-### Managing Updates
-
-1. Select a VM from the list
-2. Click "Check Updates" to see available updates
-3. Click "Install Updates" to apply them
-4. View update history in the VM details
-
-### Managing Proxmox Hosts
-
-1. Go to "Proxmox Hosts"
-2. Add your Proxmox VE hosts with credentials
-3. Poll hosts to refresh resource information
-4. View nodes and their current utilization
+---
 
 ## Development
 
-### Backend Development
-
 ```bash
-cd backend
-python3 -m venv venv
-source venv/bin/activate
+# Backend
+cd backend && python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 uvicorn app.main:app --reload
+
+# Frontend
+cd frontend && npm install && npm run dev
+
+# Build frontend for production
+cd frontend && npm run build
 ```
 
-### Frontend Development
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-### Running Tests
-
-```bash
-# Backend tests
-cd backend
-pytest
-
-# Frontend tests
-cd frontend
-npm run test
-```
-
-### Deploying Changes
-
-After making changes to the code, deploy them to production:
-
-```bash
-# Quick deploy with the deploy script
-./deploy.sh
-
-# Or deploy manually - see DEPLOYMENT.md for details
-```
-
-📖 **Full deployment guide:** [DEPLOYMENT.md](DEPLOYMENT.md)
-
-## Contributing
-
-We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## Security
-
-### Reporting Vulnerabilities
-
-Please report security vulnerabilities to **agit8or@agit8or.net** with the subject line "Depl0y Security Vulnerability" (not via public issues).
-
-See [SECURITY.md](SECURITY.md) for our complete security policy.
-
-### Best Practices
-
-- Change default passwords immediately after installation
-- Use strong, unique passwords
-- Enable 2FA for all admin accounts
-- Keep Depl0y updated to the latest version
-- Use HTTPS in production (configure SSL certificates)
-- Regularly backup your database
-- Restrict network access to trusted IPs if possible
+---
 
 ## Roadmap
 
 - [x] Cloud images for ultra-fast deployment
 - [x] Template-based VM cloning
-- [x] **LLM deployment wizard** — self-hosted AI inference with auto-tuning
-- [x] GPU passthrough support (NVIDIA/AMD)
-- [x] Open WebUI integration
-- [ ] Scheduled deployments
-- [ ] VM snapshots management
+- [x] LLM deployment wizard (Simple + Advanced modes)
+- [x] GPU passthrough (NVIDIA/AMD)
+- [x] Open WebUI + ComfyUI integration
+- [x] AI auto-tuning with one-click apply
+- [x] Conversation logging & RAG
+- [x] Automated update management with real-time streaming
+- [x] Auto-scheduled update & security scan checks
+- [x] Linux VM security agent
+- [x] **VM Import** — file upload (OVA/VMDK/VHD/QCOW2) + VMware direct import
+- [ ] VM snapshots management UI
 - [ ] Backup automation
-- [ ] Integration with monitoring tools (Prometheus, Grafana)
-- [ ] Image generation support (Stable Diffusion)
+- [ ] Scheduled deployments
+- [ ] Prometheus / Grafana integration
 - [ ] Multi-language support
 - [ ] Mobile app
-- [ ] Ansible playbook execution
-- [ ] Cost tracking and reporting
+
+---
 
 ## Troubleshooting
 
-### Common Issues
-
 **Cannot connect to Proxmox host**
-- Verify credentials are correct
-- Check network connectivity
-- Ensure Proxmox API is accessible
-- Verify SSL certificate settings
+- Verify credentials and network connectivity
+- Check SSL certificate settings (disable verify_ssl for self-signed certs)
+- Ensure Proxmox API port (8006) is reachable
+
+**VM import fails at disk upload**
+- Ensure `local` storage exists and has enough space on the target node
+- Check SSH is configured between the Depl0y server and Proxmox host (`Settings → SSH Setup`)
 
 **VMs not starting**
-- Check Proxmox node has sufficient resources
-- Verify ISO image is available
-- Check VM logs in Proxmox
+- Check the node has sufficient CPU/RAM/disk resources
+- Verify ISO or cloud image is available on the storage pool
 
-**Database connection errors**
-- Verify database file exists at `/var/lib/depl0y/db/depl0y.db`
-- Check file permissions (`depl0y` user needs read/write access)
-- Review backend logs: `sudo journalctl -u depl0y-backend`
+**Backend logs**
+```bash
+sudo journalctl -u depl0y-backend -f
+# or
+tail -f /var/log/depl0y/app.log
+```
 
-For more help, see [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) or open an issue.
+For more help: [docs/](docs/) · [GitHub Issues](https://github.com/agit8or1/Depl0y/issues)
+
+---
+
+## Contributing
+
+Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+1. Fork the repo
+2. Create a feature branch (`git checkout -b feature/my-feature`)
+3. Commit your changes
+4. Open a Pull Request
+
+---
+
+## Security
+
+Report vulnerabilities to **agit8or@agit8or.net** — do not use public issues.
+
+See [SECURITY.md](SECURITY.md) for the full security policy.
+
+**Best practices:** change default password immediately · enable 2FA · use HTTPS · keep Depl0y updated · restrict network access
+
+---
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT License — see [LICENSE](LICENSE)
 
-## Acknowledgments
-
-- Built with [FastAPI](https://fastapi.tiangolo.com/)
-- Frontend powered by [Vue.js](https://vuejs.org/)
-- Proxmox integration via [proxmoxer](https://github.com/proxmoxer/proxmoxer)
-- Icons from various open-source projects
+---
 
 ## Support
 
-- **Documentation**: [docs/](docs/)
-- **Issues**: [GitHub Issues](https://github.com/agit8or1/Depl0y/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/agit8or1/Depl0y/discussions)
-- **Email**: agit8or@agit8or.net
-
-## Author
-
-Created with ❤️ by the Depl0y team and contributors.
+- **Docs:** [docs/](docs/)
+- **Issues:** [GitHub Issues](https://github.com/agit8or1/Depl0y/issues)
+- **Discussions:** [GitHub Discussions](https://github.com/agit8or1/Depl0y/discussions)
+- **Email:** agit8or@agit8or.net
 
 ---
 
 **Star this repo if you find it useful!** ⭐
 
-
-
----
-
-## About This Project
-
-Depl0y is lovingly crafted by Luna the dog 🐕
-
-
+*Depl0y is lovingly crafted by Luna the dog 🐕*

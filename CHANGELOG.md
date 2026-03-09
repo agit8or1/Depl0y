@@ -5,6 +5,33 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] - 2026-03-09 📥 VM Import — File Upload & VMware Direct Import
+
+### Added
+- **VM Import wizard** — new "Import VM" page (📥 in sidebar, `/import-vm`) with a 5-step wizard: source → review specs → select target → confirm → deploy
+- **File upload import** — drag & drop or browse for OVA, OVF, VMDK, VHD, VHDX, QCOW2, RAW, or ZIP archives
+- **OVF/OVA parsing** — automatically extracts VM name, CPU cores, RAM, disk sizes, and OS type from OVF descriptors inside OVA archives
+- **Disk conversion** — converts VMDK, VHD, VHDX, and RAW images to qcow2 via `qemu-img convert` as part of the import pipeline
+- **VMware ESXi / vCenter direct import** — connect directly to any ESXi host or vCenter server; browse all VMs in a table (name, OS, CPU, RAM, disk, power state); select and pull VMDKs over the datastore HTTP API without needing ovftool
+- **VMDK download with live progress** — streams flat VMDK extent files from VMware's datastore HTTP API with MB/s speed and progress bar
+- **Proxmox deployment** — uploads converted disk to Proxmox, creates VM via API, runs `qm importdisk` via SSH (with cluster-hop fallback), attaches disk as `scsi0`, and saves VM record to the Depl0y database
+- **Manual fallback** — if SSH is not configured, the `qm importdisk` command is displayed for the user to run manually
+- **`POST /api/v1/vm-import/upload`** — upload and parse a VM image file
+- **`POST /api/v1/vm-import/{job_id}/deploy`** — deploy a parsed import to Proxmox
+- **`GET /api/v1/vm-import/{job_id}/progress`** — poll import job progress
+- **`POST /api/v1/vm-import/vmware/test`** — test VMware connection
+- **`POST /api/v1/vm-import/vmware/vms`** — list VMs on ESXi/vCenter
+- **`POST /api/v1/vm-import/vmware/prepare`** — start background VMDK download from VMware
+
+### Fixed
+- **Login 2FA auto-focus** — when the 2FA code field appears after username/password entry, cursor automatically moves to it; also added `inputmode="numeric"` and `autocomplete="one-time-code"` for mobile keyboards
+- **Version display** — Settings page now shows "Latest Release" (not "Latest Version") and correctly distinguishes between "running the latest version" vs "running a pre-release version (newer than x.y.z)"
+
+### Changed
+- `pyvmomi` added to Python dependencies for VMware API access
+
+---
+
 ## [1.5.7] - 2026-03-05 ⚡ Real-Time Update Monitor + AI Tune Apply Fixes
 
 ### Added

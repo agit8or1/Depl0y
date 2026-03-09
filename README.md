@@ -34,21 +34,18 @@ Depl0y is a free, open-source web-based control panel that simplifies the deploy
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)
 ![Vue.js](https://img.shields.io/badge/vue.js-3.x-green.svg)
-![Version](https://img.shields.io/badge/version-1.4.0-brightgreen.svg)
+![Version](https://img.shields.io/badge/version-1.6.0-brightgreen.svg)
 
-## ✨ What's New in v1.4.0 — Deploy LLM
+## ✨ What's New in v1.6.0 — VM Import
 
-**Deploy a self-hosted AI inference server in minutes, directly from the Depl0y interface.**
+**Import virtual machines from VMware, VirtualBox, Hyper-V, or any standard format directly into Proxmox.**
 
-- **🤖 Deploy LLM** — New wizard to provision a full LLM inference VM on any Proxmox node
-- **⚡ Simple Mode** — 4 questions, auto-selected model and resources, no AI knowledge required
-- **⚙️ Advanced Mode** — Full control: engine, model, GPU passthrough, OS, networking, storage
-- **🔧 4 Engines** — Ollama (recommended), llama.cpp, vLLM (OpenAI-compatible), LocalAI
-- **🧠 15+ Models** — Llama 3.x, Mistral, Phi-4, Gemma, Qwen, DeepSeek, Code Llama and more
-- **🖥️ GPU Support** — NVIDIA CUDA and AMD ROCm passthrough with automatic driver installation
-- **🌐 Open WebUI** — Optionally deploy a ChatGPT-like browser interface alongside the engine
-- **📊 Auto-Tuning** — After model pull, benchmarks thread counts and selects the fastest setting
-- **📡 Real-Time Progress** — Live deployment stage tracker from provisioning to LLM ready
+- **📥 File Upload Import** — drag & drop OVA, OVF, VMDK, VHD, VHDX, QCOW2, or RAW disk images
+- **☁️ VMware Direct Import** — connect to ESXi or vCenter, browse all VMs, and pull them directly over the network without exporting first
+- **🔍 Auto-Parse Specs** — OVF descriptors are parsed automatically to extract VM name, CPU, RAM, disk size, and OS type
+- **🔄 Disk Conversion** — VMDK, VHD, and VHDX images are converted to qcow2 via `qemu-img` as part of the pipeline
+- **🚀 Full Proxmox Integration** — imported disk is uploaded to Proxmox storage, VM is created via API, disk imported and attached automatically
+- **📡 Live Progress** — real-time progress bar covering download → conversion → upload → deployment
 
 [View Full Changelog](CHANGELOG.md)
 
@@ -65,6 +62,13 @@ Depl0y is a free, open-source web-based control panel that simplifies the deploy
 - **Auto-Tuning** — Benchmarks thread counts post-install and bakes the optimal value into the model config
 - **Use Cases** — Chat & Q&A, Coding, Document Analysis, Research & Reasoning, Humor & Memes (text)
 - **Live Progress** — Stage-by-stage deployment tracker: Provisioning → Cloning → Starting → LLM Setup
+
+### 📥 VM Import (New in v1.6.0)
+- **File Upload** — Import OVA, OVF, VMDK, VHD, VHDX, QCOW2, or RAW disk images via drag & drop
+- **VMware Direct Import** — Connect to ESXi or vCenter and pull VMs directly without manual export
+- **Auto-Parse** — OVF/OVA descriptors parsed automatically for name, CPU, RAM, disk, and OS type
+- **Disk Conversion** — Automatic VMDK/VHD/VHDX → qcow2 conversion via qemu-img
+- **Full Pipeline** — Upload → Convert → Proxmox VM creation → disk import → ready to start
 
 ### Core Functionality
 - **Automated VM Deployment** - Deploy Ubuntu, Debian, CentOS, Rocky Linux, Alma Linux, and Windows VMs with a few clicks

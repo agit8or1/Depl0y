@@ -1,72 +1,96 @@
 <template>
   <div class="vm-console-page">
-    <div class="console-header">
-      <div class="breadcrumb">
-        <router-link to="/proxmox" class="breadcrumb-link">Proxmox Hosts</router-link>
-        <span class="breadcrumb-sep">›</span>
-        <router-link :to="`/proxmox/${hostId}/nodes/${node}`" class="breadcrumb-link">{{ node }}</router-link>
-        <span class="breadcrumb-sep">›</span>
-        <span>VM {{ vmid }} Console</span>
+    <!-- Toolbar -->
+    <div class="console-toolbar">
+      <div class="toolbar-left">
+        <router-link :to="`/proxmox/${hostId}/nodes/${node}`" class="back-link">← {{ node }}</router-link>
+        <div class="vm-info">
+          <span class="vm-name">{{ vmName || `VM ${vmid}` }}</span>
+          <span class="vm-id-badge">VMID {{ vmid }}</span>
+          <span :class="['status-pill', vmStatus]">{{ vmStatus || 'unknown' }}</span>
+          <span class="type-pill">QEMU</span>
+        </div>
       </div>
-      <h2>VM Console — VMID {{ vmid }}</h2>
-    </div>
-
-    <div class="card">
-      <div class="card-header">
-        <h3>Console Access</h3>
-        <button @click="loadTicket" class="btn btn-primary" :disabled="loading">
-          {{ loading ? 'Loading…' : 'Get VNC Info' }}
+      <div class="toolbar-center">
+        <span :class="['conn-badge', connectionStatus]">{{ connStatusLabel }}</span>
+      </div>
+      <div class="toolbar-right">
+        <button v-if="connectionStatus === 'connected'" @click="sendCtrlAltDel" class="btn-toolbar" title="Send Ctrl+Alt+Del">
+          Ctrl+Alt+Del
+        </button>
+        <button @click="toggleFullscreen" class="btn-toolbar" title="Fullscreen">
+          Fullscreen
+        </button>
+        <button v-if="connectionStatus !== 'connecting' && connectionStatus !== 'connected'" @click="connect" class="btn-toolbar btn-connect">
+          Connect
+        </button>
+        <button v-if="connectionStatus === 'connected' || connectionStatus === 'connecting'" @click="disconnect" class="btn-toolbar btn-disconnect">
+          Disconnect
         </button>
       </div>
-      <div class="card-body">
-        <div v-if="error" class="alert alert-danger">{{ error }}</div>
+    </div>
 
-        <div v-if="!ticketData && !loading" class="console-placeholder">
-          <div class="console-icon">🖥️</div>
-          <p>Click "Get VNC Info" to retrieve console access details.</p>
-          <p class="text-muted text-sm">Console access uses the Proxmox VNC WebSocket proxy.</p>
-        </div>
+    <!-- Console canvas area -->
+    <div class="console-area">
+      <!-- noVNC canvas target -->
+      <div id="novnc-screen" ref="canvasRef" class="novnc-screen"></div>
 
-        <div v-if="loading" class="console-loading">
-          <div class="spinner"></div>
-          <p>Requesting VNC ticket from Proxmox…</p>
-        </div>
+      <!-- Overlay: connecting -->
+      <div v-if="connectionStatus === 'connecting'" class="overlay">
+        <div class="spinner"></div>
+        <p>Connecting to VM console…</p>
+      </div>
 
-        <div v-if="ticketData" class="ticket-info">
-          <div class="info-grid">
+      <!-- Overlay: idle / disconnected / error -->
+      <div v-if="connectionStatus !== 'connecting' && connectionStatus !== 'connected'" class="overlay overlay-dark">
+        <div class="overlay-content">
+          <div class="console-icon">&#9654;</div>
+          <h3>{{ vmName || `VM ${vmid}` }} — VNC Console</h3>
+          <p class="subtitle">Node: <strong>{{ node }}</strong> &nbsp;|&nbsp; VMID: <strong>{{ vmid }}</strong></p>
+
+          <div v-if="connectionStatus === 'error'" class="error-box">
+            <strong>Error:</strong> {{ errorMessage }}
+          </div>
+
+          <div v-if="connectionStatus === 'disconnected' && !errorMessage" class="info-box">
+            Console disconnected.
+          </div>
+
+          <!-- VNC info panel -->
+          <div v-if="ticketData" class="info-panel">
             <div class="info-row">
-              <span class="info-label">VNC Port</span>
-              <span class="info-val">{{ ticketData.port }}</span>
+              <span class="info-key">VNC Port</span>
+              <code class="info-val">{{ ticketData.port }}</code>
             </div>
             <div class="info-row">
-              <span class="info-label">WebSocket Path</span>
-              <span class="info-val ws-path">/api/v1/pve-console/ws/vm/{{ hostId }}/{{ node }}/{{ vmid }}</span>
+              <span class="info-key">WebSocket proxy</span>
+              <code class="info-val">/api/v1/pve-console/ws/vm/{{ hostId }}/{{ node }}/{{ vmid }}</code>
             </div>
             <div class="info-row">
-              <span class="info-label">Ticket</span>
-              <span class="info-val ticket-val">{{ ticketData.ticket?.slice(0, 32) }}…</span>
+              <span class="info-key">Proxmox Web UI</span>
+              <a v-if="proxmoxConsoleUrl !== '#'" :href="proxmoxConsoleUrl" target="_blank" rel="noopener" class="ext-link">
+                Open in Proxmox &rarr;
+              </a>
+              <span v-else class="info-val muted">—</span>
             </div>
           </div>
 
-          <div class="console-actions">
-            <a
-              :href="proxmoxConsoleUrl"
-              target="_blank"
-              rel="noopener noreferrer"
-              class="btn btn-success"
-            >
-              Open in Proxmox Web UI
+          <div class="overlay-actions">
+            <button @click="connect" class="btn-primary-lg" :disabled="loadingTicket">
+              {{ loadingTicket ? 'Loading…' : (connectionStatus === 'disconnected' ? 'Reconnect' : 'Connect') }}
+            </button>
+            <button v-if="ticketData" @click="copyWsUrl" class="btn-secondary-lg">
+              Copy WS URL
+            </button>
+            <a v-if="proxmoxConsoleUrl !== '#'" :href="proxmoxConsoleUrl" target="_blank" rel="noopener" class="btn-secondary-lg">
+              Proxmox Web UI
             </a>
-            <button @click="copyWsUrl" class="btn btn-secondary">Copy WS URL</button>
           </div>
 
-          <div class="info-note">
-            <strong>Note:</strong> Full in-browser VNC (noVNC) integration requires the
-            <code>@novnc/novnc</code> package. For now, use the Proxmox Web UI link above
-            for full console access. The WebSocket endpoint at
-            <code>/api/v1/pve-console/ws/vm/…</code> is available for external VNC clients
-            with JWT authentication.
-          </div>
+          <p class="note">
+            Full in-browser VNC is provided via noVNC loaded from CDN.
+            If the connection fails, use the Proxmox Web UI link above.
+          </p>
         </div>
       </div>
     </div>
@@ -74,221 +98,488 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute } from 'vue-router'
 import api from '@/services/api'
 
 const route = useRoute()
-const hostId = route.params.hostId
-const node = route.params.node
-const vmid = route.params.vmid
+const hostId = computed(() => route.params.hostId)
+const node = computed(() => route.params.node)
+const vmid = computed(() => route.params.vmid)
 
-const loading = ref(false)
-const error = ref('')
+const connectionStatus = ref('idle')   // idle | connecting | connected | disconnected | error
+const errorMessage = ref('')
+const vmName = ref('')
+const vmStatus = ref('')
 const ticketData = ref(null)
 const hostInfo = ref(null)
+const loadingTicket = ref(false)
+const canvasRef = ref(null)
+
+let rfb = null
+
+const connStatusLabel = computed(() => {
+  const map = {
+    idle: 'Not connected',
+    connecting: 'Connecting…',
+    connected: 'Connected',
+    disconnected: 'Disconnected',
+    error: 'Error',
+  }
+  return map[connectionStatus.value] || connectionStatus.value
+})
 
 const proxmoxConsoleUrl = computed(() => {
   if (!hostInfo.value) return '#'
   const h = hostInfo.value
+  const hostname = h.hostname || h.host || ''
   const port = h.port || 8006
-  return `https://${h.host}:${port}/?console=kvm&novnc=1&vmid=${vmid}&node=${node}&resize=off`
+  const name = encodeURIComponent(vmName.value || `vm-${vmid.value}`)
+  return `https://${hostname}:${port}/?console=kvm&novnc=1&vmid=${vmid.value}&vmname=${name}&node=${node.value}&resize=off&cmd=`
 })
 
-async function loadTicket () {
-  loading.value = true
-  error.value = ''
+function buildWsUrl() {
+  const token = localStorage.getItem('access_token') || ''
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
+  return `${proto}//${location.host}/api/v1/pve-console/ws/vm/${hostId.value}/${node.value}/${vmid.value}?token=${encodeURIComponent(token)}`
+}
+
+async function fetchVmInfo() {
   try {
-    const [ticketRes, hostRes] = await Promise.all([
-      api.pveVm.getVncTicket(hostId, node, vmid),
-      api.proxmox.getHost(hostId)
-    ])
-    ticketData.value = ticketRes.data
-    hostInfo.value = hostRes.data
+    const res = await api.pveVm.getStatus(hostId.value, node.value, vmid.value)
+    vmName.value = res.data?.name || ''
+    vmStatus.value = res.data?.status || ''
   } catch (e) {
-    error.value = e?.response?.data?.detail || e.message || 'Failed to get VNC ticket'
-  } finally {
-    loading.value = false
+    // non-fatal
   }
 }
 
-function copyWsUrl () {
-  const token = localStorage.getItem('access_token') || ''
-  const url = `${location.protocol.replace('http', 'ws')}//${location.host}/api/v1/pve-console/ws/vm/${hostId}/${node}/${vmid}?token=${token}`
+async function getTicketAndHost() {
+  loadingTicket.value = true
+  try {
+    const [ticketRes, hostRes] = await Promise.all([
+      api.pveVm.getVncTicket(hostId.value, node.value, vmid.value),
+      api.proxmox.getHost(hostId.value),
+    ])
+    ticketData.value = ticketRes.data
+    hostInfo.value = hostRes.data
+    return true
+  } catch (e) {
+    errorMessage.value = e?.response?.data?.detail || e.message || 'Failed to get VNC ticket'
+    connectionStatus.value = 'error'
+    return false
+  } finally {
+    loadingTicket.value = false
+  }
+}
+
+async function connect() {
+  connectionStatus.value = 'connecting'
+  errorMessage.value = ''
+
+  const ok = await getTicketAndHost()
+  if (!ok) return
+
+  try {
+    // Attempt to load noVNC from CDN
+    const { default: RFB } = await import('https://cdn.jsdelivr.net/npm/@novnc/novnc@1.4.0/core/rfb.js')
+
+    if (rfb) {
+      try { rfb.disconnect() } catch {}
+      rfb = null
+    }
+
+    const wsUrl = buildWsUrl()
+    rfb = new RFB(canvasRef.value, wsUrl)
+    rfb.viewOnly = false
+    rfb.scaleViewport = true
+    rfb.resizeSession = true
+
+    rfb.addEventListener('connect', () => {
+      connectionStatus.value = 'connected'
+    })
+
+    rfb.addEventListener('disconnect', (e) => {
+      if (e.detail?.clean === false) {
+        connectionStatus.value = 'error'
+        errorMessage.value = 'Connection lost unexpectedly.'
+      } else {
+        connectionStatus.value = 'disconnected'
+      }
+    })
+
+    rfb.addEventListener('desktopname', (e) => {
+      if (e.detail?.name) vmName.value = e.detail.name
+    })
+
+  } catch (e) {
+    console.error('noVNC load/connect error:', e)
+    connectionStatus.value = 'error'
+    errorMessage.value = `noVNC failed to load or connect: ${e.message}. Use the Proxmox Web UI console instead.`
+  }
+}
+
+function disconnect() {
+  if (rfb) {
+    try { rfb.disconnect() } catch {}
+    rfb = null
+  }
+  connectionStatus.value = 'disconnected'
+}
+
+function sendCtrlAltDel() {
+  if (rfb && connectionStatus.value === 'connected') {
+    rfb.sendCtrlAltDel()
+  }
+}
+
+function toggleFullscreen() {
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen().catch(err => console.error('Fullscreen error:', err))
+  } else {
+    document.exitFullscreen()
+  }
+}
+
+function copyWsUrl() {
+  const url = buildWsUrl()
   navigator.clipboard.writeText(url).then(() => {
     alert('WebSocket URL copied to clipboard')
   })
 }
 
-onMounted(loadTicket)
+onMounted(async () => {
+  await fetchVmInfo()
+  // Auto-connect on mount
+  connect()
+})
+
+onBeforeUnmount(() => {
+  if (rfb) {
+    try { rfb.disconnect() } catch {}
+    rfb = null
+  }
+})
 </script>
 
 <style scoped>
 .vm-console-page {
-  padding: 1.5rem;
-}
-
-.console-header {
-  margin-bottom: 1.5rem;
-}
-
-.breadcrumb {
-  font-size: 0.85rem;
-  color: rgba(255,255,255,0.5);
-  margin-bottom: 0.5rem;
-}
-
-.breadcrumb-link {
-  color: #3b82f6;
-  text-decoration: none;
-}
-
-.breadcrumb-link:hover { text-decoration: underline; }
-
-.breadcrumb-sep {
-  margin: 0 0.4rem;
-}
-
-.card {
-  background: #1e2a3a;
-  border: 1px solid rgba(255,255,255,0.1);
-  border-radius: 8px;
-}
-
-.card-header {
   display: flex;
-  justify-content: space-between;
+  flex-direction: column;
+  height: 100vh;
+  max-height: 100vh;
+  background: #0d1117;
+  color: #c9d1d9;
+  overflow: hidden;
+  font-family: system-ui, sans-serif;
+}
+
+/* ---- Toolbar ---- */
+.console-toolbar {
+  display: flex;
   align-items: center;
-  padding: 1rem 1.5rem;
-  border-bottom: 1px solid rgba(255,255,255,0.1);
+  justify-content: space-between;
+  padding: 0.5rem 1rem;
+  background: #161b22;
+  border-bottom: 1px solid #30363d;
+  flex-shrink: 0;
+  min-height: 50px;
+  gap: 1rem;
 }
 
-.card-header h3 { margin: 0; font-size: 1rem; }
-
-.card-body {
-  padding: 1.5rem;
+.toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  min-width: 0;
 }
 
-.console-placeholder {
+.back-link {
+  color: #58a6ff;
+  text-decoration: none;
+  font-size: 0.8rem;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.back-link:hover { text-decoration: underline; }
+
+.vm-info {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.vm-name {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: #f0f6fc;
+}
+
+.vm-id-badge {
+  background: #21262d;
+  border: 1px solid #30363d;
+  color: #8b949e;
+  border-radius: 4px;
+  padding: 0.1rem 0.4rem;
+  font-size: 0.75rem;
+  font-family: monospace;
+}
+
+.status-pill {
+  padding: 0.1rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: capitalize;
+  background: #21262d;
+  color: #8b949e;
+  border: 1px solid #30363d;
+}
+
+.status-pill.running  { background: #0d2d1a; color: #3fb950; border-color: #1f6335; }
+.status-pill.stopped  { background: #2d0d0d; color: #ff7b72; border-color: #6e1212; }
+
+.type-pill {
+  background: #1c2a3a;
+  border: 1px solid #1f4068;
+  color: #58a6ff;
+  border-radius: 4px;
+  padding: 0.1rem 0.4rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.toolbar-center {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+}
+
+.conn-badge {
+  padding: 0.2rem 0.75rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.conn-badge.idle         { background: #21262d; color: #8b949e; border: 1px solid #30363d; }
+.conn-badge.connecting   { background: #3d2b00; color: #e3b341; border: 1px solid #6e4c00; }
+.conn-badge.connected    { background: #0d2d1a; color: #3fb950; border: 1px solid #1f6335; }
+.conn-badge.disconnected { background: #21262d; color: #8b949e; border: 1px solid #30363d; }
+.conn-badge.error        { background: #2d0d0d; color: #ff7b72; border: 1px solid #6e1212; }
+
+.toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.btn-toolbar {
+  padding: 0.3rem 0.85rem;
+  border-radius: 5px;
+  border: 1px solid #30363d;
+  background: #21262d;
+  color: #c9d1d9;
+  cursor: pointer;
+  font-size: 0.8rem;
+  transition: background 0.15s;
+}
+
+.btn-toolbar:hover { background: #30363d; }
+.btn-connect    { background: #238636; border-color: #2ea043; color: #fff; }
+.btn-connect:hover { background: #2ea043; }
+.btn-disconnect { background: #da3633; border-color: #f85149; color: #fff; }
+.btn-disconnect:hover { background: #f85149; }
+
+/* ---- Console area ---- */
+.console-area {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  background: #000;
+}
+
+.novnc-screen {
+  width: 100%;
+  height: 100%;
+}
+
+.novnc-screen :deep(canvas) {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: contain;
+}
+
+/* ---- Overlays ---- */
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 0.75rem;
+  color: #c9d1d9;
+  font-size: 0.9rem;
+  background: rgba(13,17,23,0.85);
+  z-index: 5;
+}
+
+.overlay-dark {
+  background: #0d1117;
+}
+
+.overlay-content {
+  max-width: 560px;
+  width: 90%;
   text-align: center;
-  padding: 3rem 1rem;
-  color: rgba(255,255,255,0.5);
 }
 
 .console-icon {
-  font-size: 3rem;
-  margin-bottom: 1rem;
+  font-size: 2.5rem;
+  color: #3fb950;
+  margin-bottom: 0.75rem;
+  line-height: 1;
 }
 
-.console-loading {
-  text-align: center;
-  padding: 2rem;
-  color: rgba(255,255,255,0.7);
+.overlay-content h3 {
+  margin: 0 0 0.25rem;
+  font-size: 1.2rem;
+  color: #f0f6fc;
 }
 
-.spinner {
-  width: 2rem;
-  height: 2rem;
-  border: 3px solid rgba(255,255,255,0.2);
-  border-top-color: #3b82f6;
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-  margin: 0 auto 1rem;
+.subtitle {
+  font-size: 0.85rem;
+  color: #8b949e;
+  margin: 0 0 1.25rem;
 }
 
-@keyframes spin { to { transform: rotate(360deg); } }
-
-.info-grid {
-  background: #0f1419;
+.error-box {
+  background: rgba(255,123,114,0.1);
+  border: 1px solid rgba(255,123,114,0.4);
   border-radius: 6px;
-  padding: 1rem;
-  margin-bottom: 1.5rem;
+  padding: 0.75rem 1rem;
+  color: #ff7b72;
+  font-size: 0.85rem;
+  margin-bottom: 1.25rem;
+  text-align: left;
+}
+
+.info-box {
+  background: rgba(139,148,158,0.1);
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  padding: 0.6rem 1rem;
+  color: #8b949e;
+  font-size: 0.85rem;
+  margin-bottom: 1.25rem;
+}
+
+.info-panel {
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  padding: 0.875rem;
+  margin-bottom: 1.25rem;
+  text-align: left;
 }
 
 .info-row {
   display: flex;
-  align-items: baseline;
-  padding: 0.4rem 0;
-  border-bottom: 1px solid rgba(255,255,255,0.05);
-  gap: 1rem;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.3rem 0;
+  border-bottom: 1px solid #21262d;
 }
 
 .info-row:last-child { border-bottom: none; }
 
-.info-label {
-  font-size: 0.8rem;
-  color: rgba(255,255,255,0.5);
-  min-width: 140px;
+.info-key {
+  font-size: 0.75rem;
+  color: #8b949e;
+  min-width: 130px;
+  flex-shrink: 0;
 }
 
 .info-val {
-  font-family: monospace;
-  font-size: 0.85rem;
-  color: #e2e8f0;
+  font-family: 'Fira Mono', monospace;
+  font-size: 0.78rem;
+  color: #58a6ff;
   word-break: break-all;
 }
 
-.ws-path { color: #38bdf8; }
+.info-val.muted { color: #8b949e; font-family: inherit; }
 
-.ticket-val { color: rgba(255,255,255,0.6); }
+.ext-link {
+  font-size: 0.8rem;
+  color: #3fb950;
+  text-decoration: none;
+}
 
-.console-actions {
+.ext-link:hover { text-decoration: underline; }
+
+.overlay-actions {
   display: flex;
   gap: 0.75rem;
-  margin-bottom: 1.5rem;
+  justify-content: center;
   flex-wrap: wrap;
-}
-
-.info-note {
-  background: rgba(59,130,246,0.1);
-  border: 1px solid rgba(59,130,246,0.3);
-  border-radius: 6px;
-  padding: 1rem;
-  font-size: 0.85rem;
-  color: rgba(255,255,255,0.7);
-  line-height: 1.6;
-}
-
-code {
-  background: rgba(255,255,255,0.1);
-  padding: 0.1em 0.4em;
-  border-radius: 3px;
-  font-family: monospace;
-}
-
-.alert-danger {
-  background: rgba(239,68,68,0.15);
-  border: 1px solid rgba(239,68,68,0.4);
-  border-radius: 6px;
-  padding: 0.75rem 1rem;
-  color: #fca5a5;
   margin-bottom: 1rem;
 }
 
-.btn {
-  padding: 0.5rem 1rem;
-  border-radius: 6px;
+.btn-primary-lg {
+  background: #238636;
+  color: #fff;
   border: none;
+  border-radius: 6px;
+  padding: 0.55rem 1.5rem;
+  font-size: 0.9rem;
+  font-weight: 600;
   cursor: pointer;
-  font-size: 0.875rem;
-  font-weight: 500;
+  transition: background 0.15s;
   text-decoration: none;
   display: inline-flex;
   align-items: center;
-  transition: opacity 0.2s;
 }
 
-.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-primary-lg:hover:not(:disabled) { background: #2ea043; }
+.btn-primary-lg:disabled { opacity: 0.45; cursor: not-allowed; }
 
-.btn-primary { background: #3b82f6; color: white; }
-.btn-primary:hover:not(:disabled) { background: #2563eb; }
+.btn-secondary-lg {
+  background: #21262d;
+  color: #c9d1d9;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  padding: 0.55rem 1.25rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: background 0.15s;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+}
 
-.btn-success { background: #22c55e; color: white; }
-.btn-success:hover { background: #16a34a; }
+.btn-secondary-lg:hover { background: #30363d; }
 
-.btn-secondary { background: rgba(255,255,255,0.1); color: white; border: 1px solid rgba(255,255,255,0.2); }
-.btn-secondary:hover { background: rgba(255,255,255,0.15); }
+.note {
+  font-size: 0.78rem;
+  color: #6e7681;
+  line-height: 1.5;
+  margin: 0;
+}
 
-.text-muted { color: rgba(255,255,255,0.5); }
-.text-sm { font-size: 0.85rem; }
+/* ---- Connecting spinner ---- */
+.spinner {
+  width: 2.25rem;
+  height: 2.25rem;
+  border: 3px solid rgba(255,255,255,0.1);
+  border-top-color: #58a6ff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
 </style>

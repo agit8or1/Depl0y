@@ -282,339 +282,362 @@
   </div>
 </template>
 
-<script>
-import { ref, onMounted } from 'vue'
+<script setup>
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-
-import api from '@/services/api'
 import { useToast } from 'vue-toastification'
+import api from '@/services/api'
+import { formatBytes, formatUptime } from '@/utils/proxmox'
 
-export default {
-  name: 'ContainerDetail',
-  setup() {
-    const route = useRoute()
-    const router = useRouter()
-    const toast = useToast()
-    const hostId = ref(route.params.hostId)
-    const node = ref(route.params.node)
-    const vmid = ref(route.params.vmid)
-    const status = ref('unknown')
-    const config = ref({})
-    const editConfig = ref({})
-    const currentStats = ref({})
-    const snapshots = ref([])
-    const loading = ref(true)
-    const actioning = ref(false)
-    const savingConfig = ref(false)
-    const loadingSnapshots = ref(false)
-    const showSnapshotModal = ref(false)
-    const savingSnapshot = ref(false)
-    const activeTab = ref('Overview')
+const route = useRoute()
+const router = useRouter()
+const toast = useToast()
 
-    const newSnapshot = ref({ snapname: '', description: '' })
+const hostId = computed(() => route.params.hostId)
+const node = computed(() => route.params.node)
+const vmid = computed(() => route.params.vmid)
 
+const status = ref('unknown')
+const config = ref({})
+const editConfig = ref({})
+const currentStats = ref({})
+const snapshots = ref([])
+const loading = ref(true)
+const actioning = ref(false)
+const savingConfig = ref(false)
+const loadingSnapshots = ref(false)
+const showSnapshotModal = ref(false)
+const savingSnapshot = ref(false)
+const activeTab = ref('overview')
+const editMode = ref(false)
+const newSnapshot = ref({ snapname: '', description: '' })
 
-    const fetchAll = async () => {
-      loading.value = true
-      try {
-        const [statusRes, configRes] = await Promise.all([
-          api.pveNode.getContainerStatus(hostId.value, node.value, vmid.value),
-          api.pveNode.getContainerConfig(hostId.value, node.value, vmid.value)
-        ])
-        currentStats.value = statusRes.data || {}
-        status.value = currentStats.value.status || 'unknown'
-        config.value = configRes.data || {}
-        editConfig.value = {
-          hostname: config.value.hostname || '',
-          cores: config.value.cores || config.value.cpus || 1,
-          memory: config.value.memory || 512,
-          swap: config.value.swap !== undefined ? config.value.swap : 512,
-          onboot: config.value.onboot || 0,
-          description: config.value.description || ''
-        }
-      } catch (error) {
-        console.error('Failed to fetch container info:', error)
-        toast.error('Failed to load container information')
-      } finally {
-        loading.value = false
-      }
-    }
+let pollInterval = null
 
-    const fetchSnapshots = async () => {
-      loadingSnapshots.value = true
-      try {
-        const response = await api.pveNode.listContainerSnapshots(hostId.value, node.value, vmid.value)
-        snapshots.value = (response.data || []).filter(s => s.name !== 'current').concat(
-          (response.data || []).filter(s => s.name === 'current')
-        )
-      } catch (error) {
-        console.error('Failed to fetch snapshots:', error)
-      } finally {
-        loadingSnapshots.value = false
-      }
-    }
+const tabs = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'config', label: 'Config' },
+  { id: 'snapshots', label: 'Snapshots' },
+  { id: 'terminal', label: 'Terminal' },
+]
 
-    const action = async (act) => {
-      actioning.value = true
-      try {
-        await api.pveNode.containerAction(hostId.value, node.value, vmid.value, `status/${act}`)
-        toast.success(`Container ${act} initiated`)
-        setTimeout(() => fetchAll(), 2000)
-      } catch (error) {
-        console.error(`Failed to ${act} container:`, error)
-        toast.error(`Failed to ${act} container`)
-      } finally {
-        actioning.value = false
-      }
-    }
+const NET_KEYS = ['net0', 'net1', 'net2', 'net3', 'net4', 'net5', 'net6', 'net7']
 
-    const saveConfig = async () => {
-      savingConfig.value = true
-      try {
-        const payload = { ...editConfig.value }
-        await api.pveNode.updateContainerConfig(hostId.value, node.value, vmid.value, payload)
-        toast.success('Configuration saved')
-        await fetchAll()
-      } catch (error) {
-        console.error('Failed to save config:', error)
-        toast.error('Failed to save configuration')
-      } finally {
-        savingConfig.value = false
-      }
-    }
-
-    const createSnapshot = async () => {
-      savingSnapshot.value = true
-      try {
-        await api.pveNode.createContainerSnapshot(hostId.value, node.value, vmid.value, newSnapshot.value)
-        toast.success('Snapshot created')
-        showSnapshotModal.value = false
-        newSnapshot.value = { snapname: '', description: '' }
-        await fetchSnapshots()
-      } catch (error) {
-        console.error('Failed to create snapshot:', error)
-        toast.error('Failed to create snapshot')
-      } finally {
-        savingSnapshot.value = false
-      }
-    }
-
-    const rollbackSnapshot = async (snapname) => {
-      if (!confirm(`Roll back to snapshot "${snapname}"? Current state will be lost.`)) return
-      try {
-        await api.pveNode.rollbackContainerSnapshot(hostId.value, node.value, vmid.value, snapname)
-        toast.success('Rollback initiated')
-        await fetchAll()
-      } catch (error) {
-        console.error('Failed to rollback:', error)
-        toast.error('Failed to rollback')
-      }
-    }
-
-    const deleteSnapshot = async (snapname) => {
-      if (!confirm(`Delete snapshot "${snapname}"?`)) return
-      try {
-        await api.pveNode.containerAction(hostId.value, node.value, vmid.value, `snapshots/${snapname}/delete`)
-        toast.success('Snapshot deleted')
-        await fetchSnapshots()
-      } catch (error) {
-        console.error('Failed to delete snapshot:', error)
-        toast.error('Failed to delete snapshot')
-      }
-    }
-
-    const deleteContainer = async () => {
-      if (!confirm(`Permanently delete CT ${vmid.value}? This cannot be undone.`)) return
-      actioning.value = true
-      try {
-        await api.pveNode.deleteContainer(hostId.value, node.value, vmid.value)
-        toast.success('Container deleted')
-        router.push('/vms')
-      } catch (error) {
-        console.error('Failed to delete container:', error)
-        toast.error('Failed to delete container')
-      } finally {
-        actioning.value = false
-      }
-    }
-
-    const openTerminal = () => {
-      const url = `/proxmox/${hostId.value}/nodes/${node.value}/lxc/${vmid.value}/terminal`
-      window.open(url, '_blank')
-    }
-
-    const getStatusBadge = (s) => {
-      if (s === 'running') return 'badge-success'
-      if (s === 'stopped') return 'badge-danger'
-      if (s === 'suspended') return 'badge-warning'
-      return 'badge-info'
-    }
-
-    const formatBytes = (bytes) => {
-      if (!bytes) return '0 B'
-      const gb = bytes / (1024 * 1024 * 1024)
-      if (gb >= 1) return gb.toFixed(2) + ' GB'
-      const mb = bytes / (1024 * 1024)
-      return mb.toFixed(1) + ' MB'
-    }
-
-    const formatUptime = (seconds) => {
-      if (!seconds) return '—'
-      const days = Math.floor(seconds / 86400)
-      const hours = Math.floor((seconds % 86400) / 3600)
-      const minutes = Math.floor((seconds % 3600) / 60)
-      return `${days}d ${hours}h ${minutes}m`
-    }
-
-    const formatDate = (epoch) => {
-      return new Date(epoch * 1000).toLocaleString()
-    }
-
-    onMounted(async () => {
-      await fetchAll()
-      fetchSnapshots()
+const parsedNets = computed(() => {
+  if (!config.value) return []
+  return NET_KEYS
+    .filter(k => config.value[k])
+    .map(k => {
+      const raw = config.value[k]
+      const result = { key: k, raw, name: '', bridge: '', ip: '', gw: '' }
+      raw.split(',').forEach(part => {
+        if (part.startsWith('name=')) result.name = part.slice(5)
+        else if (part.startsWith('bridge=')) result.bridge = part.slice(7)
+        else if (part.startsWith('ip=')) result.ip = part.slice(3)
+        else if (part.startsWith('gw=')) result.gw = part.slice(3)
+      })
+      return result
     })
+})
 
-    return {
-      hostId,
-      node,
-      vmid,
-      status,
-      config,
-      editConfig,
-      currentStats,
-      snapshots,
-      loading,
-      actioning,
-      savingConfig,
-      loadingSnapshots,
-      showSnapshotModal,
-      savingSnapshot,
-      activeTab,
-      newSnapshot,
-      action,
-      saveConfig,
-      createSnapshot,
-      rollbackSnapshot,
-      deleteSnapshot,
-      deleteContainer,
-      openTerminal,
-      getStatusBadge,
-      formatBytes,
-      formatUptime,
-      formatDate
-    }
+const fetchAll = async () => {
+  loading.value = true
+  try {
+    const [statusRes, configRes] = await Promise.all([
+      api.pveNode.getContainerStatus(hostId.value, node.value, vmid.value),
+      api.pveNode.getContainerConfig(hostId.value, node.value, vmid.value),
+    ])
+    currentStats.value = statusRes.data || {}
+    status.value = currentStats.value.status || 'unknown'
+    config.value = configRes.data || {}
+  } catch (error) {
+    console.error('Failed to fetch container info:', error)
+    toast.error('Failed to load container information')
+  } finally {
+    loading.value = false
   }
 }
+
+const fetchStatus = async () => {
+  try {
+    const res = await api.pveNode.getContainerStatus(hostId.value, node.value, vmid.value)
+    currentStats.value = res.data || {}
+    status.value = currentStats.value.status || 'unknown'
+  } catch (e) {
+    console.warn('CT status poll failed', e)
+  }
+}
+
+const fetchSnapshots = async () => {
+  loadingSnapshots.value = true
+  try {
+    const response = await api.pveNode.listContainerSnapshots(hostId.value, node.value, vmid.value)
+    snapshots.value = response.data || []
+  } catch (error) {
+    console.error('Failed to fetch snapshots:', error)
+  } finally {
+    loadingSnapshots.value = false
+  }
+}
+
+const switchTab = (tab) => {
+  activeTab.value = tab
+  if (tab === 'snapshots') fetchSnapshots()
+  if (tab === 'overview') fetchStatus()
+}
+
+const startPolling = () => {
+  pollInterval = setInterval(() => {
+    if (activeTab.value === 'overview') fetchStatus()
+  }, 5000)
+}
+
+const action = async (act) => {
+  actioning.value = true
+  try {
+    await api.pveNode.containerAction(hostId.value, node.value, vmid.value, act)
+    toast.success(`Container ${act} initiated`)
+    setTimeout(() => fetchStatus(), 2000)
+  } catch (error) {
+    console.error(`Failed to ${act} container:`, error)
+    toast.error(`Failed to ${act} container`)
+  } finally {
+    actioning.value = false
+  }
+}
+
+const enterEditMode = () => {
+  editConfig.value = {
+    hostname: config.value.hostname || '',
+    cores: config.value.cores || config.value.cpus || 1,
+    memory: config.value.memory || 512,
+    swap: config.value.swap !== undefined ? config.value.swap : 0,
+    startup: config.value.startup || '',
+    onboot: config.value.onboot || 0,
+    description: config.value.description || '',
+  }
+  editMode.value = true
+}
+
+const cancelEdit = () => {
+  editMode.value = false
+}
+
+const saveConfig = async () => {
+  savingConfig.value = true
+  try {
+    const payload = { ...editConfig.value }
+    Object.keys(payload).forEach(k => {
+      if (payload[k] === '' || payload[k] === null) delete payload[k]
+    })
+    await api.pveNode.updateContainerConfig(hostId.value, node.value, vmid.value, payload)
+    toast.success('Configuration saved')
+    editMode.value = false
+    await fetchAll()
+  } catch (error) {
+    console.error('Failed to save config:', error)
+    toast.error('Failed to save configuration')
+  } finally {
+    savingConfig.value = false
+  }
+}
+
+const createSnapshot = async () => {
+  if (!newSnapshot.value.snapname) {
+    toast.error('Snapshot name is required')
+    return
+  }
+  savingSnapshot.value = true
+  try {
+    await api.pveNode.createContainerSnapshot(hostId.value, node.value, vmid.value, newSnapshot.value)
+    toast.success('Snapshot created')
+    showSnapshotModal.value = false
+    newSnapshot.value = { snapname: '', description: '' }
+    await fetchSnapshots()
+  } catch (error) {
+    console.error('Failed to create snapshot:', error)
+    toast.error('Failed to create snapshot')
+  } finally {
+    savingSnapshot.value = false
+  }
+}
+
+const rollbackSnapshot = async (snapname) => {
+  if (!confirm(`Roll back to snapshot "${snapname}"? Current container state will be lost.`)) return
+  actioning.value = true
+  try {
+    await api.pveNode.rollbackContainerSnapshot(hostId.value, node.value, vmid.value, snapname)
+    toast.success('Rollback initiated')
+    await fetchSnapshots()
+  } catch (error) {
+    console.error('Failed to rollback:', error)
+    toast.error('Failed to rollback')
+  } finally {
+    actioning.value = false
+  }
+}
+
+const deleteSnapshot = async (snapname) => {
+  if (!confirm(`Delete snapshot "${snapname}"?`)) return
+  actioning.value = true
+  try {
+    const token = localStorage.getItem('access_token')
+    const { default: axios } = await import('axios')
+    await axios.delete(
+      `/api/v1/pve-node/${hostId.value}/nodes/${node.value}/lxc/${vmid.value}/snapshots/${snapname}`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    )
+    toast.success('Snapshot deleted')
+    await fetchSnapshots()
+  } catch (error) {
+    console.error('Failed to delete snapshot:', error)
+    toast.error('Failed to delete snapshot')
+  } finally {
+    actioning.value = false
+  }
+}
+
+const deleteContainer = async () => {
+  if (!confirm(`Permanently delete CT ${vmid.value}? This cannot be undone.`)) return
+  actioning.value = true
+  try {
+    await api.pveNode.deleteContainer(hostId.value, node.value, vmid.value)
+    toast.success('Container deleted')
+    router.push(`/proxmox/${hostId.value}/nodes/${node.value}`)
+  } catch (error) {
+    console.error('Failed to delete container:', error)
+    toast.error('Failed to delete container')
+  } finally {
+    actioning.value = false
+  }
+}
+
+const openTerminal = () => {
+  router.push(`/proxmox/${hostId.value}/nodes/${node.value}/terminal?lxc=${vmid.value}`)
+}
+
+const getStatusBadge = (s) => {
+  if (s === 'running') return 'badge-success'
+  if (s === 'stopped') return 'badge-danger'
+  if (s === 'suspended') return 'badge-warning'
+  return 'badge-info'
+}
+
+const formatDate = (epoch) => new Date(epoch * 1000).toLocaleString()
+
+onMounted(async () => {
+  await fetchAll()
+  fetchSnapshots()
+  startPolling()
+})
+
+onUnmounted(() => {
+  if (pollInterval) clearInterval(pollInterval)
+})
 </script>
 
 <style scoped>
+.container-detail-page {
+  padding: 0;
+}
+
 .page-header {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  margin-bottom: 1.5rem;
+  margin-bottom: 1rem;
   flex-wrap: wrap;
   gap: 1rem;
 }
 
 .header-left {
   display: flex;
-  align-items: center;
-  gap: 0.75rem;
+  flex-direction: column;
+  gap: 0.25rem;
 }
 
-.header-left h2 {
-  margin: 0;
-  font-size: 1.5rem;
-  font-weight: 600;
+.back-link {
+  color: var(--text-muted, var(--text-secondary));
+  text-decoration: none;
+  font-size: 0.875rem;
+}
+
+.back-link:hover {
   color: var(--text-primary);
 }
 
-.mb-2 { margin-bottom: 1rem; }
-
-.btn-sm {
-  padding: 0.25rem 0.625rem;
-  font-size: 0.875rem;
+.ct-title {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
 }
 
 .tabs {
   display: flex;
   gap: 0;
   border-bottom: 2px solid var(--border-color);
+  margin-bottom: 1.5rem;
 }
 
 .tab-btn {
   background: none;
   border: none;
-  padding: 0.75rem 1.5rem;
+  padding: 0.6rem 1.25rem;
   cursor: pointer;
-  font-size: 0.95rem;
   color: var(--text-secondary);
+  font-size: 0.9rem;
   border-bottom: 2px solid transparent;
   margin-bottom: -2px;
-  transition: all 0.2s;
+  transition: color 0.15s, border-color 0.15s;
 }
 
 .tab-btn:hover { color: var(--text-primary); }
 
-.tab-active {
-  color: var(--primary-color) !important;
-  border-bottom-color: var(--primary-color) !important;
+.tab-btn--active {
+  color: var(--primary-color);
+  border-bottom-color: var(--primary-color);
   font-weight: 600;
 }
 
-.tab-content {
-  padding: 1.5rem;
-}
-
-.tab-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+.stats-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(155px, 1fr));
+  gap: 1rem;
   margin-bottom: 1.5rem;
 }
 
-.tab-header h3 { margin: 0; }
-
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 1rem;
-  margin-bottom: 2rem;
-}
-
-.stat-card {
-  padding: 1.25rem;
-  background: var(--background);
+.stat-card-sm {
+  background: var(--bg-secondary);
   border: 1px solid var(--border-color);
   border-radius: 0.5rem;
+  padding: 0.875rem 1rem;
 }
 
-.stat-card h4 {
-  margin: 0 0 0.5rem 0;
-  font-size: 0.75rem;
+.stat-card-sm__label {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--text-secondary);
-}
-
-.stat-value {
-  font-size: 1.25rem;
-  font-weight: 700;
-  color: var(--text-primary);
   margin-bottom: 0.25rem;
 }
 
-.config-summary h4 {
-  margin: 0 0 1rem 0;
+.stat-card-sm__value {
   font-size: 1rem;
   font-weight: 600;
+  color: var(--text-primary);
+}
+
+.card-body {
+  padding: 1.5rem;
 }
 
 .summary-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
   gap: 0.75rem;
 }
 
@@ -623,81 +646,89 @@ export default {
   flex-direction: column;
   gap: 0.25rem;
   padding: 0.75rem;
-  background: var(--background);
+  background: var(--background, var(--bg-secondary));
   border: 1px solid var(--border-color);
   border-radius: 0.375rem;
 }
 
 .summary-label {
-  font-size: 0.75rem;
+  font-size: 0.7rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--text-secondary);
   font-weight: 600;
 }
 
-.form-row {
+.config-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 1rem;
 }
 
-.config-form {
-  max-width: 600px;
-  margin-bottom: 2rem;
+@media (max-width: 700px) {
+  .config-grid { grid-template-columns: 1fr; }
 }
 
-.raw-config {
-  margin-top: 2rem;
-  padding-top: 1.5rem;
-  border-top: 1px solid var(--border-color);
-}
-
-.raw-config h4 {
-  margin: 0 0 1rem 0;
-}
-
-.config-table {
-  display: grid;
-  gap: 0;
+.config-value {
+  padding: 0.5rem 0.75rem;
+  background: var(--bg-tertiary, var(--background, #1a1a2e));
   border: 1px solid var(--border-color);
-  border-radius: 0.5rem;
+  border-radius: 0.375rem;
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  min-height: 2.25rem;
+  display: flex;
+  align-items: center;
+}
+
+.section-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-top: 1px solid var(--border-color);
+  padding-top: 1rem;
+}
+
+.raw-config-table {
+  border: 1px solid var(--border-color);
+  border-radius: 0.375rem;
   overflow: hidden;
 }
 
-.config-row {
+.raw-config-row {
   display: grid;
-  grid-template-columns: 200px 1fr;
+  grid-template-columns: 180px 1fr;
   border-bottom: 1px solid var(--border-color);
 }
 
-.config-row:last-child { border-bottom: none; }
+.raw-config-row:last-child { border-bottom: none; }
 
-.config-key {
-  padding: 0.5rem 0.75rem;
-  background: var(--background);
+.raw-config-key {
+  padding: 0.4rem 0.75rem;
+  background: var(--background, rgba(255,255,255,0.03));
   font-family: monospace;
-  font-size: 0.875rem;
+  font-size: 0.8rem;
   font-weight: 600;
   color: var(--text-secondary);
   border-right: 1px solid var(--border-color);
 }
 
-.config-val {
-  padding: 0.5rem 0.75rem;
+.raw-config-val {
+  padding: 0.4rem 0.75rem;
   font-family: monospace;
-  font-size: 0.875rem;
+  font-size: 0.8rem;
   color: var(--text-primary);
   word-break: break-all;
 }
 
-.text-muted { color: var(--text-secondary); }
-.text-sm { font-size: 0.875rem; }
+.table-container { overflow-x: auto; }
 
 .modal {
   position: fixed;
   top: 0; left: 0; right: 0; bottom: 0;
-  background-color: rgba(0, 0, 0, 0.5);
+  background-color: rgba(0,0,0,0.6);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -705,31 +736,47 @@ export default {
 }
 
 .modal-content {
-  background: white;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
   border-radius: 0.5rem;
-  max-width: 480px;
+  max-width: 500px;
   width: 90%;
-  box-shadow: var(--shadow-lg);
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.5);
 }
 
 .modal-header {
-  padding: 1.5rem;
+  padding: 1.25rem 1.5rem;
   border-bottom: 1px solid var(--border-color);
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
 
-.modal-header h3 { margin: 0; }
+.modal-header h3 { margin: 0; font-size: 1.1rem; }
 
 .btn-close {
   background: none;
   border: none;
-  font-size: 2rem;
+  font-size: 1.5rem;
   cursor: pointer;
   color: var(--text-secondary);
   line-height: 1;
+  padding: 0;
 }
 
 .modal-body { padding: 1.5rem; }
+
+.flex { display: flex; }
+.flex-wrap { flex-wrap: wrap; }
+.gap-1 { gap: 0.5rem; }
+.mt-2 { margin-top: 1rem; }
+.mb-2 { margin-bottom: 1rem; }
+.mb-1 { margin-bottom: 0.5rem; }
+.ml-1 { margin-left: 0.25rem; }
+.btn-sm { padding: 0.25rem 0.6rem; font-size: 0.875rem; }
+.text-sm { font-size: 0.875rem; }
+.text-muted { color: var(--text-secondary); }
+.text-center { text-align: center; }
 </style>

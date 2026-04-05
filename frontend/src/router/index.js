@@ -145,13 +145,13 @@ const router = createRouter({
     {
       path: '/proxmox/:hostId/nodes/:node/terminal',
       name: 'NodeTerminal',
-      component: () => import('@/views/Terminal.vue'),
+      component: () => import('@/views/NodeTerminal.vue'),
       meta: { requiresAuth: true, layout: 'fullscreen' }
     },
     {
       path: '/proxmox/:hostId/nodes/:node/lxc/:vmid/terminal',
       name: 'ContainerTerminal',
-      component: () => import('@/views/Terminal.vue'),
+      component: () => import('@/views/NodeTerminal.vue'),
       meta: { requiresAuth: true, layout: 'fullscreen' }
     },
     {

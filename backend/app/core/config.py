@@ -26,7 +26,7 @@ def get_app_version():
         # Fallback to hardcoded version if database query fails
         pass
 
-    return "1.6.1"  # iDRAC/iLO dashboard: Redfish-first, charts, clickable alerts, model auto-detect
+    return "1.7.0"  # Full Proxmox VE management: VM/node/LXC/cluster/storage/firewall/console
 
 
 class Settings(BaseSettings):

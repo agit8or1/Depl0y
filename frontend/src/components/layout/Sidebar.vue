@@ -120,7 +120,7 @@ export default {
     const authStore = useAuthStore()
     const isAdmin = computed(() => authStore.isAdmin)
     const isOperator = computed(() => authStore.isOperator || authStore.isAdmin)
-    const appVersion = ref('1.6.1') // Fallback version
+    const appVersion = ref('1.7.0') // Fallback version
     const linuxAgentEnabled = ref(false)
 
     // Fetch version from API

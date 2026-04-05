@@ -451,6 +451,7 @@ export default {
     setFirewallOptions: (h, node, vmid, data) => api.put(`/pve-vm/${h}/${node}/${vmid}/firewall/options`, data),
     getVncTicket: (h, node, vmid) => api.post(`/pve-vm/${h}/${node}/${vmid}/vncticket`),
     getRrdData: (h, node, vmid, params) => api.get(`/pve-vm/${h}/${node}/${vmid}/rrddata`, { params }),
+    vmPending: (h, node, vmid) => api.get(`/pve-vm/${h}/${node}/${vmid}/pending`),
     // Aliases for VMDetail.vue naming convention
     config: (h, node, vmid) => api.get(`/pve-vm/${h}/${node}/${vmid}/config`),
     updateConfig: (h, node, vmid, data) => api.put(`/pve-vm/${h}/${node}/${vmid}/config`, data),
@@ -516,6 +517,7 @@ export default {
     updateNetwork: (h, node, iface, data) => api.put(`/pve-node/${h}/nodes/${node}/network/${iface}`, data),
     deleteNetwork: (h, node, iface) => api.delete(`/pve-node/${h}/nodes/${node}/network/${iface}`),
     applyNetwork: (h, node) => api.put(`/pve-node/${h}/nodes/${node}/network`),
+    revertNetwork: (h, node) => api.delete(`/pve-node/${h}/nodes/${node}/network`),
     // Terminal
     nodeTermproxy: (h, node) => api.post(`/pve-node/${h}/nodes/${node}/termproxy`),
     // Backup
@@ -535,6 +537,8 @@ export default {
     rollbackContainerSnapshot: (h, node, vmid, snap) => api.post(`/pve-node/${h}/nodes/${node}/lxc/${vmid}/snapshots/${snap}/rollback`),
     containerTermproxy: (h, node, vmid) => api.post(`/pve-node/${h}/nodes/${node}/lxc/${vmid}/termproxy`),
     deleteContainer: (h, node, vmid) => api.delete(`/pve-node/${h}/nodes/${node}/lxc/${vmid}`),
+    cloneLxc: (h, node, vmid, data) => api.post(`/pve-node/${h}/nodes/${node}/lxc/${vmid}/clone`, data),
+    lxcRrdData: (h, node, vmid, params) => api.get(`/pve-node/${h}/nodes/${node}/lxc/${vmid}/rrddata`, { params }),
     // Restore
     restoreBackup: (h, node, vmid, data) => api.post(`/pve-node/${h}/nodes/${node}/qemu/${vmid}/restore`, data),
     // Aliases for NodeDetail.vue / Tasks.vue / Containers.vue naming convention
@@ -562,6 +566,9 @@ export default {
       timeout: 0,
       onUploadProgress: onProgress,
     }),
+    // Disk Health / SMART
+    listDisks: (h, node) => api.get(`/pve-node/${h}/nodes/${node}/disks/list`),
+    getSmartData: (h, node, disk) => api.get(`/pve-node/${h}/nodes/${node}/disks/${encodeURIComponent(disk)}/smart`),
   },
 
   // PBS Management

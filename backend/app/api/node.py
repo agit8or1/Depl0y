@@ -544,6 +544,19 @@ def apply_network_config(host_id: int, node: str, db: Session = Depends(get_db),
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.delete("/{host_id}/nodes/{node}/network")
+def revert_network_config(host_id: int, node: str, db: Session = Depends(get_db),
+                          current_user=Depends(require_admin)):
+    """Revert pending network configuration changes."""
+    host = _get_host(host_id, db)
+    try:
+        _pve(host).nodes(node).network.delete()
+        pve_cache.clear_prefix(f"pve:{host_id}:")
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ── Node shell termproxy ──────────────────────────────────────────────────────
 
 @router.post("/{host_id}/nodes/{node}/termproxy")
@@ -732,6 +745,37 @@ def delete_ct(host_id: int, node: str, vmid: int,
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/{host_id}/nodes/{node}/lxc/{vmid}/clone")
+def clone_ct(host_id: int, node: str, vmid: int, data: dict,
+             db: Session = Depends(get_db), current_user=Depends(require_operator)):
+    """Clone an LXC container."""
+    host = _get_host(host_id, db)
+    try:
+        upid = _pve(host).nodes(node).lxc(vmid).clone.post(**data)
+        pve_cache.clear_prefix(f"pve:{host_id}:")
+        return {"upid": upid}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{host_id}/nodes/{node}/lxc/{vmid}/rrddata")
+def ct_rrddata(host_id: int, node: str, vmid: int,
+               timeframe: str = "hour", cf: str = "AVERAGE",
+               db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    """LXC container performance/RRD data."""
+    host = _get_host(host_id, db)
+    cache_key = f"pve:{host_id}:nodes/{node}/lxc/{vmid}/rrddata:{timeframe}:{cf}"
+    cached = pve_cache.get(cache_key)
+    if cached is not None:
+        return cached
+    try:
+        result = _pve(host).nodes(node).lxc(vmid).rrddata.get(timeframe=timeframe, cf=cf)
+        pve_cache.set(cache_key, result, ttl=60)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ── VM restore from backup ────────────────────────────────────────────────────
 
 @router.post("/{host_id}/nodes/{node}/qemu/{vmid}/restore")
@@ -797,6 +841,30 @@ def list_vm_templates(host_id: int, node: str,
     try:
         vms = _pve(host).nodes(node).qemu.get()
         return [v for v in vms if v.get("template") == 1]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Disk / SMART ──────────────────────────────────────────────────────────────
+
+@router.get("/{host_id}/nodes/{node}/disks/list")
+def node_disk_list(host_id: int, node: str, db: Session = Depends(get_db),
+                   current_user=Depends(get_current_user)):
+    """List physical disks on a node."""
+    host = _get_host(host_id, db)
+    try:
+        return _pve(host).nodes(node).disks.list.get()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{host_id}/nodes/{node}/disks/{disk}/smart")
+def node_disk_smart(host_id: int, node: str, disk: str, db: Session = Depends(get_db),
+                    current_user=Depends(get_current_user)):
+    """SMART data for a physical disk on a node."""
+    host = _get_host(host_id, db)
+    try:
+        return _pve(host).nodes(node).disks.smart.get(disk=disk)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

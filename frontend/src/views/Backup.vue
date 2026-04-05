@@ -24,11 +24,11 @@
     </div>
 
     <!-- Tabs -->
-    <div v-if="selectedHostId" class="card">
+    <div class="card">
       <div class="card-header" style="border-bottom: none; padding-bottom: 0;">
         <div class="tabs">
           <button
-            v-for="tab in ['Schedules', 'Run Backup Now']"
+            v-for="tab in availableTabs"
             :key="tab"
             @click="activeTab = tab"
             :class="['tab-btn', activeTab === tab ? 'tab-active' : '']"
@@ -38,145 +38,278 @@
         </div>
       </div>
 
+      <!-- PBS Servers Tab -->
+      <div v-if="activeTab === 'PBS Servers'" class="tab-content">
+        <div class="tab-header">
+          <h3>Proxmox Backup Servers</h3>
+          <button @click="fetchPbsServers" class="btn btn-outline btn-sm" :disabled="loadingPbs">
+            {{ loadingPbs ? 'Refreshing...' : 'Refresh' }}
+          </button>
+        </div>
+
+        <div v-if="loadingPbs" class="loading-spinner"></div>
+
+        <div v-else-if="pbsServers.length === 0" class="text-center text-muted" style="padding: 2rem;">
+          <p>No PBS servers configured.</p>
+        </div>
+
+        <div v-else class="pbs-list">
+          <div v-for="pbs in pbsServers" :key="pbs.id" class="pbs-card">
+            <div class="pbs-card-header">
+              <div class="pbs-card-title">
+                <strong>{{ pbs.name }}</strong>
+                <span class="text-muted text-sm">{{ pbs.hostname }}</span>
+              </div>
+              <div class="pbs-card-badges">
+                <span v-if="pbsStatus[pbs.id] === 'ok'" class="badge badge-success">Connected</span>
+                <span v-else-if="pbsStatus[pbs.id] === 'error'" class="badge badge-danger">Failed</span>
+                <span v-else-if="pbsStatus[pbs.id] === 'testing'" class="badge badge-info">Testing...</span>
+                <span v-else class="badge badge-secondary">Unknown</span>
+                <span v-if="pbs.datastore_count !== undefined" class="badge badge-info">
+                  {{ pbs.datastore_count }} datastore{{ pbs.datastore_count !== 1 ? 's' : '' }}
+                </span>
+              </div>
+              <div class="pbs-card-actions">
+                <button
+                  @click="testPbsConnection(pbs.id)"
+                  class="btn btn-outline btn-sm"
+                  :disabled="pbsStatus[pbs.id] === 'testing'"
+                >
+                  Test Connection
+                </button>
+                <button
+                  @click="toggleDatastores(pbs.id)"
+                  class="btn btn-outline btn-sm"
+                >
+                  {{ expandedPbs === pbs.id ? 'Hide Datastores' : 'View Datastores' }}
+                </button>
+              </div>
+            </div>
+
+            <!-- Datastores expand section -->
+            <div v-if="expandedPbs === pbs.id" class="pbs-datastores">
+              <div v-if="loadingDatastores[pbs.id]" class="loading-spinner" style="margin: 1rem 0;"></div>
+              <div v-else-if="pbsDatastores[pbs.id] && pbsDatastores[pbs.id].length === 0" class="text-muted text-sm" style="padding: 1rem 0;">
+                No datastores found.
+              </div>
+              <div v-else-if="pbsDatastores[pbs.id]" class="table-container" style="margin-top: 0.75rem;">
+                <table class="table table-sm">
+                  <thead>
+                    <tr>
+                      <th>Datastore</th>
+                      <th>Path</th>
+                      <th>Total</th>
+                      <th>Used</th>
+                      <th>Available</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="ds in pbsDatastores[pbs.id]" :key="ds.store || ds.name">
+                      <td><strong>{{ ds.store || ds.name }}</strong></td>
+                      <td class="text-sm text-muted">{{ ds.path || '—' }}</td>
+                      <td>{{ formatBytes(ds.total) }}</td>
+                      <td>{{ formatBytes(ds.used) }}</td>
+                      <td>{{ formatBytes(ds.avail) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Schedules Tab -->
       <div v-if="activeTab === 'Schedules'" class="tab-content">
-        <div class="tab-header">
-          <h3>Backup Schedules</h3>
-          <button @click="showAddScheduleModal = true" class="btn btn-primary">+ Add Schedule</button>
+        <div v-if="!selectedHostId" class="text-center text-muted" style="padding: 2rem;">
+          <p>Select a Proxmox host above to manage backup schedules.</p>
         </div>
+        <template v-else>
+          <div class="tab-header">
+            <h3>Backup Schedules</h3>
+            <button @click="showAddScheduleModal = true" class="btn btn-primary">+ Add Schedule</button>
+          </div>
 
-        <div v-if="loadingSchedules" class="loading-spinner"></div>
+          <div v-if="loadingSchedules" class="loading-spinner"></div>
 
-        <div v-else-if="schedules.length === 0" class="text-center text-muted" style="padding: 2rem;">
-          <p>No backup schedules configured.</p>
-        </div>
+          <div v-else-if="schedules.length === 0" class="text-center text-muted" style="padding: 2rem;">
+            <p>No backup schedules configured.</p>
+          </div>
 
-        <div v-else class="table-container">
-          <table class="table">
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Enabled</th>
-                <th>Schedule</th>
-                <th>VMs</th>
-                <th>Storage</th>
-                <th>Mode</th>
-                <th>Keep Last</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="sched in schedules" :key="sched.id">
-                <td><strong>{{ sched.id }}</strong></td>
-                <td>
-                  <span :class="['badge', sched.enabled == 1 ? 'badge-success' : 'badge-danger']">
-                    {{ sched.enabled == 1 ? 'Enabled' : 'Disabled' }}
-                  </span>
-                </td>
-                <td><code>{{ sched.schedule || sched.dow + ' ' + sched.starttime }}</code></td>
-                <td class="text-sm">{{ sched.vmid || 'all' }}</td>
-                <td>{{ sched.storage || '—' }}</td>
-                <td>
-                  <span class="badge badge-info">{{ sched.mode || 'snapshot' }}</span>
-                </td>
-                <td>{{ sched['keep-last'] || sched.maxfiles || '—' }}</td>
-                <td>
-                  <button @click="deleteSchedule(sched.id)" class="btn btn-danger btn-sm">Delete</button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+          <div v-else class="table-container">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Enabled</th>
+                  <th>Schedule</th>
+                  <th>VMs</th>
+                  <th>Storage</th>
+                  <th>Mode</th>
+                  <th>Keep Last</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="sched in schedules" :key="sched.id">
+                  <td><strong>{{ sched.id }}</strong></td>
+                  <td>
+                    <span :class="['badge', sched.enabled == 1 ? 'badge-success' : 'badge-danger']">
+                      {{ sched.enabled == 1 ? 'Enabled' : 'Disabled' }}
+                    </span>
+                  </td>
+                  <td><code>{{ sched.schedule || sched.dow + ' ' + sched.starttime }}</code></td>
+                  <td class="text-sm">{{ sched.vmid || 'all' }}</td>
+                  <td>{{ sched.storage || '—' }}</td>
+                  <td>
+                    <span class="badge badge-info">{{ sched.mode || 'snapshot' }}</span>
+                  </td>
+                  <td>{{ sched['keep-last'] || sched.maxfiles || '—' }}</td>
+                  <td class="actions-cell">
+                    <button
+                      @click="runScheduleNow(sched)"
+                      class="btn btn-outline btn-sm"
+                      :disabled="runningSchedule === sched.id"
+                      title="Run this backup job immediately"
+                    >
+                      {{ runningSchedule === sched.id ? 'Starting...' : 'Run Now' }}
+                    </button>
+                    <button @click="deleteSchedule(sched.id)" class="btn btn-danger btn-sm">Delete</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Run Now: Node selector modal -->
+          <div v-if="showRunNowModal" class="modal" @click="showRunNowModal = false">
+            <div class="modal-content" @click.stop style="max-width: 400px;">
+              <div class="modal-header">
+                <h3>Run Backup Now</h3>
+                <button @click="showRunNowModal = false" class="btn-close">×</button>
+              </div>
+              <div class="modal-body">
+                <p class="text-sm text-muted" style="margin-bottom: 1rem;">
+                  Select the node to run schedule <strong>{{ pendingRunSchedule?.id }}</strong> on.
+                </p>
+                <div class="form-group">
+                  <label class="form-label">Node</label>
+                  <select v-model="runNowNode" class="form-control">
+                    <option value="">— Select node —</option>
+                    <option v-for="node in nodes" :key="node.node || node.name" :value="node.node || node.name">
+                      {{ node.node || node.name }}
+                    </option>
+                  </select>
+                </div>
+                <div class="flex gap-1 mt-2">
+                  <button
+                    @click="confirmRunNow"
+                    class="btn btn-primary"
+                    :disabled="!runNowNode || runningSchedule === pendingRunSchedule?.id"
+                  >
+                    Run Now
+                  </button>
+                  <button @click="showRunNowModal = false" class="btn btn-outline">Cancel</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </template>
       </div>
 
       <!-- Run Backup Now Tab -->
       <div v-if="activeTab === 'Run Backup Now'" class="tab-content">
-        <div class="tab-header">
-          <h3>Manual Backup</h3>
+        <div v-if="!selectedHostId" class="text-center text-muted" style="padding: 2rem;">
+          <p>Select a Proxmox host above to run a manual backup.</p>
         </div>
-
-        <div class="backup-form">
-          <div class="form-row">
-            <div class="form-group">
-              <label class="form-label">Node</label>
-              <select v-model="manualBackup.node" class="form-control" @change="onNodeChange">
-                <option value="">— Select node —</option>
-                <option v-for="node in nodes" :key="node.node || node.name" :value="node.node || node.name">
-                  {{ node.node || node.name }}
-                </option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label class="form-label">Virtual Machine</label>
-              <select v-model="manualBackup.vmid" class="form-control">
-                <option value="">— Select VM —</option>
-                <option v-for="vm in nodeVMs" :key="vm.vmid" :value="vm.vmid">
-                  {{ vm.vmid }} — {{ vm.name }} ({{ vm.type }})
-                </option>
-              </select>
-            </div>
+        <template v-else>
+          <div class="tab-header">
+            <h3>Manual Backup</h3>
           </div>
 
-          <div class="form-row">
-            <div class="form-group">
-              <label class="form-label">Storage</label>
-              <select v-model="manualBackup.storage" class="form-control">
-                <option value="">— Select storage —</option>
-                <option v-for="s in storages" :key="s.storage" :value="s.storage">
-                  {{ s.storage }}
-                </option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label class="form-label">Mode</label>
-              <select v-model="manualBackup.mode" class="form-control">
-                <option value="snapshot">Snapshot</option>
-                <option value="suspend">Suspend</option>
-                <option value="stop">Stop</option>
-              </select>
-            </div>
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">Compress</label>
-            <select v-model="manualBackup.compress" class="form-control" style="max-width: 200px;">
-              <option value="lzo">LZO (fast)</option>
-              <option value="gzip">Gzip</option>
-              <option value="zstd">Zstd (recommended)</option>
-              <option value="0">None</option>
-            </select>
-          </div>
-
-          <button @click="startBackup" class="btn btn-primary" :disabled="startingBackup || !manualBackup.vmid || !manualBackup.storage">
-            {{ startingBackup ? 'Starting...' : 'Start Backup' }}
-          </button>
-
-          <!-- Task status -->
-          <div v-if="backupTask" class="task-status">
-            <h4>Backup Task</h4>
-            <div class="task-info">
-              <div class="task-upid">
-                <span class="info-label">UPID:</span>
-                <code>{{ backupTask.upid }}</code>
+          <div class="backup-form">
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Node</label>
+                <select v-model="manualBackup.node" class="form-control" @change="onNodeChange">
+                  <option value="">— Select node —</option>
+                  <option v-for="node in nodes" :key="node.node || node.name" :value="node.node || node.name">
+                    {{ node.node || node.name }}
+                  </option>
+                </select>
               </div>
-              <div class="task-state">
-                <span class="info-label">Status:</span>
-                <span :class="['badge', getTaskBadge(taskStatus?.status)]">
-                  {{ taskStatus?.status || 'running' }}
-                </span>
-              </div>
-              <div v-if="taskStatus?.exitstatus" class="task-exit">
-                <span class="info-label">Exit:</span>
-                <span :class="taskStatus.exitstatus === 'OK' ? 'text-success' : 'text-danger'">
-                  {{ taskStatus.exitstatus }}
-                </span>
+              <div class="form-group">
+                <label class="form-label">Virtual Machine</label>
+                <select v-model="manualBackup.vmid" class="form-control">
+                  <option value="">— Select VM —</option>
+                  <option v-for="vm in nodeVMs" :key="vm.vmid" :value="vm.vmid">
+                    {{ vm.vmid }} — {{ vm.name }} ({{ vm.type }})
+                  </option>
+                </select>
               </div>
             </div>
-            <div v-if="taskLog" class="task-log">
-              <pre>{{ taskLog }}</pre>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Storage</label>
+                <select v-model="manualBackup.storage" class="form-control">
+                  <option value="">— Select storage —</option>
+                  <option v-for="s in storages" :key="s.storage" :value="s.storage">
+                    {{ s.storage }}
+                  </option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Mode</label>
+                <select v-model="manualBackup.mode" class="form-control">
+                  <option value="snapshot">Snapshot</option>
+                  <option value="suspend">Suspend</option>
+                  <option value="stop">Stop</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Compress</label>
+              <select v-model="manualBackup.compress" class="form-control" style="max-width: 200px;">
+                <option value="lzo">LZO (fast)</option>
+                <option value="gzip">Gzip</option>
+                <option value="zstd">Zstd (recommended)</option>
+                <option value="0">None</option>
+              </select>
+            </div>
+
+            <button @click="startBackup" class="btn btn-primary" :disabled="startingBackup || !manualBackup.vmid || !manualBackup.storage">
+              {{ startingBackup ? 'Starting...' : 'Start Backup' }}
+            </button>
+
+            <!-- Task status -->
+            <div v-if="backupTask" class="task-status">
+              <h4>Backup Task</h4>
+              <div class="task-info">
+                <div class="task-upid">
+                  <span class="info-label">UPID:</span>
+                  <code>{{ backupTask.upid }}</code>
+                </div>
+                <div class="task-state">
+                  <span class="info-label">Status:</span>
+                  <span :class="['badge', getTaskBadge(taskStatus?.status)]">
+                    {{ taskStatus?.status || 'running' }}
+                  </span>
+                </div>
+                <div v-if="taskStatus?.exitstatus" class="task-exit">
+                  <span class="info-label">Exit:</span>
+                  <span :class="taskStatus.exitstatus === 'OK' ? 'text-success' : 'text-danger'">
+                    {{ taskStatus.exitstatus }}
+                  </span>
+                </div>
+              </div>
+              <div v-if="taskLog" class="task-log">
+                <pre>{{ taskLog }}</pre>
+              </div>
             </div>
           </div>
-        </div>
+        </template>
       </div>
     </div>
 
@@ -243,7 +376,7 @@
 </template>
 
 <script>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import api from '@/services/api'
 import { useToast } from 'vue-toastification'
 
@@ -253,7 +386,7 @@ export default {
     const toast = useToast()
     const hosts = ref([])
     const selectedHostId = ref('')
-    const activeTab = ref('Schedules')
+    const activeTab = ref('PBS Servers')
     const schedules = ref([])
     const loadingSchedules = ref(false)
     const showAddScheduleModal = ref(false)
@@ -266,6 +399,25 @@ export default {
     const taskStatus = ref(null)
     const taskLog = ref(null)
     let pollTimer = null
+
+    // PBS state
+    const pbsServers = ref([])
+    const loadingPbs = ref(false)
+    const pbsStatus = ref({})       // id -> 'ok' | 'error' | 'testing'
+    const expandedPbs = ref(null)
+    const pbsDatastores = ref({})   // id -> array
+    const loadingDatastores = ref({})
+
+    // Run Now state
+    const runningSchedule = ref(null)
+    const showRunNowModal = ref(false)
+    const pendingRunSchedule = ref(null)
+    const runNowNode = ref('')
+
+    const availableTabs = computed(() => {
+      const tabs = ['PBS Servers', 'Schedules', 'Run Backup Now']
+      return tabs
+    })
 
     const newSchedule = ref({
       schedule: '',
@@ -381,6 +533,41 @@ export default {
       }
     }
 
+    // Run Now: open node-picker modal if nodes are loaded, else pick first available
+    const runScheduleNow = (sched) => {
+      if (nodes.value.length === 0) {
+        toast.error('No nodes loaded. Select a host first.')
+        return
+      }
+      pendingRunSchedule.value = sched
+      runNowNode.value = nodes.value.length === 1 ? (nodes.value[0].node || nodes.value[0].name) : ''
+      showRunNowModal.value = true
+    }
+
+    const confirmRunNow = async () => {
+      const sched = pendingRunSchedule.value
+      if (!sched || !runNowNode.value) return
+      showRunNowModal.value = false
+      runningSchedule.value = sched.id
+      try {
+        const payload = {
+          mode: sched.mode || 'snapshot',
+          compress: 'zstd',
+        }
+        if (sched.vmid) payload.vmid = sched.vmid
+        if (sched.storage) payload.storage = sched.storage
+        await api.pveNode.runBackup(selectedHostId.value, runNowNode.value, payload)
+        toast.success(`Backup job "${sched.id}" started on node ${runNowNode.value}`)
+      } catch (error) {
+        console.error('Failed to run backup schedule:', error)
+        toast.error('Failed to start backup job')
+      } finally {
+        runningSchedule.value = null
+        pendingRunSchedule.value = null
+        runNowNode.value = ''
+      }
+    }
+
     const startBackup = async () => {
       startingBackup.value = true
       backupTask.value = null
@@ -442,14 +629,71 @@ export default {
       return 'badge-warning'
     }
 
+    // PBS methods
+    const fetchPbsServers = async () => {
+      loadingPbs.value = true
+      try {
+        const response = await api.pbs.list()
+        pbsServers.value = response.data || []
+      } catch (error) {
+        console.error('Failed to fetch PBS servers:', error)
+        toast.error('Failed to load PBS servers')
+      } finally {
+        loadingPbs.value = false
+      }
+    }
+
+    const testPbsConnection = async (pbsId) => {
+      pbsStatus.value = { ...pbsStatus.value, [pbsId]: 'testing' }
+      try {
+        await api.pbsMgmt.test(pbsId)
+        pbsStatus.value = { ...pbsStatus.value, [pbsId]: 'ok' }
+        toast.success('PBS connection successful')
+      } catch (error) {
+        console.error('PBS connection test failed:', error)
+        pbsStatus.value = { ...pbsStatus.value, [pbsId]: 'error' }
+        toast.error('PBS connection failed')
+      }
+    }
+
+    const toggleDatastores = async (pbsId) => {
+      if (expandedPbs.value === pbsId) {
+        expandedPbs.value = null
+        return
+      }
+      expandedPbs.value = pbsId
+      if (pbsDatastores.value[pbsId]) return  // already loaded
+      loadingDatastores.value = { ...loadingDatastores.value, [pbsId]: true }
+      try {
+        const response = await api.pbsMgmt.listDatastores(pbsId)
+        pbsDatastores.value = { ...pbsDatastores.value, [pbsId]: response.data || [] }
+      } catch (error) {
+        console.error('Failed to fetch PBS datastores:', error)
+        toast.error('Failed to load datastores')
+        pbsDatastores.value = { ...pbsDatastores.value, [pbsId]: [] }
+      } finally {
+        loadingDatastores.value = { ...loadingDatastores.value, [pbsId]: false }
+      }
+    }
+
+    const formatBytes = (bytes) => {
+      if (bytes === undefined || bytes === null) return '—'
+      if (bytes === 0) return '0 B'
+      const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
+      const i = Math.floor(Math.log(bytes) / Math.log(1024))
+      return (bytes / Math.pow(1024, i)).toFixed(1) + ' ' + units[i]
+    }
+
     onMounted(() => {
       fetchHosts()
+      fetchPbsServers()
     })
 
     return {
       hosts,
       selectedHostId,
       activeTab,
+      availableTabs,
       schedules,
       loadingSchedules,
       showAddScheduleModal,
@@ -463,12 +707,31 @@ export default {
       backupTask,
       taskStatus,
       taskLog,
+      // PBS
+      pbsServers,
+      loadingPbs,
+      pbsStatus,
+      expandedPbs,
+      pbsDatastores,
+      loadingDatastores,
+      // Run Now
+      runningSchedule,
+      showRunNowModal,
+      pendingRunSchedule,
+      runNowNode,
+      // Methods
       onHostChange,
       onNodeChange,
       addSchedule,
       deleteSchedule,
+      runScheduleNow,
+      confirmRunNow,
       startBackup,
-      getTaskBadge
+      getTaskBadge,
+      fetchPbsServers,
+      testPbsConnection,
+      toggleDatastores,
+      formatBytes,
     }
   }
 }
@@ -622,6 +885,67 @@ export default {
 .text-success { color: #10b981; }
 .text-danger { color: #ef4444; }
 
+/* PBS Servers */
+.pbs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.pbs-card {
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+
+.pbs-card-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  background: var(--background);
+  flex-wrap: wrap;
+}
+
+.pbs-card-title {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  flex: 1;
+  min-width: 150px;
+}
+
+.pbs-card-badges {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.pbs-card-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.pbs-datastores {
+  padding: 0 1.25rem 1.25rem;
+  border-top: 1px solid var(--border-color);
+}
+
+.table-sm th,
+.table-sm td {
+  padding: 0.4rem 0.75rem;
+  font-size: 0.875rem;
+}
+
+.actions-cell {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+/* Modals */
 .modal {
   position: fixed;
   top: 0; left: 0; right: 0; bottom: 0;
@@ -663,5 +987,10 @@ export default {
 
 .modal-body {
   padding: 1.5rem;
+}
+
+.badge-secondary {
+  background-color: var(--border-color);
+  color: var(--text-secondary);
 }
 </style>

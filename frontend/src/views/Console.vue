@@ -66,6 +66,17 @@ export default {
       return `${proto}//${location.host}/api/v1/pve-console/ws/vm/${hostId.value}/${node.value}/${vmid.value}?token=${token}`
     }
 
+    // Clipboard paste handler: intercept browser paste events and relay text
+    // into the VNC session via rfb.clipboardPasteFrom().
+    const handlePaste = (e) => {
+      if (!rfb || connectionStatus.value !== 'connected') return
+      const text = (e.clipboardData || window.clipboardData)?.getData('text')
+      if (text) {
+        e.preventDefault()
+        rfb.clipboardPasteFrom(text)
+      }
+    }
+
     const connect = async () => {
       connectionStatus.value = 'connecting'
       errorMessage.value = ''
@@ -101,6 +112,14 @@ export default {
           vmName.value = e.detail.name
         })
 
+        // Forward VNC clipboard content back to the browser clipboard when the
+        // guest copies something (best-effort; requires Clipboard API permission).
+        rfb.addEventListener('clipboard', (e) => {
+          if (e.detail?.text && navigator.clipboard?.writeText) {
+            navigator.clipboard.writeText(e.detail.text).catch(() => {})
+          }
+        })
+
       } catch (error) {
         console.error('Failed to load noVNC or connect:', error)
         connectionStatus.value = 'error'
@@ -133,10 +152,12 @@ export default {
     }
 
     onMounted(() => {
+      document.addEventListener('paste', handlePaste)
       connect()
     })
 
     onBeforeUnmount(() => {
+      document.removeEventListener('paste', handlePaste)
       if (rfb) {
         try { rfb.disconnect() } catch {}
         rfb = null

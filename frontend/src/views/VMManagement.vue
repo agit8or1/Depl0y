@@ -45,6 +45,12 @@
 
         <div class="table-toolbar">
           <input v-model="search" class="search-input" placeholder="Search VMs, VMID, IP, OS..." />
+          <select v-model="statusFilterMgmt" class="search-input" style="width: 140px; flex: none;">
+            <option value="">All statuses</option>
+            <option value="running">Running</option>
+            <option value="stopped">Stopped</option>
+            <option value="paused">Paused</option>
+          </select>
           <span class="text-sm text-muted">{{ filteredVMs.length }} of {{ vms.length }} VMs</span>
         </div>
 
@@ -294,6 +300,17 @@
             <option :value="168">7 days</option>
           </select>
           <span class="text-sm text-muted">— runs on all managed VMs with saved credentials</span>
+        </div>
+
+        <div class="table-toolbar">
+          <input v-model="search" class="search-input" placeholder="Search VMs, VMID, IP, OS..." />
+          <select v-model="statusFilterMgmt" class="search-input" style="width: 140px; flex: none;">
+            <option value="">All statuses</option>
+            <option value="running">Running</option>
+            <option value="stopped">Stopped</option>
+            <option value="paused">Paused</option>
+          </select>
+          <span class="text-sm text-muted">{{ filteredVMs.length }} of {{ vms.length }} VMs</span>
         </div>
 
         <div v-if="loadingVMs" class="loading-row">
@@ -1101,6 +1118,7 @@ export default {
     const scanning = ref(null)     // vmid currently being scanned
     const scanExpanded = ref({})   // vmid → bool
     const search = ref('')
+    const statusFilterMgmt = ref('')
     const sortKey = ref('name')
     const sortDir = ref('asc')
 
@@ -1311,6 +1329,10 @@ export default {
             getManagedVM(vm.vmid)?.os_type?.toLowerCase().includes(q)
           )
         : [...vms.value]
+
+      if (statusFilterMgmt.value) {
+        list = list.filter(vm => (vm.status || '').toLowerCase() === statusFilterMgmt.value)
+      }
 
       list.sort((a, b) => {
         let av, bv
@@ -1859,7 +1881,7 @@ export default {
       runScan, scanResults, scanning, scanExpanded,
       getVMStatusBadge, formatDate, formatBytes, formatMB,
       credModal, credForm, savingCreds, fetchingIP, openCredModal, saveCredentials, sessionCreds,
-      search, sortKey, sortDir, filteredVMs, setSort, sortIcon,
+      search, statusFilterMgmt, sortKey, sortDir, filteredVMs, setSort, sortIcon,
       schedule, saveSchedule, scanCache, getCacheEntry, getUpdateResult,
       vmModels, loadingModels, deletingModel, loadVMModels,
       pullJobs, selectedPullModel, ollamaCatalog, pullModel, deleteModel, closePullLog,

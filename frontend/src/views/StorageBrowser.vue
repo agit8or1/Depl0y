@@ -54,10 +54,23 @@
         <div class="card">
           <div class="card-header">
             <h3>{{ selectedStorage ? `Contents: ${selectedStorage}` : 'Select a Storage Pool' }}</h3>
-            <button v-if="selectedStorage" @click="fetchContent" class="btn btn-outline btn-sm">
-              Refresh
-            </button>
+            <div class="header-actions">
+              <button v-if="selectedStorage" @click="triggerUpload" class="btn btn-primary btn-sm">
+                Upload
+              </button>
+              <button v-if="selectedStorage" @click="fetchContent" class="btn btn-outline btn-sm">
+                Refresh
+              </button>
+            </div>
           </div>
+
+          <!-- Hidden file input -->
+          <input
+            ref="fileInput"
+            type="file"
+            style="display: none"
+            @change="onFileSelected"
+          />
 
           <div v-if="!selectedStorage" class="text-center text-muted p-4">
             Select a storage pool from the left panel to browse its contents.
@@ -103,7 +116,19 @@
                     <td>{{ item.size != null ? formatBytes(item.size) : '—' }}</td>
                     <td class="text-sm">{{ item.ctime ? formatDate(item.ctime) : '—' }}</td>
                     <td>
-                      <button @click="openDeleteModal(item)" class="btn btn-danger btn-sm">Delete</button>
+                      <div class="row-actions">
+                        <button
+                          @click="copyVolid(item.volid)"
+                          class="btn btn-outline btn-sm btn-icon"
+                          title="Copy volume ID"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                          </svg>
+                        </button>
+                        <button @click="openDeleteModal(item)" class="btn btn-danger btn-sm">Delete</button>
+                      </div>
                     </td>
                   </tr>
                 </tbody>
@@ -134,6 +159,22 @@
         </div>
       </div>
     </div>
+
+    <!-- Upload progress modal -->
+    <div v-if="uploading" class="modal">
+      <div class="modal-content modal-small" @click.stop>
+        <div class="modal-header">
+          <h3>Uploading File</h3>
+        </div>
+        <div class="modal-body">
+          <p class="upload-filename">{{ uploadFileName }}</p>
+          <div class="progress-bar-wrap">
+            <div class="progress-bar-fill" :style="{ width: uploadProgress + '%' }"></div>
+          </div>
+          <div class="progress-label">{{ uploadProgress }}%</div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -160,6 +201,11 @@ const contentFilter = ref('')
 
 const deleteTarget = ref(null)
 const deleting = ref(false)
+
+const fileInput = ref(null)
+const uploading = ref(false)
+const uploadProgress = ref(0)
+const uploadFileName = ref('')
 
 const contentFilters = [
   { label: 'All', value: '' },
@@ -256,6 +302,65 @@ async function doDeleteVolume() {
     toast.error('Failed to delete volume')
   } finally {
     deleting.value = false
+  }
+}
+
+function triggerUpload() {
+  if (fileInput.value) {
+    fileInput.value.value = ''
+    fileInput.value.click()
+  }
+}
+
+async function onFileSelected(event) {
+  const file = event.target.files[0]
+  if (!file) return
+
+  uploadFileName.value = file.name
+  uploadProgress.value = 0
+  uploading.value = true
+
+  try {
+    const formData = new FormData()
+    formData.append('filename', file)
+
+    // Detect content type from file extension for the form data
+    const ext = file.name.split('.').pop().toLowerCase()
+    if (ext === 'iso') formData.append('content', 'iso')
+    else if (ext === 'tar' || ext === 'gz' || file.name.includes('.tar.')) formData.append('content', 'vztmpl')
+
+    const onProgress = (evt) => {
+      if (evt.total) uploadProgress.value = Math.round((evt.loaded * 100) / evt.total)
+    }
+
+    await api.pveNode.uploadToStorage(
+      hostId.value,
+      node.value,
+      selectedStorage.value,
+      formData,
+      onProgress
+    )
+
+    uploadProgress.value = 100
+    toast.success(`${file.name} uploaded successfully`)
+    await fetchContent()
+  } catch (err) {
+    console.error('Failed to upload file:', err)
+    toast.error('Upload failed: ' + (err?.response?.data?.detail || err.message || 'Unknown error'))
+  } finally {
+    uploading.value = false
+    uploadFileName.value = ''
+    uploadProgress.value = 0
+  }
+}
+
+async function copyVolid(volid) {
+  try {
+    await navigator.clipboard.writeText(volid)
+    toast.success('Volume ID copied to clipboard')
+  } catch (err) {
+    console.error('Failed to copy to clipboard:', err)
+    toast.error('Failed to copy to clipboard')
   }
 }
 
@@ -400,6 +505,53 @@ onMounted(async () => {
   font-size: 0.8rem;
   word-break: break-all;
   color: var(--text-primary);
+}
+
+.header-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.row-actions {
+  display: flex;
+  gap: 0.375rem;
+  align-items: center;
+}
+
+.btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.25rem 0.375rem;
+}
+
+.progress-bar-wrap {
+  height: 10px;
+  background: var(--border-color);
+  border-radius: 5px;
+  overflow: hidden;
+  margin: 0.75rem 0 0.375rem;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: var(--primary-color, #6366f1);
+  border-radius: 5px;
+  transition: width 0.2s;
+}
+
+.progress-label {
+  text-align: right;
+  font-size: 0.85rem;
+  color: var(--text-muted, #888);
+}
+
+.upload-filename {
+  font-weight: 500;
+  color: var(--text-primary);
+  word-break: break-all;
+  margin: 0;
 }
 
 .btn-sm {

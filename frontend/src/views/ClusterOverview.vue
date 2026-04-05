@@ -2,7 +2,15 @@
   <div class="cluster-overview-page">
     <div class="page-header mb-2">
       <h2>Cluster Overview</h2>
-      <p class="text-muted">Status and resources for Proxmox host {{ hostId }}</p>
+      <div class="header-right">
+        <p class="text-muted">Status and resources for Proxmox host {{ hostId }}</p>
+        <div class="refresh-control">
+          <span class="countdown-badge" :class="{ 'countdown-urgent': refreshCountdown <= 5 }">
+            Refreshing in {{ refreshCountdown }}s
+          </span>
+          <button @click="manualRefresh" class="btn btn-outline btn-sm">Refresh Now</button>
+        </div>
+      </div>
     </div>
 
     <!-- Cluster status + node list -->
@@ -11,7 +19,6 @@
       <div class="card">
         <div class="card-header">
           <h3>Cluster Status</h3>
-          <button @click="refresh" class="btn btn-outline btn-sm">Refresh</button>
         </div>
         <div v-if="loadingStatus" class="loading-spinner"></div>
         <div v-else class="card-body">
@@ -20,9 +27,18 @@
             <div v-for="item in clusterNodes" :key="item.name || item.id" class="node-card">
               <div class="node-card-header">
                 <span class="node-name">{{ item.name }}</span>
-                <span :class="['badge', item.online ? 'badge-success' : 'badge-danger']">
-                  {{ item.online ? 'Online' : 'Offline' }}
-                </span>
+                <div class="node-card-actions">
+                  <span :class="['badge', item.online ? 'badge-success' : 'badge-danger']">
+                    {{ item.online ? 'Online' : 'Offline' }}
+                  </span>
+                  <button
+                    class="btn btn-outline btn-xs"
+                    @click.stop="navigateToNode(item.name)"
+                    title="View node details"
+                  >
+                    View Details
+                  </button>
+                </div>
               </div>
               <div class="node-card-meta text-sm text-muted">
                 <span v-if="item.level">Level: {{ item.level }}</span>
@@ -32,6 +48,31 @@
                 <span v-if="item.nodeid !== undefined" class="ml-1">
                   Node ID: {{ item.nodeid }}
                 </span>
+              </div>
+              <!-- Per-node CPU and memory from cluster resources -->
+              <div v-if="nodeStats[item.name]" class="node-resource-bars mt-1">
+                <div class="node-bar-row">
+                  <span class="node-bar-label text-xs">CPU</span>
+                  <div class="mini-bar-wrap mini-bar-wrap--sm">
+                    <div
+                      class="mini-bar-fill"
+                      :class="barClass(nodeStats[item.name].cpuRatio)"
+                      :style="{ width: Math.round(nodeStats[item.name].cpuRatio * 100) + '%' }"
+                    ></div>
+                  </div>
+                  <span class="text-xs text-muted node-bar-pct">{{ Math.round(nodeStats[item.name].cpuRatio * 100) }}%</span>
+                </div>
+                <div class="node-bar-row">
+                  <span class="node-bar-label text-xs">MEM</span>
+                  <div class="mini-bar-wrap mini-bar-wrap--sm">
+                    <div
+                      class="mini-bar-fill"
+                      :class="barClass(nodeStats[item.name].memRatio)"
+                      :style="{ width: Math.round(nodeStats[item.name].memRatio * 100) + '%' }"
+                    ></div>
+                  </div>
+                  <span class="text-xs text-muted node-bar-pct">{{ Math.round(nodeStats[item.name].memRatio * 100) }}%</span>
+                </div>
               </div>
             </div>
           </div>
@@ -89,6 +130,68 @@
                 ></div>
               </div>
               <div class="text-xs text-muted">{{ memPct }}%</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Live Migration panel -->
+    <div class="card mb-2">
+      <div class="card-header" @click="migrationExpanded = !migrationExpanded" style="cursor:pointer;">
+        <h3>Live Migration</h3>
+        <span class="toggle-icon">{{ migrationExpanded ? '▲' : '▼' }}</span>
+      </div>
+      <div v-if="migrationExpanded" class="card-body">
+        <div v-if="loadingResources" class="text-muted text-sm">Loading VM list...</div>
+        <div v-else>
+          <div class="migration-form">
+            <div class="form-group">
+              <label class="form-label">Virtual Machine</label>
+              <select v-model="migrateVmid" class="form-control">
+                <option value="">-- Select VM --</option>
+                <option
+                  v-for="vm in migrateableVms"
+                  :key="vm.vmid"
+                  :value="vm.vmid"
+                >
+                  {{ vm.vmid }} — {{ vm.name || 'unnamed' }} ({{ vm.node }})
+                </option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Target Node</label>
+              <select v-model="migrateTarget" class="form-control">
+                <option value="">-- Select target node --</option>
+                <option
+                  v-for="node in migrateTargetNodes"
+                  :key="node.name"
+                  :value="node.name"
+                >
+                  {{ node.name }}{{ node.online ? '' : ' (offline)' }}
+                </option>
+              </select>
+            </div>
+
+            <div class="form-group form-group--inline">
+              <label class="form-label checkbox-label">
+                <input type="checkbox" v-model="migrateOnline" class="form-check" />
+                Online migration (live, no downtime)
+              </label>
+            </div>
+
+            <div class="form-group">
+              <button
+                class="btn btn-primary"
+                :disabled="!migrateVmid || !migrateTarget || migrating"
+                @click="doMigrate"
+              >
+                <span v-if="migrating">Migrating...</span>
+                <span v-else>Migrate VM</span>
+              </button>
+              <span v-if="migrateError" class="migrate-error text-sm ml-1">{{ migrateError }}</span>
+              <span v-if="migrateSuccess" class="migrate-success text-sm ml-1">{{ migrateSuccess }}</span>
             </div>
           </div>
         </div>
@@ -215,7 +318,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useToast } from 'vue-toastification'
 import api from '@/services/api'
@@ -236,6 +339,21 @@ const resourceSearch = ref('')
 
 const firewallRules = ref([])
 const loadingFirewall = ref(false)
+
+// Auto-refresh
+const REFRESH_INTERVAL = 30
+const refreshCountdown = ref(REFRESH_INTERVAL)
+let countdownTimer = null
+let refreshTimer = null
+
+// Migration panel
+const migrationExpanded = ref(false)
+const migrateVmid = ref('')
+const migrateTarget = ref('')
+const migrateOnline = ref(true)
+const migrating = ref(false)
+const migrateError = ref('')
+const migrateSuccess = ref('')
 
 const summary = ref({
   vmsTotal: 0,
@@ -269,6 +387,35 @@ const filteredResources = computed(() => {
   )
 })
 
+// Per-node CPU/mem stats derived from cluster resources (type=node entries)
+const nodeStats = computed(() => {
+  const stats = {}
+  for (const r of allResources.value) {
+    if (r.type === 'node') {
+      const cpuRatio = r.maxcpu ? (r.cpu || 0) : 0
+      const memRatio = r.maxmem ? (r.mem || 0) / r.maxmem : 0
+      stats[r.node || r.name] = { cpuRatio, memRatio }
+    }
+  }
+  return stats
+})
+
+// VMs available for migration (qemu type only — LXC migration is different)
+const migrateableVms = computed(() => {
+  return allResources.value.filter(r => r.type === 'qemu' && r.vmid)
+})
+
+// Target nodes for migration: all online nodes except the current VM's node
+const selectedVmNode = computed(() => {
+  if (!migrateVmid.value) return null
+  const vm = migrateableVms.value.find(v => String(v.vmid) === String(migrateVmid.value))
+  return vm ? vm.node : null
+})
+
+const migrateTargetNodes = computed(() => {
+  return clusterNodes.value.filter(n => n.name !== selectedVmNode.value)
+})
+
 function barClass(ratio) {
   if (ratio >= 0.9) return 'fill--danger'
   if (ratio >= 0.75) return 'fill--warning'
@@ -286,6 +433,41 @@ function navigateToResource(r) {
     router.push(`/proxmox/${hostId.value}/nodes/${r.node}/containers/${r.vmid}`)
   } else {
     router.push(`/proxmox/${hostId.value}/nodes/${r.node}/vms/${r.vmid}`)
+  }
+}
+
+function navigateToNode(nodeName) {
+  router.push(`/proxmox/${hostId.value}/nodes/${nodeName}`)
+}
+
+async function doMigrate() {
+  migrateError.value = ''
+  migrateSuccess.value = ''
+  if (!migrateVmid.value || !migrateTarget.value) return
+
+  const vm = migrateableVms.value.find(v => String(v.vmid) === String(migrateVmid.value))
+  if (!vm) {
+    migrateError.value = 'VM not found in resource list.'
+    return
+  }
+
+  migrating.value = true
+  try {
+    await api.pveVm.migrate(hostId.value, vm.node, vm.vmid, {
+      target: migrateTarget.value,
+      online: migrateOnline.value ? 1 : 0,
+    })
+    migrateSuccess.value = `Migration of VM ${vm.vmid} to ${migrateTarget.value} initiated.`
+    toast.success(migrateSuccess.value)
+    // Reset selectors
+    migrateVmid.value = ''
+    migrateTarget.value = ''
+  } catch (err) {
+    const msg = err?.response?.data?.detail || err?.message || 'Migration failed.'
+    migrateError.value = msg
+    toast.error('Migration failed: ' + msg)
+  } finally {
+    migrating.value = false
   }
 }
 
@@ -310,7 +492,7 @@ async function fetchResources() {
     const resources = res.data || []
     allResources.value = resources
 
-    // Build summary
+    // Build summary from qemu/lxc entries
     let vmsTotal = 0, vmsRunning = 0, ctsTotal = 0, ctsRunning = 0
     let cpuUsed = 0, cpuTotal = 0, memUsed = 0, memTotal = 0
 
@@ -361,7 +543,43 @@ async function refresh() {
   await Promise.all([fetchClusterStatus(), fetchResources(), fetchFirewallRules()])
 }
 
-onMounted(refresh)
+function startAutoRefresh() {
+  refreshCountdown.value = REFRESH_INTERVAL
+
+  // Countdown ticker — fires every second
+  countdownTimer = setInterval(() => {
+    refreshCountdown.value--
+    if (refreshCountdown.value <= 0) {
+      refreshCountdown.value = REFRESH_INTERVAL
+    }
+  }, 1000)
+
+  // Actual refresh timer — fires every 30 seconds
+  refreshTimer = setInterval(() => {
+    refresh()
+  }, REFRESH_INTERVAL * 1000)
+}
+
+function stopAutoRefresh() {
+  if (countdownTimer) clearInterval(countdownTimer)
+  if (refreshTimer) clearInterval(refreshTimer)
+}
+
+async function manualRefresh() {
+  // Reset the countdown so the next auto-refresh is 30s from now
+  stopAutoRefresh()
+  await refresh()
+  startAutoRefresh()
+}
+
+onMounted(async () => {
+  await refresh()
+  startAutoRefresh()
+})
+
+onUnmounted(() => {
+  stopAutoRefresh()
+})
 </script>
 
 <style scoped>
@@ -371,6 +589,11 @@ onMounted(refresh)
 
 .page-header {
   margin-bottom: 1.5rem;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
 }
 
 .page-header h2 {
@@ -378,6 +601,35 @@ onMounted(refresh)
   font-size: 1.75rem;
   font-weight: 600;
   color: var(--text-primary);
+}
+
+.header-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.5rem;
+}
+
+.refresh-control {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.countdown-badge {
+  font-size: 0.75rem;
+  color: var(--text-muted, #888);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 0.25rem;
+  padding: 0.2rem 0.5rem;
+  font-variant-numeric: tabular-nums;
+  transition: color 0.3s, border-color 0.3s;
+}
+
+.countdown-urgent {
+  color: #f59e0b;
+  border-color: #f59e0b;
 }
 
 .summary-grid {
@@ -411,6 +663,12 @@ onMounted(refresh)
   margin-bottom: 0.25rem;
 }
 
+.node-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
 .node-name {
   font-weight: 600;
   color: var(--text-primary);
@@ -420,6 +678,33 @@ onMounted(refresh)
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
+}
+
+.node-resource-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.node-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.node-bar-label {
+  min-width: 30px;
+  color: var(--text-muted, #888);
+  font-weight: 500;
+}
+
+.node-bar-pct {
+  min-width: 34px;
+  text-align: right;
+}
+
+.mini-bar-wrap--sm {
+  height: 6px;
 }
 
 .summary-stats {
@@ -489,6 +774,55 @@ onMounted(refresh)
 .fill--warning { background: #f59e0b; }
 .fill--danger { background: #ef4444; }
 
+/* Migration panel */
+.migration-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: flex-end;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 200px;
+}
+
+.form-group--inline {
+  justify-content: flex-end;
+  min-width: unset;
+}
+
+.form-label {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.form-check {
+  margin-right: 0.4rem;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.migrate-error {
+  color: #ef4444;
+}
+
+.migrate-success {
+  color: #10b981;
+}
+
+.toggle-icon {
+  font-size: 0.75rem;
+  color: var(--text-muted, #888);
+}
+
 .search-input {
   max-width: 260px;
   padding: 0.3rem 0.6rem;
@@ -507,6 +841,11 @@ onMounted(refresh)
 .btn-sm {
   padding: 0.25rem 0.5rem;
   font-size: 0.875rem;
+}
+
+.btn-xs {
+  padding: 0.15rem 0.4rem;
+  font-size: 0.75rem;
 }
 
 .mb-2 { margin-bottom: 1rem; }
@@ -528,6 +867,15 @@ onMounted(refresh)
 
   .summary-stats {
     grid-template-columns: repeat(2, 1fr);
+  }
+
+  .page-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .header-right {
+    align-items: flex-start;
   }
 }
 

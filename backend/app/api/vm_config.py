@@ -95,6 +95,17 @@ class FirewallRule(BaseModel):
 
 # ── VM config read/write ──────────────────────────────────────────────────────
 
+@router.get("/{host_id}/{node}/{vmid}/pending")
+def get_vm_pending(host_id: int, node: str, vmid: int, db: Session = Depends(get_db),
+                   current_user=Depends(get_current_user)):
+    """Get pending VM config changes (applied on next reboot)."""
+    host = _get_host(host_id, db)
+    try:
+        return _pve(_svc(host)).nodes(node).qemu(vmid).pending.get()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/{host_id}/{node}/{vmid}/config")
 def get_vm_config(host_id: int, node: str, vmid: int, db: Session = Depends(get_db),
                   current_user=Depends(get_current_user)):

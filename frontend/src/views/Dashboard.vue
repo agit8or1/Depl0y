@@ -205,6 +205,71 @@
       </table>
     </div>
 
+    <!-- Cluster Health -->
+    <div class="card mt-2">
+      <div class="card-header">
+        <h3>Cluster Health</h3>
+        <span class="pve-live-badge">PVE Live</span>
+      </div>
+      <div v-if="clusterLoading" class="hosts-loading">Loading cluster status...</div>
+      <div v-else-if="clusterHealthData.length === 0" class="hosts-empty">No cluster data available.</div>
+      <div v-else class="cluster-panels">
+        <div v-for="entry in clusterHealthData" :key="entry.hostId" class="cluster-panel">
+          <div class="cluster-panel-header">
+            <span class="cluster-host-name">{{ entry.hostName }}</span>
+            <span v-if="entry.error" class="cluster-badge cluster-badge-error">Error</span>
+            <span v-else-if="entry.standalone" class="cluster-badge cluster-badge-standalone">Standalone</span>
+            <span v-else-if="entry.quorate" class="cluster-badge cluster-badge-ok">Quorate</span>
+            <span v-else class="cluster-badge cluster-badge-danger">No Quorum</span>
+          </div>
+          <div v-if="entry.error" class="cluster-error-msg">{{ entry.error }}</div>
+          <ul v-else class="cluster-members">
+            <li v-for="node in entry.nodes" :key="node.name" class="cluster-member">
+              <span class="cluster-dot" :class="node.online ? 'dot-online' : 'dot-offline'"></span>
+              <span class="cluster-member-name">{{ node.name }}</span>
+              <span class="cluster-member-status" :class="node.online ? 'text-online' : 'text-offline'">
+                {{ node.online ? 'Online' : 'Offline' }}
+              </span>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- Recent Tasks -->
+    <div class="card mt-2">
+      <div class="card-header">
+        <h3>Recent Tasks</h3>
+        <span class="pve-live-badge">PVE Live</span>
+      </div>
+      <div v-if="tasksLoading" class="hosts-loading">Loading recent tasks...</div>
+      <div v-else-if="recentTasks.length === 0" class="hosts-empty">No recent tasks found.</div>
+      <table v-else class="hosts-table">
+        <thead>
+          <tr>
+            <th>Host</th>
+            <th>Node</th>
+            <th>Type</th>
+            <th>Status</th>
+            <th>Started</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="task in recentTasks" :key="task.upid">
+            <td class="host-name">{{ task.hostName }}</td>
+            <td>{{ task.node }}</td>
+            <td>{{ task.type }}</td>
+            <td>
+              <span class="task-status-badge" :class="taskStatusClass(task.status)">
+                {{ task.status || 'running' }}
+              </span>
+            </td>
+            <td class="host-addr">{{ formatTaskTime(task.starttime) }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
     <div class="dashboard-footer">
       <span class="last-updated">Last updated: {{ lastUpdatedSeconds }}s ago</span>
     </div>
@@ -242,6 +307,14 @@ export default {
     const hostsLoading = ref(true)
     const proxmoxHosts = ref([])
     const hostNodeCounts = ref({})
+
+    // Cluster Health state
+    const clusterLoading = ref(true)
+    const clusterHealthData = ref([])
+
+    // Recent Tasks state
+    const tasksLoading = ref(true)
+    const recentTasks = ref([])
 
     // Auto-refresh state
     const lastUpdatedSeconds = ref(0)
@@ -359,9 +432,139 @@ export default {
       }
     }
 
+    const fetchClusterHealth = async () => {
+      clusterLoading.value = true
+      try {
+        const hostsResponse = await api.proxmox.listHosts()
+        const hosts = hostsResponse.data || []
+        const activeHosts = hosts.filter(h => h.is_active)
+
+        const results = await Promise.allSettled(
+          activeHosts.map(h => api.pveNode.clusterStatus(h.id))
+        )
+
+        clusterHealthData.value = results.map((result, idx) => {
+          const host = activeHosts[idx]
+          if (result.status === 'rejected') {
+            return {
+              hostId: host.id,
+              hostName: host.name,
+              error: 'Failed to fetch cluster status',
+              standalone: false,
+              quorate: false,
+              nodes: []
+            }
+          }
+
+          const items = result.value.data || []
+          // If no cluster items or all items are nodes with no cluster entry, treat as standalone
+          const clusterEntry = items.find(i => i.type === 'cluster')
+          const nodeItems = items.filter(i => i.type === 'node')
+
+          if (!clusterEntry && nodeItems.length <= 1) {
+            // Single-node standalone
+            return {
+              hostId: host.id,
+              hostName: host.name,
+              standalone: true,
+              quorate: false,
+              nodes: nodeItems.map(n => ({ name: n.name, online: n.online === 1 || n.online === true }))
+            }
+          }
+
+          return {
+            hostId: host.id,
+            hostName: host.name,
+            standalone: false,
+            quorate: clusterEntry ? (clusterEntry.quorate === 1 || clusterEntry.quorate === true) : false,
+            nodes: nodeItems.map(n => ({ name: n.name, online: n.online === 1 || n.online === true }))
+          }
+        })
+      } catch (error) {
+        console.error('Failed to fetch cluster health:', error)
+      } finally {
+        clusterLoading.value = false
+      }
+    }
+
+    const fetchRecentTasks = async () => {
+      tasksLoading.value = true
+      try {
+        const hostsResponse = await api.proxmox.listHosts()
+        const hosts = hostsResponse.data || []
+        const activeHosts = hosts.filter(h => h.is_active)
+
+        // Get cluster resources to find node names per host
+        const resourceResults = await Promise.allSettled(
+          activeHosts.map(h => api.pveNode.clusterResources(h.id))
+        )
+
+        // Build list of { hostId, hostName, node } combos
+        const nodeTargets = []
+        resourceResults.forEach((result, idx) => {
+          const host = activeHosts[idx]
+          if (result.status === 'fulfilled') {
+            const items = result.value.data || []
+            const nodeNames = items.filter(i => i.type === 'node').map(i => i.node)
+            // If no nodes found in resources, fall back to host name as node
+            const names = nodeNames.length > 0 ? nodeNames : [host.host.split(':')[0].split('.')[0]]
+            names.forEach(node => nodeTargets.push({ hostId: host.id, hostName: host.name, node }))
+          }
+        })
+
+        // Fetch tasks for each node (limit 5 per node)
+        const taskResults = await Promise.allSettled(
+          nodeTargets.map(t => api.pveNode.listTasks(t.hostId, t.node, { limit: 5 }))
+        )
+
+        const allTasks = []
+        taskResults.forEach((result, idx) => {
+          const target = nodeTargets[idx]
+          if (result.status === 'fulfilled') {
+            const tasks = result.value.data || []
+            tasks.forEach(task => {
+              allTasks.push({
+                upid: task.upid,
+                hostName: target.hostName,
+                node: task.node || target.node,
+                type: task.type,
+                status: task.status,
+                starttime: task.starttime
+              })
+            })
+          }
+        })
+
+        // Sort by starttime descending and take top 5 overall
+        allTasks.sort((a, b) => (b.starttime || 0) - (a.starttime || 0))
+        recentTasks.value = allTasks.slice(0, 5)
+      } catch (error) {
+        console.error('Failed to fetch recent tasks:', error)
+      } finally {
+        tasksLoading.value = false
+      }
+    }
+
+    const taskStatusClass = (status) => {
+      if (!status) return 'task-running'
+      const s = status.toLowerCase()
+      if (s === 'ok') return 'task-ok'
+      if (s.includes('warn')) return 'task-warning'
+      if (s === 'error' || s.includes('fail')) return 'task-error'
+      return 'task-running'
+    }
+
+    const formatTaskTime = (ts) => {
+      if (!ts) return '—'
+      const d = new Date(ts * 1000)
+      return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+    }
+
     onMounted(() => {
       fetchData()
       fetchPveData()
+      fetchClusterHealth()
+      fetchRecentTasks()
 
       const intervalSecs = parseInt(localStorage.getItem('depl0y_refresh_interval') || '30', 10)
       const intervalMs = intervalSecs * 1000
@@ -369,6 +572,8 @@ export default {
       refreshInterval = setInterval(() => {
         fetchData()
         fetchPveData()
+        fetchClusterHealth()
+        fetchRecentTasks()
         lastUpdatedSeconds.value = 0
       }, intervalMs)
 
@@ -393,6 +598,12 @@ export default {
       hostsLoading,
       proxmoxHosts,
       hostNodeCounts,
+      clusterLoading,
+      clusterHealthData,
+      tasksLoading,
+      recentTasks,
+      taskStatusClass,
+      formatTaskTime,
       lastUpdatedSeconds
     }
   }
@@ -695,5 +906,148 @@ export default {
 .last-updated {
   font-size: 0.7rem;
   color: var(--text-secondary);
+}
+
+/* Cluster Health */
+.cluster-panels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.cluster-panel {
+  flex: 1;
+  min-width: 160px;
+  border: 1px solid var(--border-color);
+  border-radius: 0.375rem;
+  padding: 0.5rem 0.65rem;
+}
+
+.cluster-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.4rem;
+}
+
+.cluster-host-name {
+  font-weight: 600;
+  font-size: 0.82rem;
+  color: var(--text-primary);
+  flex: 1;
+}
+
+.cluster-badge {
+  font-size: 0.62rem;
+  font-weight: 700;
+  padding: 0.1rem 0.38rem;
+  border-radius: 0.25rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.cluster-badge-ok {
+  background-color: rgba(34, 197, 94, 0.15);
+  color: var(--secondary-color, #22c55e);
+}
+
+.cluster-badge-danger {
+  background-color: rgba(239, 68, 68, 0.12);
+  color: var(--danger-color, #ef4444);
+}
+
+.cluster-badge-standalone {
+  background-color: rgba(100, 116, 139, 0.15);
+  color: var(--text-secondary);
+}
+
+.cluster-badge-error {
+  background-color: rgba(239, 68, 68, 0.12);
+  color: var(--danger-color, #ef4444);
+}
+
+.cluster-error-msg {
+  font-size: 0.72rem;
+  color: var(--danger-color, #ef4444);
+}
+
+.cluster-members {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.cluster-member {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+}
+
+.cluster-dot {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.dot-online {
+  background-color: var(--secondary-color, #22c55e);
+}
+
+.dot-offline {
+  background-color: var(--danger-color, #ef4444);
+}
+
+.cluster-member-name {
+  flex: 1;
+  color: var(--text-primary);
+}
+
+.cluster-member-status {
+  font-size: 0.7rem;
+}
+
+.text-online {
+  color: var(--secondary-color, #22c55e);
+}
+
+.text-offline {
+  color: var(--danger-color, #ef4444);
+}
+
+/* Recent Tasks */
+.task-status-badge {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-weight: 600;
+  padding: 0.1rem 0.4rem;
+  border-radius: 0.25rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.task-ok {
+  background-color: rgba(34, 197, 94, 0.15);
+  color: var(--secondary-color, #22c55e);
+}
+
+.task-warning {
+  background-color: rgba(234, 179, 8, 0.15);
+  color: #ca8a04;
+}
+
+.task-error {
+  background-color: rgba(239, 68, 68, 0.12);
+  color: var(--danger-color, #ef4444);
+}
+
+.task-running {
+  background-color: rgba(59, 130, 246, 0.15);
+  color: #3b82f6;
 }
 </style>

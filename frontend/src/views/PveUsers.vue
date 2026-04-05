@@ -5,7 +5,20 @@
       <p class="text-muted">Manage users on Proxmox host {{ hostId }}</p>
     </div>
 
-    <div class="card">
+    <!-- Tab Bar -->
+    <div class="tab-bar">
+      <button
+        v-for="tab in tabs"
+        :key="tab.id"
+        :class="['tab-btn', { active: activeTab === tab.id }]"
+        @click="switchTab(tab.id)"
+      >
+        {{ tab.label }}
+      </button>
+    </div>
+
+    <!-- Users Tab -->
+    <div v-if="activeTab === 'users'" class="card">
       <div class="card-header">
         <h3>Users</h3>
         <button @click="showAddModal = true" class="btn btn-primary">+ Add User</button>
@@ -59,6 +72,56 @@
                 <div class="flex gap-1">
                   <button @click="deleteUser(user.userid)" class="btn btn-danger btn-sm">Delete</button>
                 </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Tokens Tab (placeholder — opened via Users modal) -->
+
+    <!-- Access Control Tab -->
+    <div v-if="activeTab === 'acl'" class="card">
+      <div class="card-header">
+        <h3>Access Control List</h3>
+        <button @click="openGrantModal" class="btn btn-primary">+ Grant Permission</button>
+      </div>
+
+      <div v-if="loadingAcl" class="loading-spinner"></div>
+
+      <div v-else-if="aclEntries.length === 0" class="text-center text-muted" style="padding: 2rem;">
+        <p>No ACL entries found.</p>
+      </div>
+
+      <div v-else class="table-container">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Path</th>
+              <th>User / Group / Token</th>
+              <th>Role</th>
+              <th>Propagate</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="(entry, idx) in aclEntries" :key="idx">
+              <td><code>{{ entry.path }}</code></td>
+              <td>
+                <span v-if="entry.type === 'group'" class="badge badge-warning" style="margin-right: 0.4rem;">group</span>
+                <span v-else-if="entry.type === 'token'" class="badge badge-info" style="margin-right: 0.4rem;">token</span>
+                <span v-else class="badge badge-secondary" style="margin-right: 0.4rem;">user</span>
+                {{ entry.ugid }}
+              </td>
+              <td><span class="badge badge-info">{{ entry.roleid }}</span></td>
+              <td>
+                <span :class="['badge', entry.propagate ? 'badge-success' : 'badge-secondary']">
+                  {{ entry.propagate ? 'Yes' : 'No' }}
+                </span>
+              </td>
+              <td>
+                <button @click="deleteAclEntry(entry)" class="btn btn-danger btn-sm">Delete</button>
               </td>
             </tr>
           </tbody>
@@ -196,6 +259,64 @@
         </div>
       </div>
     </div>
+
+    <!-- Grant Permission Modal -->
+    <div v-if="showGrantModal" class="modal" @click="showGrantModal = false">
+      <div class="modal-content" @click.stop>
+        <div class="modal-header">
+          <h3>Grant Permission</h3>
+          <button @click="showGrantModal = false" class="btn-close">×</button>
+        </div>
+        <form @submit.prevent="grantAcl" class="modal-body">
+          <div class="form-group">
+            <label class="form-label">Path</label>
+            <input
+              v-model="newAcl.path"
+              class="form-control"
+              placeholder="/ or /nodes/pve or /vms/100"
+              required
+            />
+            <p class="text-xs text-muted mt-1">Root path "/" grants access to everything.</p>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">User / Token ID</label>
+            <input
+              v-model="newAcl.ugid"
+              class="form-control"
+              placeholder="user@pve or user@pve!token"
+              required
+            />
+            <p class="text-xs text-muted mt-1">Use <code>user@realm</code> for a user or <code>user@realm!tokenid</code> for a token.</p>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Role</label>
+            <div v-if="loadingRoles" class="text-sm text-muted">Loading roles...</div>
+            <select v-else v-model="newAcl.roles" class="form-control" required>
+              <option value="" disabled>Select a role</option>
+              <option v-for="role in roles" :key="role.roleid" :value="role.roleid">
+                {{ role.roleid }}
+              </option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">
+              <input type="checkbox" v-model="newAcl.propagate" :true-value="1" :false-value="0" />
+              Propagate (apply to sub-paths)
+            </label>
+          </div>
+
+          <div class="flex gap-1 mt-2">
+            <button type="submit" class="btn btn-primary" :disabled="savingAcl">
+              {{ savingAcl ? 'Granting...' : 'Grant Permission' }}
+            </button>
+            <button type="button" @click="showGrantModal = false" class="btn btn-outline">Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -211,6 +332,14 @@ export default {
     const route = useRoute()
     const toast = useToast()
     const hostId = ref(route.params.hostId)
+
+    const tabs = [
+      { id: 'users', label: 'Users' },
+      { id: 'acl', label: 'Access Control' }
+    ]
+    const activeTab = ref('users')
+
+    // ── Users ──────────────────────────────────────────────────────────────
     const users = ref([])
     const loading = ref(false)
     const saving = ref(false)
@@ -336,6 +465,103 @@ export default {
       }
     }
 
+    // ── ACL ────────────────────────────────────────────────────────────────
+    const aclEntries = ref([])
+    const loadingAcl = ref(false)
+    const roles = ref([])
+    const loadingRoles = ref(false)
+    const showGrantModal = ref(false)
+    const savingAcl = ref(false)
+
+    const newAcl = ref({
+      path: '/',
+      ugid: '',
+      roles: '',
+      propagate: 1
+    })
+
+    const fetchAcl = async () => {
+      loadingAcl.value = true
+      try {
+        const response = await api.pveNode.listAcl(hostId.value)
+        aclEntries.value = response.data || []
+      } catch (error) {
+        console.error('Failed to fetch ACL:', error)
+        toast.error('Failed to load ACL entries')
+      } finally {
+        loadingAcl.value = false
+      }
+    }
+
+    const fetchRoles = async () => {
+      if (roles.value.length > 0) return
+      loadingRoles.value = true
+      try {
+        const response = await api.pveNode.listRoles(hostId.value)
+        roles.value = response.data || []
+      } catch (error) {
+        console.error('Failed to fetch roles:', error)
+        toast.error('Failed to load roles')
+      } finally {
+        loadingRoles.value = false
+      }
+    }
+
+    const openGrantModal = async () => {
+      newAcl.value = { path: '/', ugid: '', roles: '', propagate: 1 }
+      showGrantModal.value = true
+      await fetchRoles()
+    }
+
+    const grantAcl = async () => {
+      savingAcl.value = true
+      try {
+        await api.pveNode.updateAcl(hostId.value, {
+          path: newAcl.value.path,
+          roles: newAcl.value.roles,
+          ugid: newAcl.value.ugid,
+          delete: 0,
+          propagate: newAcl.value.propagate
+        })
+        toast.success('Permission granted')
+        showGrantModal.value = false
+        await fetchAcl()
+      } catch (error) {
+        console.error('Failed to grant ACL:', error)
+        toast.error(error.response?.data?.detail || 'Failed to grant permission')
+      } finally {
+        savingAcl.value = false
+      }
+    }
+
+    const deleteAclEntry = async (entry) => {
+      if (!confirm(`Remove "${entry.roleid}" on "${entry.path}" for "${entry.ugid}"?`)) return
+      try {
+        await api.pveNode.updateAcl(hostId.value, {
+          path: entry.path,
+          roles: entry.roleid,
+          ugid: entry.ugid,
+          delete: 1,
+          propagate: entry.propagate ? 1 : 0
+        })
+        toast.success('ACL entry removed')
+        await fetchAcl()
+      } catch (error) {
+        console.error('Failed to delete ACL entry:', error)
+        toast.error('Failed to remove ACL entry')
+      }
+    }
+
+    // ── Tab switching ──────────────────────────────────────────────────────
+    const switchTab = (tabId) => {
+      activeTab.value = tabId
+      if (tabId === 'acl') {
+        fetchAcl()
+        fetchRoles()
+      }
+    }
+
+    // ── Helpers ────────────────────────────────────────────────────────────
     const extractRealm = (userid) => {
       if (!userid) return '—'
       const parts = userid.split('@')
@@ -353,6 +579,10 @@ export default {
 
     return {
       hostId,
+      tabs,
+      activeTab,
+      switchTab,
+      // users
       users,
       loading,
       saving,
@@ -370,6 +600,18 @@ export default {
       openTokens,
       createToken,
       revokeToken,
+      // acl
+      aclEntries,
+      loadingAcl,
+      roles,
+      loadingRoles,
+      showGrantModal,
+      savingAcl,
+      newAcl,
+      openGrantModal,
+      grantAcl,
+      deleteAclEntry,
+      // helpers
       extractRealm,
       formatExpiry
     }
@@ -387,6 +629,36 @@ export default {
   font-size: 1.75rem;
   font-weight: 600;
   color: var(--text-primary);
+}
+
+/* Tab bar */
+.tab-bar {
+  display: flex;
+  gap: 0;
+  margin-bottom: 1.5rem;
+  border-bottom: 2px solid var(--border-color);
+}
+
+.tab-btn {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  padding: 0.625rem 1.25rem;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.tab-btn:hover {
+  color: var(--text-primary);
+}
+
+.tab-btn.active {
+  color: var(--primary, #3b82f6);
+  border-bottom-color: var(--primary, #3b82f6);
 }
 
 .btn-sm {
@@ -469,5 +741,10 @@ export default {
   border-radius: 0.375rem;
   font-size: 0.875rem;
   word-break: break-all;
+}
+
+.badge-secondary {
+  background: var(--background, #f3f4f6);
+  color: var(--text-secondary, #6b7280);
 }
 </style>

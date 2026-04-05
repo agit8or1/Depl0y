@@ -21,6 +21,7 @@
         <button @click="action('restart')" class="btn btn-outline btn-sm"
           :disabled="actioning || (currentStats.status || status) !== 'running'">Restart</button>
         <button @click="openTerminal" class="btn btn-outline btn-sm">Terminal</button>
+        <button @click="openCloneModal" class="btn btn-outline btn-sm">Clone</button>
         <button @click="deleteContainer" class="btn btn-danger btn-sm" :disabled="actioning">Delete</button>
       </div>
     </div>
@@ -238,6 +239,67 @@
         </div>
       </div>
 
+      <!-- Performance Tab -->
+      <div v-if="activeTab === 'performance'">
+        <div class="card">
+          <div class="card-header">
+            <h3>Performance</h3>
+            <button @click="fetchRrdData" class="btn btn-outline btn-sm" :disabled="loadingRrd">
+              {{ loadingRrd ? 'Loading...' : 'Refresh' }}
+            </button>
+          </div>
+          <div class="card-body">
+            <div v-if="loadingRrd" class="loading-spinner"></div>
+            <div v-else-if="!rrdPoint" class="text-center text-muted" style="padding:2rem;">
+              <p>No performance data available.</p>
+            </div>
+            <div v-else>
+              <div class="perf-timeframe-row mb-2">
+                <label class="form-label" style="margin:0;align-self:center;">Timeframe:</label>
+                <select v-model="rrdTimeframe" @change="fetchRrdData" class="form-control" style="width:auto;">
+                  <option value="hour">Last Hour</option>
+                  <option value="day">Last Day</option>
+                  <option value="week">Last Week</option>
+                  <option value="month">Last Month</option>
+                </select>
+              </div>
+              <div class="perf-grid">
+                <div class="perf-card">
+                  <div class="perf-card__label">CPU Usage</div>
+                  <div class="perf-card__value">{{ rrdPoint.cpu != null ? (rrdPoint.cpu * 100).toFixed(2) + '%' : '—' }}</div>
+                  <div class="perf-bar-track"><div class="perf-bar-fill" :style="{ width: rrdPoint.cpu != null ? Math.min(rrdPoint.cpu * 100, 100).toFixed(1) + '%' : '0%', background: cpuBarColor }"></div></div>
+                </div>
+                <div class="perf-card">
+                  <div class="perf-card__label">Memory</div>
+                  <div class="perf-card__value">{{ formatBytes(rrdPoint.mem) }} / {{ formatBytes(rrdPoint.maxmem) }}</div>
+                  <div class="perf-bar-track"><div class="perf-bar-fill" :style="{ width: memPct + '%', background: memBarColor }"></div></div>
+                  <div class="perf-card__sub">{{ memPct.toFixed(1) }}% used</div>
+                </div>
+                <div class="perf-card">
+                  <div class="perf-card__label">Network In</div>
+                  <div class="perf-card__value">{{ formatRateBytes(rrdPoint.netin) }}/s</div>
+                </div>
+                <div class="perf-card">
+                  <div class="perf-card__label">Network Out</div>
+                  <div class="perf-card__value">{{ formatRateBytes(rrdPoint.netout) }}/s</div>
+                </div>
+                <div class="perf-card">
+                  <div class="perf-card__label">Disk Read</div>
+                  <div class="perf-card__value">{{ formatRateBytes(rrdPoint.diskread) }}/s</div>
+                </div>
+                <div class="perf-card">
+                  <div class="perf-card__label">Disk Write</div>
+                  <div class="perf-card__value">{{ formatRateBytes(rrdPoint.diskwrite) }}/s</div>
+                </div>
+              </div>
+              <div class="text-muted text-sm mt-2" style="text-align:right;">
+                Data point: {{ rrdPoint.time ? new Date(rrdPoint.time * 1000).toLocaleString() : 'unknown' }}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Terminal Tab -->
       <div v-if="activeTab === 'terminal'">
         <div class="card">
@@ -253,6 +315,50 @@
         </div>
       </div>
     </template>
+
+    <!-- Clone LXC Modal -->
+    <div v-if="showCloneModal" class="modal" @click="showCloneModal = false">
+      <div class="modal-content" @click.stop>
+        <div class="modal-header">
+          <h3>Clone Container CT{{ vmid }}</h3>
+          <button @click="showCloneModal = false" class="btn-close">×</button>
+        </div>
+        <form @submit.prevent="submitClone" class="modal-body">
+          <div class="form-group">
+            <label class="form-label">New CT ID</label>
+            <input v-model.number="cloneForm.newid" type="number" min="100" class="form-control" required :disabled="loadingNextId" />
+            <div v-if="loadingNextId" class="text-muted text-sm mt-1">Loading next available ID…</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Hostname</label>
+            <input v-model="cloneForm.hostname" type="text" class="form-control" placeholder="new-container" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Target Node</label>
+            <select v-model="cloneForm.target" class="form-control">
+              <option value="">Same node ({{ node }})</option>
+              <option v-for="n in pveNodes" :key="n.name" :value="n.name">{{ n.name }}</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Storage (optional)</label>
+            <input v-model="cloneForm.storage" type="text" class="form-control" placeholder="e.g. local-lvm" />
+          </div>
+          <div class="form-group">
+            <label class="form-label checkbox-label">
+              <input type="checkbox" v-model="cloneForm.full" style="margin-right:0.5rem;" />
+              Full Clone (uncheck for linked clone)
+            </label>
+          </div>
+          <div class="flex gap-1 mt-2">
+            <button type="submit" class="btn btn-primary" :disabled="cloningLxc">
+              {{ cloningLxc ? 'Cloning…' : 'Clone' }}
+            </button>
+            <button type="button" @click="showCloneModal = false" class="btn btn-outline">Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
 
     <!-- Create Snapshot Modal -->
     <div v-if="showSnapshotModal" class="modal" @click="showSnapshotModal = false">
@@ -312,12 +418,25 @@ const activeTab = ref('overview')
 const editMode = ref(false)
 const newSnapshot = ref({ snapname: '', description: '' })
 
+// Clone modal state
+const showCloneModal = ref(false)
+const cloningLxc = ref(false)
+const loadingNextId = ref(false)
+const pveNodes = ref([])
+const cloneForm = ref({ newid: null, hostname: '', target: '', full: true, storage: '' })
+
+// Performance / RRD state
+const rrdData = ref([])
+const loadingRrd = ref(false)
+const rrdTimeframe = ref('hour')
+
 let pollInterval = null
 
 const tabs = [
   { id: 'overview', label: 'Overview' },
   { id: 'config', label: 'Config' },
   { id: 'snapshots', label: 'Snapshots' },
+  { id: 'performance', label: 'Performance' },
   { id: 'terminal', label: 'Terminal' },
 ]
 
@@ -380,10 +499,41 @@ const fetchSnapshots = async () => {
   }
 }
 
+// RRD computed helpers
+const rrdPoint = computed(() => {
+  if (!rrdData.value || rrdData.value.length === 0) return null
+  // Find the last non-null data point
+  for (let i = rrdData.value.length - 1; i >= 0; i--) {
+    const p = rrdData.value[i]
+    if (p && (p.cpu != null || p.mem != null)) return p
+  }
+  return rrdData.value[rrdData.value.length - 1]
+})
+
+const memPct = computed(() => {
+  if (!rrdPoint.value || !rrdPoint.value.maxmem || !rrdPoint.value.mem) return 0
+  return Math.min((rrdPoint.value.mem / rrdPoint.value.maxmem) * 100, 100)
+})
+
+const cpuBarColor = computed(() => {
+  if (!rrdPoint.value || rrdPoint.value.cpu == null) return 'var(--primary-color)'
+  const pct = rrdPoint.value.cpu * 100
+  if (pct > 90) return '#ef4444'
+  if (pct > 70) return '#f59e0b'
+  return '#22c55e'
+})
+
+const memBarColor = computed(() => {
+  if (memPct.value > 90) return '#ef4444'
+  if (memPct.value > 70) return '#f59e0b'
+  return '#3b82f6'
+})
+
 const switchTab = (tab) => {
   activeTab.value = tab
   if (tab === 'snapshots') fetchSnapshots()
   if (tab === 'overview') fetchStatus()
+  if (tab === 'performance') fetchRrdData()
 }
 
 const startPolling = () => {
@@ -509,6 +659,73 @@ const deleteContainer = async () => {
     toast.error('Failed to delete container')
   } finally {
     actioning.value = false
+  }
+}
+
+const fetchRrdData = async () => {
+  loadingRrd.value = true
+  try {
+    const res = await api.pveNode.lxcRrdData(hostId.value, node.value, vmid.value, {
+      timeframe: rrdTimeframe.value,
+      cf: 'AVERAGE',
+    })
+    rrdData.value = res.data || []
+  } catch (e) {
+    console.error('Failed to fetch RRD data:', e)
+    toast.error('Failed to load performance data')
+  } finally {
+    loadingRrd.value = false
+  }
+}
+
+const formatRateBytes = (val) => {
+  if (val == null || isNaN(val)) return '0 B'
+  if (val >= 1073741824) return (val / 1073741824).toFixed(2) + ' GB'
+  if (val >= 1048576) return (val / 1048576).toFixed(2) + ' MB'
+  if (val >= 1024) return (val / 1024).toFixed(2) + ' KB'
+  return val.toFixed(0) + ' B'
+}
+
+const openCloneModal = async () => {
+  cloneForm.value = { newid: null, hostname: '', target: '', full: true, storage: '' }
+  showCloneModal.value = true
+  // Load next ID and cluster nodes in parallel
+  loadingNextId.value = true
+  try {
+    const [nextIdRes, clusterRes] = await Promise.all([
+      api.pveNode.nextId(hostId.value),
+      api.pveNode.clusterStatus(hostId.value),
+    ])
+    cloneForm.value.newid = nextIdRes.data
+    // clusterStatus returns mixed entries (type=cluster + type=node); keep only nodes
+    const allNodes = (clusterRes.data || []).filter(e => e.type === 'node')
+    pveNodes.value = allNodes.filter(n => n.name !== node.value)
+  } catch (e) {
+    console.warn('Failed to pre-populate clone form:', e)
+  } finally {
+    loadingNextId.value = false
+  }
+}
+
+const submitClone = async () => {
+  if (!cloneForm.value.newid) {
+    toast.error('New CT ID is required')
+    return
+  }
+  cloningLxc.value = true
+  try {
+    const payload = { newid: cloneForm.value.newid, full: cloneForm.value.full ? 1 : 0 }
+    if (cloneForm.value.hostname) payload.hostname = cloneForm.value.hostname
+    if (cloneForm.value.target) payload.target = cloneForm.value.target
+    if (cloneForm.value.storage) payload.storage = cloneForm.value.storage
+    await api.pveNode.cloneLxc(hostId.value, node.value, vmid.value, payload)
+    toast.success(`Clone task started — new CT ${cloneForm.value.newid}`)
+    showCloneModal.value = false
+  } catch (e) {
+    console.error('Failed to clone container:', e)
+    toast.error('Failed to clone container')
+  } finally {
+    cloningLxc.value = false
   }
 }
 
@@ -779,4 +996,68 @@ onUnmounted(() => {
 .text-sm { font-size: 0.875rem; }
 .text-muted { color: var(--text-secondary); }
 .text-center { text-align: center; }
+
+/* Performance tab */
+.perf-timeframe-row {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.perf-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.perf-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+  padding: 1rem 1.25rem;
+}
+
+.perf-card__label {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.35rem;
+  font-weight: 600;
+}
+
+.perf-card__value {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 0.5rem;
+}
+
+.perf-card__sub {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  margin-top: 0.25rem;
+}
+
+.perf-bar-track {
+  height: 6px;
+  background: var(--border-color);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-top: 0.25rem;
+}
+
+.perf-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.4s ease;
+}
+
+/* Clone modal extras */
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  font-weight: 500;
+}
 </style>

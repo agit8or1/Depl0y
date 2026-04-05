@@ -23,17 +23,26 @@
         <router-link to="/vms/create" class="btn btn-primary">+ Create VM</router-link>
       </div>
 
-      <!-- Filter Bar -->
-      <div v-if="statusFilter" class="filter-bar">
-        <div class="filter-info">
-          <span class="filter-label">Filtered by status:</span>
-          <span :class="['badge', getStatusBadgeClass(statusFilter)]">
-            {{ statusFilter }}
-          </span>
-          <span class="filter-count">({{ filteredVMs.length }} VMs)</span>
+      <!-- Search + Filter Bar -->
+      <div class="filter-bar">
+        <div class="filter-info" style="flex-wrap: wrap; gap: 0.5rem;">
+          <input
+            v-model="managedSearch"
+            type="text"
+            placeholder="Search by name, VMID, node…"
+            class="form-control"
+            style="width: 220px;"
+          />
+          <select v-model="managedStatusFilter" class="form-control" style="width: 140px;">
+            <option value="">All statuses</option>
+            <option value="running">Running</option>
+            <option value="stopped">Stopped</option>
+            <option value="paused">Paused</option>
+          </select>
+          <span class="filter-count">{{ filteredVMs.length }} VM{{ filteredVMs.length !== 1 ? 's' : '' }}</span>
         </div>
-        <button @click="clearFilter" class="btn btn-sm btn-secondary">
-          Clear Filter
+        <button v-if="managedSearch || managedStatusFilter || statusFilter" @click="clearFilter" class="btn btn-sm btn-secondary">
+          Clear
         </button>
       </div>
 
@@ -338,6 +347,8 @@ export default {
     const sortField = ref('vmid')
     const sortDirection = ref('asc')
     const statusFilter = ref(route.query.status || null)
+    const managedSearch = ref('')
+    const managedStatusFilter = ref('')
     const showDeleteConfirmModal = ref(false)
     const vmToDelete = ref(null)
     const deleteConfirmInput = ref('')
@@ -461,16 +472,35 @@ export default {
     }
 
     const filteredVMs = computed(() => {
-      if (!statusFilter.value) {
-        return vms.value
+      let list = vms.value
+
+      // Route query status filter (from dashboard clicks)
+      if (statusFilter.value) {
+        list = list.filter(vm => vm.status.toLowerCase() === statusFilter.value.toLowerCase())
       }
-      return vms.value.filter(vm =>
-        vm.status.toLowerCase() === statusFilter.value.toLowerCase()
-      )
+
+      // Inline status dropdown
+      if (managedStatusFilter.value) {
+        list = list.filter(vm => vm.status.toLowerCase() === managedStatusFilter.value.toLowerCase())
+      }
+
+      // Free-text search across name, VMID, and node
+      if (managedSearch.value.trim()) {
+        const q = managedSearch.value.trim().toLowerCase()
+        list = list.filter(vm =>
+          (vm.name || '').toLowerCase().includes(q) ||
+          String(vm.vmid).includes(q) ||
+          (vm.node || '').toLowerCase().includes(q)
+        )
+      }
+
+      return list
     })
 
     const clearFilter = () => {
       statusFilter.value = null
+      managedSearch.value = ''
+      managedStatusFilter.value = ''
       router.push('/vms')
     }
 
@@ -713,6 +743,8 @@ export default {
       sortField,
       sortDirection,
       statusFilter,
+      managedSearch,
+      managedStatusFilter,
       filteredVMs,
       showDeleteConfirmModal,
       vmToDelete,

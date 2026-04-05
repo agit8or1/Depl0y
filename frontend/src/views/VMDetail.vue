@@ -92,6 +92,29 @@
             </div>
           </div>
         </div>
+
+        <!-- Notes -->
+        <div class="card mt-2">
+          <div class="card-header">
+            <h4 style="margin:0;font-size:0.95rem;">Notes</h4>
+            <div class="flex gap-1">
+              <button v-if="!editingNotes" @click="startEditNotes" class="btn btn-outline btn-sm">Edit</button>
+              <template v-else>
+                <button @click="saveNotes" class="btn btn-primary btn-sm" :disabled="savingNotes">
+                  {{ savingNotes ? 'Saving...' : 'Save' }}
+                </button>
+                <button @click="cancelEditNotes" class="btn btn-outline btn-sm">Cancel</button>
+              </template>
+            </div>
+          </div>
+          <div class="card-body">
+            <textarea v-if="editingNotes" v-model="notesText" class="form-control" rows="5"
+              placeholder="Enter notes / description for this VM..."></textarea>
+            <div v-else class="config-value pre-wrap" style="min-height:60px;">
+              {{ config.description || '—' }}
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- ─── Config Tab ─── -->
@@ -188,6 +211,57 @@
                 </label>
               </div>
             </div>
+          </div>
+        </div>
+
+        <!-- Pending Config Changes -->
+        <div class="card mt-2">
+          <div class="card-header pending-header" @click="pendingExpanded = !pendingExpanded" style="cursor:pointer;">
+            <h3 class="pending-title">
+              Pending Config Changes
+              <span v-if="pendingLoaded && pendingChanges.length > 0" class="badge badge-warning ml-1">{{ pendingChanges.length }}</span>
+            </h3>
+            <div class="flex gap-1 pending-header-actions" @click.stop>
+              <button @click="loadPending" class="btn btn-outline btn-sm pending-refresh" :disabled="loadingPending" title="Refresh pending changes">
+                <span :class="loadingPending ? 'spin' : ''">&#8635;</span>
+              </button>
+              <button class="btn btn-outline btn-sm" @click="pendingExpanded = !pendingExpanded">
+                {{ pendingExpanded ? '▲' : '▼' }}
+              </button>
+            </div>
+          </div>
+          <div v-if="pendingExpanded">
+            <div v-if="loadingPending" class="loading-spinner"></div>
+            <div v-else-if="!pendingLoaded" class="card-body text-muted text-sm">
+              Loading pending changes...
+            </div>
+            <div v-else-if="pendingChanges.length === 0" class="card-body text-muted text-sm">
+              No pending changes.
+            </div>
+            <template v-else>
+              <div class="pending-warning-banner">
+                <span class="pending-warning-icon">&#9888;</span>
+                This VM has pending configuration changes that will take effect on next boot.
+              </div>
+              <div class="table-container">
+                <table class="table">
+                  <thead>
+                    <tr>
+                      <th>Key</th>
+                      <th>Current Value</th>
+                      <th>Pending Value</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="item in pendingChanges" :key="item.key">
+                      <td><code>{{ item.key }}</code></td>
+                      <td class="text-sm pending-current">{{ item.value ?? '—' }}</td>
+                      <td class="text-sm pending-new">{{ item.pending }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </template>
           </div>
         </div>
       </div>
@@ -800,6 +874,9 @@ const loadingInit = ref(true)
 const actioning = ref(false)
 const savingConfig = ref(false)
 const editingConfig = ref(false)
+const editingNotes = ref(false)
+const savingNotes = ref(false)
+const notesText = ref('')
 const activeTab = ref('overview')
 
 // Tab data
@@ -812,6 +889,12 @@ const storageList = ref([])
 const clusterNodes = ref([])
 const rrdData = ref(null)
 const rrdTimeframe = ref('hour')
+
+// Pending config changes
+const pendingChanges = ref([])
+const loadingPending = ref(false)
+const pendingLoaded = ref(false)
+const pendingExpanded = ref(true)
 
 // Modal visibility
 const showDeleteConfirm = ref(false)
@@ -1013,6 +1096,20 @@ const loadClusterNodes = async () => {
   }
 }
 
+const loadPending = async () => {
+  loadingPending.value = true
+  try {
+    const res = await api.pveVm.vmPending(hostId.value, node.value, vmid.value)
+    const raw = res.data || []
+    pendingChanges.value = raw.filter(item => item.pending !== undefined && item.pending !== null)
+    pendingLoaded.value = true
+  } catch (e) {
+    console.warn('Pending config load failed', e)
+  } finally {
+    loadingPending.value = false
+  }
+}
+
 const loadNextId = async () => {
   try {
     const res = await api.pveNode.nextId(hostId.value)
@@ -1041,6 +1138,7 @@ const switchTab = (tab) => {
   if (tab === 'snapshots') loadSnapshots()
   if (tab === 'firewall') loadFirewall()
   if (tab === 'overview') { loadStatus(); loadRrd() }
+  if (tab === 'config') loadPending()
 }
 
 // ── Polling ────────────────────────────────────────────────────────────────────
@@ -1146,6 +1244,32 @@ const saveConfig = async () => {
     console.error(e)
   } finally {
     savingConfig.value = false
+  }
+}
+
+// ── Notes Actions ──────────────────────────────────────────────────────────────
+
+const startEditNotes = () => {
+  notesText.value = config.value.description || ''
+  editingNotes.value = true
+}
+
+const cancelEditNotes = () => {
+  editingNotes.value = false
+}
+
+const saveNotes = async () => {
+  savingNotes.value = true
+  try {
+    await api.pveVm.updateConfig(hostId.value, node.value, vmid.value, { description: notesText.value })
+    toast.success('Notes saved')
+    editingNotes.value = false
+    await loadConfig()
+  } catch (e) {
+    console.error(e)
+    toast.error('Failed to save notes')
+  } finally {
+    savingNotes.value = false
   }
 }
 
@@ -1264,7 +1388,7 @@ const doCreateSnapshot = async () => {
 }
 
 const rollbackSnapshot = async (snapName) => {
-  if (!confirm(`Rollback to snapshot '${snapName}'? Current VM state will be lost.`)) return
+  if (!confirm(`This will revert the VM to this snapshot. Continue?`)) return
   actioning.value = true
   try {
     await api.pveVm.rollbackSnapshot(hostId.value, node.value, vmid.value, snapName)
@@ -1690,5 +1814,68 @@ onUnmounted(() => {
 
 .btn-success:hover {
   background-color: #059669;
+}
+
+/* Pending Config Changes */
+.pending-header {
+  user-select: none;
+}
+
+.pending-title {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin: 0;
+  font-size: 1rem;
+}
+
+.pending-header-actions {
+  align-items: center;
+}
+
+.pending-refresh {
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0.2rem 0.5rem;
+}
+
+.pending-warning-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  background: rgba(234, 179, 8, 0.12);
+  border-left: 4px solid #eab308;
+  color: #ca8a04;
+  padding: 0.75rem 1.25rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.pending-warning-icon {
+  font-size: 1.1rem;
+  flex-shrink: 0;
+}
+
+.pending-current {
+  color: var(--text-secondary);
+  font-family: monospace;
+  word-break: break-all;
+}
+
+.pending-new {
+  color: #eab308;
+  font-family: monospace;
+  font-weight: 600;
+  word-break: break-all;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.spin {
+  display: inline-block;
+  animation: spin 0.8s linear infinite;
 }
 </style>

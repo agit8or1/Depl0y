@@ -240,9 +240,17 @@
         <div class="card">
           <div class="card-header">
             <h3>Network Interfaces</h3>
-            <button @click="applyNetwork" class="btn btn-outline btn-sm" :disabled="applyingNetwork">
-              {{ applyingNetwork ? 'Applying...' : 'Apply Network Changes' }}
-            </button>
+            <div class="flex gap-1">
+              <button @click="showCreateNetworkModal = true" class="btn btn-primary btn-sm">
+                + Create Interface
+              </button>
+              <button @click="applyNetwork" class="btn btn-outline btn-sm" :disabled="applyingNetwork">
+                {{ applyingNetwork ? 'Applying...' : 'Apply Network Config' }}
+              </button>
+              <button @click="loadNetwork" class="btn btn-outline btn-sm" :disabled="loadingNetwork">
+                Refresh
+              </button>
+            </div>
           </div>
           <div v-if="loadingNetwork" class="loading-spinner"></div>
           <div v-else class="table-container">
@@ -252,26 +260,30 @@
                   <th>Interface</th>
                   <th>Type</th>
                   <th>State</th>
-                  <th>Address / Mask</th>
+                  <th>Address / CIDR</th>
                   <th>Gateway</th>
-                  <th>Bridge Ports</th>
+                  <th>Bridge Ports / Slaves</th>
                   <th>Autostart</th>
+                  <th>Comments</th>
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 <tr v-if="networkIfaces.length === 0">
-                  <td colspan="7" class="text-muted text-center">No interfaces found</td>
+                  <td colspan="9" class="text-muted text-center">No interfaces found</td>
                 </tr>
                 <tr v-for="iface in networkIfaces" :key="iface.iface">
                   <td><code>{{ iface.iface }}</code></td>
-                  <td>{{ iface.type }}</td>
+                  <td>
+                    <span class="badge badge-info">{{ iface.type }}</span>
+                  </td>
                   <td>
                     <span :class="iface.active ? 'badge badge-success' : 'badge badge-danger'">
                       {{ iface.active ? 'UP' : 'DOWN' }}
                     </span>
                   </td>
                   <td class="text-sm">
-                    <code v-if="iface.address">{{ iface.address }}{{ iface.netmask ? '/' + iface.netmask : '' }}</code>
+                    <code v-if="iface.address">{{ iface.address }}{{ iface.netmask ? '/' + cidrFromNetmask(iface.netmask) : '' }}</code>
                     <span v-else class="text-muted">—</span>
                   </td>
                   <td class="text-sm">{{ iface.gateway || '—' }}</td>
@@ -279,6 +291,77 @@
                   <td>
                     <span v-if="iface.autostart" class="badge badge-success">Yes</span>
                     <span v-else class="text-muted text-sm">No</span>
+                  </td>
+                  <td class="text-sm text-muted" style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" :title="iface.comments || iface.comment || ''">
+                    {{ iface.comments || iface.comment || '—' }}
+                  </td>
+                  <td @click.stop>
+                    <button
+                      @click="deleteNetworkIface(iface)"
+                      class="btn btn-danger btn-sm"
+                      :disabled="networkIfaceDeleting[iface.iface]"
+                      title="Delete interface">
+                      {{ networkIfaceDeleting[iface.iface] ? '...' : 'Delete' }}
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ─── Backup Schedules Tab ─── -->
+      <div v-if="activeTab === 'backups'">
+        <div class="card">
+          <div class="card-header">
+            <h3>Backup Schedules</h3>
+            <div class="flex gap-1">
+              <button @click="showCreateBackupModal = true" class="btn btn-primary btn-sm">
+                + Create Schedule
+              </button>
+              <button @click="loadBackupSchedules" class="btn btn-outline btn-sm" :disabled="loadingBackups">
+                Refresh
+              </button>
+            </div>
+          </div>
+          <div v-if="loadingBackups" class="loading-spinner"></div>
+          <div v-else class="table-container">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Schedule</th>
+                  <th>Storage</th>
+                  <th>Node</th>
+                  <th>Mode</th>
+                  <th>Compress</th>
+                  <th>Enabled</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-if="backupSchedules.length === 0">
+                  <td colspan="8" class="text-muted text-center">No backup schedules configured</td>
+                </tr>
+                <tr v-for="sched in backupSchedules" :key="sched.id">
+                  <td><code class="text-sm">{{ sched.id }}</code></td>
+                  <td class="text-sm"><code>{{ sched.schedule || sched.starttime || '—' }}</code></td>
+                  <td class="text-sm">{{ sched.storage || '—' }}</td>
+                  <td class="text-sm">{{ sched.node || 'all' }}</td>
+                  <td class="text-sm">{{ sched.mode || '—' }}</td>
+                  <td class="text-sm">{{ sched.compress || '—' }}</td>
+                  <td>
+                    <span v-if="sched.enabled !== 0 && sched.enabled !== false" class="badge badge-success">Yes</span>
+                    <span v-else class="badge badge-danger">No</span>
+                  </td>
+                  <td @click.stop>
+                    <button
+                      @click="deleteBackupSchedule(sched)"
+                      class="btn btn-danger btn-sm"
+                      :disabled="backupDeleting[sched.id]">
+                      {{ backupDeleting[sched.id] ? '...' : 'Delete' }}
+                    </button>
                   </td>
                 </tr>
               </tbody>
@@ -353,6 +436,56 @@
         </div>
       </div>
 
+      <!-- ─── Disk Health Tab ─── -->
+      <div v-if="activeTab === 'disks'">
+        <div class="card">
+          <div class="card-header">
+            <h3>Physical Disks</h3>
+            <button @click="loadDisks" class="btn btn-outline btn-sm" :disabled="loadingDisks">
+              {{ loadingDisks ? 'Loading...' : 'Refresh' }}
+            </button>
+          </div>
+          <div v-if="loadingDisks" class="loading-spinner"></div>
+          <div v-else class="table-container">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Device</th>
+                  <th>Model</th>
+                  <th>Size</th>
+                  <th>Type</th>
+                  <th>Wearout</th>
+                  <th>Health</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-if="diskList.length === 0">
+                  <td colspan="7" class="text-muted text-center">No disks found</td>
+                </tr>
+                <tr v-for="disk in diskList" :key="disk.devpath || disk.dev">
+                  <td><code class="text-sm">{{ disk.devpath || disk.dev }}</code></td>
+                  <td class="text-sm">{{ disk.model || '—' }}</td>
+                  <td class="text-sm">{{ disk.size ? formatBytes(disk.size) : '—' }}</td>
+                  <td>
+                    <span class="badge badge-info">{{ diskTypeLabel(disk) }}</span>
+                  </td>
+                  <td class="text-sm">{{ diskWearout(disk) }}</td>
+                  <td>
+                    <span v-if="diskHealth(disk) === 'PASSED'" class="badge badge-success">PASSED</span>
+                    <span v-else-if="diskHealth(disk) === 'FAILED'" class="badge badge-danger">FAILED</span>
+                    <span v-else class="text-muted text-sm">{{ diskHealth(disk) }}</span>
+                  </td>
+                  <td>
+                    <button @click="openSmartModal(disk)" class="btn btn-outline btn-sm">SMART</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
       <!-- ─── Terminal Tab ─── -->
       <div v-if="activeTab === 'terminal'">
         <div class="card">
@@ -380,6 +513,196 @@
         <div class="modal-body">
           <div v-if="selectedTask?._loadingLog" class="loading-spinner"></div>
           <pre v-else class="task-log task-log-modal">{{ formatTaskLog(selectedTask?._log) }}</pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- Create Network Interface Modal -->
+    <div v-if="showCreateNetworkModal" class="modal" @click.self="showCreateNetworkModal = false">
+      <div class="modal-content" @click.stop>
+        <div class="modal-header">
+          <h3>Create Network Interface</h3>
+          <button @click="showCreateNetworkModal = false" class="btn-close">×</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label">Interface Name *</label>
+            <input v-model="newNetworkForm.iface" class="form-control" placeholder="e.g. vmbr1, bond0, vlan10" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Type *</label>
+            <select v-model="newNetworkForm.type" class="form-control">
+              <option value="bridge">Bridge</option>
+              <option value="bond">Bond</option>
+              <option value="vlan">VLAN</option>
+              <option value="eth">Ethernet</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">IP Address</label>
+            <input v-model="newNetworkForm.address" class="form-control" placeholder="e.g. 192.168.1.1" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Netmask</label>
+            <input v-model="newNetworkForm.netmask" class="form-control" placeholder="e.g. 255.255.255.0" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Gateway</label>
+            <input v-model="newNetworkForm.gateway" class="form-control" placeholder="e.g. 192.168.1.254" />
+          </div>
+          <div v-if="newNetworkForm.type === 'bridge'" class="form-group">
+            <label class="form-label">Bridge Ports</label>
+            <input v-model="newNetworkForm.bridge_ports" class="form-control" placeholder="e.g. eth0 eth1" />
+          </div>
+          <div v-if="newNetworkForm.type === 'bond'" class="form-group">
+            <label class="form-label">Bond Mode</label>
+            <select v-model="newNetworkForm.bond_mode" class="form-control">
+              <option value="active-backup">active-backup</option>
+              <option value="balance-rr">balance-rr</option>
+              <option value="balance-xor">balance-xor</option>
+              <option value="broadcast">broadcast</option>
+              <option value="802.3ad">802.3ad (LACP)</option>
+              <option value="balance-tlb">balance-tlb</option>
+              <option value="balance-alb">balance-alb</option>
+            </select>
+          </div>
+          <div v-if="newNetworkForm.type === 'vlan'" class="form-group">
+            <label class="form-label">VLAN ID</label>
+            <input v-model="newNetworkForm.vlan_id" class="form-control" type="number" placeholder="e.g. 100" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Comments</label>
+            <input v-model="newNetworkForm.comments" class="form-control" placeholder="Optional description" />
+          </div>
+          <div class="form-group flex gap-1 align-center">
+            <input type="checkbox" v-model="newNetworkForm.autostart" id="net-autostart" />
+            <label for="net-autostart" class="form-label" style="margin:0">Autostart</label>
+          </div>
+          <div class="flex gap-1 mt-2" style="justify-content:flex-end">
+            <button @click="showCreateNetworkModal = false" class="btn btn-outline">Cancel</button>
+            <button @click="createNetworkIface" class="btn btn-primary" :disabled="creatingNetwork">
+              {{ creatingNetwork ? 'Creating...' : 'Create Interface' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SMART Data Modal -->
+    <div v-if="showSmartModal" class="modal" @click.self="showSmartModal = false">
+      <div class="modal-content modal-large" @click.stop>
+        <div class="modal-header">
+          <h3>SMART Data: {{ smartDisk?.devpath || smartDisk?.dev }}</h3>
+          <button @click="showSmartModal = false" class="btn-close">×</button>
+        </div>
+        <div class="modal-body">
+          <div v-if="loadingSmart" class="loading-spinner"></div>
+          <div v-else-if="smartData?.error" class="text-muted text-sm">{{ smartData.error }}</div>
+          <template v-else-if="smartData">
+            <div class="flex gap-2 mb-2 text-sm">
+              <span v-if="smartData.health"><strong>Health:</strong>
+                <span :class="smartData.health === 'PASSED' ? 'badge badge-success ml-1' : 'badge badge-danger ml-1'">
+                  {{ smartData.health }}
+                </span>
+              </span>
+              <span v-if="smartData.type"><strong>Type:</strong> {{ smartData.type }}</span>
+            </div>
+            <div v-if="smartData.attributes && smartData.attributes.length" class="table-container">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Attribute</th>
+                    <th>Value</th>
+                    <th>Worst</th>
+                    <th>Threshold</th>
+                    <th>Raw</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="attr in smartData.attributes" :key="attr.id || attr.name">
+                    <td class="text-sm text-muted">{{ attr.id }}</td>
+                    <td class="text-sm">{{ attr.name }}</td>
+                    <td class="text-sm">{{ attr.value }}</td>
+                    <td class="text-sm">{{ attr.worst }}</td>
+                    <td class="text-sm">{{ attr.threshold }}</td>
+                    <td class="text-sm text-muted">{{ attr.raw }}</td>
+                    <td>
+                      <span v-if="attr.flags && attr.flags.includes('f')" class="badge badge-danger">FAIL</span>
+                      <span v-else class="badge badge-success">OK</span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div v-else-if="smartData.text" class="text-sm">
+              <pre class="task-log" style="max-height:400px">{{ smartData.text }}</pre>
+            </div>
+            <div v-else class="text-muted text-sm">No SMART attributes available.</div>
+          </template>
+          <div v-else class="text-muted text-sm">No data.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Create Backup Schedule Modal -->
+    <div v-if="showCreateBackupModal" class="modal" @click.self="showCreateBackupModal = false">
+      <div class="modal-content" @click.stop>
+        <div class="modal-header">
+          <h3>Create Backup Schedule</h3>
+          <button @click="showCreateBackupModal = false" class="btn-close">×</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label">Storage *</label>
+            <input v-model="newBackupForm.storage" class="form-control" placeholder="e.g. local, backup-store" />
+            <span class="text-sm text-muted">Storage ID where backups will be saved</span>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Node</label>
+            <input v-model="newBackupForm.node" class="form-control" :placeholder="node" />
+            <span class="text-sm text-muted">Leave blank to back up all nodes</span>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Schedule (cron)</label>
+            <input v-model="newBackupForm.schedule" class="form-control" placeholder="e.g. daily, 0 2 * * *" />
+            <span class="text-sm text-muted">Systemd calendar format or cron expression</span>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Compression</label>
+            <select v-model="newBackupForm.compress" class="form-control">
+              <option value="zstd">zstd (recommended)</option>
+              <option value="lzo">lzo (fast)</option>
+              <option value="gzip">gzip</option>
+              <option value="0">None</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Mode</label>
+            <select v-model="newBackupForm.mode" class="form-control">
+              <option value="snapshot">snapshot</option>
+              <option value="suspend">suspend</option>
+              <option value="stop">stop</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Mail Notification</label>
+            <select v-model="newBackupForm.mailnotification" class="form-control">
+              <option value="failure">On failure only</option>
+              <option value="always">Always</option>
+            </select>
+          </div>
+          <div class="form-group flex gap-1 align-center">
+            <input type="checkbox" v-model="newBackupForm.enabled" :true-value="1" :false-value="0" id="backup-enabled" />
+            <label for="backup-enabled" class="form-label" style="margin:0">Enabled</label>
+          </div>
+          <div class="flex gap-1 mt-2" style="justify-content:flex-end">
+            <button @click="showCreateBackupModal = false" class="btn btn-outline">Cancel</button>
+            <button @click="createBackupSchedule" class="btn btn-primary" :disabled="creatingBackup">
+              {{ creatingBackup ? 'Creating...' : 'Create Schedule' }}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -430,12 +753,51 @@ const loadingStorage = ref(false)
 const networkIfaces = ref([])
 const loadingNetwork = ref(false)
 const applyingNetwork = ref(false)
+const networkIfaceDeleting = ref({})
+const showCreateNetworkModal = ref(false)
+const newNetworkForm = ref({
+  iface: '',
+  type: 'bridge',
+  address: '',
+  netmask: '',
+  gateway: '',
+  bridge_ports: '',
+  bond_mode: 'active-backup',
+  vlan_id: '',
+  autostart: true,
+  comments: '',
+})
+const creatingNetwork = ref(false)
+
+// Backup Schedules
+const backupSchedules = ref([])
+const loadingBackups = ref(false)
+const backupDeleting = ref({})
+const showCreateBackupModal = ref(false)
+const newBackupForm = ref({
+  node: '',
+  storage: '',
+  schedule: 'daily',
+  compress: 'zstd',
+  mode: 'snapshot',
+  enabled: 1,
+  mailnotification: 'failure',
+})
+const creatingBackup = ref(false)
 
 // Tasks
 const tasks = ref([])
 const loadingTasks = ref(false)
 const showTaskModal = ref(false)
 const selectedTask = ref(null)
+
+// Disk Health
+const diskList = ref([])
+const loadingDisks = ref(false)
+const showSmartModal = ref(false)
+const smartDisk = ref(null)
+const smartData = ref(null)
+const loadingSmart = ref(false)
 
 // Polling
 let pollInterval = null
@@ -445,7 +807,9 @@ const tabs = [
   { id: 'guests', label: 'VMs & Containers' },
   { id: 'storage', label: 'Storage' },
   { id: 'network', label: 'Network' },
+  { id: 'backups', label: 'Backup Schedules' },
   { id: 'tasks', label: 'Tasks' },
+  { id: 'disks', label: 'Disk Health' },
   { id: 'terminal', label: 'Terminal' },
 ]
 
@@ -658,7 +1022,9 @@ const switchTab = (tab) => {
   if (tab === 'guests') loadGuests()
   if (tab === 'storage') loadStorage()
   if (tab === 'network') loadNetwork()
+  if (tab === 'backups') loadBackupSchedules()
   if (tab === 'tasks') loadTasks()
+  if (tab === 'disks') loadDisks()
   if (tab === 'overview') { loadNodeStatus(); loadRrd() }
 }
 
@@ -735,6 +1101,159 @@ const applyNetwork = async () => {
   }
 }
 
+const resetNetworkForm = () => {
+  newNetworkForm.value = {
+    iface: '',
+    type: 'bridge',
+    address: '',
+    netmask: '',
+    gateway: '',
+    bridge_ports: '',
+    bond_mode: 'active-backup',
+    vlan_id: '',
+    autostart: true,
+    comments: '',
+  }
+}
+
+const createNetworkIface = async () => {
+  if (!newNetworkForm.value.iface) {
+    toast.error('Interface name is required')
+    return
+  }
+  creatingNetwork.value = true
+  try {
+    const payload = {
+      iface: newNetworkForm.value.iface,
+      type: newNetworkForm.value.type,
+      autostart: newNetworkForm.value.autostart ? 1 : 0,
+    }
+    if (newNetworkForm.value.address) payload.address = newNetworkForm.value.address
+    if (newNetworkForm.value.netmask) payload.netmask = newNetworkForm.value.netmask
+    if (newNetworkForm.value.gateway) payload.gateway = newNetworkForm.value.gateway
+    if (newNetworkForm.value.comments) payload.comments = newNetworkForm.value.comments
+    if (newNetworkForm.value.type === 'bridge' && newNetworkForm.value.bridge_ports) {
+      payload['bridge-ports'] = newNetworkForm.value.bridge_ports
+    }
+    if (newNetworkForm.value.type === 'bond' && newNetworkForm.value.bond_mode) {
+      payload.bond_mode = newNetworkForm.value.bond_mode
+    }
+    if (newNetworkForm.value.type === 'vlan' && newNetworkForm.value.vlan_id) {
+      payload['vlan-id'] = newNetworkForm.value.vlan_id
+    }
+    await api.pveNode.createNetwork(hostId.value, node.value, payload)
+    toast.success(`Interface ${payload.iface} created (apply changes to activate)`)
+    showCreateNetworkModal.value = false
+    resetNetworkForm()
+    await loadNetwork()
+  } catch (e) {
+    toast.error('Failed to create interface: ' + (e?.response?.data?.detail || e.message || 'Unknown error'))
+    console.error(e)
+  } finally {
+    creatingNetwork.value = false
+  }
+}
+
+const deleteNetworkIface = async (iface) => {
+  if (!confirm(`Delete interface "${iface.iface}"? Apply network changes afterwards to make it permanent.`)) return
+  networkIfaceDeleting.value[iface.iface] = true
+  try {
+    await api.pveNode.deleteNetwork(hostId.value, node.value, iface.iface)
+    toast.success(`Interface ${iface.iface} deleted (apply changes to activate)`)
+    await loadNetwork()
+  } catch (e) {
+    toast.error('Failed to delete interface: ' + (e?.response?.data?.detail || e.message || 'Unknown error'))
+    console.error(e)
+  } finally {
+    delete networkIfaceDeleting.value[iface.iface]
+  }
+}
+
+const cidrFromNetmask = (netmask) => {
+  if (!netmask) return ''
+  // If already a CIDR prefix number, return as-is
+  if (/^\d+$/.test(netmask)) return netmask
+  const parts = netmask.split('.')
+  if (parts.length !== 4) return netmask
+  return parts.reduce((acc, octet) => {
+    const n = parseInt(octet, 10)
+    let bits = 0
+    for (let i = 7; i >= 0; i--) { if (n & (1 << i)) bits++; else break }
+    return acc + bits
+  }, 0).toString()
+}
+
+// ── Backup Schedules ───────────────────────────────────────────────────────────
+
+const loadBackupSchedules = async () => {
+  loadingBackups.value = true
+  try {
+    const res = await api.pveNode.listBackupSchedules(hostId.value)
+    backupSchedules.value = res.data || []
+  } catch (e) {
+    console.warn('Backup schedules failed', e)
+    backupSchedules.value = []
+  } finally {
+    loadingBackups.value = false
+  }
+}
+
+const resetBackupForm = () => {
+  newBackupForm.value = {
+    node: node.value,
+    storage: '',
+    schedule: 'daily',
+    compress: 'zstd',
+    mode: 'snapshot',
+    enabled: 1,
+    mailnotification: 'failure',
+  }
+}
+
+const createBackupSchedule = async () => {
+  if (!newBackupForm.value.storage) {
+    toast.error('Storage is required')
+    return
+  }
+  creatingBackup.value = true
+  try {
+    const payload = {
+      storage: newBackupForm.value.storage,
+      schedule: newBackupForm.value.schedule,
+      compress: newBackupForm.value.compress,
+      mode: newBackupForm.value.mode,
+      enabled: newBackupForm.value.enabled,
+      mailnotification: newBackupForm.value.mailnotification,
+    }
+    if (newBackupForm.value.node) payload.node = newBackupForm.value.node
+    await api.pveNode.createBackupSchedule(hostId.value, payload)
+    toast.success('Backup schedule created')
+    showCreateBackupModal.value = false
+    resetBackupForm()
+    await loadBackupSchedules()
+  } catch (e) {
+    toast.error('Failed to create schedule: ' + (e?.response?.data?.detail || e.message || 'Unknown error'))
+    console.error(e)
+  } finally {
+    creatingBackup.value = false
+  }
+}
+
+const deleteBackupSchedule = async (sched) => {
+  if (!confirm(`Delete backup schedule "${sched.id}"?`)) return
+  backupDeleting.value[sched.id] = true
+  try {
+    await api.pveNode.deleteBackupSchedule(hostId.value, sched.id)
+    toast.success('Backup schedule deleted')
+    await loadBackupSchedules()
+  } catch (e) {
+    toast.error('Failed to delete schedule: ' + (e?.response?.data?.detail || e.message || 'Unknown error'))
+    console.error(e)
+  } finally {
+    delete backupDeleting.value[sched.id]
+  }
+}
+
 // ── Tasks ──────────────────────────────────────────────────────────────────────
 
 const toggleTaskLog = async (task) => {
@@ -784,6 +1303,53 @@ const taskDuration = (task) => {
   if (secs < 60) return `${secs}s`
   if (secs < 3600) return `${Math.floor(secs / 60)}m ${secs % 60}s`
   return `${Math.floor(secs / 3600)}h ${Math.floor((secs % 3600) / 60)}m`
+}
+
+// ── Disk Health ────────────────────────────────────────────────────────────────
+
+const loadDisks = async () => {
+  loadingDisks.value = true
+  try {
+    const res = await api.pveNode.listDisks(hostId.value, node.value)
+    diskList.value = res.data || []
+  } catch (e) {
+    console.warn('Disk list failed', e)
+    diskList.value = []
+  } finally {
+    loadingDisks.value = false
+  }
+}
+
+const openSmartModal = async (disk) => {
+  smartDisk.value = disk
+  smartData.value = null
+  showSmartModal.value = true
+  loadingSmart.value = true
+  try {
+    const res = await api.pveNode.getSmartData(hostId.value, node.value, disk.devpath || disk.dev)
+    smartData.value = res.data
+  } catch (e) {
+    smartData.value = { error: e?.response?.data?.detail || e.message || 'Failed to load SMART data' }
+  } finally {
+    loadingSmart.value = false
+  }
+}
+
+const diskTypeLabel = (disk) => {
+  if (disk.type) return disk.type.toUpperCase()
+  if (disk.rpm === 0 || disk.rpm === '0') return 'SSD'
+  if (disk.rpm > 0) return 'HDD'
+  return '—'
+}
+
+const diskWearout = (disk) => {
+  if (disk.wearout != null && disk.wearout !== '') return disk.wearout + '%'
+  return '—'
+}
+
+const diskHealth = (disk) => {
+  if (disk.health) return disk.health
+  return '—'
 }
 
 // ── Terminal ───────────────────────────────────────────────────────────────────
@@ -1081,6 +1647,19 @@ onUnmounted(() => {
 
 .modal-body {
   padding: 1.5rem;
+}
+
+/* Form groups */
+.form-group {
+  margin-bottom: 1rem;
+}
+
+.form-label {
+  display: block;
+  margin-bottom: 0.35rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-primary);
 }
 
 /* Utilities */

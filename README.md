@@ -5,9 +5,25 @@
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)
 ![Vue.js](https://img.shields.io/badge/vue.js-3.x-green.svg)
-![Version](https://img.shields.io/badge/version-1.6.1-brightgreen.svg)
+![Version](https://img.shields.io/badge/version-1.7.0-brightgreen.svg)
 
 Depl0y is a free, open-source web-based control panel that simplifies the deployment, management, and import of virtual machines on Proxmox VE infrastructure. With an intuitive interface and powerful automation, Depl0y makes VM provisioning and day-2 operations accessible to everyone.
+
+---
+
+## ✨ What's New in v1.7.0 — Full Proxmox VE Management
+
+**Full Proxmox VE Management — same functionality as the Proxmox Web UI, built into Depl0y.**
+
+- **Full Proxmox VE Management** — same functionality as Proxmox Web UI, directly in Depl0y
+- **VM management** — lifecycle (start/stop/reboot/suspend/resume), config editing, disks, NICs, snapshots, clone, migrate, firewall, VNC console
+- **Node management** — metrics/RRD charts, VM + LXC list, storage browser, network configuration, task log, node terminal
+- **LXC container management** — lifecycle, config editing, snapshots, terminal access
+- **Cluster** — status overview, node list, resource overview, HA management (groups + resources)
+- **Backup** — schedule CRUD, manual backup trigger, PBS datastore browsing
+- **Access** — PVE users, API tokens, ACL management, resource pools, datacenter firewall
+- **WebSocket proxy** — noVNC (QEMU VMs) + xterm.js (node/LXC shells) via CDN
+- **73 new API endpoints, 20+ new frontend views**
 
 ---
 

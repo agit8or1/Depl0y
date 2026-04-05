@@ -75,6 +75,7 @@ sudo chown -R root:root "$INSTALL_DIR/scripts"
 # Install Python dependencies
 echo "📦 Installing Python dependencies..."
 "$INSTALL_DIR/backend/venv/bin/pip" install -q -r "$INSTALL_DIR/backend/requirements.txt"
+"$INSTALL_DIR/backend/venv/bin/pip" install websockets --quiet 2>/dev/null || true
 
 # Clear Python cache
 echo "🗑️  Clearing Python cache..."

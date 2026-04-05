@@ -6,11 +6,18 @@
     </div>
 
     <nav class="sidebar-nav">
+      <!-- Core -->
       <router-link to="/" class="nav-item">
         <span class="icon">📊</span>
         <span>Dashboard</span>
       </router-link>
 
+      <router-link to="/vms" class="nav-item">
+        <span class="icon">🖥️</span>
+        <span>Virtual Machines</span>
+      </router-link>
+
+      <!-- Deploy -->
       <router-link v-if="isOperator" to="/deploy" class="nav-item">
         <span class="icon">🚀</span>
         <span>Deploy VM</span>
@@ -21,31 +28,17 @@
         <span>Import VM</span>
       </router-link>
 
-      <router-link to="/documentation" class="nav-item">
-        <span class="icon">📖</span>
-        <span>Documentation</span>
+      <router-link v-if="isOperator" to="/llm-deploy" class="nav-item">
+        <span class="icon">🤖</span>
+        <span>LLM Deploy</span>
       </router-link>
 
-      <router-link v-if="isAdmin" to="/ha-management" class="nav-item">
-        <span class="icon">🔄</span>
-        <span>HA Management</span>
+      <router-link v-if="isOperator" to="/vm-management" class="nav-item">
+        <span class="icon">🛠️</span>
+        <span>VM Management</span>
       </router-link>
 
-      <router-link to="/images" class="nav-item">
-        <span class="icon">💿</span>
-        <span>Images</span>
-      </router-link>
-
-      <router-link v-if="isAdmin && linuxAgentEnabled" to="/linux-vms" class="nav-item">
-        <span class="icon">🛡️</span>
-        <span>Linux VM Security</span>
-      </router-link>
-
-      <router-link v-if="isAdmin" to="/security" class="nav-item">
-        <span class="icon">🔒</span>
-        <span>Security</span>
-      </router-link>
-
+      <!-- Infrastructure -->
       <router-link to="/proxmox" class="nav-item">
         <span class="icon">🌐</span>
         <span>Proxmox Hosts</span>
@@ -61,15 +54,43 @@
         <span>Task Log</span>
       </router-link>
 
+      <router-link v-if="isAdmin" to="/ha-management" class="nav-item">
+        <span class="icon">🔄</span>
+        <span>HA Management</span>
+      </router-link>
+
       <router-link v-if="isOperator" to="/idrac" class="nav-item">
         <span class="icon">🖧</span>
         <span>iDRAC / iLO</span>
       </router-link>
 
-      <a href="https://github.com/agit8or1/Depl0y/issues" target="_blank" rel="noopener noreferrer" class="nav-item">
-        <span class="icon">🐛</span>
-        <span>Report Bug</span>
-      </a>
+      <!-- Images -->
+      <router-link to="/images" class="nav-item">
+        <span class="icon">💿</span>
+        <span>Images</span>
+      </router-link>
+
+      <!-- Admin -->
+      <router-link v-if="isAdmin" to="/users" class="nav-item">
+        <span class="icon">👥</span>
+        <span>Users</span>
+      </router-link>
+
+      <router-link v-if="isAdmin" to="/security" class="nav-item">
+        <span class="icon">🔒</span>
+        <span>Security</span>
+      </router-link>
+
+      <router-link v-if="isAdmin && linuxAgentEnabled" to="/linux-vms" class="nav-item">
+        <span class="icon">🛡️</span>
+        <span>Linux VM Security</span>
+      </router-link>
+
+      <!-- System -->
+      <router-link to="/documentation" class="nav-item">
+        <span class="icon">📖</span>
+        <span>Documentation</span>
+      </router-link>
 
       <router-link to="/settings" class="nav-item">
         <span class="icon">⚙️</span>
@@ -81,25 +102,15 @@
         <span>Support Project</span>
       </router-link>
 
-      <router-link v-if="isAdmin" to="/users" class="nav-item">
-        <span class="icon">👥</span>
-        <span>Users</span>
-      </router-link>
-
-      <router-link to="/vms" class="nav-item">
-        <span class="icon">🖥️</span>
-        <span>Virtual Machines</span>
-      </router-link>
-
-      <router-link v-if="isOperator" to="/vm-management" class="nav-item">
-        <span class="icon">🛠️</span>
-        <span>VM Management</span>
-      </router-link>
-
       <router-link to="/about" class="nav-item">
         <span class="icon">ℹ️</span>
         <span>About</span>
       </router-link>
+
+      <a href="https://github.com/agit8or1/Depl0y/issues" target="_blank" rel="noopener noreferrer" class="nav-item">
+        <span class="icon">🐛</span>
+        <span>Report Bug</span>
+      </a>
     </nav>
 
     <div class="sidebar-footer">

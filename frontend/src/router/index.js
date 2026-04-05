@@ -101,6 +101,12 @@ const router = createRouter({
       meta: { requiresAuth: true }
     },
     {
+      path: '/proxmox/:hostId/cluster/overview',
+      name: 'ClusterOverview',
+      component: () => import('@/views/ClusterOverview.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
       path: '/proxmox/:hostId/backup',
       name: 'BackupManager',
       component: () => import('@/views/BackupManager.vue'),

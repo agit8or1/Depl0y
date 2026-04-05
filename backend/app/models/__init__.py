@@ -31,6 +31,7 @@ from .security import (
     SecurityEvent,
     IPBanList,
     GeoIPRule,
+    LoginAttempt,
 )
 
 __all__ = [
@@ -63,4 +64,5 @@ __all__ = [
     "SecurityEvent",
     "IPBanList",
     "GeoIPRule",
+    "LoginAttempt",
 ]

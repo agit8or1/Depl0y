@@ -315,21 +315,45 @@
             @click="bulkAction('start')"
             :disabled="bulkRunning"
           >
-            Start Selected ({{ selectedVmKeys.size }})
+            Start Selected
           </button>
           <button
             class="btn btn-warning btn-sm"
             @click="bulkAction('shutdown')"
             :disabled="bulkRunning"
           >
-            Shutdown Selected ({{ selectedVmKeys.size }})
+            Shutdown Selected
           </button>
           <button
             class="btn btn-danger btn-sm"
             @click="bulkAction('stop')"
             :disabled="bulkRunning"
           >
-            Stop Selected ({{ selectedVmKeys.size }})
+            Stop Selected
+          </button>
+          <button
+            class="btn btn-outline btn-sm"
+            @click="openBulkSnapshotModal"
+            :disabled="bulkRunning"
+            title="Create snapshot on all selected VMs"
+          >
+            Snapshot All
+          </button>
+          <button
+            class="btn btn-outline btn-sm"
+            @click="openBulkTagModal"
+            :disabled="bulkRunning"
+            title="Apply tag to all selected VMs"
+          >
+            Tag All
+          </button>
+          <button
+            class="btn btn-danger btn-sm"
+            @click="openBulkDeleteModal"
+            :disabled="bulkRunning"
+            title="Delete all selected VMs"
+          >
+            Delete All
           </button>
           <a href="#" class="bulk-clear-link" @click.prevent="clearSelection">Clear Selection</a>
         </div>
@@ -368,6 +392,184 @@
           >
             Delete VM
           </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bulk Snapshot Modal -->
+    <div v-if="showBulkSnapshotModal" class="modal-overlay" @click.self="showBulkSnapshotModal = false">
+      <div class="modal-content" @click.stop>
+        <div class="modal-header">
+          <h3>Snapshot All Selected VMs ({{ selectedVmKeys.size }})</h3>
+          <button @click="showBulkSnapshotModal = false" class="btn-close" :disabled="bulkRunning">×</button>
+        </div>
+        <div class="modal-body">
+          <div v-if="!bulkOpDone">
+            <p class="text-muted mb-2">
+              A snapshot will be created on each of the {{ selectedVmKeys.size }} selected VMs using the same snapshot name.
+            </p>
+            <div class="form-group">
+              <label>Snapshot Name <span class="text-danger">*</span></label>
+              <input v-model="bulkSnapName" type="text" class="form-control"
+                placeholder="e.g. pre-update-20260405" :disabled="bulkRunning" />
+            </div>
+            <div class="form-group">
+              <label>Description (optional)</label>
+              <input v-model="bulkSnapDescription" type="text" class="form-control"
+                placeholder="Optional description" :disabled="bulkRunning" />
+            </div>
+          </div>
+          <!-- Progress Table -->
+          <div v-if="bulkOpResults.length > 0" class="bulk-results-table">
+            <div class="bulk-results-header">
+              <span>VMID</span>
+              <span>Name</span>
+              <span>Node</span>
+              <span>Result</span>
+            </div>
+            <div v-for="r in bulkOpResults" :key="r.key" class="bulk-results-row">
+              <span><strong>{{ r.vmid }}</strong></span>
+              <span>{{ r.name || '—' }}</span>
+              <span class="text-muted text-sm">{{ r.node }}</span>
+              <span>
+                <span v-if="r.status === 'pending'" class="text-muted text-sm">Waiting…</span>
+                <span v-else-if="r.status === 'running'" class="text-sm" style="color:#3b82f6;">Running…</span>
+                <span v-else-if="r.status === 'success'" class="badge badge-success">OK</span>
+                <span v-else-if="r.status === 'error'" class="badge badge-danger" :title="r.error">Failed</span>
+              </span>
+            </div>
+          </div>
+          <div v-if="bulkOpDone" class="bulk-done-summary">
+            {{ bulkOpResults.filter(r => r.status === 'success').length }} succeeded,
+            {{ bulkOpResults.filter(r => r.status === 'error').length }} failed.
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button v-if="!bulkOpDone" @click="showBulkSnapshotModal = false" class="btn btn-secondary" :disabled="bulkRunning">Cancel</button>
+          <button v-if="!bulkOpDone" @click="runBulkSnapshot" class="btn btn-primary"
+            :disabled="bulkRunning || !bulkSnapName.trim()">
+            {{ bulkRunning ? 'Running…' : 'Create Snapshots' }}
+          </button>
+          <button v-if="bulkOpDone" @click="closeBulkModal" class="btn btn-secondary">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bulk Tag Modal -->
+    <div v-if="showBulkTagModal" class="modal-overlay" @click.self="showBulkTagModal = false">
+      <div class="modal-content" @click.stop>
+        <div class="modal-header">
+          <h3>Tag All Selected VMs ({{ selectedVmKeys.size }})</h3>
+          <button @click="showBulkTagModal = false" class="btn-close" :disabled="bulkRunning">×</button>
+        </div>
+        <div class="modal-body">
+          <div v-if="!bulkOpDone">
+            <p class="text-muted mb-2">
+              The following tag will be added to all {{ selectedVmKeys.size }} selected VMs (appended to existing tags).
+            </p>
+            <div class="form-group">
+              <label>Tag <span class="text-danger">*</span></label>
+              <input v-model="bulkTagValue" type="text" class="form-control"
+                placeholder="e.g. production" :disabled="bulkRunning"
+                @input="bulkTagValue = bulkTagValue.toLowerCase().replace(/[^a-z0-9\-_]/g, '')" />
+              <small class="text-muted">Lowercase letters, numbers, hyphens, and underscores only.</small>
+            </div>
+          </div>
+          <!-- Progress Table -->
+          <div v-if="bulkOpResults.length > 0" class="bulk-results-table">
+            <div class="bulk-results-header">
+              <span>VMID</span>
+              <span>Name</span>
+              <span>Node</span>
+              <span>Result</span>
+            </div>
+            <div v-for="r in bulkOpResults" :key="r.key" class="bulk-results-row">
+              <span><strong>{{ r.vmid }}</strong></span>
+              <span>{{ r.name || '—' }}</span>
+              <span class="text-muted text-sm">{{ r.node }}</span>
+              <span>
+                <span v-if="r.status === 'pending'" class="text-muted text-sm">Waiting…</span>
+                <span v-else-if="r.status === 'running'" class="text-sm" style="color:#3b82f6;">Running…</span>
+                <span v-else-if="r.status === 'success'" class="badge badge-success">OK</span>
+                <span v-else-if="r.status === 'error'" class="badge badge-danger" :title="r.error">Failed</span>
+              </span>
+            </div>
+          </div>
+          <div v-if="bulkOpDone" class="bulk-done-summary">
+            {{ bulkOpResults.filter(r => r.status === 'success').length }} succeeded,
+            {{ bulkOpResults.filter(r => r.status === 'error').length }} failed.
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button v-if="!bulkOpDone" @click="showBulkTagModal = false" class="btn btn-secondary" :disabled="bulkRunning">Cancel</button>
+          <button v-if="!bulkOpDone" @click="runBulkTag" class="btn btn-primary"
+            :disabled="bulkRunning || !bulkTagValue.trim()">
+            {{ bulkRunning ? 'Running…' : 'Apply Tag' }}
+          </button>
+          <button v-if="bulkOpDone" @click="closeBulkModal" class="btn btn-secondary">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bulk Delete Modal -->
+    <div v-if="showBulkDeleteModal" class="modal-overlay" @click.self="!bulkRunning && (showBulkDeleteModal = false)">
+      <div class="modal-content" @click.stop>
+        <div class="modal-header">
+          <h3>Delete All Selected VMs ({{ selectedVmKeys.size }})</h3>
+          <button @click="showBulkDeleteModal = false" class="btn-close" :disabled="bulkRunning">×</button>
+        </div>
+        <div class="modal-body">
+          <div v-if="!bulkOpDone">
+            <p class="text-danger mb-1">
+              <strong>Warning:</strong> This will permanently delete {{ selectedVmKeys.size }} VMs from Proxmox.
+              Running VMs will be stopped first. This action cannot be undone.
+            </p>
+            <ul class="bulk-delete-list">
+              <li v-for="vm in selectedVmObjects" :key="vmKey(vm)">
+                <strong>{{ vm.vmid }}</strong> — {{ vm.name || '(no name)' }}
+                <span class="badge badge-info ml-1">{{ vm.node }}</span>
+                <span :class="['badge', vm.status === 'running' ? 'badge-success' : 'badge-danger', 'ml-1']">{{ vm.status }}</span>
+              </li>
+            </ul>
+            <div class="form-group mt-2">
+              <label>Type <strong>DELETE</strong> to confirm:</label>
+              <input v-model="bulkDeleteConfirm" type="text" class="form-control"
+                placeholder="Type DELETE to confirm" :disabled="bulkRunning" />
+            </div>
+          </div>
+          <!-- Progress Table -->
+          <div v-if="bulkOpResults.length > 0" class="bulk-results-table">
+            <div class="bulk-results-header">
+              <span>VMID</span>
+              <span>Name</span>
+              <span>Node</span>
+              <span>Result</span>
+            </div>
+            <div v-for="r in bulkOpResults" :key="r.key" class="bulk-results-row">
+              <span><strong>{{ r.vmid }}</strong></span>
+              <span>{{ r.name || '—' }}</span>
+              <span class="text-muted text-sm">{{ r.node }}</span>
+              <span>
+                <span v-if="r.status === 'pending'" class="text-muted text-sm">Waiting…</span>
+                <span v-else-if="r.status === 'running'" class="text-sm" style="color:#3b82f6;">Running…</span>
+                <span v-else-if="r.status === 'stopping'" class="text-sm" style="color:#f59e0b;">Stopping…</span>
+                <span v-else-if="r.status === 'success'" class="badge badge-success">Deleted</span>
+                <span v-else-if="r.status === 'error'" class="badge badge-danger" :title="r.error">Failed</span>
+              </span>
+            </div>
+          </div>
+          <div v-if="bulkOpDone" class="bulk-done-summary">
+            {{ bulkOpResults.filter(r => r.status === 'success').length }} deleted,
+            {{ bulkOpResults.filter(r => r.status === 'error').length }} failed.
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button v-if="!bulkOpDone" @click="showBulkDeleteModal = false" class="btn btn-secondary" :disabled="bulkRunning">Cancel</button>
+          <button v-if="!bulkOpDone" @click="runBulkDelete" class="btn btn-danger"
+            :disabled="bulkRunning || bulkDeleteConfirm !== 'DELETE'">
+            {{ bulkRunning ? 'Deleting…' : 'Delete All VMs' }}
+          </button>
+          <button v-if="bulkOpDone" @click="closeBulkModal" class="btn btn-secondary">Close</button>
         </div>
       </div>
     </div>
@@ -787,6 +989,161 @@ export default {
       setTimeout(() => fetchAllProxmoxVMs(), 2000)
     }
 
+    // ── Bulk Snapshot / Tag / Delete ────────────────────────────────────────
+    const showBulkSnapshotModal = ref(false)
+    const showBulkTagModal = ref(false)
+    const showBulkDeleteModal = ref(false)
+    const bulkSnapName = ref('')
+    const bulkSnapDescription = ref('')
+    const bulkTagValue = ref('')
+    const bulkDeleteConfirm = ref('')
+    const bulkOpResults = ref([])
+    const bulkOpDone = ref(false)
+
+    const selectedVmObjects = computed(() =>
+      allVMs.value.filter(vm => selectedVmKeys.value.has(vmKey(vm)))
+    )
+
+    const openBulkSnapshotModal = () => {
+      const now = new Date()
+      const pad = (n) => String(n).padStart(2, '0')
+      bulkSnapName.value = `bulk-snap-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`
+      bulkSnapDescription.value = ''
+      bulkOpResults.value = []
+      bulkOpDone.value = false
+      showBulkSnapshotModal.value = true
+    }
+
+    const openBulkTagModal = () => {
+      bulkTagValue.value = ''
+      bulkOpResults.value = []
+      bulkOpDone.value = false
+      showBulkTagModal.value = true
+    }
+
+    const openBulkDeleteModal = () => {
+      bulkDeleteConfirm.value = ''
+      bulkOpResults.value = []
+      bulkOpDone.value = false
+      showBulkDeleteModal.value = true
+    }
+
+    const closeBulkModal = () => {
+      showBulkSnapshotModal.value = false
+      showBulkTagModal.value = false
+      showBulkDeleteModal.value = false
+      bulkOpResults.value = []
+      bulkOpDone.value = false
+    }
+
+    const initBulkResults = () => {
+      const vmsToAct = allVMs.value.filter(vm => selectedVmKeys.value.has(vmKey(vm)))
+      bulkOpResults.value = vmsToAct.map(vm => ({
+        key: vmKey(vm),
+        vmid: vm.vmid,
+        name: vm.name,
+        node: vm.node,
+        hostId: vm.hostId,
+        status: 'pending',
+        error: null,
+      }))
+      return vmsToAct
+    }
+
+    const runBulkSnapshot = async () => {
+      if (!bulkSnapName.value.trim()) return
+      bulkRunning.value = true
+      initBulkResults()
+      for (let i = 0; i < bulkOpResults.value.length; i++) {
+        const r = bulkOpResults.value[i]
+        bulkOpResults.value[i] = { ...r, status: 'running' }
+        try {
+          await api.pveVm.createSnapshot(r.hostId, r.node, r.vmid, {
+            snapname: bulkSnapName.value.trim(),
+            description: bulkSnapDescription.value.trim(),
+          })
+          bulkOpResults.value[i] = { ...bulkOpResults.value[i], status: 'success' }
+          toast.success(`Snapshot created on VM ${r.vmid}`)
+        } catch (err) {
+          const msg = err.response?.data?.detail || err.message || 'Unknown error'
+          bulkOpResults.value[i] = { ...bulkOpResults.value[i], status: 'error', error: msg }
+          toast.error(`Failed to snapshot VM ${r.vmid}: ${msg}`)
+        }
+        if (i < bulkOpResults.value.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 300))
+        }
+      }
+      bulkRunning.value = false
+      bulkOpDone.value = true
+    }
+
+    const runBulkTag = async () => {
+      const tag = bulkTagValue.value.trim()
+      if (!tag) return
+      bulkRunning.value = true
+      initBulkResults()
+      for (let i = 0; i < bulkOpResults.value.length; i++) {
+        const r = bulkOpResults.value[i]
+        bulkOpResults.value[i] = { ...r, status: 'running' }
+        try {
+          const configRes = await api.pveVm.getConfig(r.hostId, r.node, r.vmid)
+          const currentTags = configRes.data?.tags || ''
+          const tagsArr = currentTags ? currentTags.split(';').map(t => t.trim()).filter(Boolean) : []
+          if (!tagsArr.includes(tag)) {
+            tagsArr.push(tag)
+          }
+          await api.pveVm.updateConfig(r.hostId, r.node, r.vmid, { tags: tagsArr.join(';') })
+          bulkOpResults.value[i] = { ...bulkOpResults.value[i], status: 'success' }
+        } catch (err) {
+          const msg = err.response?.data?.detail || err.message || 'Unknown error'
+          bulkOpResults.value[i] = { ...bulkOpResults.value[i], status: 'error', error: msg }
+          toast.error(`Failed to tag VM ${r.vmid}: ${msg}`)
+        }
+        if (i < bulkOpResults.value.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 200))
+        }
+      }
+      bulkRunning.value = false
+      bulkOpDone.value = true
+      setTimeout(() => fetchAllProxmoxVMs(), 1500)
+    }
+
+    const runBulkDelete = async () => {
+      if (bulkDeleteConfirm.value !== 'DELETE') return
+      bulkRunning.value = true
+      initBulkResults()
+      for (let i = 0; i < bulkOpResults.value.length; i++) {
+        const r = bulkOpResults.value[i]
+        const vm = allVMs.value.find(v => vmKey(v) === r.key)
+        if (vm?.status === 'running') {
+          bulkOpResults.value[i] = { ...r, status: 'stopping' }
+          try {
+            await api.pveVm.stop(r.hostId, r.node, r.vmid)
+            await new Promise(resolve => setTimeout(resolve, 3000))
+          } catch (err) {
+            console.warn(`Failed to stop VM ${r.vmid} before delete:`, err)
+          }
+        }
+        bulkOpResults.value[i] = { ...bulkOpResults.value[i], status: 'running' }
+        try {
+          await api.pveVm.deleteVm(r.hostId, r.node, r.vmid)
+          bulkOpResults.value[i] = { ...bulkOpResults.value[i], status: 'success' }
+          toast.success(`VM ${r.vmid} deleted`)
+        } catch (err) {
+          const msg = err.response?.data?.detail || err.message || 'Unknown error'
+          bulkOpResults.value[i] = { ...bulkOpResults.value[i], status: 'error', error: msg }
+          toast.error(`Failed to delete VM ${r.vmid}: ${msg}`)
+        }
+        if (i < bulkOpResults.value.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 500))
+        }
+      }
+      bulkRunning.value = false
+      bulkOpDone.value = true
+      clearSelection()
+      setTimeout(() => fetchAllProxmoxVMs(), 2000)
+    }
+
     // ── Tags helpers ────────────────────────────────────────────────────────
     const parseTags = (tagsStr) => {
       if (!tagsStr) return []
@@ -941,6 +1298,24 @@ export default {
       toggleSelectAll,
       clearSelection,
       bulkAction,
+      // bulk ops
+      showBulkSnapshotModal,
+      showBulkTagModal,
+      showBulkDeleteModal,
+      bulkSnapName,
+      bulkSnapDescription,
+      bulkTagValue,
+      bulkDeleteConfirm,
+      bulkOpResults,
+      bulkOpDone,
+      selectedVmObjects,
+      openBulkSnapshotModal,
+      openBulkTagModal,
+      openBulkDeleteModal,
+      closeBulkModal,
+      runBulkSnapshot,
+      runBulkTag,
+      runBulkDelete,
     }
   }
 }
@@ -1227,4 +1602,71 @@ export default {
   letter-spacing: 0.02em;
   text-transform: lowercase;
 }
+
+/* ── Bulk Op Results Table ──────────────────────────────────────────────────── */
+.bulk-results-table {
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 0.375rem;
+  overflow: hidden;
+  margin-top: 1rem;
+}
+
+.bulk-results-header {
+  display: grid;
+  grid-template-columns: 70px 1fr 80px 90px;
+  gap: 0.5rem;
+  padding: 0.4rem 0.75rem;
+  background: var(--background);
+  border-bottom: 1px solid var(--border, #e2e8f0);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted, #64748b);
+}
+
+.bulk-results-row {
+  display: grid;
+  grid-template-columns: 70px 1fr 80px 90px;
+  gap: 0.5rem;
+  padding: 0.45rem 0.75rem;
+  align-items: center;
+  font-size: 0.875rem;
+  border-bottom: 1px solid var(--border, #e2e8f0);
+}
+
+.bulk-results-row:last-child {
+  border-bottom: none;
+}
+
+.bulk-done-summary {
+  margin-top: 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* ── Bulk Delete List ─────────────────────────────────────────────────────── */
+.bulk-delete-list {
+  list-style: none;
+  padding: 0;
+  margin: 0.5rem 0 1rem 0;
+  max-height: 200px;
+  overflow-y: auto;
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 0.375rem;
+}
+
+.bulk-delete-list li {
+  padding: 0.4rem 0.75rem;
+  font-size: 0.875rem;
+  border-bottom: 1px solid var(--border, #e2e8f0);
+}
+
+.bulk-delete-list li:last-child {
+  border-bottom: none;
+}
+
+.ml-1 { margin-left: 0.25rem; }
+.mt-2 { margin-top: 1rem; }
 </style>

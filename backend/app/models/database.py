@@ -72,6 +72,7 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     last_login = Column(DateTime, nullable=True)
+    token_version = Column(Integer, default=0, nullable=False)
 
     # Relationships
     vms = relationship("VirtualMachine", back_populates="created_by_user")

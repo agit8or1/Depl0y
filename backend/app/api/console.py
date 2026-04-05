@@ -2,9 +2,11 @@
 WebSocket proxy endpoints for Proxmox VNC (noVNC) and xterm.js terminal access.
 
 Provides:
-  GET /ws/vm/{host_id}/{node}/{vmid}   — VNC proxy for QEMU VMs
-  GET /ws/lxc/{host_id}/{node}/{vmid}  — terminal proxy for LXC containers
-  GET /ws/node/{host_id}/{node}        — terminal proxy for node shell
+  GET  /ticket/{host_id}/{node}/{vmid}      — VNC ticket for QEMU VMs
+  GET  /lxc-ticket/{host_id}/{node}/{ctid}  — terminal ticket for LXC containers
+  WS   /ws/vm/{host_id}/{node}/{vmid}       — VNC proxy for QEMU VMs
+  WS   /ws/lxc/{host_id}/{node}/{vmid}      — terminal proxy for LXC containers
+  WS   /ws/node/{host_id}/{node}            — terminal proxy for node shell
 """
 import asyncio
 import logging
@@ -14,13 +16,14 @@ from typing import Optional
 
 import websockets
 import websockets.exceptions
-from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
 
-from app.core.database import SessionLocal
+from app.core.database import SessionLocal, get_db
 from app.core.security import decode_token, decrypt_data
 from app.models import ProxmoxHost, User
 from app.services.proxmox import ProxmoxService
+from app.api.auth import get_current_user
 
 logger = logging.getLogger(__name__)
 
@@ -112,6 +115,65 @@ async def _relay(ws_client: WebSocket, ws_proxmox):
             await task
         except asyncio.CancelledError:
             pass
+
+
+# ---------------------------------------------------------------------------
+# Ticket endpoints (REST)
+# ---------------------------------------------------------------------------
+
+@router.get("/ticket/{host_id}/{node}/{vmid}")
+def get_vm_vnc_ticket(
+    host_id: int,
+    node: str,
+    vmid: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Request a VNC ticket for a QEMU VM from Proxmox and return it so the
+    frontend can display metadata (port, ticket) before opening the WebSocket.
+    """
+    host = _get_host_or_none(db, host_id)
+    if host is None or not host.is_active:
+        raise HTTPException(status_code=404, detail="Proxmox host not found")
+    try:
+        svc = ProxmoxService(host)
+        result = svc.proxmox.nodes(node).qemu(vmid).vncproxy.post(websocket=1)
+        return {
+            "ticket": result.get("ticket"),
+            "port": result.get("port"),
+            "host": host.hostname,
+        }
+    except Exception as exc:
+        logger.error("Failed to get VNC ticket for VM %s/%s/%s: %s", host_id, node, vmid, exc)
+        raise HTTPException(status_code=502, detail=f"Failed to obtain VNC ticket: {exc}")
+
+
+@router.get("/lxc-ticket/{host_id}/{node}/{ctid}")
+def get_lxc_ticket(
+    host_id: int,
+    node: str,
+    ctid: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Request a terminal ticket for an LXC container from Proxmox.
+    """
+    host = _get_host_or_none(db, host_id)
+    if host is None or not host.is_active:
+        raise HTTPException(status_code=404, detail="Proxmox host not found")
+    try:
+        svc = ProxmoxService(host)
+        result = svc.proxmox.nodes(node).lxc(ctid).termproxy.post()
+        return {
+            "ticket": result.get("ticket"),
+            "port": result.get("port"),
+            "host": host.hostname,
+        }
+    except Exception as exc:
+        logger.error("Failed to get terminal ticket for LXC %s/%s/%s: %s", host_id, node, ctid, exc)
+        raise HTTPException(status_code=502, detail=f"Failed to obtain terminal ticket: {exc}")
 
 
 # ---------------------------------------------------------------------------

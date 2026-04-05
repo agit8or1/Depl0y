@@ -75,3 +75,28 @@ def init_db():
             conn.commit()
         except Exception:
             pass
+
+        # Add token_version to users if missing (session invalidation)
+        try:
+            conn.execute(text("ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0"))
+            conn.commit()
+        except Exception:
+            pass
+
+        # Create login_attempts table for comprehensive login history
+        try:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS login_attempts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER,
+                    username_attempted VARCHAR(100) NOT NULL,
+                    ip_address VARCHAR(45) NOT NULL,
+                    user_agent VARCHAR(500),
+                    success BOOLEAN NOT NULL DEFAULT 0,
+                    failure_reason VARCHAR(200),
+                    timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+            """))
+            conn.commit()
+        except Exception:
+            pass

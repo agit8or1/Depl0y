@@ -75,6 +75,10 @@
         <span class="icon">🖧</span>
         <span>iDRAC / iLO</span>
       </router-link>
+      <router-link v-if="isOperator" to="/network" class="nav-item">
+        <span class="icon">🔌</span>
+        <span>Network Management</span>
+      </router-link>
       <router-link to="/images" class="nav-item">
         <span class="icon">💿</span>
         <span>Images</span>

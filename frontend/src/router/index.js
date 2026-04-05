@@ -319,6 +319,12 @@ const router = createRouter({
       meta: { requiresAuth: true, requiresAdmin: true }
     },
     {
+      path: '/network',
+      name: 'NetworkManagement',
+      component: () => import('@/views/NetworkManagement.vue'),
+      meta: { requiresAuth: true, requiresOperator: true }
+    },
+    {
       path: '/:pathMatch(.*)*',
       name: 'NotFound',
       component: () => import('@/views/NotFound.vue')

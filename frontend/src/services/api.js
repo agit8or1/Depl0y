@@ -117,9 +117,15 @@ export default {
     list: (params) => api.get('/users/', { params }),
     get: (id) => api.get(`/users/${id}`),
     create: (data) => api.post('/users/', data),
-    update: (id, data) => api.put(`/users/${id}`),
+    update: (id, data) => api.put(`/users/${id}`, data),
+    patch: (id, data) => api.patch(`/users/${id}`, data),
     delete: (id) => api.delete(`/users/${id}`),
-    changePassword: (data) => api.post('/users/change-password', data)
+    changePassword: (data) => api.post('/users/change-password', data),
+    setStatus: (id, isActive) => api.patch(`/users/${id}/status`, { is_active: isActive }),
+    resetPassword: (id) => api.post(`/users/${id}/reset-password`),
+    disableTotp: (id) => api.post(`/users/${id}/disable-totp`),
+    invalidateSessions: (id) => api.post(`/users/invalidate-sessions/${id}`),
+    invalidateAllSessions: () => api.post('/users/invalidate-sessions-all'),
   },
 
   // Proxmox
@@ -261,6 +267,9 @@ export default {
   system: {
     getInfo: () => api.get('/system/info'),
     testEmail: () => api.post('/system/test-email'),
+    getDiagnostics: () => api.get('/system/diagnostics'),
+    dbCheck: () => api.post('/system/db-check'),
+    health: () => api.get('/system/health'),
   },
 
   // LLM Deployment
@@ -339,6 +348,10 @@ export default {
     toggleGeoIPRule: (id) => api.patch(`/security/geoip/${id}/toggle`),
     getEvents: (params) => api.get('/security/events', { params }),
     lookupIP: (ip) => api.get(`/security/lookup-ip/${ip}`),
+    getLoginHistory: (limit = 50) => api.get('/security/login-history', { params: { limit } }),
+    getPasswordPolicy: () => api.get('/security/password-policy'),
+    updatePasswordPolicy: (data) => api.patch('/security/password-policy', data),
+    get2faOverview: () => api.get('/security/2fa-overview'),
   },
 
   // iDRAC / iLO management (Proxmox hosts)
@@ -606,6 +619,24 @@ export default {
     pruneDatastore: (id, ds, params) => api.post(`/pbs-mgmt/${id}/datastores/${ds}/prune`, params),
   },
 
+  // PVE Firewall — IPSets, Aliases, rule updates
+  pveFirewall: {
+    // IPSets
+    listIpsets: (h) => api.get(`/pve-firewall/${h}/ipsets`),
+    createIpset: (h, data) => api.post(`/pve-firewall/${h}/ipsets`, data),
+    deleteIpset: (h, name) => api.delete(`/pve-firewall/${h}/ipsets/${encodeURIComponent(name)}`),
+    listIpsetEntries: (h, name) => api.get(`/pve-firewall/${h}/ipsets/${encodeURIComponent(name)}`),
+    addIpsetEntry: (h, name, data) => api.post(`/pve-firewall/${h}/ipsets/${encodeURIComponent(name)}`, data),
+    removeIpsetEntry: (h, name, cidr) => api.delete(`/pve-firewall/${h}/ipsets/${encodeURIComponent(name)}/${encodeURIComponent(cidr)}`),
+    // Aliases
+    listAliases: (h) => api.get(`/pve-firewall/${h}/aliases`),
+    createAlias: (h, data) => api.post(`/pve-firewall/${h}/aliases`, data),
+    updateAlias: (h, name, data) => api.put(`/pve-firewall/${h}/aliases/${encodeURIComponent(name)}`, data),
+    deleteAlias: (h, name) => api.delete(`/pve-firewall/${h}/aliases/${encodeURIComponent(name)}`),
+    // Cluster firewall rule update (enable/disable, reorder)
+    updateClusterFirewallRule: (h, pos, data) => api.put(`/pve-firewall/${h}/cluster/firewall/rules/${pos}`, data),
+  },
+
   // Notifications / Webhooks
   notifications: {
     listWebhooks: () => api.get('/notifications/webhooks'),
@@ -613,5 +644,11 @@ export default {
     updateWebhook: (id, data) => api.put(`/notifications/webhooks/${id}`, data),
     deleteWebhook: (id) => api.delete(`/notifications/webhooks/${id}`),
     testWebhook: (id) => api.post(`/notifications/webhooks/${id}/test`),
+  },
+
+  // PVE Console — ticket endpoints (/pve-console/...)
+  pveConsole: {
+    getVmTicket: (hostId, node, vmid) => api.get(`/pve-console/ticket/${hostId}/${node}/${vmid}`),
+    getLxcTicket: (hostId, node, ctid) => api.get(`/pve-console/lxc-ticket/${hostId}/${node}/${ctid}`),
   },
 }

@@ -81,3 +81,17 @@ class GeoIPRule(Base):
     created_by = Column(Integer, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     is_active = Column(Boolean, default=True, nullable=False)
+
+
+class LoginAttempt(Base):
+    """Comprehensive login attempt log — both successes and failures."""
+    __tablename__ = "login_attempts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, nullable=True, index=True)  # NULL for unknown usernames
+    username_attempted = Column(String(100), nullable=False, index=True)
+    ip_address = Column(String(45), nullable=False)
+    user_agent = Column(String(500), nullable=True)
+    success = Column(Boolean, nullable=False, default=False)
+    failure_reason = Column(String(200), nullable=True)  # "bad_password", "2fa_failed", "account_locked", etc.
+    timestamp = Column(DateTime(timezone=True), server_default=func.now(), index=True)

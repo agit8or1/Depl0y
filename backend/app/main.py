@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse
 from app.core.config import settings
 from app.core.database import init_db
 from app.api import auth, users, proxmox, vms, isos, cloud_images, updates, dashboard, bug_report, logs, docs, setup, system_updates, ha, system, llm, vm_agent, security, idrac, pbs, audit, notifications
-from app.api import vm_config, node as pve_node, console as pve_console, pbs_mgmt
+from app.api import vm_config, node as pve_node, console as pve_console, pbs_mgmt, pve_firewall
 from app.middleware.security import SecurityHeadersMiddleware
 from app.middleware.rate_limit import RateLimitMiddleware
 from app.middleware.ip_filter import IPFilterMiddleware
@@ -140,6 +140,7 @@ app.include_router(pve_console.router, prefix=f"{settings.API_V1_PREFIX}/pve-con
 app.include_router(pbs_mgmt.router, prefix=f"{settings.API_V1_PREFIX}/pbs-mgmt", tags=["PBS Management"])
 app.include_router(audit.router, prefix=f"{settings.API_V1_PREFIX}/audit", tags=["Audit Log"])
 app.include_router(notifications.router, prefix=f"{settings.API_V1_PREFIX}/notifications", tags=["Notifications"])
+app.include_router(pve_firewall.router, prefix=f"{settings.API_V1_PREFIX}/pve-firewall", tags=["PVE Firewall"])
 
 
 if __name__ == "__main__":

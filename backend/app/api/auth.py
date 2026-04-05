@@ -90,6 +90,12 @@ async def get_current_user(
     if not user.is_active:
         raise HTTPException(status_code=400, detail="Inactive user")
 
+    # Check token_version for session invalidation
+    token_version = payload.get("tv", 0)
+    user_token_version = getattr(user, "token_version", 0) or 0
+    if token_version < user_token_version:
+        raise credentials_exception
+
     return user
 
 
@@ -210,6 +216,32 @@ def _clear_failed_attempts(db: Session, username: str):
     db.commit()
 
 
+def _record_login_attempt(
+    db: Session,
+    user_id: Optional[int],
+    username: str,
+    ip: str,
+    ua: str,
+    success: bool,
+    reason: Optional[str],
+):
+    """Record a login attempt in the comprehensive login_attempts table."""
+    from app.models.security import LoginAttempt
+    try:
+        attempt = LoginAttempt(
+            user_id=user_id,
+            username_attempted=username,
+            ip_address=ip,
+            user_agent=ua or "",
+            success=success,
+            failure_reason=reason,
+        )
+        db.add(attempt)
+        db.commit()
+    except Exception:
+        db.rollback()
+
+
 @router.post("/login", response_model=Token)
 async def login(credentials: LoginRequest, request: Request, db: Session = Depends(get_db)):
     """Login endpoint with brute-force protection and timing attack mitigation."""
@@ -239,12 +271,22 @@ async def login(credentials: LoginRequest, request: Request, db: Session = Depen
 
     if not user or not password_valid:
         _record_failed_login(db, credentials.username, client_ip, user_agent)
+        _record_login_attempt(
+            db,
+            user_id=user.id if user else None,
+            username=credentials.username,
+            ip=client_ip,
+            ua=user_agent,
+            success=False,
+            reason="bad_password",
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
         )
 
     if not user.is_active:
+        _record_login_attempt(db, user.id, credentials.username, client_ip, user_agent, False, "account_disabled")
         raise HTTPException(status_code=400, detail="Inactive user")
 
     # Check 2FA if enabled
@@ -256,19 +298,22 @@ async def login(credentials: LoginRequest, request: Request, db: Session = Depen
             )
         if not verify_totp_code(user.totp_secret, credentials.totp_code):
             _record_failed_login(db, credentials.username, client_ip, user_agent)
+            _record_login_attempt(db, user.id, credentials.username, client_ip, user_agent, False, "2fa_failed")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid 2FA code",
             )
 
-    # Successful login — clear lockout state
+    # Successful login — clear lockout state and record success
     _clear_failed_attempts(db, credentials.username)
+    _record_login_attempt(db, user.id, credentials.username, client_ip, user_agent, True, None)
 
     user.last_login = datetime.utcnow()
     db.commit()
 
-    access_token = create_access_token(data={"sub": user.username})
-    refresh_token = create_refresh_token(data={"sub": user.username})
+    token_version = getattr(user, "token_version", 0) or 0
+    access_token = create_access_token(data={"sub": user.username, "tv": token_version})
+    refresh_token = create_refresh_token(data={"sub": user.username, "tv": token_version})
 
     return {
         "access_token": access_token,
@@ -294,9 +339,16 @@ async def refresh_token(refresh_token: str, db: Session = Depends(get_db)):
     if not user or not user.is_active:
         raise HTTPException(status_code=401, detail="User not found or inactive")
 
+    # Check token_version
+    token_version = payload.get("tv", 0)
+    user_token_version = getattr(user, "token_version", 0) or 0
+    if token_version < user_token_version:
+        raise HTTPException(status_code=401, detail="Session invalidated")
+
     # Create new tokens
-    access_token = create_access_token(data={"sub": user.username})
-    new_refresh_token = create_refresh_token(data={"sub": user.username})
+    tv = user_token_version
+    access_token = create_access_token(data={"sub": user.username, "tv": tv})
+    new_refresh_token = create_refresh_token(data={"sub": user.username, "tv": tv})
 
     return {
         "access_token": access_token,

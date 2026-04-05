@@ -302,6 +302,132 @@
       </div>
     </div>
 
+    <!-- Sparkline Resource Trends + Top Consumers row -->
+    <div class="grid grid-cols-2 gap-2 mt-2">
+      <!-- Sparkline trends -->
+      <div class="card">
+        <div class="card-header">
+          <h3>Resource Trends</h3>
+          <span class="pve-live-badge">Last Hour</span>
+        </div>
+        <div v-if="sparkLoading" class="hosts-loading">Loading trend data...</div>
+        <div v-else-if="sparkLines.cpu.length === 0" class="hosts-empty">No trend data available. Requires an active Proxmox host.</div>
+        <div v-else class="sparklines-wrap">
+          <div class="sparkline-row">
+            <span class="spark-label">CPU</span>
+            <svg class="sparkline-svg" viewBox="0 0 200 40" preserveAspectRatio="none">
+              <polyline
+                :points="buildSparkPoints(sparkLines.cpu, 200, 40)"
+                fill="none"
+                stroke="var(--primary-color)"
+                stroke-width="1.5"
+              />
+              <polyline
+                :points="buildSparkFill(sparkLines.cpu, 200, 40)"
+                fill="rgba(59,130,246,0.12)"
+                stroke="none"
+              />
+            </svg>
+            <span class="spark-val">{{ sparkLines.cpu.length ? (sparkLines.cpu[sparkLines.cpu.length-1]*100).toFixed(1) + '%' : '—' }}</span>
+          </div>
+          <div class="sparkline-row">
+            <span class="spark-label">Memory</span>
+            <svg class="sparkline-svg" viewBox="0 0 200 40" preserveAspectRatio="none">
+              <polyline
+                :points="buildSparkPoints(sparkLines.mem, 200, 40)"
+                fill="none"
+                stroke="#10b981"
+                stroke-width="1.5"
+              />
+              <polyline
+                :points="buildSparkFill(sparkLines.mem, 200, 40)"
+                fill="rgba(16,185,129,0.12)"
+                stroke="none"
+              />
+            </svg>
+            <span class="spark-val">{{ sparkLines.mem.length ? (sparkLines.mem[sparkLines.mem.length-1]*100).toFixed(1) + '%' : '—' }}</span>
+          </div>
+          <div class="sparkline-row" v-if="sparkLines.net.length">
+            <span class="spark-label">Net (in)</span>
+            <svg class="sparkline-svg" viewBox="0 0 200 40" preserveAspectRatio="none">
+              <polyline
+                :points="buildSparkPoints(sparkLines.net, 200, 40)"
+                fill="none"
+                stroke="#f59e0b"
+                stroke-width="1.5"
+              />
+              <polyline
+                :points="buildSparkFill(sparkLines.net, 200, 40)"
+                fill="rgba(245,158,11,0.12)"
+                stroke="none"
+              />
+            </svg>
+            <span class="spark-val">{{ formatNetRate(sparkLines.net[sparkLines.net.length-1]) }}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Top 5 CPU consumers -->
+      <div class="card">
+        <div class="card-header">
+          <h3>Top Resource Consumers</h3>
+          <span class="pve-live-badge">PVE Live</span>
+        </div>
+        <div v-if="pveLoading" class="hosts-loading">Loading...</div>
+        <div v-else-if="topConsumers.length === 0" class="hosts-empty">No running VMs found.</div>
+        <div v-else class="consumers-list">
+          <div
+            v-for="vm in topConsumers"
+            :key="`${vm.hostId}-${vm.node}-${vm.vmid}`"
+            class="consumer-item"
+            @click="navigateToVM(vm)"
+          >
+            <div class="consumer-name">
+              <span class="consumer-id">{{ vm.vmid }}</span>
+              <span class="consumer-vmname">{{ vm.name || '(no name)' }}</span>
+              <span class="consumer-node">{{ vm.node }}</span>
+            </div>
+            <div class="consumer-bars">
+              <div class="cbar-row">
+                <span class="cbar-label">CPU</span>
+                <div class="cbar-track"><div class="cbar-fill cbar-cpu" :style="{ width: Math.min(100, (vm.cpu || 0)*100).toFixed(1) + '%' }"></div></div>
+                <span class="cbar-pct">{{ ((vm.cpu || 0)*100).toFixed(1) }}%</span>
+              </div>
+              <div class="cbar-row">
+                <span class="cbar-label">Mem</span>
+                <div class="cbar-track"><div class="cbar-fill cbar-mem" :style="{ width: vm.memPct.toFixed(1) + '%' }"></div></div>
+                <span class="cbar-pct">{{ vm.memPct.toFixed(1) }}%</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Alerts Panel -->
+    <div class="card mt-2" v-if="alerts.length > 0 || alertsChecked">
+      <div class="card-header">
+        <h3>Alerts</h3>
+        <span class="pve-live-badge">PVE Live</span>
+      </div>
+      <div v-if="alerts.length === 0" class="hosts-empty">No alerts. All systems nominal.</div>
+      <div v-else class="alerts-list">
+        <div
+          v-for="(alert, i) in alerts"
+          :key="i"
+          class="alert-item"
+          :class="'alert-' + alert.severity"
+        >
+          <span class="alert-icon">{{ alert.icon }}</span>
+          <div class="alert-body">
+            <span class="alert-title">{{ alert.title }}</span>
+            <span class="alert-detail">{{ alert.detail }}</span>
+          </div>
+          <span class="alert-badge" :class="'alert-badge-' + alert.severity">{{ alert.severity }}</span>
+        </div>
+      </div>
+    </div>
+
     <!-- Recent Tasks -->
     <div class="card mt-2">
       <div class="card-header">
@@ -485,6 +611,9 @@ export default {
                   vmid: item.vmid,
                   name: item.name,
                   status: item.status || 'unknown',
+                  cpu: item.cpu || 0,
+                  mem: item.mem || 0,
+                  maxmem: item.maxmem || 0,
                 })
               } else if (item.type === 'lxc') {
                 totalLxc++
@@ -583,6 +712,153 @@ export default {
       }
     }
 
+    // ── Sparklines ────────────────────────────────────────────────────────────
+    const sparkLoading = ref(false)
+    const sparkLines = ref({ cpu: [], mem: [], net: [] })
+
+    const buildSparkPoints = (data, w, h) => {
+      if (!data || data.length < 2) return ''
+      const max = Math.max(...data, 0.001)
+      return data.map((v, i) => {
+        const x = (i / (data.length - 1)) * w
+        const y = h - (v / max) * (h - 4) - 2
+        return `${x.toFixed(1)},${y.toFixed(1)}`
+      }).join(' ')
+    }
+
+    const buildSparkFill = (data, w, h) => {
+      if (!data || data.length < 2) return ''
+      const pts = buildSparkPoints(data, w, h)
+      return `${pts} ${w},${h} 0,${h}`
+    }
+
+    const formatNetRate = (bps) => {
+      if (!bps) return '0 B/s'
+      if (bps < 1024) return `${bps.toFixed(0)} B/s`
+      if (bps < 1024 * 1024) return `${(bps / 1024).toFixed(1)} KB/s`
+      return `${(bps / (1024 * 1024)).toFixed(1)} MB/s`
+    }
+
+    const fetchSparklines = async () => {
+      sparkLoading.value = true
+      try {
+        const hostsResp = await api.proxmox.listHosts()
+        const hosts = hostsResp.data || []
+        const active = hosts.filter(h => h.is_active)
+        if (!active.length) return
+
+        // Get first active host's nodes and fetch RRD for the first node
+        const resourcesResp = await api.pveNode.clusterResources(active[0].id)
+        const nodes = (resourcesResp.data || []).filter(i => i.type === 'node').map(i => i.node)
+        if (!nodes.length) return
+
+        const rrdResp = await api.pveNode.nodeRrdData(active[0].id, nodes[0], { timeframe: 'hour', cf: 'AVERAGE' })
+        const rows = rrdResp.data || []
+        if (!rows.length) return
+
+        sparkLines.value = {
+          cpu: rows.map(r => r.cpu || 0),
+          mem: rows.map(r => (r.memused && r.memtotal) ? r.memused / r.memtotal : 0),
+          net: rows.map(r => r.netin || 0),
+        }
+      } catch (e) {
+        // silently ignore — sparklines are optional
+      } finally {
+        sparkLoading.value = false
+      }
+    }
+
+    // ── Top Consumers ─────────────────────────────────────────────────────────
+    const topConsumers = computed(() => {
+      return allVmList.value
+        .filter(vm => vm.status === 'running' && (vm.cpu > 0 || vm.maxmem > 0))
+        .map(vm => ({
+          ...vm,
+          memPct: vm.maxmem > 0 ? (vm.mem / vm.maxmem) * 100 : 0
+        }))
+        .sort((a, b) => (b.cpu || 0) - (a.cpu || 0))
+        .slice(0, 5)
+    })
+
+    // ── Alerts ────────────────────────────────────────────────────────────────
+    const alerts = ref([])
+    const alertsChecked = ref(false)
+
+    const buildAlerts = () => {
+      const result = []
+
+      // Failed tasks
+      recentTasks.value.forEach(task => {
+        if (task.status && (task.status.toLowerCase() === 'error' || task.status.toLowerCase().includes('fail'))) {
+          result.push({
+            severity: 'error',
+            icon: '&#9888;&#65039;',
+            title: `Task failed: ${task.type}`,
+            detail: `Node: ${task.node} on ${task.hostName} — started ${formatTaskTime(task.starttime)}`
+          })
+        }
+      })
+
+      // Stopped VMs that were in the list before (simple heuristic: any stopped non-template VM)
+      allVmList.value.forEach(vm => {
+        if (vm.status === 'stopped' && vm.name) {
+          // Only alert if VM had recent stop (uptime was non-zero last time — we use a local map)
+          // Since we don't have historical state, just surface all stopped VMs as info
+        }
+      })
+
+      // Storage over 85% — check from resources if available
+      if (resources.value) {
+        const diskPct = resources.value.total_disk_gb > 0
+          ? (resources.value.used_disk_gb / resources.value.total_disk_gb) * 100
+          : 0
+        if (diskPct > 85) {
+          result.push({
+            severity: 'warning',
+            icon: '&#128190;',
+            title: 'Storage usage above 85%',
+            detail: `${resources.value.used_disk_gb} GB used of ${resources.value.total_disk_gb} GB (${diskPct.toFixed(1)}%)`
+          })
+        }
+        const memPct = resources.value.total_memory_gb > 0
+          ? (resources.value.used_memory_gb / resources.value.total_memory_gb) * 100
+          : 0
+        if (memPct > 90) {
+          result.push({
+            severity: 'warning',
+            icon: '&#129778;',
+            title: 'Memory usage above 90%',
+            detail: `${resources.value.used_memory_gb} GB used of ${resources.value.total_memory_gb} GB (${memPct.toFixed(1)}%)`
+          })
+        }
+      }
+
+      // Offline cluster nodes
+      clusterHealthData.value.forEach(entry => {
+        if (entry.error) {
+          result.push({
+            severity: 'error',
+            icon: '&#127970;',
+            title: `Host unreachable: ${entry.hostName}`,
+            detail: entry.error
+          })
+        }
+        entry.nodes && entry.nodes.forEach(n => {
+          if (!n.online) {
+            result.push({
+              severity: 'error',
+              icon: '&#128293;',
+              title: `Node offline: ${n.name}`,
+              detail: `Host: ${entry.hostName}`
+            })
+          }
+        })
+      })
+
+      alerts.value = result
+      alertsChecked.value = true
+    }
+
     const fetchRecentTasks = async () => {
       tasksLoading.value = true
       try {
@@ -656,20 +932,22 @@ export default {
       return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
     }
 
-    onMounted(() => {
+    onMounted(async () => {
       fetchData()
-      fetchPveData()
-      fetchClusterHealth()
-      fetchRecentTasks()
+      await fetchPveData()
+      fetchClusterHealth().then(() => buildAlerts())
+      fetchRecentTasks().then(() => buildAlerts())
+      fetchSparklines()
 
       const intervalSecs = parseInt(localStorage.getItem('depl0y_refresh_interval') || '30', 10)
       const intervalMs = intervalSecs * 1000
 
-      refreshInterval = setInterval(() => {
+      refreshInterval = setInterval(async () => {
         fetchData()
-        fetchPveData()
-        fetchClusterHealth()
-        fetchRecentTasks()
+        await fetchPveData()
+        fetchClusterHealth().then(() => buildAlerts())
+        fetchRecentTasks().then(() => buildAlerts())
+        fetchSparklines()
         lastUpdatedSeconds.value = 0
       }, intervalMs)
 
@@ -705,6 +983,17 @@ export default {
       vmSearchQuery,
       vmSearchResults,
       navigateToVM,
+      // sparklines
+      sparkLoading,
+      sparkLines,
+      buildSparkPoints,
+      buildSparkFill,
+      formatNetRate,
+      // top consumers
+      topConsumers,
+      // alerts
+      alerts,
+      alertsChecked,
     }
   }
 }
@@ -1286,5 +1575,223 @@ export default {
   font-size: 0.8rem;
   color: var(--text-secondary);
   padding: 0.25rem 0.1rem;
+}
+
+/* ── Sparklines ─────────────────────────────────────────────────────────── */
+.sparklines-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.25rem 0;
+}
+
+.sparkline-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.spark-label {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  font-weight: 600;
+  width: 3.5rem;
+  flex-shrink: 0;
+}
+
+.sparkline-svg {
+  flex: 1;
+  height: 36px;
+  display: block;
+}
+
+.spark-val {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  width: 4rem;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+/* ── Top Consumers ─────────────────────────────────────────────────────── */
+.consumers-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.consumer-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.45rem 0.5rem;
+  border-radius: 0.375rem;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.consumer-item:hover {
+  background: var(--background);
+}
+
+.consumer-name {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+  flex: 0 0 40%;
+}
+
+.consumer-id {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.consumer-vmname {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.consumer-node {
+  font-size: 0.68rem;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.consumer-bars {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.cbar-row {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.cbar-label {
+  font-size: 0.65rem;
+  color: var(--text-secondary);
+  width: 2rem;
+  flex-shrink: 0;
+}
+
+.cbar-track {
+  flex: 1;
+  height: 0.3rem;
+  background: var(--border-color);
+  border-radius: 9999px;
+  overflow: hidden;
+}
+
+.cbar-fill {
+  height: 100%;
+  border-radius: 9999px;
+  transition: width 0.3s;
+}
+
+.cbar-cpu {
+  background: var(--primary-color);
+}
+
+.cbar-mem {
+  background: #10b981;
+}
+
+.cbar-pct {
+  font-size: 0.65rem;
+  color: var(--text-secondary);
+  width: 2.5rem;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+/* ── Alerts ─────────────────────────────────────────────────────────────── */
+.alerts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.alert-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  padding: 0.5rem 0.65rem;
+  border-radius: 0.375rem;
+  font-size: 0.82rem;
+  border-left: 3px solid transparent;
+}
+
+.alert-error {
+  border-left-color: var(--danger-color, #ef4444);
+  background: rgba(239, 68, 68, 0.05);
+}
+
+.alert-warning {
+  border-left-color: #f59e0b;
+  background: rgba(245, 158, 11, 0.05);
+}
+
+.alert-info {
+  border-left-color: var(--primary-color);
+  background: rgba(59, 130, 246, 0.05);
+}
+
+.alert-icon {
+  font-size: 1rem;
+  flex-shrink: 0;
+  margin-top: 0.05rem;
+}
+
+.alert-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.alert-title {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.alert-detail {
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+}
+
+.alert-badge {
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 0.1rem 0.4rem;
+  border-radius: 0.25rem;
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
+}
+
+.alert-badge-error {
+  background: rgba(239, 68, 68, 0.12);
+  color: var(--danger-color, #ef4444);
+}
+
+.alert-badge-warning {
+  background: rgba(245, 158, 11, 0.15);
+  color: #b45309;
+}
+
+.alert-badge-info {
+  background: rgba(59, 130, 246, 0.15);
+  color: var(--primary-color);
 }
 </style>

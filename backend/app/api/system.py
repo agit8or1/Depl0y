@@ -5,10 +5,13 @@ from app.core.database import get_db
 from app.models.database import SystemSettings
 from app.api.auth import get_current_user, require_admin
 from app.models import User
-from typing import Dict
+from typing import Dict, Any
 import logging
 import smtplib
 import ssl
+import os
+import time
+import sqlite3
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
@@ -120,6 +123,112 @@ def send_test_email(
     except Exception as e:
         logger.error(f"Failed to send test email: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to send test email: {str(e)}")
+
+
+@router.get("/diagnostics")
+def get_diagnostics(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+) -> Dict[str, Any]:
+    """Return a diagnostic bundle: version, db stats, log tail, uptime (admin only)"""
+    from app.core.config import settings
+
+    # Version info
+    version_setting = db.query(SystemSettings).filter(SystemSettings.key == "app_version").first()
+    version = version_setting.value if version_setting else settings.APP_VERSION
+
+    # DB stats
+    db_path = settings.DATABASE_URL.replace("sqlite:///", "")
+    db_size_bytes = 0
+    try:
+        db_size_bytes = os.path.getsize(db_path)
+    except Exception:
+        pass
+
+    user_count = 0
+    host_count = 0
+    vm_count = 0
+    try:
+        from app.models.database import User as UserModel, ProxmoxHost, VirtualMachine
+        user_count = db.query(UserModel).count()
+        host_count = db.query(ProxmoxHost).count()
+        vm_count = db.query(VirtualMachine).count()
+    except Exception:
+        pass
+
+    # Last 100 log lines
+    last_log_lines = []
+    log_file = settings.LOG_FILE
+    try:
+        if os.path.exists(log_file):
+            with open(log_file, "r", errors="replace") as f:
+                all_lines = f.readlines()
+                last_log_lines = [l.rstrip() for l in all_lines[-100:]]
+    except Exception as e:
+        last_log_lines = [f"Could not read log file: {e}"]
+
+    # System uptime
+    uptime_seconds = None
+    try:
+        with open("/proc/uptime", "r") as f:
+            uptime_seconds = float(f.read().split()[0])
+    except Exception:
+        pass
+
+    return {
+        "version": version,
+        "app_name": settings.APP_NAME,
+        "db_path": db_path,
+        "db_size_bytes": db_size_bytes,
+        "user_count": user_count,
+        "host_count": host_count,
+        "vm_count": vm_count,
+        "last_100_log_lines": last_log_lines,
+        "uptime_seconds": uptime_seconds,
+        "generated_at": time.time(),
+    }
+
+
+@router.post("/db-check")
+def db_integrity_check(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+) -> Dict[str, Any]:
+    """Run SQLite PRAGMA integrity_check (admin only)"""
+    from app.core.config import settings
+
+    db_path = settings.DATABASE_URL.replace("sqlite:///", "")
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA integrity_check")
+        rows = cursor.fetchall()
+        conn.close()
+        results = [r[0] for r in rows]
+        ok = len(results) == 1 and results[0] == "ok"
+        return {
+            "ok": ok,
+            "results": results,
+            "db_path": db_path,
+        }
+    except Exception as e:
+        logger.error(f"DB integrity check failed: {e}")
+        raise HTTPException(status_code=500, detail=f"DB integrity check failed: {e}")
+
+
+@router.get("/health")
+def system_health(db: Session = Depends(get_db)) -> Dict[str, Any]:
+    """Basic health check with db connectivity test"""
+    db_ok = False
+    try:
+        db.execute(__import__('sqlalchemy').text("SELECT 1"))
+        db_ok = True
+    except Exception:
+        pass
+    return {
+        "status": "healthy" if db_ok else "degraded",
+        "db": "ok" if db_ok else "error",
+    }
 
 
 @router.put("/version")

@@ -2,7 +2,7 @@
   <div class="security-page">
     <div class="page-header">
       <h2>Security</h2>
-      <p class="text-muted">Brute force protection, IP access control, and GeoIP filtering</p>
+      <p class="text-muted">Brute force protection, IP access control, GeoIP filtering, session management and password policy</p>
     </div>
 
     <div v-if="loading" class="loading-spinner"></div>
@@ -333,7 +333,247 @@
           </div>
         </div>
       </div>
-    </div>
+
+      <!-- ── Sessions ────────────────────────────────────────── -->
+      <div v-if="activeTab === 'sessions'">
+        <div class="card mb-2">
+          <div class="card-header">
+            <h3>Session Management</h3>
+          </div>
+          <div class="section-body">
+            <div class="info-box mb-2">
+              <strong>How session invalidation works:</strong> Each user has a
+              <code>token_version</code> counter. Bumping it immediately rejects any JWT
+              with an older version number — effectively signing out that user on their next
+              request. There is no live session list (stateless JWTs), but this provides
+              forced logout capability without a token blacklist database.
+            </div>
+
+            <div class="setting-row">
+              <div class="setting-info">
+                <span class="setting-label">Invalidate all sessions — all users</span>
+                <span class="setting-desc">Forces every user to re-authenticate on their next request</span>
+              </div>
+              <button @click="invalidateAllSessions" class="btn btn-danger btn-sm" :disabled="invalidatingAll">
+                {{ invalidatingAll ? 'Invalidating…' : 'Invalidate All Sessions' }}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h3>Per-User Session Invalidation</h3>
+            <button @click="loadUserList" class="btn btn-outline btn-sm">Refresh</button>
+          </div>
+          <div v-if="userList.length === 0" class="empty-state">No users found.</div>
+          <div v-else class="table-container">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Username</th>
+                  <th>Role</th>
+                  <th>Status</th>
+                  <th>Last Login</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="u in userList" :key="u.id">
+                  <td><strong>{{ u.username }}</strong></td>
+                  <td>
+                    <span :class="['badge', getRoleBadgeClass(u.role)]">{{ formatRole(u.role) }}</span>
+                  </td>
+                  <td>
+                    <span :class="['badge', u.is_active ? 'badge-success' : 'badge-danger']">
+                      {{ u.is_active ? 'Active' : 'Disabled' }}
+                    </span>
+                  </td>
+                  <td class="text-sm text-muted">{{ formatDate(u.last_login) }}</td>
+                  <td>
+                    <button @click="invalidateUserSessions(u)" class="btn btn-outline btn-sm">
+                      Invalidate Sessions
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Login History ───────────────────────────────────── -->
+      <div v-if="activeTab === 'history'">
+        <div class="card">
+          <div class="card-header">
+            <h3>Login History</h3>
+            <div class="flex gap-1">
+              <select v-model="historyFilter" class="form-control" style="width:130px">
+                <option value="all">All</option>
+                <option value="success">Successes</option>
+                <option value="failure">Failures</option>
+              </select>
+              <button @click="loadLoginHistory" class="btn btn-outline btn-sm">Refresh</button>
+            </div>
+          </div>
+          <div v-if="loginHistory.length === 0" class="empty-state">No login history available.</div>
+          <div v-else class="table-container">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Timestamp</th>
+                  <th>Username</th>
+                  <th>IP Address</th>
+                  <th>Result</th>
+                  <th>Reason</th>
+                  <th>User Agent</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="item in filteredHistory" :key="item.id">
+                  <td class="text-sm text-muted">{{ formatDate(item.timestamp) }}</td>
+                  <td><strong>{{ item.username_attempted }}</strong></td>
+                  <td><code>{{ item.ip_address }}</code></td>
+                  <td>
+                    <span :class="['badge', item.success ? 'badge-success' : 'badge-danger']">
+                      {{ item.success ? 'Success' : 'Failed' }}
+                    </span>
+                  </td>
+                  <td class="text-sm text-muted">{{ item.failure_reason || '—' }}</td>
+                  <td class="text-sm text-muted ua-cell">{{ item.user_agent || '—' }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Password Policy ─────────────────────────────────── -->
+      <div v-if="activeTab === 'policy'">
+        <div class="card">
+          <div class="card-header">
+            <h3>Password Policy</h3>
+          </div>
+          <div class="section-body">
+            <div class="setting-row">
+              <div class="setting-info">
+                <span class="setting-label">Minimum length</span>
+                <span class="setting-desc">Minimum number of characters required for a password</span>
+              </div>
+              <div class="input-suffix">
+                <input
+                  v-model.number="passwordPolicy.min_length"
+                  type="number" min="6" max="128"
+                  class="form-control setting-input"
+                />
+                <span class="suffix-label">chars</span>
+              </div>
+            </div>
+
+            <div class="setting-row">
+              <div class="setting-info">
+                <span class="setting-label">Require uppercase letters</span>
+                <span class="setting-desc">Password must contain at least one uppercase letter (A–Z)</span>
+              </div>
+              <label class="toggle">
+                <input type="checkbox" v-model="passwordPolicy.require_uppercase" />
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+
+            <div class="setting-row">
+              <div class="setting-info">
+                <span class="setting-label">Require numbers</span>
+                <span class="setting-desc">Password must contain at least one numeric digit (0–9)</span>
+              </div>
+              <label class="toggle">
+                <input type="checkbox" v-model="passwordPolicy.require_numbers" />
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+
+            <div class="setting-row">
+              <div class="setting-info">
+                <span class="setting-label">Require symbols</span>
+                <span class="setting-desc">Password must contain at least one special character (!@#$%^&*…)</span>
+              </div>
+              <label class="toggle">
+                <input type="checkbox" v-model="passwordPolicy.require_symbols" />
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+
+            <div class="section-footer">
+              <button @click="savePasswordPolicy" class="btn btn-primary" :disabled="savingPolicy">
+                {{ savingPolicy ? 'Saving...' : 'Save Policy' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── 2FA Overview ────────────────────────────────────── -->
+      <div v-if="activeTab === '2fa'">
+        <div class="card">
+          <div class="card-header">
+            <h3>2FA Status Overview</h3>
+            <button @click="load2faOverview" class="btn btn-outline btn-sm">Refresh</button>
+          </div>
+          <div v-if="twoFaList.length === 0" class="empty-state">No users found.</div>
+          <div v-else class="table-container">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Username</th>
+                  <th>Email</th>
+                  <th>Role</th>
+                  <th>Account Status</th>
+                  <th>2FA Status</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="u in twoFaList" :key="u.id">
+                  <td><strong>{{ u.username }}</strong></td>
+                  <td class="text-sm text-muted">{{ u.email }}</td>
+                  <td>
+                    <span :class="['badge', getRoleBadgeClass(u.role)]">{{ formatRole(u.role) }}</span>
+                  </td>
+                  <td>
+                    <span :class="['badge', u.is_active ? 'badge-success' : 'badge-danger']">
+                      {{ u.is_active ? 'Active' : 'Disabled' }}
+                    </span>
+                  </td>
+                  <td>
+                    <span :class="['badge', u.totp_enabled ? 'badge-success' : 'badge-secondary']">
+                      {{ u.totp_enabled ? 'Enabled' : 'Disabled' }}
+                    </span>
+                  </td>
+                  <td>
+                    <button
+                      v-if="u.totp_enabled"
+                      @click="forceDisable2fa(u)"
+                      class="btn btn-danger btn-sm"
+                      title="Force-disable 2FA for account recovery"
+                    >
+                      Force Disable 2FA
+                    </button>
+                    <span v-else class="text-muted text-sm">—</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="section-body" style="border-top:1px solid var(--border-color); padding-top:1rem">
+            <div class="info-box">
+              <strong>Force Disable 2FA</strong> is for account recovery when a user has lost access to their
+              authenticator app. After disabling, the user can log in with their password and set up 2FA again.
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- end v-else (not loading) -->
 
     <!-- ── Add IP Modal ───────────────────────────────────────── -->
     <div v-if="showIPModal" class="modal-overlay" @click.self="showIPModal = false">
@@ -418,7 +658,7 @@
 </template>
 
 <script>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import api from '@/services/api'
 import { useToast } from 'vue-toastification'
 
@@ -430,15 +670,22 @@ export default {
     const savingSettings = ref(false)
     const savingIP = ref(false)
     const savingGeoIP = ref(false)
+    const savingPolicy = ref(false)
+    const invalidatingAll = ref(false)
     const showIPModal = ref(false)
     const showGeoIPModal = ref(false)
     const activeTab = ref('brute')
+    const historyFilter = ref('all')
 
     const tabs = [
-      { key: 'brute',   label: 'Brute Force' },
+      { key: 'brute',    label: 'Brute Force' },
       { key: 'lockouts', label: 'Lockouts' },
-      { key: 'iplist',  label: 'IP Access' },
-      { key: 'geoip',   label: 'GeoIP' },
+      { key: 'iplist',   label: 'IP Access' },
+      { key: 'geoip',    label: 'GeoIP' },
+      { key: 'sessions', label: 'Sessions' },
+      { key: 'history',  label: 'Login History' },
+      { key: 'policy',   label: 'Password Policy' },
+      { key: '2fa',      label: '2FA Overview' },
     ]
 
     const settings = ref({
@@ -450,12 +697,30 @@ export default {
       geoip_mode: 'blacklist',
     })
 
+    const passwordPolicy = ref({
+      min_length: 8,
+      require_uppercase: false,
+      require_numbers: false,
+      require_symbols: false,
+    })
+
     const lockouts = ref([])
     const failedLogins = ref([])
     const ipList = ref([])
     const geoipRules = ref([])
+    const loginHistory = ref([])
+    const userList = ref([])
+    const twoFaList = ref([])
+
     const newIP = ref({ ip_address: '', list_type: 'ban', reason: '', expires_at: '' })
     const newGeoIP = ref({ country_code: '', country_name: '', action: 'block' })
+
+    // Filtered login history
+    const filteredHistory = computed(() => {
+      if (historyFilter.value === 'all') return loginHistory.value
+      const success = historyFilter.value === 'success'
+      return loginHistory.value.filter(h => h.success === success)
+    })
 
     // ── Country picker ──
     const countrySearch = ref('')
@@ -531,16 +796,59 @@ export default {
       }
     }
 
-    const loadSettings    = async () => { const r = await api.security.getSettings();    settings.value    = r.data }
-    const loadLockouts    = async () => { const r = await api.security.getLockouts();    lockouts.value    = r.data }
-    const loadFailedLogins= async () => { const r = await api.security.getFailedLogins();failedLogins.value= r.data }
-    const loadIPList      = async () => { const r = await api.security.getIPList();      ipList.value      = r.data }
-    const loadGeoIPRules  = async () => { const r = await api.security.getGeoIPRules();  geoipRules.value  = r.data }
+    // ── Loaders ──
+    const loadSettings     = async () => { const r = await api.security.getSettings();    settings.value     = r.data }
+    const loadLockouts     = async () => { const r = await api.security.getLockouts();    lockouts.value     = r.data }
+    const loadFailedLogins = async () => { const r = await api.security.getFailedLogins();failedLogins.value = r.data }
+    const loadIPList       = async () => { const r = await api.security.getIPList();      ipList.value       = r.data }
+    const loadGeoIPRules   = async () => { const r = await api.security.getGeoIPRules();  geoipRules.value   = r.data }
+    const loadLoginHistory = async () => {
+      try {
+        const r = await api.security.getLoginHistory(200)
+        loginHistory.value = r.data
+      } catch (e) {
+        loginHistory.value = []
+      }
+    }
+    const loadPasswordPolicy = async () => {
+      try {
+        const r = await api.security.getPasswordPolicy()
+        passwordPolicy.value = r.data
+      } catch (e) {
+        // defaults already set
+      }
+    }
+    const loadUserList = async () => {
+      try {
+        const r = await api.users.list()
+        userList.value = r.data
+      } catch (e) {
+        userList.value = []
+      }
+    }
+    const load2faOverview = async () => {
+      try {
+        const r = await api.security.get2faOverview()
+        twoFaList.value = r.data
+      } catch (e) {
+        twoFaList.value = []
+      }
+    }
 
     const loadAll = async () => {
       loading.value = true
       try {
-        await Promise.all([loadSettings(), loadLockouts(), loadFailedLogins(), loadIPList(), loadGeoIPRules()])
+        await Promise.all([
+          loadSettings(),
+          loadLockouts(),
+          loadFailedLogins(),
+          loadIPList(),
+          loadGeoIPRules(),
+          loadLoginHistory(),
+          loadPasswordPolicy(),
+          loadUserList(),
+          load2faOverview(),
+        ])
       } finally {
         loading.value = false
       }
@@ -554,6 +862,18 @@ export default {
         await loadSettings()
       } finally {
         savingSettings.value = false
+      }
+    }
+
+    const savePasswordPolicy = async () => {
+      savingPolicy.value = true
+      try {
+        await api.security.updatePasswordPolicy(passwordPolicy.value)
+        toast.success('Password policy saved')
+      } catch (e) {
+        toast.error(e.response?.data?.detail || 'Failed to save policy')
+      } finally {
+        savingPolicy.value = false
       }
     }
 
@@ -630,22 +950,69 @@ export default {
       await loadGeoIPRules()
     }
 
+    const invalidateAllSessions = async () => {
+      if (!confirm('This will force ALL users to re-authenticate. Continue?')) return
+      invalidatingAll.value = true
+      try {
+        await api.users.invalidateAllSessions()
+        toast.success('All sessions invalidated')
+      } catch (e) {
+        toast.error(e.response?.data?.detail || 'Failed to invalidate sessions')
+      } finally {
+        invalidatingAll.value = false
+      }
+    }
+
+    const invalidateUserSessions = async (u) => {
+      if (!confirm(`Invalidate all sessions for ${u.username}?`)) return
+      try {
+        await api.users.invalidateSessions(u.id)
+        toast.success(`Sessions invalidated for ${u.username}`)
+      } catch (e) {
+        toast.error(e.response?.data?.detail || 'Failed to invalidate sessions')
+      }
+    }
+
+    const forceDisable2fa = async (u) => {
+      if (!confirm(`Force-disable 2FA for ${u.username}? Use this only for account recovery.`)) return
+      try {
+        await api.users.disableTotp(u.id)
+        toast.success(`2FA disabled for ${u.username}`)
+        await load2faOverview()
+      } catch (e) {
+        toast.error(e.response?.data?.detail || 'Failed to disable 2FA')
+      }
+    }
+
     const formatDate = (d) => d ? new Date(d).toLocaleString() : '—'
+
+    const formatRole = (role) => ({ admin: 'Admin', operator: 'Operator', viewer: 'Viewer' }[role] || role)
+
+    const getRoleBadgeClass = (role) => ({
+      admin: 'badge-danger',
+      operator: 'badge-warning',
+      viewer: 'badge-info',
+    }[role] || 'badge-secondary')
 
     onMounted(loadAll)
 
     return {
-      loading, savingSettings, savingIP, savingGeoIP,
+      loading, savingSettings, savingIP, savingGeoIP, savingPolicy, invalidatingAll,
       showIPModal, showGeoIPModal, activeTab, tabs,
-      settings, lockouts, failedLogins, ipList, geoipRules,
+      settings, passwordPolicy,
+      lockouts, failedLogins, ipList, geoipRules, loginHistory, userList, twoFaList,
       newIP, newGeoIP,
+      historyFilter, filteredHistory,
       countrySearch, filteredCountries, filterCountries, selectCountry,
       lookupIP, lookupResult, lookingUp, lookupIPCountry, quickAddCountry,
-      saveSettings, unlockAccount, quickBanIP,
+      saveSettings, savePasswordPolicy,
+      unlockAccount, quickBanIP,
       addIPEntry, deleteIPEntry, toggleIPEntry,
       addGeoIPRule, deleteGeoIPRule, toggleGeoIPRule,
-      loadLockouts, loadFailedLogins,
-      formatDate,
+      loadLockouts, loadFailedLogins, loadLoginHistory, loadUserList, load2faOverview,
+      invalidateAllSessions, invalidateUserSessions,
+      forceDisable2fa,
+      formatDate, formatRole, getRoleBadgeClass,
     }
   }
 }
@@ -667,12 +1034,13 @@ export default {
   display: flex;
   gap: 0.25rem;
   border-bottom: 2px solid var(--border-color);
+  flex-wrap: wrap;
 }
 .tab-btn {
   background: none;
   border: none;
-  padding: 0.6rem 1.25rem;
-  font-size: 0.9rem;
+  padding: 0.6rem 1.1rem;
+  font-size: 0.875rem;
   font-weight: 500;
   color: var(--text-secondary);
   cursor: pointer;
@@ -682,6 +1050,7 @@ export default {
   align-items: center;
   gap: 0.4rem;
   transition: color 0.15s;
+  white-space: nowrap;
 }
 .tab-btn:hover { color: var(--text-primary); }
 .tab-active {
@@ -734,10 +1103,6 @@ export default {
   text-align: right;
   flex-shrink: 0;
 }
-.setting-input-wide {
-  width: 320px;
-  flex-shrink: 0;
-}
 .input-suffix {
   display: flex;
   align-items: center;
@@ -784,15 +1149,6 @@ export default {
 }
 .toggle input:checked + .toggle-slider { background: var(--primary-color, #3b82f6); }
 .toggle input:checked + .toggle-slider::before { transform: translateX(20px); }
-
-/* GeoIP DB status */
-.db-status {
-  display: inline-block;
-  margin-left: 0.5rem;
-  font-weight: 500;
-}
-.db-ok     { color: #16a34a; }
-.db-missing { color: #dc2626; }
 
 /* Empty state */
 .empty-state {
@@ -863,7 +1219,30 @@ export default {
   margin-top: 1.5rem;
 }
 
+.form-group { position: relative; margin-bottom: 1rem; }
+.form-label {
+  display: block;
+  margin-bottom: 0.4rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+}
+.form-control {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 0.375rem;
+  background: var(--background);
+  color: var(--text-primary);
+  font-size: 0.9rem;
+}
+.form-control:focus {
+  outline: none;
+  border-color: var(--primary-color);
+}
+
 .mb-2 { margin-bottom: 1rem; }
+.mt-1 { margin-top: 0.5rem; }
 
 /* IP Lookup */
 .lookup-row {
@@ -889,7 +1268,6 @@ export default {
   border-bottom: 1px solid var(--border-color);
 }
 .stat-row span:first-child { color: var(--text-secondary); }
-.mt-1 { margin-top: 0.5rem; }
 
 /* Country picker dropdown */
 .country-dropdown {
@@ -910,7 +1288,6 @@ export default {
   cursor: pointer;
 }
 .country-option:hover { background: var(--background); }
-.form-group { position: relative; }
 .selected-country {
   padding: 0.5rem 0.75rem;
   background: var(--background);
@@ -919,7 +1296,19 @@ export default {
   font-size: 0.875rem;
 }
 
-/* DB status (kept for compat but unused) */
-.db-ok { color: #16a34a; font-size: 0.8rem; }
-.db-missing { color: #dc2626; font-size: 0.8rem; }
+/* Info box */
+.info-box {
+  background: var(--background);
+  border: 1px solid var(--border-color);
+  border-radius: 0.375rem;
+  padding: 0.75rem 1rem;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.btn-sm {
+  padding: 0.25rem 0.6rem;
+  font-size: 0.8rem;
+}
 </style>

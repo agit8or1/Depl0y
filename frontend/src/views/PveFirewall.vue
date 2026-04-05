@@ -43,16 +43,28 @@
       </div>
     </div>
 
-    <!-- Tab Bar (VM scope only) -->
-    <div v-if="scope === 'vm' && selectedVmKey" class="tab-bar mb-2">
+    <!-- Tab Bar -->
+    <div class="tab-bar mb-2">
       <button
         :class="['tab-btn', activeTab === 'rules' ? 'active' : '']"
         @click="activeTab = 'rules'"
+        v-if="scope === 'cluster' || selectedVmKey"
       >Rules</button>
       <button
         :class="['tab-btn', activeTab === 'options' ? 'active' : '']"
         @click="activeTab = 'options'; fetchVmOptions()"
+        v-if="scope === 'vm' && selectedVmKey"
       >Firewall Options</button>
+      <button
+        :class="['tab-btn', activeTab === 'ipsets' ? 'active' : '']"
+        @click="activeTab = 'ipsets'; fetchIpsets()"
+        v-if="scope === 'cluster'"
+      >IP Sets</button>
+      <button
+        :class="['tab-btn', activeTab === 'aliases' ? 'active' : '']"
+        @click="activeTab = 'aliases'; fetchAliases()"
+        v-if="scope === 'cluster'"
+      >Aliases</button>
     </div>
 
     <!-- VM Firewall Options Tab -->
@@ -128,17 +140,158 @@
       </div>
     </div>
 
-    <!-- Rules Panel (cluster always, VM when activeTab === 'rules') -->
-    <div v-if="scope === 'cluster' || (scope === 'vm' && selectedVmKey && activeTab === 'rules')">
+    <!-- IPSets Tab -->
+    <div v-if="scope === 'cluster' && activeTab === 'ipsets'">
       <div class="two-panel-layout">
-        <!-- Left panel: IPSets & Aliases -->
+        <!-- Left: IP Set list -->
         <div class="panel-left">
           <div class="card">
             <div class="card-header">
-              <h3>IPSets &amp; Aliases</h3>
+              <h3>IP Sets</h3>
+              <button @click="openCreateIpsetModal" class="btn btn-primary btn-sm">+ New</button>
             </div>
-            <div class="card-body text-center text-muted">
-              <p style="padding: 2rem 1rem;">IPSet and alias management coming soon.</p>
+            <div v-if="loadingIpsets" class="loading-spinner p-2"></div>
+            <div v-else-if="ipsets.length === 0" class="text-center text-muted" style="padding: 1.5rem;">
+              <p>No IP sets defined.</p>
+            </div>
+            <div v-else class="ipset-list">
+              <div
+                v-for="is in ipsets"
+                :key="is.name"
+                :class="['ipset-item', selectedIpset === is.name ? 'active' : '']"
+                @click="selectIpset(is.name)"
+              >
+                <div class="ipset-item-name">{{ is.name }}</div>
+                <div class="ipset-item-comment text-sm text-muted">{{ is.comment || '' }}</div>
+                <button
+                  @click.stop="deleteIpset(is.name)"
+                  class="btn btn-danger btn-xs"
+                  title="Delete IP set"
+                >✕</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: IP Set entries -->
+        <div class="panel-right">
+          <div class="card">
+            <div class="card-header">
+              <h3>{{ selectedIpset ? `Entries — ${selectedIpset}` : 'Select an IP Set' }}</h3>
+              <button v-if="selectedIpset" @click="openAddCidrModal" class="btn btn-primary btn-sm">+ Add CIDR</button>
+            </div>
+            <div v-if="!selectedIpset" class="text-center text-muted" style="padding: 2rem;">
+              <p>Select an IP set to view its entries.</p>
+            </div>
+            <div v-else-if="loadingIpsetEntries" class="loading-spinner p-2"></div>
+            <div v-else-if="ipsetEntries.length === 0" class="text-center text-muted" style="padding: 1.5rem;">
+              <p>No entries. Add a CIDR above.</p>
+            </div>
+            <div v-else class="table-container">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>CIDR</th>
+                    <th>Comment</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="entry in ipsetEntries" :key="entry.cidr">
+                    <td><code>{{ entry.cidr }}</code></td>
+                    <td class="text-sm">{{ entry.comment || '—' }}</td>
+                    <td>
+                      <button @click="removeIpsetEntry(entry.cidr)" class="btn btn-danger btn-sm">Remove</button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Aliases Tab -->
+    <div v-if="scope === 'cluster' && activeTab === 'aliases'" class="card">
+      <div class="card-header">
+        <h3>Aliases</h3>
+        <button @click="openCreateAliasModal" class="btn btn-primary">+ New Alias</button>
+      </div>
+      <div v-if="loadingAliases" class="loading-spinner"></div>
+      <div v-else-if="aliases.length === 0" class="text-center text-muted" style="padding: 2rem;">
+        <p>No aliases defined.</p>
+      </div>
+      <div v-else class="table-container">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>IP / CIDR</th>
+              <th>Comment</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="alias in aliases" :key="alias.name">
+              <td><strong>{{ alias.name }}</strong></td>
+              <td><code>{{ alias.cidr }}</code></td>
+              <td class="text-sm">{{ alias.comment || '—' }}</td>
+              <td>
+                <div class="action-btns">
+                  <button @click="openEditAliasModal(alias)" class="btn btn-outline btn-sm">Edit</button>
+                  <button @click="deleteAlias(alias.name)" class="btn btn-danger btn-sm">Delete</button>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Rules Panel (cluster always visible on rules tab; VM when activeTab === 'rules') -->
+    <div v-if="activeTab === 'rules' && (scope === 'cluster' || (scope === 'vm' && selectedVmKey))">
+      <div class="two-panel-layout">
+        <!-- Left panel: Filter + Import/Export -->
+        <div class="panel-left">
+          <div class="card mb-2">
+            <div class="card-header"><h3>Filter Rules</h3></div>
+            <div class="card-body">
+              <div class="form-group">
+                <label class="form-label">Action</label>
+                <select v-model="filter.action" class="form-control form-control-sm">
+                  <option value="">All</option>
+                  <option value="ACCEPT">ACCEPT</option>
+                  <option value="DROP">DROP</option>
+                  <option value="REJECT">REJECT</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Source</label>
+                <input v-model="filter.source" class="form-control form-control-sm" placeholder="Filter by source..." />
+              </div>
+              <div class="form-group">
+                <label class="form-label">Destination</label>
+                <input v-model="filter.dest" class="form-control form-control-sm" placeholder="Filter by dest..." />
+              </div>
+              <div class="form-group">
+                <label class="form-label">Comment</label>
+                <input v-model="filter.comment" class="form-control form-control-sm" placeholder="Filter by comment..." />
+              </div>
+              <button @click="clearFilter" class="btn btn-outline btn-sm mt-1">Clear Filter</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header"><h3>Import / Export</h3></div>
+            <div class="card-body">
+              <div class="flex-col gap-1">
+                <button @click="exportRules" class="btn btn-outline btn-sm w-full">Export as JSON</button>
+                <label class="btn btn-outline btn-sm w-full text-center cursor-pointer">
+                  Import from JSON
+                  <input type="file" accept=".json" @change="importRules" class="hidden" ref="importFileRef" />
+                </label>
+              </div>
             </div>
           </div>
         </div>
@@ -149,15 +302,18 @@
             <div class="card-header">
               <h3>
                 {{ scope === 'cluster' ? 'Cluster' : selectedVmLabel }} Firewall Rules
+                <span v-if="filteredRules.length !== rules.length" class="text-sm text-muted ml-1">
+                  ({{ filteredRules.length }} of {{ rules.length }})
+                </span>
               </h3>
               <button @click="openAddModal" class="btn btn-primary">+ Add Rule</button>
             </div>
 
             <div v-if="loading" class="loading-spinner"></div>
 
-            <div v-else-if="rules.length === 0" class="text-center text-muted" style="padding: 2rem;">
-              <p>No firewall rules configured.</p>
-              <p class="text-sm">Add a rule to control traffic.</p>
+            <div v-else-if="filteredRules.length === 0" class="text-center text-muted" style="padding: 2rem;">
+              <p>{{ rules.length === 0 ? 'No firewall rules configured.' : 'No rules match the current filter.' }}</p>
+              <p v-if="rules.length === 0" class="text-sm">Add a rule to control traffic.</p>
             </div>
 
             <div v-else class="table-container">
@@ -165,7 +321,7 @@
                 <thead>
                   <tr>
                     <th>Pos</th>
-                    <th>Direction</th>
+                    <th>Dir</th>
                     <th>Action</th>
                     <th>Protocol</th>
                     <th>Source</th>
@@ -177,7 +333,11 @@
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="(rule, index) in rules" :key="index">
+                  <tr
+                    v-for="(rule, index) in filteredRules"
+                    :key="rule.pos !== undefined ? rule.pos : index"
+                    :class="{ 'rule-disabled': rule.enable == 0 || rule.enable === false }"
+                  >
                     <td><strong>{{ rule.pos !== undefined ? rule.pos : index }}</strong></td>
                     <td>
                       <span :class="['badge', rule.type === 'out' ? 'badge-warning' : 'badge-info']">
@@ -201,12 +361,20 @@
                     </td>
                     <td class="text-sm">{{ rule.comment || '—' }}</td>
                     <td>
-                      <span :class="['badge', rule.enable == 1 || rule.enable === true ? 'badge-success' : 'badge-danger']">
-                        {{ rule.enable == 1 || rule.enable === true ? 'Yes' : 'No' }}
-                      </span>
+                      <label class="toggle-switch toggle-sm" :title="(rule.enable == 1 || rule.enable === true) ? 'Disable rule' : 'Enable rule'">
+                        <input
+                          type="checkbox"
+                          :checked="rule.enable == 1 || rule.enable === true"
+                          @change="toggleRule(rule, $event.target.checked)"
+                        />
+                        <span class="toggle-slider"></span>
+                      </label>
                     </td>
                     <td>
-                      <button @click="deleteRule(rule.pos !== undefined ? rule.pos : index)" class="btn btn-danger btn-sm">Delete</button>
+                      <div class="action-btns">
+                        <button @click="openEditRuleModal(rule)" class="btn btn-outline btn-sm">Edit</button>
+                        <button @click="deleteRule(rule.pos !== undefined ? rule.pos : index)" class="btn btn-danger btn-sm">Del</button>
+                      </div>
                     </td>
                   </tr>
                 </tbody>
@@ -222,14 +390,14 @@
       <p>Select a VM above to manage its firewall rules and options.</p>
     </div>
 
-    <!-- Add Rule Modal -->
+    <!-- Add / Edit Rule Modal -->
     <div v-if="showAddModal" class="modal" @click="showAddModal = false">
       <div class="modal-content" @click.stop>
         <div class="modal-header">
-          <h3>Add Firewall Rule</h3>
+          <h3>{{ editingRule ? 'Edit Firewall Rule' : 'Add Firewall Rule' }}</h3>
           <button @click="showAddModal = false" class="btn-close">×</button>
         </div>
-        <form @submit.prevent="addRule" class="modal-body">
+        <form @submit.prevent="submitRule" class="modal-body">
           <div class="form-row">
             <div class="form-group">
               <label class="form-label">Direction</label>
@@ -256,6 +424,7 @@
                 <option value="tcp">TCP</option>
                 <option value="udp">UDP</option>
                 <option value="icmp">ICMP</option>
+                <option value="tcp_udp">TCP+UDP</option>
               </select>
             </div>
             <div class="form-group flex items-center">
@@ -288,6 +457,11 @@
             </div>
           </div>
 
+          <div class="form-group" v-if="editingRule">
+            <label class="form-label">Move to Position</label>
+            <input v-model.number="newRule.moveto" type="number" class="form-control" placeholder="Leave blank to keep current position" />
+          </div>
+
           <div class="form-group">
             <label class="form-label">Comment</label>
             <input v-model="newRule.comment" class="form-control" placeholder="Optional description" />
@@ -295,9 +469,93 @@
 
           <div class="flex gap-1 mt-2">
             <button type="submit" class="btn btn-primary" :disabled="saving">
-              {{ saving ? 'Adding...' : 'Add Rule' }}
+              {{ saving ? (editingRule ? 'Updating...' : 'Adding...') : (editingRule ? 'Update Rule' : 'Add Rule') }}
             </button>
             <button type="button" @click="showAddModal = false" class="btn btn-outline">Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Create IPSet Modal -->
+    <div v-if="showIpsetModal" class="modal" @click="showIpsetModal = false">
+      <div class="modal-content" @click.stop>
+        <div class="modal-header">
+          <h3>Create IP Set</h3>
+          <button @click="showIpsetModal = false" class="btn-close">×</button>
+        </div>
+        <form @submit.prevent="createIpset" class="modal-body">
+          <div class="form-group">
+            <label class="form-label">Name <span class="text-danger">*</span></label>
+            <input v-model="ipsetForm.name" class="form-control" placeholder="e.g. webservers" required pattern="[A-Za-z][A-Za-z0-9_-]*" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Comment</label>
+            <input v-model="ipsetForm.comment" class="form-control" placeholder="Optional description" />
+          </div>
+          <div class="flex gap-1 mt-2">
+            <button type="submit" class="btn btn-primary" :disabled="saving">Create</button>
+            <button type="button" @click="showIpsetModal = false" class="btn btn-outline">Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Add CIDR to IPSet Modal -->
+    <div v-if="showCidrModal" class="modal" @click="showCidrModal = false">
+      <div class="modal-content" @click.stop>
+        <div class="modal-header">
+          <h3>Add CIDR to {{ selectedIpset }}</h3>
+          <button @click="showCidrModal = false" class="btn-close">×</button>
+        </div>
+        <form @submit.prevent="addCidrToIpset" class="modal-body">
+          <div class="form-group">
+            <label class="form-label">CIDR <span class="text-danger">*</span></label>
+            <input v-model="cidrForm.cidr" class="form-control" placeholder="e.g. 192.168.1.0/24 or 10.0.0.5" required />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Comment</label>
+            <input v-model="cidrForm.comment" class="form-control" placeholder="Optional" />
+          </div>
+          <div class="form-group">
+            <label class="form-label toggle-label">
+              <input type="checkbox" v-model="cidrForm.nomatch" />
+              <span>Nomatch (negate — exclude this CIDR)</span>
+            </label>
+          </div>
+          <div class="flex gap-1 mt-2">
+            <button type="submit" class="btn btn-primary" :disabled="saving">Add</button>
+            <button type="button" @click="showCidrModal = false" class="btn btn-outline">Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Create / Edit Alias Modal -->
+    <div v-if="showAliasModal" class="modal" @click="showAliasModal = false">
+      <div class="modal-content" @click.stop>
+        <div class="modal-header">
+          <h3>{{ editingAlias ? 'Edit Alias' : 'Create Alias' }}</h3>
+          <button @click="showAliasModal = false" class="btn-close">×</button>
+        </div>
+        <form @submit.prevent="submitAlias" class="modal-body">
+          <div class="form-group">
+            <label class="form-label">Name <span class="text-danger">*</span></label>
+            <input v-model="aliasForm.name" class="form-control" placeholder="e.g. my-server" required :disabled="!!editingAlias" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">IP / CIDR <span class="text-danger">*</span></label>
+            <input v-model="aliasForm.cidr" class="form-control" placeholder="e.g. 192.168.1.100 or 10.0.0.0/8" required />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Comment</label>
+            <input v-model="aliasForm.comment" class="form-control" placeholder="Optional description" />
+          </div>
+          <div class="flex gap-1 mt-2">
+            <button type="submit" class="btn btn-primary" :disabled="saving">
+              {{ editingAlias ? 'Update' : 'Create' }}
+            </button>
+            <button type="button" @click="showAliasModal = false" class="btn btn-outline">Cancel</button>
           </div>
         </form>
       </div>
@@ -325,7 +583,7 @@ export default {
     // VM list
     const vmList = ref([])
     const loadingVms = ref(false)
-    const selectedVmKey = ref('')  // "vmid@node"
+    const selectedVmKey = ref(route.query.vmid ? '' : '')  // populated from query if provided
 
     // Derived VM identity
     const selectedVmId = computed(() => {
@@ -346,6 +604,19 @@ export default {
     const loading = ref(false)
     const saving = ref(false)
     const showAddModal = ref(false)
+    const editingRule = ref(null)
+
+    // Filter
+    const filter = ref({ action: '', source: '', dest: '', comment: '' })
+    const filteredRules = computed(() => {
+      return rules.value.filter(rule => {
+        if (filter.value.action && rule.action !== filter.value.action) return false
+        if (filter.value.source && !(rule.source || '').toLowerCase().includes(filter.value.source.toLowerCase())) return false
+        if (filter.value.dest && !(rule.dest || '').toLowerCase().includes(filter.value.dest.toLowerCase())) return false
+        if (filter.value.comment && !(rule.comment || '').toLowerCase().includes(filter.value.comment.toLowerCase())) return false
+        return true
+      })
+    })
 
     const freshRule = () => ({
       type: 'in',
@@ -356,7 +627,8 @@ export default {
       dport: '',
       sport: '',
       comment: '',
-      enable: 1
+      enable: 1,
+      moveto: null,
     })
     const newRule = ref(freshRule())
 
@@ -365,9 +637,28 @@ export default {
     const loadingOptions = ref(false)
     const savingOptions = ref(false)
 
-    // ----------------------------------------------------------------
-    // Scope switching
-    // ----------------------------------------------------------------
+    // IPSets
+    const ipsets = ref([])
+    const loadingIpsets = ref(false)
+    const selectedIpset = ref('')
+    const ipsetEntries = ref([])
+    const loadingIpsetEntries = ref(false)
+    const showIpsetModal = ref(false)
+    const showCidrModal = ref(false)
+    const ipsetForm = ref({ name: '', comment: '' })
+    const cidrForm = ref({ cidr: '', comment: '', nomatch: false })
+
+    // Aliases
+    const aliases = ref([])
+    const loadingAliases = ref(false)
+    const showAliasModal = ref(false)
+    const editingAlias = ref(null)
+    const aliasForm = ref({ name: '', cidr: '', comment: '' })
+
+    // Import file ref
+    const importFileRef = ref(null)
+
+    // ── Scope switching ───────────────────────────────────────────────────────
     const setScope = async (s) => {
       scope.value = s
       activeTab.value = 'rules'
@@ -379,24 +670,28 @@ export default {
         if (vmList.value.length === 0) {
           await fetchVmList()
         }
-        // If a VM was previously selected, reload its rules
         if (selectedVmKey.value) {
           fetchRules()
         }
       }
     }
 
-    // ----------------------------------------------------------------
-    // VM list
-    // ----------------------------------------------------------------
+    // ── VM list ───────────────────────────────────────────────────────────────
     const fetchVmList = async () => {
       loadingVms.value = true
       try {
         const res = await api.pveNode.clusterResources(hostId.value, 'vm')
         const data = res.data || []
-        // clusterResources returns array; filter to only qemu/lxc
         vmList.value = data.filter(r => r.type === 'qemu' || r.type === 'lxc')
           .sort((a, b) => (a.vmid || 0) - (b.vmid || 0))
+        // If vmid passed as query param, auto-select
+        if (route.query.vmid && route.query.node) {
+          const key = `${route.query.vmid}@${route.query.node}`
+          if (vmList.value.find(v => v.vmid + '@' + v.node === key)) {
+            selectedVmKey.value = key
+            fetchRules()
+          }
+        }
       } catch (err) {
         console.error('Failed to load VM list:', err)
         toast.error('Failed to load VM list')
@@ -414,9 +709,7 @@ export default {
       }
     }
 
-    // ----------------------------------------------------------------
-    // Rules
-    // ----------------------------------------------------------------
+    // ── Rules ─────────────────────────────────────────────────────────────────
     const fetchRules = async () => {
       loading.value = true
       try {
@@ -435,31 +728,63 @@ export default {
       }
     }
 
+    const clearFilter = () => {
+      filter.value = { action: '', source: '', dest: '', comment: '' }
+    }
+
     const openAddModal = () => {
+      editingRule.value = null
       newRule.value = freshRule()
       showAddModal.value = true
     }
 
-    const addRule = async () => {
+    const openEditRuleModal = (rule) => {
+      editingRule.value = rule
+      newRule.value = {
+        type: rule.type || 'in',
+        action: rule.action || 'ACCEPT',
+        proto: rule.proto || '',
+        source: rule.source || '',
+        dest: rule.dest || '',
+        dport: rule.dport || '',
+        sport: rule.sport || '',
+        comment: rule.comment || '',
+        enable: rule.enable == 1 || rule.enable === true ? 1 : 0,
+        moveto: null,
+      }
+      showAddModal.value = true
+    }
+
+    const submitRule = async () => {
       saving.value = true
       try {
         const payload = { ...newRule.value }
-        // Remove empty fields
+        // Remove empty/null fields
         Object.keys(payload).forEach(k => {
-          if (payload[k] === '' || payload[k] === null) delete payload[k]
+          if (payload[k] === '' || payload[k] === null || payload[k] === undefined) delete payload[k]
         })
-        if (scope.value === 'cluster') {
-          await api.pveNode.addClusterFirewallRule(hostId.value, payload)
+        if (editingRule.value) {
+          const pos = editingRule.value.pos !== undefined ? editingRule.value.pos : 0
+          if (scope.value === 'cluster') {
+            await api.pveFirewall.updateClusterFirewallRule(hostId.value, pos, payload)
+          } else {
+            await api.pveVm.updateFirewallRule(hostId.value, selectedVmNode.value, selectedVmId.value, pos, payload)
+          }
+          toast.success('Firewall rule updated')
         } else {
-          await api.pveVm.addFirewallRule(hostId.value, selectedVmNode.value, selectedVmId.value, payload)
+          if (scope.value === 'cluster') {
+            await api.pveNode.addClusterFirewallRule(hostId.value, payload)
+          } else {
+            await api.pveVm.addFirewallRule(hostId.value, selectedVmNode.value, selectedVmId.value, payload)
+          }
+          toast.success('Firewall rule added')
         }
-        toast.success('Firewall rule added')
         showAddModal.value = false
         newRule.value = freshRule()
         await fetchRules()
       } catch (error) {
-        console.error('Failed to add firewall rule:', error)
-        toast.error('Failed to add firewall rule')
+        console.error('Failed to save firewall rule:', error)
+        toast.error('Failed to save firewall rule')
       } finally {
         saving.value = false
       }
@@ -481,9 +806,77 @@ export default {
       }
     }
 
-    // ----------------------------------------------------------------
-    // VM Firewall Options
-    // ----------------------------------------------------------------
+    const toggleRule = async (rule, enabled) => {
+      const pos = rule.pos !== undefined ? rule.pos : 0
+      try {
+        const payload = { enable: enabled ? 1 : 0 }
+        if (scope.value === 'cluster') {
+          await api.pveFirewall.updateClusterFirewallRule(hostId.value, pos, payload)
+        } else {
+          await api.pveVm.updateFirewallRule(hostId.value, selectedVmNode.value, selectedVmId.value, pos, payload)
+        }
+        rule.enable = enabled ? 1 : 0
+        toast.success(`Rule ${enabled ? 'enabled' : 'disabled'}`)
+      } catch (err) {
+        toast.error('Failed to toggle rule')
+        await fetchRules()
+      }
+    }
+
+    // ── Export / Import ───────────────────────────────────────────────────────
+    const exportRules = () => {
+      const data = JSON.stringify(rules.value, null, 2)
+      const blob = new Blob([data], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `firewall-rules-${hostId.value}-${scope.value}.json`
+      a.click()
+      URL.revokeObjectURL(url)
+      toast.success('Rules exported')
+    }
+
+    const importRules = async (event) => {
+      const file = event.target.files[0]
+      if (!file) return
+      try {
+        const text = await file.text()
+        const imported = JSON.parse(text)
+        if (!Array.isArray(imported)) {
+          toast.error('Invalid import file: expected a JSON array of rules')
+          return
+        }
+        if (!confirm(`Import ${imported.length} rule(s)? Existing rules will NOT be removed.`)) return
+        saving.value = true
+        let added = 0
+        for (const rule of imported) {
+          const payload = { ...rule }
+          delete payload.pos
+          Object.keys(payload).forEach(k => {
+            if (payload[k] === '' || payload[k] === null || payload[k] === undefined) delete payload[k]
+          })
+          try {
+            if (scope.value === 'cluster') {
+              await api.pveNode.addClusterFirewallRule(hostId.value, payload)
+            } else {
+              await api.pveVm.addFirewallRule(hostId.value, selectedVmNode.value, selectedVmId.value, payload)
+            }
+            added++
+          } catch (e) {
+            console.warn('Failed to import rule:', e)
+          }
+        }
+        toast.success(`Imported ${added} of ${imported.length} rule(s)`)
+        await fetchRules()
+      } catch (err) {
+        toast.error('Failed to import rules: ' + err.message)
+      } finally {
+        saving.value = false
+        if (importFileRef.value) importFileRef.value.value = ''
+      }
+    }
+
+    // ── VM Firewall Options ───────────────────────────────────────────────────
     const fetchVmOptions = async () => {
       if (!selectedVmKey.value) return
       loadingOptions.value = true
@@ -527,6 +920,159 @@ export default {
       await saveVmOptions()
     }
 
+    // ── IPSets ────────────────────────────────────────────────────────────────
+    const fetchIpsets = async () => {
+      loadingIpsets.value = true
+      try {
+        const res = await api.pveFirewall.listIpsets(hostId.value)
+        ipsets.value = res.data || []
+      } catch (err) {
+        toast.error('Failed to load IP sets')
+      } finally {
+        loadingIpsets.value = false
+      }
+    }
+
+    const selectIpset = async (name) => {
+      selectedIpset.value = name
+      loadingIpsetEntries.value = true
+      try {
+        const res = await api.pveFirewall.listIpsetEntries(hostId.value, name)
+        ipsetEntries.value = res.data || []
+      } catch (err) {
+        toast.error('Failed to load IP set entries')
+      } finally {
+        loadingIpsetEntries.value = false
+      }
+    }
+
+    const openCreateIpsetModal = () => {
+      ipsetForm.value = { name: '', comment: '' }
+      showIpsetModal.value = true
+    }
+
+    const createIpset = async () => {
+      saving.value = true
+      try {
+        await api.pveFirewall.createIpset(hostId.value, ipsetForm.value)
+        toast.success('IP set created')
+        showIpsetModal.value = false
+        await fetchIpsets()
+      } catch (err) {
+        toast.error('Failed to create IP set')
+      } finally {
+        saving.value = false
+      }
+    }
+
+    const deleteIpset = async (name) => {
+      if (!confirm(`Delete IP set "${name}"? It must be empty to delete.`)) return
+      try {
+        await api.pveFirewall.deleteIpset(hostId.value, name)
+        toast.success(`IP set "${name}" deleted`)
+        if (selectedIpset.value === name) {
+          selectedIpset.value = ''
+          ipsetEntries.value = []
+        }
+        await fetchIpsets()
+      } catch (err) {
+        toast.error('Failed to delete IP set')
+      }
+    }
+
+    const openAddCidrModal = () => {
+      cidrForm.value = { cidr: '', comment: '', nomatch: false }
+      showCidrModal.value = true
+    }
+
+    const addCidrToIpset = async () => {
+      saving.value = true
+      try {
+        const payload = { cidr: cidrForm.value.cidr }
+        if (cidrForm.value.comment) payload.comment = cidrForm.value.comment
+        if (cidrForm.value.nomatch) payload.nomatch = 1
+        await api.pveFirewall.addIpsetEntry(hostId.value, selectedIpset.value, payload)
+        toast.success('CIDR added')
+        showCidrModal.value = false
+        await selectIpset(selectedIpset.value)
+      } catch (err) {
+        toast.error('Failed to add CIDR')
+      } finally {
+        saving.value = false
+      }
+    }
+
+    const removeIpsetEntry = async (cidr) => {
+      if (!confirm(`Remove ${cidr} from ${selectedIpset.value}?`)) return
+      try {
+        await api.pveFirewall.removeIpsetEntry(hostId.value, selectedIpset.value, cidr)
+        toast.success('Entry removed')
+        await selectIpset(selectedIpset.value)
+      } catch (err) {
+        toast.error('Failed to remove entry')
+      }
+    }
+
+    // ── Aliases ───────────────────────────────────────────────────────────────
+    const fetchAliases = async () => {
+      loadingAliases.value = true
+      try {
+        const res = await api.pveFirewall.listAliases(hostId.value)
+        aliases.value = res.data || []
+      } catch (err) {
+        toast.error('Failed to load aliases')
+      } finally {
+        loadingAliases.value = false
+      }
+    }
+
+    const openCreateAliasModal = () => {
+      editingAlias.value = null
+      aliasForm.value = { name: '', cidr: '', comment: '' }
+      showAliasModal.value = true
+    }
+
+    const openEditAliasModal = (alias) => {
+      editingAlias.value = alias
+      aliasForm.value = { name: alias.name, cidr: alias.cidr, comment: alias.comment || '' }
+      showAliasModal.value = true
+    }
+
+    const submitAlias = async () => {
+      saving.value = true
+      try {
+        if (editingAlias.value) {
+          await api.pveFirewall.updateAlias(hostId.value, aliasForm.value.name, {
+            cidr: aliasForm.value.cidr,
+            comment: aliasForm.value.comment,
+            rename: aliasForm.value.name,
+          })
+          toast.success('Alias updated')
+        } else {
+          await api.pveFirewall.createAlias(hostId.value, aliasForm.value)
+          toast.success('Alias created')
+        }
+        showAliasModal.value = false
+        await fetchAliases()
+      } catch (err) {
+        toast.error(editingAlias.value ? 'Failed to update alias' : 'Failed to create alias')
+      } finally {
+        saving.value = false
+      }
+    }
+
+    const deleteAlias = async (name) => {
+      if (!confirm(`Delete alias "${name}"?`)) return
+      try {
+        await api.pveFirewall.deleteAlias(hostId.value, name)
+        toast.success('Alias deleted')
+        await fetchAliases()
+      } catch (err) {
+        toast.error('Failed to delete alias')
+      }
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
     const getActionBadge = (action) => {
       const map = { ACCEPT: 'badge-success', DROP: 'badge-danger', REJECT: 'badge-warning' }
       return map[action] || 'badge-info'
@@ -534,6 +1080,10 @@ export default {
 
     onMounted(() => {
       fetchRules()
+      // If vmid in query, switch to VM scope
+      if (route.query.vmid) {
+        setScope('vm')
+      }
     })
 
     return {
@@ -547,20 +1097,41 @@ export default {
       selectedVmLabel,
       onVmChange,
       rules,
+      filteredRules,
+      filter,
+      clearFilter,
       loading,
       saving,
       showAddModal,
+      editingRule,
       newRule,
       openAddModal,
-      addRule,
+      openEditRuleModal,
+      submitRule,
       deleteRule,
+      toggleRule,
+      exportRules,
+      importRules,
+      importFileRef,
       vmOptions,
       loadingOptions,
       savingOptions,
       fetchVmOptions,
       saveVmOptions,
       toggleVmFirewall,
-      getActionBadge
+      getActionBadge,
+      // IPSets
+      ipsets, loadingIpsets, selectedIpset, ipsetEntries, loadingIpsetEntries,
+      showIpsetModal, showCidrModal,
+      ipsetForm, cidrForm,
+      fetchIpsets, selectIpset,
+      openCreateIpsetModal, createIpset, deleteIpset,
+      openAddCidrModal, addCidrToIpset, removeIpsetEntry,
+      // Aliases
+      aliases, loadingAliases,
+      showAliasModal, editingAlias, aliasForm,
+      fetchAliases,
+      openCreateAliasModal, openEditAliasModal, submitAlias, deleteAlias,
     }
   }
 }
@@ -660,7 +1231,7 @@ export default {
 }
 
 .card-body {
-  padding: 1.5rem;
+  padding: 1.25rem;
 }
 
 .form-row {
@@ -679,6 +1250,12 @@ export default {
 .btn-sm {
   padding: 0.25rem 0.5rem;
   font-size: 0.875rem;
+}
+
+.btn-xs {
+  padding: 0.1rem 0.4rem;
+  font-size: 0.75rem;
+  border-radius: 0.25rem;
 }
 
 /* Toggle label in form */
@@ -732,6 +1309,11 @@ export default {
   cursor: pointer;
 }
 
+.toggle-switch.toggle-sm {
+  width: 34px;
+  height: 18px;
+}
+
 .toggle-switch input {
   opacity: 0;
   width: 0;
@@ -758,6 +1340,13 @@ export default {
   transition: transform 0.2s;
 }
 
+.toggle-switch.toggle-sm .toggle-slider::before {
+  height: 12px;
+  width: 12px;
+  left: 3px;
+  bottom: 3px;
+}
+
 .toggle-switch input:checked + .toggle-slider {
   background-color: var(--color-primary, #3b82f6);
 }
@@ -766,8 +1355,92 @@ export default {
   transform: translateX(20px);
 }
 
+.toggle-switch.toggle-sm input:checked + .toggle-slider::before {
+  transform: translateX(16px);
+}
+
 .ml-1 {
   margin-left: 0.25rem;
+}
+
+/* Rule disabled row */
+.rule-disabled {
+  opacity: 0.5;
+}
+
+/* IPSet list */
+.ipset-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.ipset-item {
+  display: flex;
+  align-items: center;
+  padding: 0.6rem 1rem;
+  border-bottom: 1px solid var(--border-color);
+  cursor: pointer;
+  gap: 0.5rem;
+  transition: background-color 0.15s;
+}
+
+.ipset-item:hover {
+  background-color: var(--bg-hover, rgba(0,0,0,0.04));
+}
+
+.ipset-item.active {
+  background-color: rgba(59, 130, 246, 0.1);
+  border-left: 3px solid var(--color-primary, #3b82f6);
+}
+
+.ipset-item-name {
+  font-weight: 600;
+  flex: 1;
+}
+
+.ipset-item-comment {
+  flex: 2;
+}
+
+/* Action buttons */
+.action-btns {
+  display: flex;
+  gap: 0.3rem;
+}
+
+/* Filter sidebar */
+.mb-2 {
+  margin-bottom: 1rem;
+}
+
+/* Import / Export */
+.flex-col {
+  display: flex;
+  flex-direction: column;
+}
+
+.gap-1 {
+  gap: 0.5rem;
+}
+
+.w-full {
+  width: 100%;
+}
+
+.cursor-pointer {
+  cursor: pointer;
+}
+
+.hidden {
+  display: none;
+}
+
+.mt-1 {
+  margin-top: 0.5rem;
+}
+
+.text-danger {
+  color: var(--color-danger, #ef4444);
 }
 
 /* Modal */

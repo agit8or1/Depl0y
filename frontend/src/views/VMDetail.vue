@@ -676,6 +676,72 @@
         </div>
       </div>
 
+      <!-- ─── Power Schedule Tab ─── -->
+      <div v-if="activeTab === 'schedule'">
+        <div class="card mb-2">
+          <div class="card-header">
+            <h3>Power Schedule</h3>
+            <button @click="openAddScheduleModal" class="btn btn-primary btn-sm">+ Add Schedule</button>
+          </div>
+          <div class="card-body" style="padding:0.75rem 1.5rem 1rem;">
+            <p class="text-muted text-sm mb-2">
+              Schedule automated power actions for this VM. Schedules are stored as VM tags with the prefix <code>schedule:</code>.
+              They are parsed and displayed here for easy management.
+            </p>
+            <div v-if="scheduleEntries.length === 0" class="text-muted text-sm">
+              No power schedules configured. Click "+ Add Schedule" to create one.
+            </div>
+          </div>
+          <div v-if="scheduleEntries.length > 0" class="table-container">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Action</th>
+                  <th>Cron Expression</th>
+                  <th>Description</th>
+                  <th>Next Run</th>
+                  <th>Enabled</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(entry, idx) in scheduleEntries" :key="idx">
+                  <td>
+                    <span :class="['badge', scheduleActionBadge(entry.action)]">{{ entry.action }}</span>
+                  </td>
+                  <td><code class="text-sm">{{ entry.cron }}</code></td>
+                  <td class="text-sm text-muted">{{ entry.description || '—' }}</td>
+                  <td class="text-sm">{{ computeNextRun(entry.cron) }}</td>
+                  <td>
+                    <button
+                      @click="toggleScheduleEntry(idx)"
+                      :class="entry.enabled ? 'btn btn-success btn-xs' : 'btn btn-outline btn-xs'"
+                      :disabled="savingTags"
+                    >
+                      {{ entry.enabled ? 'Yes' : 'No' }}
+                    </button>
+                  </td>
+                  <td>
+                    <button @click="deleteScheduleEntry(idx)" class="btn btn-danger btn-sm" :disabled="savingTags">Delete</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Schedule info card -->
+        <div class="card">
+          <div class="card-header"><h4 style="margin:0;font-size:0.9rem;">How Power Schedules Work</h4></div>
+          <div class="card-body text-sm text-muted" style="padding:1rem 1.5rem;">
+            <p>Schedules are stored as VM tags in the format <code>schedule:action:cron_b64:desc_b64:enabled</code>.</p>
+            <p class="mt-1">The depl0y scheduler reads these tags and executes the appropriate Proxmox API call at the scheduled time.</p>
+            <p class="mt-1"><strong>Cron format:</strong> <code>minute hour day-of-month month day-of-week</code> (e.g. <code>0 2 * * *</code> = 2:00 AM daily)</p>
+            <p class="mt-1"><strong>Actions:</strong> start, shutdown, reboot</p>
+          </div>
+        </div>
+      </div>
+
       <!-- ─── Console Tab ─── -->
       <div v-if="activeTab === 'console'">
         <div class="card">
@@ -777,42 +843,84 @@
         </div>
         <div class="modal-body">
 
+          <!-- Source Info Card -->
+          <div class="migrate-source-card">
+            <div class="migrate-source-title">Source</div>
+            <div class="migrate-source-row">
+              <span class="migrate-source-label">VM</span>
+              <span><strong>{{ config?.name || 'VM ' + vmid }}</strong> ({{ vmid }})</span>
+            </div>
+            <div class="migrate-source-row">
+              <span class="migrate-source-label">Node</span>
+              <span class="badge badge-info">{{ node }}</span>
+            </div>
+            <div class="migrate-source-row">
+              <span class="migrate-source-label">Status</span>
+              <span :class="statusBadgeClass">{{ vmStatus?.status || 'unknown' }}</span>
+            </div>
+          </div>
+
+          <!-- Precondition Warnings -->
+          <div v-if="migrateWarnings.length > 0" class="migrate-warnings">
+            <div v-for="(w, i) in migrateWarnings" :key="i" class="migrate-warning-item">
+              <span class="migrate-warning-icon">&#9888;</span> {{ w }}
+            </div>
+          </div>
+
           <!-- Target node -->
           <div class="form-group">
-            <label class="form-label">Target Node</label>
+            <label class="form-label">Target Node <span class="text-danger">*</span></label>
             <select v-model="migrateForm.target" class="form-control" @change="onMigrateTargetChange">
               <option value="" disabled>Select target node</option>
-              <option v-for="n in clusterNodes" :key="n.node" :value="n.node">{{ n.node }}</option>
+              <option v-for="n in clusterNodes" :key="n.node" :value="n.node">
+                {{ n.node }}
+                <template v-if="n.status"> — {{ n.status }}</template>
+              </option>
             </select>
+            <div v-if="clusterNodes.length === 0" class="form-hint text-danger">
+              No other nodes found in the cluster. Migration requires at least one other node.
+            </div>
           </div>
 
           <!-- Online migration -->
           <div class="form-group">
             <label class="form-label checkbox-label">
-              <input v-model="migrateForm.online" type="checkbox" />
+              <input v-model="migrateForm.online" type="checkbox"
+                :disabled="vmStatus?.status !== 'running'" />
               Online Migration (live, VM stays running)
             </label>
-            <div class="form-hint" v-if="migrateForm.online">VM will remain running during migration.</div>
-            <div class="form-hint" v-else>VM will be stopped before migration.</div>
+            <div class="form-hint" v-if="migrateForm.online">VM will remain running during migration. Requires shared storage or local disk migration.</div>
+            <div class="form-hint" v-else-if="vmStatus?.status === 'running'">
+              VM will be <strong>stopped</strong> before migration and restarted on the target node.
+            </div>
+            <div class="form-hint" v-else>VM is stopped — offline migration will be used.</div>
           </div>
 
           <!-- With local disks -->
           <div class="form-group">
             <label class="form-label checkbox-label">
               <input v-model="migrateForm.with_local_disks" type="checkbox" />
-              Migrate with local disks
+              Migrate with Local Disks
             </label>
-            <div class="form-hint">Required when VM has disks on local (non-shared) storage.</div>
+            <div class="form-hint">Required when VM has disks on local (non-shared) storage. Copies disk data to target node.</div>
+          </div>
+
+          <!-- Bandwidth limit -->
+          <div class="form-group">
+            <label class="form-label">Bandwidth Limit (MB/s, 0 = unlimited)</label>
+            <input v-model.number="migrateForm.bwlimit" type="number" min="0" step="10"
+              class="form-control" placeholder="0 = unlimited" />
+            <div class="form-hint">Maximum migration bandwidth in MB/s. Set to 0 for unlimited.</div>
           </div>
 
           <!-- Target storage selector -->
           <div v-if="migrateForm.target" class="form-group">
             <label class="form-label">
-              Target Storage
+              Target Storage (per-disk mapping)
               <span v-if="loadingTargetStorage" class="text-muted text-sm ml-1">(loading…)</span>
             </label>
             <div v-if="!loadingTargetStorage && targetStorageList.length === 0" class="text-muted text-sm">
-              No storage available on {{ migrateForm.target }}.
+              No VM-capable storage available on {{ migrateForm.target }}.
             </div>
             <div v-else-if="!loadingTargetStorage">
               <!-- Per-disk storage mapping -->
@@ -843,7 +951,7 @@
           <div class="flex gap-1 mt-2">
             <button @click="doMigrate" class="btn btn-primary"
               :disabled="migrateSubmitting || !migrateForm.target">
-              {{ migrateSubmitting ? 'Starting…' : 'Migrate' }}
+              {{ migrateSubmitting ? 'Starting…' : 'Start Migration' }}
             </button>
             <button @click="showMigrateModal = false" class="btn btn-outline">Cancel</button>
           </div>
@@ -1144,6 +1252,57 @@
       </div>
     </div>
 
+    <!-- Add Power Schedule Modal -->
+    <div v-if="showAddScheduleModal" class="modal" @click.self="showAddScheduleModal = false">
+      <div class="modal-content" @click.stop>
+        <div class="modal-header">
+          <h3>Add Power Schedule</h3>
+          <button @click="showAddScheduleModal = false" class="btn-close">×</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label">Action <span class="text-danger">*</span></label>
+            <select v-model="scheduleForm.action" class="form-control">
+              <option value="start">Start</option>
+              <option value="shutdown">Shutdown</option>
+              <option value="reboot">Reboot</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Cron Expression <span class="text-danger">*</span></label>
+            <input v-model="scheduleForm.cron" class="form-control" placeholder="0 2 * * *" />
+            <div class="form-hint">Format: minute hour day month weekday — e.g. <code>0 2 * * *</code> = 2:00 AM every day</div>
+          </div>
+          <div class="schedule-presets">
+            <span class="text-sm text-muted" style="margin-right:0.5rem;">Presets:</span>
+            <button v-for="p in schedulePresets" :key="p.label" @click="scheduleForm.cron = p.cron"
+              class="btn btn-outline btn-xs" style="margin:0.15rem;">{{ p.label }}</button>
+          </div>
+          <div class="form-group mt-2">
+            <label class="form-label">Description (optional)</label>
+            <input v-model="scheduleForm.description" class="form-control" placeholder="e.g. Nightly shutdown" />
+          </div>
+          <div class="form-group">
+            <label class="form-label checkbox-label">
+              <input v-model="scheduleForm.enabled" type="checkbox" />
+              Enabled
+            </label>
+          </div>
+          <div v-if="scheduleForm.cron && isValidCron(scheduleForm.cron)" class="form-hint" style="color:var(--secondary-color,#10b981);">
+            Next run: {{ computeNextRun(scheduleForm.cron) }}
+          </div>
+          <div v-else-if="scheduleForm.cron" class="form-hint text-danger">Invalid cron expression</div>
+          <div class="flex gap-1 mt-2">
+            <button @click="doAddSchedule" class="btn btn-primary"
+              :disabled="savingTags || !scheduleForm.cron || !isValidCron(scheduleForm.cron)">
+              {{ savingTags ? 'Saving...' : 'Add Schedule' }}
+            </button>
+            <button @click="showAddScheduleModal = false" class="btn btn-outline">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Add Firewall Rule Modal -->
     <div v-if="showFirewallModal" class="modal" @click.self="showFirewallModal = false">
       <div class="modal-content" @click.stop>
@@ -1400,7 +1559,7 @@ const saveInlineField = async (field, value) => {
 
 // Modal forms
 const cloneForm = ref({ newid: null, name: '', full: true, storage: '', target: '' })
-const migrateForm = ref({ target: '', online: true, with_local_disks: true })
+const migrateForm = ref({ target: '', online: true, with_local_disks: true, bwlimit: 0 })
 
 // Migrate — target storage
 const targetStorageList = ref([])
@@ -1429,6 +1588,7 @@ const tabs = [
   { id: 'network', label: 'Network' },
   { id: 'snapshots', label: 'Snapshots' },
   { id: 'firewall', label: 'Firewall' },
+  { id: 'schedule', label: 'Power Schedule' },
   { id: 'console', label: 'Console' },
 ]
 
@@ -2234,6 +2394,216 @@ const deleteFirewallRule = async (pos) => {
   }
 }
 
+// ── Power Schedule ─────────────────────────────────────────────────────────────
+
+const showAddScheduleModal = ref(false)
+const scheduleForm = ref({ action: 'shutdown', cron: '0 2 * * *', description: '', enabled: true })
+
+const schedulePresets = [
+  { label: 'Daily 2AM', cron: '0 2 * * *' },
+  { label: 'Daily 8AM', cron: '0 8 * * *' },
+  { label: 'Weekdays 9AM', cron: '0 9 * * 1-5' },
+  { label: 'Every Sunday midnight', cron: '0 0 * * 0' },
+  { label: 'Every hour', cron: '0 * * * *' },
+]
+
+const SCHEDULE_TAG_PREFIX = 'schedule:'
+
+// Parse schedule entries from VM tags
+const scheduleEntries = computed(() => {
+  if (!config.value?.tags) return []
+  return config.value.tags
+    .split(';')
+    .map(t => t.trim())
+    .filter(t => t.startsWith(SCHEDULE_TAG_PREFIX))
+    .map(t => {
+      try {
+        const rest = t.slice(SCHEDULE_TAG_PREFIX.length)
+        const parts = rest.split(':')
+        // format: action:cron_b64:desc_b64:enabled
+        const action = parts[0] || 'shutdown'
+        const cron = parts[1] ? atob(parts[1]) : '0 0 * * *'
+        const description = parts[2] ? atob(parts[2]) : ''
+        const enabled = parts[3] !== '0'
+        return { action, cron, description, enabled }
+      } catch {
+        return null
+      }
+    })
+    .filter(Boolean)
+})
+
+const encodeScheduleTag = (entry) => {
+  const cronB64 = btoa(entry.cron)
+  const descB64 = btoa(entry.description || '')
+  const en = entry.enabled ? '1' : '0'
+  return `${SCHEDULE_TAG_PREFIX}${entry.action}:${cronB64}:${descB64}:${en}`
+}
+
+const isValidCron = (cron) => {
+  if (!cron) return false
+  const parts = cron.trim().split(/\s+/)
+  if (parts.length !== 5) return false
+  const ranges = [
+    [0, 59], [0, 23], [1, 31], [1, 12], [0, 7]
+  ]
+  return parts.every((p, i) => {
+    if (p === '*') return true
+    if (p.includes('-')) {
+      const [a, b] = p.split('-').map(Number)
+      return !isNaN(a) && !isNaN(b) && a >= ranges[i][0] && b <= ranges[i][1]
+    }
+    if (p.includes('/')) {
+      const [base, step] = p.split('/')
+      return base === '*' && !isNaN(Number(step)) && Number(step) > 0
+    }
+    if (p.includes(',')) {
+      return p.split(',').every(v => {
+        const n = Number(v)
+        return !isNaN(n) && n >= ranges[i][0] && n <= ranges[i][1]
+      })
+    }
+    const n = Number(p)
+    return !isNaN(n) && n >= ranges[i][0] && n <= ranges[i][1]
+  })
+}
+
+const computeNextRun = (cronStr) => {
+  if (!isValidCron(cronStr)) return 'Invalid cron'
+  try {
+    const parts = cronStr.trim().split(/\s+/)
+    const [minPart, hourPart, domPart, monPart, dowPart] = parts
+
+    const matchField = (part, val, min, max) => {
+      if (part === '*') return true
+      if (part.includes('/')) {
+        const step = parseInt(part.split('/')[1])
+        return (val - min) % step === 0
+      }
+      if (part.includes(',')) return part.split(',').map(Number).includes(val)
+      if (part.includes('-')) {
+        const [a, b] = part.split('-').map(Number)
+        return val >= a && val <= b
+      }
+      return parseInt(part) === val
+    }
+
+    const now = new Date()
+    const candidate = new Date(now)
+    candidate.setSeconds(0, 0)
+    candidate.setMinutes(candidate.getMinutes() + 1) // start from next minute
+
+    for (let i = 0; i < 525600; i++) { // max 1 year of minutes
+      const m = candidate.getMinutes()
+      const h = candidate.getHours()
+      const dom = candidate.getDate()
+      const mon = candidate.getMonth() + 1
+      const dow = candidate.getDay()
+
+      if (
+        matchField(monPart, mon, 1, 12) &&
+        matchField(domPart, dom, 1, 31) &&
+        matchField(dowPart, dow, 0, 7) &&
+        matchField(hourPart, h, 0, 23) &&
+        matchField(minPart, m, 0, 59)
+      ) {
+        return candidate.toLocaleString()
+      }
+      candidate.setMinutes(candidate.getMinutes() + 1)
+    }
+    return 'No match within 1 year'
+  } catch {
+    return 'Error'
+  }
+}
+
+const scheduleActionBadge = (action) => {
+  if (action === 'start') return 'badge-success'
+  if (action === 'shutdown') return 'badge-warning'
+  if (action === 'reboot') return 'badge-info'
+  return 'badge-secondary'
+}
+
+const openAddScheduleModal = () => {
+  scheduleForm.value = { action: 'shutdown', cron: '0 2 * * *', description: '', enabled: true }
+  showAddScheduleModal.value = true
+}
+
+const doAddSchedule = async () => {
+  if (!scheduleForm.value.cron || !isValidCron(scheduleForm.value.cron)) {
+    toast.error('Invalid cron expression')
+    return
+  }
+  const newTag = encodeScheduleTag(scheduleForm.value)
+  const currentTags = tagList.value
+  const newTags = [...currentTags, newTag].join(';')
+  await saveTags(newTags)
+  showAddScheduleModal.value = false
+}
+
+const toggleScheduleEntry = async (idx) => {
+  const allTags = config.value.tags
+    ? config.value.tags.split(';').map(t => t.trim()).filter(Boolean)
+    : []
+  // Find the nth schedule tag
+  let schedIdx = -1
+  const newTags = allTags.map(t => {
+    if (t.startsWith(SCHEDULE_TAG_PREFIX)) {
+      schedIdx++
+      if (schedIdx === idx) {
+        // Toggle the last part
+        const parts = t.split(':')
+        const currentEnabled = parts[parts.length - 1]
+        parts[parts.length - 1] = currentEnabled === '0' ? '1' : '0'
+        return parts.join(':')
+      }
+    }
+    return t
+  })
+  await saveTags(newTags.join(';'))
+}
+
+const deleteScheduleEntry = async (idx) => {
+  const allTags = config.value.tags
+    ? config.value.tags.split(';').map(t => t.trim()).filter(Boolean)
+    : []
+  let schedIdx = -1
+  const newTags = allTags.filter(t => {
+    if (t.startsWith(SCHEDULE_TAG_PREFIX)) {
+      schedIdx++
+      if (schedIdx === idx) return false
+    }
+    return true
+  })
+  await saveTags(newTags.join(';'))
+}
+
+// ── Migration Warnings ─────────────────────────────────────────────────────────
+
+const migrateWarnings = computed(() => {
+  if (!config.value) return []
+  const warnings = []
+  // Check for CD-ROM
+  const allKeys = Object.keys(config.value)
+  const hasCdrom = allKeys.some(k => {
+    const v = config.value[k]
+    if (typeof v !== 'string') return false
+    return v.includes('media=cdrom') || (k.startsWith('ide') && v.includes('.iso'))
+  })
+  if (hasCdrom) {
+    warnings.push('VM has a CD-ROM/ISO mounted. Unmount it before live migration to avoid issues.')
+  }
+  // Check for snapshots
+  if (snapshots.value.length > 1) { // >1 because 'current' is always present
+    warnings.push('VM has snapshots. Live migration with snapshots may fail if disks are on local storage.')
+  }
+  // Warn if online migration is disabled but VM is running
+  if (vmStatus.value?.status === 'running' && !migrateForm.value.online) {
+    warnings.push('VM is running and online migration is disabled. The VM will be stopped during migration.')
+  }
+  return warnings
+})
+
 // ── Clone / Migrate ────────────────────────────────────────────────────────────
 
 const openCloneModal = async () => {
@@ -2243,10 +2613,15 @@ const openCloneModal = async () => {
 
 const openMigrateModal = async () => {
   await loadClusterNodes()
+  // Load snapshots for warning detection (if not already loaded)
+  if (snapshots.value.length === 0) {
+    await loadSnapshots()
+  }
   // Default online=true if running, false if stopped
   const isRunning = vmStatus.value?.status === 'running'
   migrateForm.value.online = isRunning
   migrateForm.value.with_local_disks = true
+  migrateForm.value.bwlimit = 0
   migrateForm.value.target = ''
   targetStorageList.value = []
   migrateStorageMap.value = {}
@@ -2262,7 +2637,10 @@ const loadTargetStorage = async (targetNode) => {
   loadingTargetStorage.value = true
   try {
     const res = await api.pveNode.listStorage(hostId.value, targetNode)
-    targetStorageList.value = res.data || []
+    const all = res.data || []
+    // Filter to only VM disk-capable storage types
+    const vmCapableTypes = new Set(['dir', 'lvm', 'lvmthin', 'zfspool', 'zfs', 'nfs', 'cifs', 'rbd', 'cephfs'])
+    targetStorageList.value = all.filter(s => vmCapableTypes.has(s.type))
     // Reset storage map
     migrateStorageMap.value = {}
   } catch (e) {
@@ -2312,6 +2690,9 @@ const doMigrate = async () => {
       target: migrateForm.value.target,
       online: migrateForm.value.online ? 1 : 0,
       with_local_disks: migrateForm.value.with_local_disks ? 1 : 0,
+    }
+    if (migrateForm.value.bwlimit > 0) {
+      payload.bwlimit = migrateForm.value.bwlimit
     }
     // Append target storage mappings (targetstorage or per-disk)
     // Collect non-empty mappings: if all disks map to same storage use targetstorage,
@@ -3007,5 +3388,77 @@ onUnmounted(() => {
 .compare-val {
   color: var(--text-primary);
   word-break: break-all;
+}
+
+/* ── Migration Source Card ── */
+.migrate-source-card {
+  background: var(--background);
+  border: 1px solid var(--border-color);
+  border-radius: 0.375rem;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+}
+
+.migrate-source-title {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+  margin-bottom: 0.5rem;
+}
+
+.migrate-source-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.3rem;
+  font-size: 0.875rem;
+}
+
+.migrate-source-row:last-child {
+  margin-bottom: 0;
+}
+
+.migrate-source-label {
+  min-width: 60px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+}
+
+/* ── Migration Warnings ── */
+.migrate-warnings {
+  background: rgba(234, 179, 8, 0.1);
+  border: 1px solid rgba(234, 179, 8, 0.4);
+  border-radius: 0.375rem;
+  padding: 0.6rem 1rem;
+  margin-bottom: 1rem;
+}
+
+.migrate-warning-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  font-size: 0.82rem;
+  color: #ca8a04;
+  padding: 0.2rem 0;
+  line-height: 1.4;
+}
+
+.migrate-warning-icon {
+  font-size: 1rem;
+  flex-shrink: 0;
+  margin-top: 0.05rem;
+}
+
+/* ── Schedule Presets ── */
+.schedule-presets {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+  margin-top: 0.4rem;
+  margin-bottom: 0.4rem;
 }
 </style>

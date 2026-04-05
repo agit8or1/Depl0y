@@ -4,6 +4,8 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel, EmailStr
 from typing import List, Optional
 from datetime import datetime
+import secrets
+import string
 
 from app.core.database import get_db
 from app.core.security import get_password_hash, verify_password
@@ -166,6 +168,135 @@ async def delete_user(
     db.commit()
 
     return None
+
+
+@router.patch("/{user_id}", response_model=UserResponse)
+async def patch_user(
+    user_id: int,
+    user_data: UserUpdate,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Patch user fields (admin only) — same as PUT but partial."""
+    return await update_user(user_id, user_data, current_user, db)
+
+
+class UserStatusUpdate(BaseModel):
+    is_active: bool
+
+
+@router.patch("/{user_id}/status", response_model=UserResponse)
+async def toggle_user_status(
+    user_id: int,
+    data: UserStatusUpdate,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Enable or disable a user account (admin only)."""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if user.id == current_user.id and not data.is_active:
+        raise HTTPException(status_code=400, detail="Cannot deactivate your own account")
+    user.is_active = data.is_active
+    user.updated_at = datetime.utcnow()
+    # Bump token_version to invalidate existing sessions when disabling
+    if not data.is_active:
+        user.token_version = (getattr(user, "token_version", 0) or 0) + 1
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+class ResetPasswordResponse(BaseModel):
+    temporary_password: str
+    message: str
+
+
+def _generate_temp_password(length: int = 16) -> str:
+    alphabet = string.ascii_letters + string.digits + "!@#$%^&*"
+    while True:
+        pwd = "".join(secrets.choice(alphabet) for _ in range(length))
+        # Ensure complexity
+        if (any(c.isupper() for c in pwd) and any(c.islower() for c in pwd)
+                and any(c.isdigit() for c in pwd) and any(c in "!@#$%^&*" for c in pwd)):
+            return pwd
+
+
+@router.post("/{user_id}/reset-password", response_model=ResetPasswordResponse)
+async def admin_reset_password(
+    user_id: int,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Admin resets a user's password, returning a one-time temporary password."""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    temp_password = _generate_temp_password()
+    user.hashed_password = get_password_hash(temp_password)
+    user.updated_at = datetime.utcnow()
+    # Bump token_version to invalidate all active sessions
+    user.token_version = (getattr(user, "token_version", 0) or 0) + 1
+    db.commit()
+
+    return {
+        "temporary_password": temp_password,
+        "message": f"Password reset for {user.username}. Share this temporary password securely — it will not be shown again.",
+    }
+
+
+class DisableTotpRequest(BaseModel):
+    pass  # No body needed; admin action
+
+
+@router.post("/{user_id}/disable-totp")
+async def admin_disable_totp(
+    user_id: int,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Admin force-disables 2FA for a user (account recovery)."""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if not user.totp_enabled:
+        raise HTTPException(status_code=400, detail="2FA is not enabled for this user")
+    user.totp_enabled = False
+    user.totp_secret = None
+    user.updated_at = datetime.utcnow()
+    db.commit()
+    return {"message": f"2FA disabled for {user.username}"}
+
+
+@router.post("/invalidate-sessions/{user_id}")
+async def invalidate_user_sessions(
+    user_id: int,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Invalidate all active sessions for a specific user by bumping token_version."""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    user.token_version = (getattr(user, "token_version", 0) or 0) + 1
+    user.updated_at = datetime.utcnow()
+    db.commit()
+    return {"message": f"All sessions invalidated for {user.username}"}
+
+
+@router.post("/invalidate-sessions-all")
+async def invalidate_all_sessions(
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Invalidate all active sessions for ALL users by bumping token_version."""
+    users = db.query(User).all()
+    for u in users:
+        u.token_version = (getattr(u, "token_version", 0) or 0) + 1
+    db.commit()
+    return {"message": f"All sessions invalidated for {len(users)} users"}
 
 
 @router.post("/change-password")

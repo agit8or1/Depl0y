@@ -14,6 +14,7 @@ from app.models.security import (
     SecurityEvent,
     IPBanList,
     GeoIPRule,
+    LoginAttempt,
 )
 from app.models.database import User
 import logging
@@ -435,3 +436,134 @@ async def list_security_events(
         query = query.filter(SecurityEvent.event_type == event_type)
     events = query.order_by(SecurityEvent.created_at.desc()).limit(limit).all()
     return events
+
+
+# ─────────────────────────────────────────────────────────────
+# Login history (comprehensive login_attempts table)
+# ─────────────────────────────────────────────────────────────
+
+class LoginAttemptResponse(BaseModel):
+    id: int
+    user_id: Optional[int]
+    username_attempted: str
+    ip_address: str
+    user_agent: Optional[str]
+    success: bool
+    failure_reason: Optional[str]
+    timestamp: datetime
+
+    class Config:
+        from_attributes = True
+
+
+@router.get("/login-history", response_model=List[LoginAttemptResponse])
+async def get_login_history(
+    limit: int = Query(50, le=500),
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """List last N login attempts (both successes and failures), admin only."""
+    attempts = (
+        db.query(LoginAttempt)
+        .order_by(LoginAttempt.timestamp.desc())
+        .limit(limit)
+        .all()
+    )
+    return attempts
+
+
+# ─────────────────────────────────────────────────────────────
+# Password policy
+# ─────────────────────────────────────────────────────────────
+
+class PasswordPolicyResponse(BaseModel):
+    min_length: int
+    require_uppercase: bool
+    require_numbers: bool
+    require_symbols: bool
+
+
+class PasswordPolicyUpdate(BaseModel):
+    min_length: Optional[int] = None
+    require_uppercase: Optional[bool] = None
+    require_numbers: Optional[bool] = None
+    require_symbols: Optional[bool] = None
+
+
+@router.get("/password-policy", response_model=PasswordPolicyResponse)
+async def get_password_policy(
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Get current password policy settings."""
+    return {
+        "min_length": int(_get_setting(db, "pw_min_length", "8")),
+        "require_uppercase": _get_setting(db, "pw_require_uppercase", "false") == "true",
+        "require_numbers": _get_setting(db, "pw_require_numbers", "false") == "true",
+        "require_symbols": _get_setting(db, "pw_require_symbols", "false") == "true",
+    }
+
+
+@router.patch("/password-policy", response_model=PasswordPolicyResponse)
+async def update_password_policy(
+    data: PasswordPolicyUpdate,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Update password policy settings."""
+    if data.min_length is not None:
+        if data.min_length < 6 or data.min_length > 128:
+            raise HTTPException(status_code=400, detail="min_length must be between 6 and 128")
+        _set_setting(db, "pw_min_length", str(data.min_length), "Minimum password length")
+    if data.require_uppercase is not None:
+        _set_setting(db, "pw_require_uppercase", "true" if data.require_uppercase else "false",
+                     "Require uppercase letters in password")
+    if data.require_numbers is not None:
+        _set_setting(db, "pw_require_numbers", "true" if data.require_numbers else "false",
+                     "Require numbers in password")
+    if data.require_symbols is not None:
+        _set_setting(db, "pw_require_symbols", "true" if data.require_symbols else "false",
+                     "Require symbols in password")
+
+    return {
+        "min_length": int(_get_setting(db, "pw_min_length", "8")),
+        "require_uppercase": _get_setting(db, "pw_require_uppercase", "false") == "true",
+        "require_numbers": _get_setting(db, "pw_require_numbers", "false") == "true",
+        "require_symbols": _get_setting(db, "pw_require_symbols", "false") == "true",
+    }
+
+
+# ─────────────────────────────────────────────────────────────
+# 2FA overview
+# ─────────────────────────────────────────────────────────────
+
+class UserTotpStatusResponse(BaseModel):
+    id: int
+    username: str
+    email: str
+    role: str
+    totp_enabled: bool
+    is_active: bool
+
+    class Config:
+        from_attributes = True
+
+
+@router.get("/2fa-overview", response_model=List[UserTotpStatusResponse])
+async def get_2fa_overview(
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Get 2FA status for all users, admin only."""
+    users = db.query(User).order_by(User.username).all()
+    return [
+        {
+            "id": u.id,
+            "username": u.username,
+            "email": u.email,
+            "role": u.role.value if hasattr(u.role, "value") else u.role,
+            "totp_enabled": u.totp_enabled,
+            "is_active": u.is_active,
+        }
+        for u in users
+    ]

@@ -869,6 +869,47 @@ def node_disk_smart(host_id: int, node: str, disk: str, db: Session = Depends(ge
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ── Services ──────────────────────────────────────────────────────────────────
+
+@router.get("/{host_id}/nodes/{node}/services")
+def list_services(host_id: int, node: str, db: Session = Depends(get_db),
+                  current_user=Depends(get_current_user)):
+    """List system services on a node."""
+    host = _get_host(host_id, db)
+    try:
+        return _pve(host).nodes(node).services.get()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{host_id}/nodes/{node}/services/{service}/{command}")
+def service_action(host_id: int, node: str, service: str, command: str,
+                   db: Session = Depends(get_db), current_user=Depends(require_admin)):
+    """Perform an action (start/stop/restart/reload) on a node service."""
+    allowed = {"start", "stop", "restart", "reload"}
+    if command not in allowed:
+        raise HTTPException(status_code=400, detail=f"Invalid command. Allowed: {allowed}")
+    host = _get_host(host_id, db)
+    try:
+        result = getattr(_pve(host).nodes(node).services(service), command).post()
+        return {"upid": result} if result else {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Certificates ──────────────────────────────────────────────────────────────
+
+@router.get("/{host_id}/nodes/{node}/certificates/info")
+def get_certificates(host_id: int, node: str, db: Session = Depends(get_db),
+                     current_user=Depends(get_current_user)):
+    """List TLS certificates installed on a node."""
+    host = _get_host(host_id, db)
+    try:
+        return _pve(host).nodes(node).certificates.info.get()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ── Storage upload ────────────────────────────────────────────────────────────
 
 @router.post("/{host_id}/nodes/{node}/storage/{storage}/upload")

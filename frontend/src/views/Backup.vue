@@ -92,27 +92,52 @@
               <div v-else-if="pbsDatastores[pbs.id] && pbsDatastores[pbs.id].length === 0" class="text-muted text-sm" style="padding: 1rem 0;">
                 No datastores found.
               </div>
-              <div v-else-if="pbsDatastores[pbs.id]" class="table-container" style="margin-top: 0.75rem;">
-                <table class="table table-sm">
-                  <thead>
-                    <tr>
-                      <th>Datastore</th>
-                      <th>Path</th>
-                      <th>Total</th>
-                      <th>Used</th>
-                      <th>Available</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr v-for="ds in pbsDatastores[pbs.id]" :key="ds.store || ds.name">
-                      <td><strong>{{ ds.store || ds.name }}</strong></td>
-                      <td class="text-sm text-muted">{{ ds.path || '—' }}</td>
-                      <td>{{ formatBytes(ds.total) }}</td>
-                      <td>{{ formatBytes(ds.used) }}</td>
-                      <td>{{ formatBytes(ds.avail) }}</td>
-                    </tr>
-                  </tbody>
-                </table>
+              <div v-else-if="pbsDatastores[pbs.id]" style="margin-top: 0.75rem;">
+                <div
+                  v-for="ds in pbsDatastores[pbs.id]"
+                  :key="ds.store || ds.name"
+                  class="ds-card"
+                >
+                  <div class="ds-card-header">
+                    <div class="ds-card-title">
+                      <strong>{{ ds.store || ds.name }}</strong>
+                      <span class="text-sm text-muted">{{ ds.path || '' }}</span>
+                    </div>
+                    <div class="ds-card-actions">
+                      <button
+                        @click="pruneDatastore(pbs.id, ds.store || ds.name)"
+                        class="btn btn-outline btn-sm"
+                        :disabled="pruningDs[pbs.id + ':' + (ds.store || ds.name)]"
+                        title="Prune old backups in this datastore"
+                      >
+                        {{ pruningDs[pbs.id + ':' + (ds.store || ds.name)] ? 'Pruning...' : 'Prune' }}
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- Usage bar -->
+                  <div class="ds-usage" v-if="ds.total">
+                    <div class="ds-usage-labels">
+                      <span class="text-sm">Used: <strong>{{ formatBytes(ds.used) }}</strong></span>
+                      <span class="text-sm text-muted">of {{ formatBytes(ds.total) }}</span>
+                      <span class="text-sm text-muted" style="margin-left: auto;">Free: {{ formatBytes(ds.avail) }}</span>
+                    </div>
+                    <div class="ds-usage-bar-wrap">
+                      <div
+                        class="ds-usage-bar"
+                        :style="{ width: dsUsagePct(ds) + '%' }"
+                        :class="dsUsageClass(ds)"
+                      ></div>
+                    </div>
+                    <div class="text-xs text-muted" style="margin-top: 0.2rem;">{{ dsUsagePct(ds).toFixed(1) }}% used</div>
+                  </div>
+
+                  <!-- Last backup -->
+                  <div class="ds-last-backup text-sm text-muted" v-if="dsLastBackup[pbs.id + ':' + (ds.store || ds.name)] !== undefined">
+                    Last backup:
+                    <strong>{{ dsLastBackup[pbs.id + ':' + (ds.store || ds.name)] || 'none' }}</strong>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -407,6 +432,9 @@ export default {
     const expandedPbs = ref(null)
     const pbsDatastores = ref({})   // id -> array
     const loadingDatastores = ref({})
+    // PBS enhancements
+    const pruningDs = ref({})                // 'pbsId:dsName' -> bool
+    const dsLastBackup = ref({})             // 'pbsId:dsName' -> string
 
     // Run Now state
     const runningSchedule = ref(null)
@@ -666,7 +694,12 @@ export default {
       loadingDatastores.value = { ...loadingDatastores.value, [pbsId]: true }
       try {
         const response = await api.pbsMgmt.listDatastores(pbsId)
-        pbsDatastores.value = { ...pbsDatastores.value, [pbsId]: response.data || [] }
+        const datastores = response.data || []
+        pbsDatastores.value = { ...pbsDatastores.value, [pbsId]: datastores }
+        // Fetch last backup time for each datastore (from groups, non-blocking)
+        datastores.forEach(ds => {
+          fetchDsLastBackup(pbsId, ds.store || ds.name)
+        })
       } catch (error) {
         console.error('Failed to fetch PBS datastores:', error)
         toast.error('Failed to load datastores')
@@ -674,6 +707,58 @@ export default {
       } finally {
         loadingDatastores.value = { ...loadingDatastores.value, [pbsId]: false }
       }
+    }
+
+    const fetchDsLastBackup = async (pbsId, dsName) => {
+      const key = pbsId + ':' + dsName
+      try {
+        const res = await api.pbsMgmt.listGroups(pbsId, dsName)
+        const groups = res.data || []
+        if (groups.length === 0) {
+          dsLastBackup.value = { ...dsLastBackup.value, [key]: 'none' }
+          return
+        }
+        // Find the most recent last-backup across all groups
+        let maxTs = 0
+        for (const g of groups) {
+          if (g['last-backup'] && g['last-backup'] > maxTs) {
+            maxTs = g['last-backup']
+          }
+        }
+        dsLastBackup.value = {
+          ...dsLastBackup.value,
+          [key]: maxTs ? new Date(maxTs * 1000).toLocaleString() : 'none',
+        }
+      } catch {
+        dsLastBackup.value = { ...dsLastBackup.value, [key]: 'unknown' }
+      }
+    }
+
+    const pruneDatastore = async (pbsId, dsName) => {
+      const key = pbsId + ':' + dsName
+      if (!confirm(`Prune datastore "${dsName}"? This will remove expired backups based on retention settings.`)) return
+      pruningDs.value = { ...pruningDs.value, [key]: true }
+      try {
+        await api.pbsMgmt.pruneDatastore(pbsId, dsName, {})
+        toast.success(`Prune job started for datastore "${dsName}"`)
+      } catch (error) {
+        console.error('Failed to prune datastore:', error)
+        toast.error('Failed to start prune job')
+      } finally {
+        pruningDs.value = { ...pruningDs.value, [key]: false }
+      }
+    }
+
+    const dsUsagePct = (ds) => {
+      if (!ds.total || ds.total === 0) return 0
+      return Math.min(100, ((ds.used || 0) / ds.total) * 100)
+    }
+
+    const dsUsageClass = (ds) => {
+      const pct = dsUsagePct(ds)
+      if (pct >= 90) return 'ds-usage-bar--danger'
+      if (pct >= 75) return 'ds-usage-bar--warn'
+      return 'ds-usage-bar--ok'
     }
 
     const formatBytes = (bytes) => {
@@ -714,6 +799,8 @@ export default {
       expandedPbs,
       pbsDatastores,
       loadingDatastores,
+      pruningDs,
+      dsLastBackup,
       // Run Now
       runningSchedule,
       showRunNowModal,
@@ -731,6 +818,9 @@ export default {
       fetchPbsServers,
       testPbsConnection,
       toggleDatastores,
+      pruneDatastore,
+      dsUsagePct,
+      dsUsageClass,
       formatBytes,
     }
   }
@@ -992,5 +1082,79 @@ export default {
 .badge-secondary {
   background-color: var(--border-color);
   color: var(--text-secondary);
+}
+
+/* Datastore cards */
+.ds-card {
+  border: 1px solid var(--border-color);
+  border-radius: 0.375rem;
+  padding: 0.9rem 1rem;
+  margin-bottom: 0.75rem;
+  background: var(--bg-card, transparent);
+}
+
+.ds-card:last-child {
+  margin-bottom: 0;
+}
+
+.ds-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.65rem;
+}
+
+.ds-card-title {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.ds-card-actions {
+  flex-shrink: 0;
+}
+
+.ds-usage {
+  margin-bottom: 0.5rem;
+}
+
+.ds-usage-labels {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  margin-bottom: 0.3rem;
+  flex-wrap: wrap;
+}
+
+.ds-usage-bar-wrap {
+  height: 8px;
+  background: var(--border-color, rgba(255,255,255,0.1));
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.ds-usage-bar {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.4s ease;
+}
+
+.ds-usage-bar--ok {
+  background: #10b981;
+}
+
+.ds-usage-bar--warn {
+  background: #f59e0b;
+}
+
+.ds-usage-bar--danger {
+  background: #ef4444;
+}
+
+.ds-last-backup {
+  margin-top: 0.4rem;
+  padding-top: 0.4rem;
+  border-top: 1px solid var(--border-color);
 }
 </style>

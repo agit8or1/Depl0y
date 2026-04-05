@@ -540,6 +540,7 @@ export default {
     deleteContainer: (h, node, vmid) => api.delete(`/pve-node/${h}/nodes/${node}/lxc/${vmid}`),
     cloneLxc: (h, node, vmid, data) => api.post(`/pve-node/${h}/nodes/${node}/lxc/${vmid}/clone`, data),
     lxcRrdData: (h, node, vmid, params) => api.get(`/pve-node/${h}/nodes/${node}/lxc/${vmid}/rrddata`, { params }),
+    resizeLxcDisk: (h, node, vmid, data) => api.post(`/pve-node/${h}/nodes/${node}/lxc/${vmid}/resize`, data),
     // Restore
     restoreBackup: (h, node, vmid, data) => api.post(`/pve-node/${h}/nodes/${node}/qemu/${vmid}/restore`, data),
     // Aliases for NodeDetail.vue / Tasks.vue / Containers.vue naming convention
@@ -570,6 +571,11 @@ export default {
     // Disk Health / SMART
     listDisks: (h, node) => api.get(`/pve-node/${h}/nodes/${node}/disks/list`),
     getSmartData: (h, node, disk) => api.get(`/pve-node/${h}/nodes/${node}/disks/${encodeURIComponent(disk)}/smart`),
+    // Services
+    listServices: (h, node) => api.get(`/pve-node/${h}/nodes/${node}/services`),
+    serviceAction: (h, node, service, cmd) => api.post(`/pve-node/${h}/nodes/${node}/services/${service}/${cmd}`),
+    // Certificates
+    listCertificates: (h, node) => api.get(`/pve-node/${h}/nodes/${node}/certificates/info`),
   },
 
   // Audit Log
@@ -583,6 +589,8 @@ export default {
     listDatastores: (id) => api.get(`/pbs-mgmt/${id}/datastores`),
     listGroups: (id, ds) => api.get(`/pbs-mgmt/${id}/datastores/${ds}/groups`),
     listSnapshots: (id, ds, params) => api.get(`/pbs-mgmt/${id}/datastores/${ds}/snapshots`, { params }),
+    verifySnapshot: (id, ds, params) => api.post(`/pbs-mgmt/${id}/datastores/${ds}/verify`, params),
+    pruneDatastore: (id, ds, params) => api.post(`/pbs-mgmt/${id}/datastores/${ds}/prune`, params),
   },
 
   // Notifications / Webhooks

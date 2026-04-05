@@ -486,6 +486,125 @@
         </div>
       </div>
 
+      <!-- ─── Services Tab ─── -->
+      <div v-if="activeTab === 'services'">
+        <div class="card">
+          <div class="card-header">
+            <h3>System Services</h3>
+            <button @click="loadServices" class="btn btn-outline btn-sm" :disabled="loadingServices">
+              {{ loadingServices ? 'Loading...' : 'Refresh' }}
+            </button>
+          </div>
+          <div v-if="loadingServices" class="loading-spinner"></div>
+          <div v-else class="table-container">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Service Name</th>
+                  <th>Description</th>
+                  <th>State</th>
+                  <th>Auto-start</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-if="servicesList.length === 0">
+                  <td colspan="5" class="text-muted text-center">No services found</td>
+                </tr>
+                <tr v-for="svc in servicesList" :key="svc.name">
+                  <td><code class="text-sm">{{ svc.name }}</code></td>
+                  <td class="text-sm text-muted">{{ svc.desc || '—' }}</td>
+                  <td>
+                    <span :class="serviceBadgeClass(svc.state)">{{ svc.state || '—' }}</span>
+                  </td>
+                  <td>
+                    <span v-if="svc.unitstate === 'enabled'" class="badge badge-success">Yes</span>
+                    <span v-else class="text-muted text-sm">No</span>
+                  </td>
+                  <td>
+                    <div class="flex gap-1">
+                      <button
+                        @click="doServiceAction(svc, 'start')"
+                        class="btn btn-success btn-sm"
+                        :disabled="svc.state === 'running' || serviceActioning[svc.name + ':start']"
+                        title="Start">
+                        {{ serviceActioning[svc.name + ':start'] ? '...' : 'Start' }}
+                      </button>
+                      <button
+                        @click="doServiceAction(svc, 'stop')"
+                        class="btn btn-outline btn-sm"
+                        :disabled="svc.state !== 'running' || serviceActioning[svc.name + ':stop']"
+                        title="Stop">
+                        {{ serviceActioning[svc.name + ':stop'] ? '...' : 'Stop' }}
+                      </button>
+                      <button
+                        @click="doServiceAction(svc, 'restart')"
+                        class="btn btn-outline btn-sm"
+                        :disabled="serviceActioning[svc.name + ':restart']"
+                        title="Restart">
+                        {{ serviceActioning[svc.name + ':restart'] ? '...' : 'Restart' }}
+                      </button>
+                      <button
+                        @click="doServiceAction(svc, 'reload')"
+                        class="btn btn-outline btn-sm"
+                        :disabled="svc.state !== 'running' || serviceActioning[svc.name + ':reload']"
+                        title="Reload">
+                        {{ serviceActioning[svc.name + ':reload'] ? '...' : 'Reload' }}
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ─── Certificates Tab ─── -->
+      <div v-if="activeTab === 'certificates'">
+        <div class="card">
+          <div class="card-header">
+            <h3>TLS Certificates</h3>
+            <div class="flex gap-1">
+              <button @click="toast.info('Use PVE web UI for ACME configuration')" class="btn btn-outline btn-sm">
+                Order ACME Certificate
+              </button>
+              <button @click="loadCertificates" class="btn btn-outline btn-sm" :disabled="loadingCertificates">
+                {{ loadingCertificates ? 'Loading...' : 'Refresh' }}
+              </button>
+            </div>
+          </div>
+          <div v-if="loadingCertificates" class="loading-spinner"></div>
+          <div v-else-if="certificatesList.length === 0" class="text-muted text-center" style="padding: 2rem;">
+            No certificates found
+          </div>
+          <div v-else style="padding: 1rem; display: flex; flex-direction: column; gap: 1rem;">
+            <div v-for="cert in certificatesList" :key="cert.filename || cert.subject" class="cert-card">
+              <div class="cert-row">
+                <span class="cert-label">Subject</span>
+                <span class="cert-value text-sm">{{ cert.subject || '—' }}</span>
+              </div>
+              <div class="cert-row">
+                <span class="cert-label">Issuer</span>
+                <span class="cert-value text-sm text-muted">{{ cert.issuer || '—' }}</span>
+              </div>
+              <div class="cert-row">
+                <span class="cert-label">Fingerprint</span>
+                <code class="cert-value text-sm" style="word-break:break-all;">{{ cert.fingerprint || '—' }}</code>
+              </div>
+              <div class="cert-row">
+                <span class="cert-label">Expires</span>
+                <span :class="certExpiryClass(cert.notafter)">{{ certExpiryLabel(cert.notafter) }}</span>
+              </div>
+              <div v-if="cert.san" class="cert-row">
+                <span class="cert-label">SANs</span>
+                <span class="cert-value text-sm text-muted">{{ Array.isArray(cert.san) ? cert.san.join(', ') : cert.san }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- ─── Terminal Tab ─── -->
       <div v-if="activeTab === 'terminal'">
         <div class="card">
@@ -799,6 +918,15 @@ const smartDisk = ref(null)
 const smartData = ref(null)
 const loadingSmart = ref(false)
 
+// Services
+const servicesList = ref([])
+const loadingServices = ref(false)
+const serviceActioning = ref({})
+
+// Certificates
+const certificatesList = ref([])
+const loadingCertificates = ref(false)
+
 // Polling
 let pollInterval = null
 
@@ -810,6 +938,8 @@ const tabs = [
   { id: 'backups', label: 'Backup Schedules' },
   { id: 'tasks', label: 'Tasks' },
   { id: 'disks', label: 'Disk Health' },
+  { id: 'services', label: 'Services' },
+  { id: 'certificates', label: 'Certificates' },
   { id: 'terminal', label: 'Terminal' },
 ]
 
@@ -1025,6 +1155,8 @@ const switchTab = (tab) => {
   if (tab === 'backups') loadBackupSchedules()
   if (tab === 'tasks') loadTasks()
   if (tab === 'disks') loadDisks()
+  if (tab === 'services') loadServices()
+  if (tab === 'certificates') loadCertificates()
   if (tab === 'overview') { loadNodeStatus(); loadRrd() }
 }
 
@@ -1350,6 +1482,76 @@ const diskWearout = (disk) => {
 const diskHealth = (disk) => {
   if (disk.health) return disk.health
   return '—'
+}
+
+// ── Services ───────────────────────────────────────────────────────────────────
+
+const loadServices = async () => {
+  loadingServices.value = true
+  try {
+    const res = await api.pveNode.listServices(hostId.value, node.value)
+    servicesList.value = (res.data || []).sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+  } catch (e) {
+    console.warn('Services load failed', e)
+    servicesList.value = []
+  } finally {
+    loadingServices.value = false
+  }
+}
+
+const doServiceAction = async (svc, cmd) => {
+  const key = svc.name + ':' + cmd
+  serviceActioning.value[key] = true
+  try {
+    await api.pveNode.serviceAction(hostId.value, node.value, svc.name, cmd)
+    toast.success(`${svc.name}: ${cmd} requested`)
+    setTimeout(loadServices, 1500)
+  } catch (e) {
+    console.error(e)
+  } finally {
+    delete serviceActioning.value[key]
+  }
+}
+
+const serviceBadgeClass = (state) => {
+  if (state === 'running') return 'badge badge-success'
+  if (state === 'failed') return 'badge badge-danger'
+  return 'badge badge-secondary'
+}
+
+// ── Certificates ───────────────────────────────────────────────────────────────
+
+const loadCertificates = async () => {
+  loadingCertificates.value = true
+  try {
+    const res = await api.pveNode.listCertificates(hostId.value, node.value)
+    certificatesList.value = res.data || []
+  } catch (e) {
+    console.warn('Certificates load failed', e)
+    certificatesList.value = []
+  } finally {
+    loadingCertificates.value = false
+  }
+}
+
+const certExpiryClass = (notafter) => {
+  if (!notafter) return ''
+  const now = Date.now() / 1000
+  const diff = notafter - now
+  const days = diff / 86400
+  if (days < 30) return 'badge badge-danger'
+  if (days < 90) return 'badge badge-warning'
+  return 'badge badge-success'
+}
+
+const certExpiryLabel = (notafter) => {
+  if (!notafter) return '—'
+  const d = new Date(notafter * 1000)
+  const now = Date.now() / 1000
+  const days = Math.floor((notafter - now) / 86400)
+  const dateStr = d.toLocaleDateString()
+  if (days < 0) return `${dateStr} (expired)`
+  return `${dateStr} (${days}d)`
 }
 
 // ── Terminal ───────────────────────────────────────────────────────────────────
@@ -1688,5 +1890,41 @@ onUnmounted(() => {
 .badge-warning {
   background-color: #fef3c7;
   color: #92400e;
+}
+
+.badge-secondary {
+  background-color: var(--border-color);
+  color: var(--text-secondary);
+}
+
+/* Certificate card */
+.cert-card {
+  background: var(--background);
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+  padding: 1rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.cert-row {
+  display: flex;
+  gap: 1rem;
+  align-items: baseline;
+}
+
+.cert-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  min-width: 100px;
+  flex-shrink: 0;
+}
+
+.cert-value {
+  flex: 1;
 }
 </style>

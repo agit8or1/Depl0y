@@ -19,6 +19,14 @@
         :class="['tab-btn', activeTab === 'restore' ? 'tab-btn--active' : '']"
         @click="activeTab = 'restore'; onRestoreTabOpen()"
       >Restore</button>
+      <button
+        :class="['tab-btn', activeTab === 'pbs' ? 'tab-btn--active' : '']"
+        @click="activeTab = 'pbs'; onPbsTabOpen()"
+      >PBS Browser</button>
+      <button
+        :class="['tab-btn', activeTab === 'notifications' ? 'tab-btn--active' : '']"
+        @click="activeTab = 'notifications'"
+      >Notifications</button>
     </div>
 
     <!-- Schedules tab -->
@@ -203,6 +211,208 @@
                 </tr>
               </tbody>
             </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PBS Browser tab -->
+    <div v-if="activeTab === 'pbs'">
+      <div class="card">
+        <div class="card-header">
+          <h3>PBS Datastore Browser</h3>
+          <div class="flex gap-1 align-center">
+            <select v-model="pbsBrowser.selectedServerId" class="form-control form-control-sm" @change="onPbsServerChange">
+              <option value="">Select PBS server...</option>
+              <option v-for="srv in pbsServers" :key="srv.id" :value="srv.id">
+                {{ srv.name }} ({{ srv.hostname }})
+              </option>
+            </select>
+            <select
+              v-if="pbsBrowser.selectedServerId"
+              v-model="pbsBrowser.selectedDatastore"
+              class="form-control form-control-sm"
+              :disabled="loadingPbsDatastores"
+              @change="fetchPbsGroups"
+            >
+              <option value="">{{ loadingPbsDatastores ? 'Loading...' : 'Select datastore...' }}</option>
+              <option v-for="ds in pbsBrowserDatastores" :key="ds.store || ds.name" :value="ds.store || ds.name">
+                {{ ds.store || ds.name }}
+              </option>
+            </select>
+            <button
+              @click="fetchPbsGroups"
+              class="btn btn-outline btn-sm"
+              :disabled="!pbsBrowser.selectedServerId || !pbsBrowser.selectedDatastore || loadingPbsGroups"
+            >
+              Refresh
+            </button>
+          </div>
+        </div>
+
+        <!-- Loading PBS servers -->
+        <div v-if="loadingPbsServers" class="loading-spinner"></div>
+
+        <!-- No server selected -->
+        <div v-else-if="!pbsBrowser.selectedServerId" class="text-center text-muted p-3">
+          Select a PBS server to browse its datastores.
+        </div>
+
+        <!-- No datastore selected -->
+        <div v-else-if="!pbsBrowser.selectedDatastore" class="text-center text-muted p-3">
+          Select a datastore to browse backup groups.
+        </div>
+
+        <!-- Loading groups -->
+        <div v-else-if="loadingPbsGroups" class="loading-spinner"></div>
+
+        <!-- No groups -->
+        <div v-else-if="pbsBrowserGroups.length === 0" class="text-center text-muted p-3">
+          No backup groups found in this datastore.
+        </div>
+
+        <!-- Groups list -->
+        <div v-else class="pbs-browser-groups">
+          <div
+            v-for="group in pbsBrowserGroups"
+            :key="group['backup-type'] + '/' + group['backup-id']"
+            class="pbs-group"
+          >
+            <!-- Group header row -->
+            <div
+              class="pbs-group-header"
+              @click="togglePbsGroup(group)"
+              :class="{ 'pbs-group-header--expanded': expandedPbsGroups[pbsGroupKey(group)] }"
+            >
+              <span class="pbs-group-chevron">{{ expandedPbsGroups[pbsGroupKey(group)] ? '▾' : '▸' }}</span>
+              <span class="vmid-badge">{{ group['backup-type'] === 'vm' ? 'VMID' : group['backup-type'].toUpperCase() }} {{ group['backup-id'] }}</span>
+              <span class="pbs-group-meta text-sm text-muted">
+                Last backup: {{ group['last-backup'] ? formatDate(group['last-backup']) : '—' }}
+              </span>
+              <span class="pbs-group-meta text-sm text-muted">
+                {{ group['backup-count'] ?? '?' }} snapshot{{ (group['backup-count'] ?? 0) !== 1 ? 's' : '' }}
+              </span>
+            </div>
+
+            <!-- Snapshots (expanded) -->
+            <div v-if="expandedPbsGroups[pbsGroupKey(group)]" class="pbs-snapshots">
+              <div v-if="loadingPbsSnapshots[pbsGroupKey(group)]" class="loading-spinner" style="margin: 0.75rem 0;"></div>
+              <div v-else-if="!pbsSnapshots[pbsGroupKey(group)] || pbsSnapshots[pbsGroupKey(group)].length === 0" class="text-muted text-sm p-3">
+                No snapshots found.
+              </div>
+              <table v-else class="table table-sm">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Size</th>
+                    <th>Verify Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="snap in pbsSnapshots[pbsGroupKey(group)]" :key="snap['backup-time']">
+                    <td>{{ formatDate(snap['backup-time']) }}</td>
+                    <td>{{ snap.size !== undefined ? formatSize(snap.size) : '—' }}</td>
+                    <td>
+                      <span
+                        v-if="snap['verify-state']"
+                        :class="['verify-badge', snap['verify-state'] === 'ok' ? 'verify-badge--ok' : 'verify-badge--fail']"
+                      >
+                        {{ snap['verify-state'] }}
+                      </span>
+                      <span v-else class="text-muted text-xs">—</span>
+                    </td>
+                    <td>
+                      <div class="flex gap-1">
+                        <button
+                          @click="openRestoreModalFromPbs(snap, group)"
+                          class="btn btn-primary btn-sm"
+                        >
+                          Restore
+                        </button>
+                        <button
+                          @click="verifyPbsSnapshot(snap, group)"
+                          class="btn btn-outline btn-sm"
+                          :disabled="verifyingSnapshot[pbsSnapshotKey(snap, group)]"
+                          title="Verify this snapshot"
+                        >
+                          {{ verifyingSnapshot[pbsSnapshotKey(snap, group)] ? 'Verifying...' : 'Verify' }}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Notifications tab -->
+    <div v-if="activeTab === 'notifications'">
+      <div class="card">
+        <div class="card-header">
+          <h3>Backup Notifications</h3>
+        </div>
+        <div class="card-body">
+          <p class="text-muted text-sm mb-2">
+            Configure email notifications for backup job results. Settings are applied to all backup schedules for this host.
+          </p>
+
+          <div class="form-group">
+            <label class="form-label">Email Notifications</label>
+            <div class="radio-group">
+              <label class="radio-label">
+                <input type="radio" v-model="notifForm.mailnotification" value="never" />
+                <span>Disabled</span>
+              </label>
+              <label class="radio-label">
+                <input type="radio" v-model="notifForm.mailnotification" value="failure" />
+                <span>On failure only</span>
+              </label>
+              <label class="radio-label">
+                <input type="radio" v-model="notifForm.mailnotification" value="always" />
+                <span>Always (success &amp; failure)</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="form-group" style="max-width: 420px;">
+            <label class="form-label">Email Address</label>
+            <input
+              v-model="notifForm.mailto"
+              type="email"
+              class="form-control"
+              placeholder="admin@example.com"
+              :disabled="notifForm.mailnotification === 'never'"
+            />
+            <div class="text-xs text-muted mt-1">Separate multiple addresses with a comma.</div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Apply to Schedule</label>
+            <select v-model="notifForm.scheduleId" class="form-control" style="max-width: 340px;">
+              <option value="">— All schedules —</option>
+              <option v-for="sched in schedules" :key="sched.id" :value="sched.id">{{ sched.id }}</option>
+            </select>
+            <div class="text-xs text-muted mt-1">
+              Choose a specific schedule, or leave blank to apply to all schedules.
+            </div>
+          </div>
+
+          <div v-if="notifSaveResult" :class="['notif-result', notifSaveResult.ok ? 'notif-result--ok' : 'notif-result--err']">
+            {{ notifSaveResult.message }}
+          </div>
+
+          <div class="flex gap-1 mt-2">
+            <button
+              @click="saveNotifications"
+              class="btn btn-primary"
+              :disabled="savingNotif || notifForm.mailnotification !== 'never' && !notifForm.mailto"
+            >
+              {{ savingNotif ? 'Saving...' : 'Save Notification Settings' }}
+            </button>
           </div>
         </div>
       </div>
@@ -444,16 +654,57 @@ const loadingRestoreTargetStorages = ref(false)
 const restoreTask = ref({ upid: null, status: null, exitstatus: null })
 let restoreTaskPollTimer = null
 
+// ── PBS Browser state ─────────────────────────────────────────────────────────
+
+const pbsServers = ref([])
+const loadingPbsServers = ref(false)
+
+const pbsBrowser = ref({
+  selectedServerId: '',
+  selectedDatastore: '',
+})
+
+const pbsBrowserDatastores = ref([])
+const loadingPbsDatastores = ref(false)
+
+const pbsBrowserGroups = ref([])
+const loadingPbsGroups = ref(false)
+
+// expanded group keys -> true
+const expandedPbsGroups = ref({})
+// group key -> snapshot array
+const pbsSnapshots = ref({})
+// group key -> bool (loading)
+const loadingPbsSnapshots = ref({})
+// snapshot key -> bool (verifying)
+const verifyingSnapshot = ref({})
+
+function pbsGroupKey(group) {
+  return `${group['backup-type']}/${group['backup-id']}`
+}
+
+function pbsSnapshotKey(snap, group) {
+  return `${pbsGroupKey(group)}@${snap['backup-time']}`
+}
+
+// ── Notifications state ───────────────────────────────────────────────────────
+
+const notifForm = ref({
+  mailnotification: 'never',
+  mailto: '',
+  scheduleId: '',
+})
+const savingNotif = ref(false)
+const notifSaveResult = ref(null)
+
 // Computed: group backup files by VMID
 const backupGroups = computed(() => {
   const groups = {}
   for (const bk of backupFiles.value) {
-    // Parse vmid from volid: e.g. local:backup/vzdump-qemu-100-2024_01_15-03_00_01.vma.zst
     const vmid = parseVmidFromVolid(bk.volid) || bk.vmid || 'unknown'
     if (!groups[vmid]) groups[vmid] = { vmid, backups: [] }
     groups[vmid].backups.push(bk)
   }
-  // Sort each group's backups by date descending
   return Object.values(groups)
     .sort((a, b) => String(a.vmid).localeCompare(String(b.vmid), undefined, { numeric: true }))
     .map(g => ({
@@ -464,7 +715,6 @@ const backupGroups = computed(() => {
 
 function parseVmidFromVolid(volid) {
   if (!volid) return null
-  // vzdump-qemu-100-... or vzdump-lxc-100-...
   const m = volid.match(/vzdump-(?:qemu|lxc)-(\d+)-/)
   return m ? m[1] : null
 }
@@ -591,7 +841,6 @@ async function runBackup() {
 // ── Restore tab ──────────────────────────────────────────────────────────────
 
 function onRestoreTabOpen() {
-  // Pre-populate node list if not done yet; storages load on node selection
   if (restoreFilter.value.node && restoreStorages.value.length === 0) {
     fetchRestoreStorages(restoreFilter.value.node)
   }
@@ -649,7 +898,22 @@ function openRestoreModal(backup, vmid) {
     start: false,
   }
   restoreModal.value = { show: true, volid: backup.volid }
-  // Load storages for the pre-selected node
+  if (restoreForm.value.node) {
+    fetchRestoreTargetStorages(restoreForm.value.node)
+  }
+}
+
+function openRestoreModalFromPbs(snap, group) {
+  // Build a display volid reference for PBS snapshots
+  const label = `pbs:${pbsBrowser.value.selectedDatastore}/${group['backup-type']}/${group['backup-id']}/${snap['backup-time']}`
+  restoreTask.value = { upid: null, status: null, exitstatus: null }
+  restoreForm.value = {
+    vmid: Number(group['backup-id']) || null,
+    node: clusterNodes.value.length > 0 ? (clusterNodes.value[0].node || clusterNodes.value[0].name) : '',
+    storage: '',
+    start: false,
+  }
+  restoreModal.value = { show: true, volid: label }
   if (restoreForm.value.node) {
     fetchRestoreTargetStorages(restoreForm.value.node)
   }
@@ -716,7 +980,6 @@ async function submitRestore() {
 function startTaskPolling(node, upid) {
   stopTaskPolling()
   restoreTaskPollTimer = setInterval(() => pollTaskStatus(node, upid), 3000)
-  // Poll once immediately
   pollTaskStatus(node, upid)
 }
 
@@ -743,6 +1006,168 @@ async function pollTaskStatus(node, upid) {
     }
   } catch (err) {
     console.warn('Failed to poll task status:', err)
+  }
+}
+
+// ── PBS Browser ───────────────────────────────────────────────────────────────
+
+async function fetchPbsServerList() {
+  loadingPbsServers.value = true
+  try {
+    const res = await api.pbs.list()
+    pbsServers.value = res.data || []
+  } catch (err) {
+    console.error('Failed to load PBS servers:', err)
+  } finally {
+    loadingPbsServers.value = false
+  }
+}
+
+function onPbsTabOpen() {
+  if (pbsServers.value.length === 0) {
+    fetchPbsServerList()
+  }
+}
+
+async function onPbsServerChange() {
+  pbsBrowser.value.selectedDatastore = ''
+  pbsBrowserDatastores.value = []
+  pbsBrowserGroups.value = []
+  expandedPbsGroups.value = {}
+  pbsSnapshots.value = {}
+
+  if (!pbsBrowser.value.selectedServerId) return
+  loadingPbsDatastores.value = true
+  try {
+    const res = await api.pbsMgmt.listDatastores(pbsBrowser.value.selectedServerId)
+    pbsBrowserDatastores.value = res.data || []
+  } catch (err) {
+    console.error('Failed to load PBS datastores:', err)
+    toast.error('Failed to load datastores')
+  } finally {
+    loadingPbsDatastores.value = false
+  }
+}
+
+async function fetchPbsGroups() {
+  if (!pbsBrowser.value.selectedServerId || !pbsBrowser.value.selectedDatastore) return
+  loadingPbsGroups.value = true
+  pbsBrowserGroups.value = []
+  expandedPbsGroups.value = {}
+  pbsSnapshots.value = {}
+  try {
+    const res = await api.pbsMgmt.listGroups(
+      pbsBrowser.value.selectedServerId,
+      pbsBrowser.value.selectedDatastore
+    )
+    pbsBrowserGroups.value = res.data || []
+  } catch (err) {
+    console.error('Failed to load PBS groups:', err)
+    toast.error('Failed to load backup groups')
+  } finally {
+    loadingPbsGroups.value = false
+  }
+}
+
+async function togglePbsGroup(group) {
+  const key = pbsGroupKey(group)
+  if (expandedPbsGroups.value[key]) {
+    expandedPbsGroups.value = { ...expandedPbsGroups.value, [key]: false }
+    return
+  }
+  expandedPbsGroups.value = { ...expandedPbsGroups.value, [key]: true }
+  if (pbsSnapshots.value[key]) return  // already loaded
+  loadingPbsSnapshots.value = { ...loadingPbsSnapshots.value, [key]: true }
+  try {
+    const res = await api.pbsMgmt.listSnapshots(
+      pbsBrowser.value.selectedServerId,
+      pbsBrowser.value.selectedDatastore,
+      { 'backup-type': group['backup-type'], 'backup-id': group['backup-id'] }
+    )
+    const snaps = (res.data || []).sort((a, b) => (b['backup-time'] || 0) - (a['backup-time'] || 0))
+    pbsSnapshots.value = { ...pbsSnapshots.value, [key]: snaps }
+  } catch (err) {
+    console.error('Failed to load PBS snapshots:', err)
+    toast.error('Failed to load snapshots')
+    pbsSnapshots.value = { ...pbsSnapshots.value, [key]: [] }
+  } finally {
+    loadingPbsSnapshots.value = { ...loadingPbsSnapshots.value, [key]: false }
+  }
+}
+
+async function verifyPbsSnapshot(snap, group) {
+  const key = pbsSnapshotKey(snap, group)
+  verifyingSnapshot.value = { ...verifyingSnapshot.value, [key]: true }
+  try {
+    await api.pbsMgmt.verifySnapshot(
+      pbsBrowser.value.selectedServerId,
+      pbsBrowser.value.selectedDatastore,
+      {
+        'backup-type': group['backup-type'],
+        'backup-id': group['backup-id'],
+        'backup-time': snap['backup-time'],
+      }
+    )
+    toast.success('Verify job started')
+    // Reload snapshots to reflect updated verify-state
+    const groupKey = pbsGroupKey(group)
+    delete pbsSnapshots.value[groupKey]
+    await togglePbsGroup(group)
+  } catch (err) {
+    console.error('Failed to verify snapshot:', err)
+    toast.error('Failed to start verify')
+  } finally {
+    verifyingSnapshot.value = { ...verifyingSnapshot.value, [key]: false }
+  }
+}
+
+// ── Notifications ─────────────────────────────────────────────────────────────
+
+async function saveNotifications() {
+  const scheduleIds = notifForm.value.scheduleId
+    ? [notifForm.value.scheduleId]
+    : schedules.value.map(s => s.id)
+
+  if (scheduleIds.length === 0) {
+    toast.error('No backup schedules found. Create a schedule first.')
+    return
+  }
+
+  savingNotif.value = true
+  notifSaveResult.value = null
+
+  const payload = {
+    mailnotification: notifForm.value.mailnotification,
+  }
+  if (notifForm.value.mailnotification !== 'never' && notifForm.value.mailto) {
+    payload.mailto = notifForm.value.mailto
+  }
+
+  let successCount = 0
+  let failCount = 0
+  for (const id of scheduleIds) {
+    try {
+      await api.pveNode.updateBackupSchedule(hostId.value, id, payload)
+      successCount++
+    } catch (err) {
+      console.error(`Failed to update schedule ${id}:`, err)
+      failCount++
+    }
+  }
+
+  savingNotif.value = false
+  if (failCount === 0) {
+    notifSaveResult.value = {
+      ok: true,
+      message: `Notification settings saved for ${successCount} schedule${successCount !== 1 ? 's' : ''}.`,
+    }
+    toast.success('Notification settings saved')
+  } else {
+    notifSaveResult.value = {
+      ok: false,
+      message: `Saved ${successCount}, failed ${failCount} schedule(s). Check console for details.`,
+    }
+    toast.error('Some schedules could not be updated')
   }
 }
 
@@ -873,6 +1298,7 @@ onUnmounted(() => {
   padding: 0.1rem 0.45rem;
   font-size: 0.8rem;
   font-weight: 600;
+  white-space: nowrap;
 }
 
 .table-sm td,
@@ -887,6 +1313,124 @@ onUnmounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* PBS Browser */
+.pbs-browser-groups {
+  border-top: 1px solid var(--border-color);
+}
+
+.pbs-group {
+  border-bottom: 1px solid var(--border-color);
+}
+
+.pbs-group:last-child {
+  border-bottom: none;
+}
+
+.pbs-group-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.65rem 1rem;
+  cursor: pointer;
+  user-select: none;
+  background: var(--bg-secondary, rgba(255,255,255,0.02));
+  transition: background 0.12s;
+}
+
+.pbs-group-header:hover {
+  background: var(--bg-hover, rgba(99, 102, 241, 0.06));
+}
+
+.pbs-group-header--expanded {
+  background: var(--bg-hover, rgba(99, 102, 241, 0.06));
+}
+
+.pbs-group-chevron {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  width: 1rem;
+  flex-shrink: 0;
+}
+
+.pbs-group-meta {
+  margin-left: auto;
+}
+
+.pbs-group-meta + .pbs-group-meta {
+  margin-left: 1.25rem;
+}
+
+.pbs-snapshots {
+  border-top: 1px solid var(--border-color);
+  background: var(--bg-secondary, rgba(255,255,255,0.01));
+}
+
+.verify-badge {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.1rem 0.4rem;
+  border-radius: 0.25rem;
+  text-transform: uppercase;
+}
+
+.verify-badge--ok {
+  background: rgba(5, 150, 105, 0.12);
+  color: #059669;
+  border: 1px solid #059669;
+}
+
+.verify-badge--fail {
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+  border: 1px solid #ef4444;
+}
+
+.align-center {
+  align-items: center;
+}
+
+/* Notifications */
+.radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+.radio-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+}
+
+.radio-label input[type="radio"] {
+  width: 1rem;
+  height: 1rem;
+  cursor: pointer;
+}
+
+.notif-result {
+  padding: 0.75rem 1rem;
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  margin-bottom: 0.75rem;
+}
+
+.notif-result--ok {
+  background: rgba(5, 150, 105, 0.1);
+  border: 1px solid #059669;
+  color: #059669;
+}
+
+.notif-result--err {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid #ef4444;
+  color: #ef4444;
 }
 
 /* Restore modal */
@@ -1050,6 +1594,9 @@ onUnmounted(() => {
 @media (max-width: 640px) {
   .form-row {
     grid-template-columns: 1fr;
+  }
+  .pbs-group-meta {
+    display: none;
   }
 }
 </style>

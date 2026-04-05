@@ -135,6 +135,40 @@
         <div class="card-header">
           <h3>Quick Actions</h3>
         </div>
+
+        <!-- Quick VM Search -->
+        <div class="quick-search-wrap">
+          <div class="quick-search-input-row">
+            <span class="quick-search-icon">🔍</span>
+            <input
+              v-model="vmSearchQuery"
+              type="text"
+              class="quick-search-input"
+              placeholder="Search VMs by name or VMID..."
+              @keyup.escape="vmSearchQuery = ''"
+            />
+            <button v-if="vmSearchQuery" class="quick-search-clear" @click="vmSearchQuery = ''">×</button>
+          </div>
+          <div v-if="vmSearchQuery.trim() && vmSearchResults.length > 0" class="quick-search-results">
+            <div
+              v-for="vm in vmSearchResults"
+              :key="`${vm.hostId}-${vm.node}-${vm.vmid}`"
+              class="quick-search-result-item"
+              @click="navigateToVM(vm)"
+            >
+              <span class="qsr-vmid">{{ vm.vmid }}</span>
+              <span class="qsr-name">{{ vm.name || '(no name)' }}</span>
+              <span :class="['qsr-status', vm.status === 'running' ? 'qsr-running' : vm.status === 'stopped' ? 'qsr-stopped' : 'qsr-other']">
+                {{ vm.status }}
+              </span>
+              <span class="qsr-node">{{ vm.node }}</span>
+            </div>
+          </div>
+          <div v-else-if="vmSearchQuery.trim() && vmSearchResults.length === 0 && !pveLoading" class="quick-search-empty">
+            No VMs found matching "{{ vmSearchQuery }}"
+          </div>
+        </div>
+
         <div class="quick-actions">
           <router-link to="/deploy" class="action-button">
             <span class="action-icon">➕</span>
@@ -310,11 +344,14 @@
 
 <script>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
 import api from '@/services/api'
 
 export default {
   name: 'Dashboard',
   setup() {
+    const router = useRouter()
+
     const stats = ref({
       total_vms: 0,
       running_vms: 0,
@@ -347,6 +384,24 @@ export default {
     // Recent Tasks state
     const tasksLoading = ref(true)
     const recentTasks = ref([])
+
+    // Quick VM search state
+    const vmSearchQuery = ref('')
+    const allVmList = ref([])
+
+    const vmSearchResults = computed(() => {
+      const q = vmSearchQuery.value.trim().toLowerCase()
+      if (!q) return []
+      return allVmList.value.filter(vm =>
+        (vm.name || '').toLowerCase().includes(q) ||
+        String(vm.vmid).includes(q)
+      ).slice(0, 8)
+    })
+
+    const navigateToVM = (vm) => {
+      vmSearchQuery.value = ''
+      router.push(`/proxmox/${vm.hostId}/nodes/${vm.node}/vms/${vm.vmid}`)
+    }
 
     // Auto-refresh state
     const lastUpdatedSeconds = ref(0)
@@ -414,6 +469,7 @@ export default {
         const nodeSet = new Set()
         const nodeCountMap = {}
 
+        const vmListAccum = []
         resourceResults.forEach((result, idx) => {
           const host = activeHosts[idx]
           if (result.status === 'fulfilled') {
@@ -423,6 +479,13 @@ export default {
               if (item.type === 'qemu') {
                 totalVms++
                 if (item.status === 'running') runningVms++
+                vmListAccum.push({
+                  hostId: host.id,
+                  node: item.node,
+                  vmid: item.vmid,
+                  name: item.name,
+                  status: item.status || 'unknown',
+                })
               } else if (item.type === 'lxc') {
                 totalLxc++
               } else if (item.type === 'node') {
@@ -433,6 +496,7 @@ export default {
             nodeCountMap[host.id] = hostNodeCount
           }
         })
+        allVmList.value = vmListAccum
 
         // For inactive hosts, try to use cached node data via listNodes
         const inactiveHosts = hosts.filter(h => !h.is_active)
@@ -636,7 +700,11 @@ export default {
       recentTasks,
       taskStatusClass,
       formatTaskTime,
-      lastUpdatedSeconds
+      lastUpdatedSeconds,
+      // quick VM search
+      vmSearchQuery,
+      vmSearchResults,
+      navigateToVM,
     }
   }
 }
@@ -1081,5 +1149,142 @@ export default {
 .task-running {
   background-color: rgba(59, 130, 246, 0.15);
   color: #3b82f6;
+}
+
+/* ── Quick VM Search ─────────────────────────────────────────────────────── */
+.quick-search-wrap {
+  padding: 0.6rem 0.75rem 0.5rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.quick-search-input-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: var(--background);
+  border: 1px solid var(--border-color);
+  border-radius: 0.375rem;
+  padding: 0.3rem 0.5rem;
+  transition: border-color 0.15s;
+}
+
+.quick-search-input-row:focus-within {
+  border-color: var(--primary-color);
+}
+
+.quick-search-icon {
+  font-size: 0.85rem;
+  flex-shrink: 0;
+  opacity: 0.6;
+}
+
+.quick-search-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  outline: none;
+  min-width: 0;
+}
+
+.quick-search-input::placeholder {
+  color: var(--text-secondary);
+}
+
+.quick-search-clear {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 0.1rem;
+  flex-shrink: 0;
+}
+
+.quick-search-clear:hover {
+  color: var(--text-primary);
+}
+
+.quick-search-results {
+  margin-top: 0.4rem;
+  border: 1px solid var(--border-color);
+  border-radius: 0.375rem;
+  overflow: hidden;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.quick-search-result-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.6rem;
+  cursor: pointer;
+  font-size: 0.82rem;
+  transition: background 0.1s;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.quick-search-result-item:last-child {
+  border-bottom: none;
+}
+
+.quick-search-result-item:hover {
+  background: var(--background);
+}
+
+.qsr-vmid {
+  font-weight: 700;
+  color: var(--text-secondary);
+  min-width: 2.5rem;
+  font-size: 0.75rem;
+}
+
+.qsr-name {
+  flex: 1;
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.qsr-status {
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 0.1rem 0.35rem;
+  border-radius: 9999px;
+  white-space: nowrap;
+  text-transform: lowercase;
+}
+
+.qsr-running {
+  background-color: rgba(34, 197, 94, 0.15);
+  color: var(--secondary-color, #22c55e);
+}
+
+.qsr-stopped {
+  background-color: rgba(239, 68, 68, 0.12);
+  color: var(--danger-color, #ef4444);
+}
+
+.qsr-other {
+  background-color: rgba(100, 116, 139, 0.15);
+  color: var(--text-secondary);
+}
+
+.qsr-node {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.quick-search-empty {
+  margin-top: 0.4rem;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  padding: 0.25rem 0.1rem;
 }
 </style>

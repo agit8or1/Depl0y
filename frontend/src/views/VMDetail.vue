@@ -93,6 +93,50 @@
           </div>
         </div>
 
+        <!-- Tags -->
+        <div class="card mt-2">
+          <div class="card-header">
+            <h4 style="margin:0;font-size:0.95rem;">Tags</h4>
+            <button v-if="!showTagInput" @click="openTagInput" class="btn btn-outline btn-sm" :disabled="savingTags">
+              + Add Tag
+            </button>
+          </div>
+          <div class="card-body" style="padding:0.75rem 1.5rem 1rem;">
+            <div class="tag-manager">
+              <span
+                v-for="tag in tagList"
+                :key="tag"
+                class="tag-pill"
+                :style="{ backgroundColor: tagColor(tag) }"
+              >
+                {{ tag }}
+                <button
+                  class="tag-remove"
+                  @click="removeTag(tag)"
+                  :disabled="savingTags"
+                  title="Remove tag"
+                >&times;</button>
+              </span>
+              <span v-if="tagList.length === 0 && !showTagInput" class="text-muted text-sm">No tags</span>
+
+              <span v-if="showTagInput" class="tag-input-wrap">
+                <input
+                  ref="tagInputRef"
+                  v-model="newTagValue"
+                  class="tag-input"
+                  placeholder="tagname"
+                  @keyup.enter="addTag"
+                  @keyup.escape="cancelTagInput"
+                  @input="newTagValue = sanitizeTag(newTagValue)"
+                  maxlength="40"
+                />
+                <button class="btn btn-primary btn-sm" @click="addTag" :disabled="!newTagValue.trim()">+</button>
+                <button class="btn btn-outline btn-sm" @click="cancelTagInput">Cancel</button>
+              </span>
+            </div>
+          </div>
+        </div>
+
         <!-- Notes -->
         <div class="card mt-2">
           <div class="card-header">
@@ -122,94 +166,206 @@
         <div class="card">
           <div class="card-header">
             <h3>VM Configuration</h3>
-            <div class="flex gap-1">
-              <button v-if="!editingConfig" @click="startEditConfig" class="btn btn-outline btn-sm">Edit</button>
-              <template v-else>
-                <button @click="saveConfig" class="btn btn-primary btn-sm" :disabled="savingConfig">
-                  {{ savingConfig ? 'Saving...' : 'Save' }}
-                </button>
-                <button @click="cancelEditConfig" class="btn btn-outline btn-sm">Cancel</button>
-              </template>
-            </div>
           </div>
           <div class="card-body">
             <div class="config-grid">
-              <div class="form-group">
+
+              <!-- Name -->
+              <div class="form-group inline-field">
                 <label class="form-label">Name</label>
-                <input v-if="editingConfig" v-model="editConfig.name" class="form-control" />
-                <div v-else class="config-value">{{ config.name || '—' }}</div>
+                <div class="inline-edit-row">
+                  <input v-model="inlineEdit.name" class="form-control" placeholder="vm-name"
+                    @keyup.enter="saveInlineField('name', inlineEdit.name)" />
+                  <button @click="saveInlineField('name', inlineEdit.name)"
+                    class="btn btn-primary btn-sm" :disabled="savingField.name">
+                    {{ savingField.name ? '...' : 'Save' }}
+                  </button>
+                </div>
+                <div class="inline-current">Current: <code>{{ config.name || '—' }}</code></div>
               </div>
-              <div class="form-group">
+
+              <!-- CPU Cores -->
+              <div class="form-group inline-field">
                 <label class="form-label">CPU Cores</label>
-                <input v-if="editingConfig" v-model.number="editConfig.cores" type="number" min="1" class="form-control" />
-                <div v-else class="config-value">{{ config.cores || 1 }}</div>
+                <div class="inline-edit-row">
+                  <input v-model.number="inlineEdit.cores" type="number" min="1" max="128"
+                    class="form-control"
+                    @keyup.enter="saveInlineField('cores', inlineEdit.cores)" />
+                  <button @click="saveInlineField('cores', inlineEdit.cores)"
+                    class="btn btn-primary btn-sm" :disabled="savingField.cores">
+                    {{ savingField.cores ? '...' : 'Save' }}
+                  </button>
+                </div>
+                <div class="inline-current">Current: <code>{{ config.cores || 1 }}</code></div>
               </div>
-              <div class="form-group">
-                <label class="form-label">Sockets</label>
-                <input v-if="editingConfig" v-model.number="editConfig.sockets" type="number" min="1" class="form-control" />
-                <div v-else class="config-value">{{ config.sockets || 1 }}</div>
-              </div>
-              <div class="form-group">
-                <label class="form-label">CPU Type</label>
-                <input v-if="editingConfig" v-model="editConfig.cpu" class="form-control" placeholder="host" />
-                <div v-else class="config-value">{{ config.cpu || 'host' }}</div>
-              </div>
-              <div class="form-group">
+
+              <!-- Memory -->
+              <div class="form-group inline-field">
                 <label class="form-label">Memory (MB)</label>
-                <input v-if="editingConfig" v-model.number="editConfig.memory" type="number" min="64" step="64" class="form-control" />
-                <div v-else class="config-value">{{ config.memory || '—' }} MB</div>
+                <div class="inline-edit-row">
+                  <input v-model.number="inlineEdit.memory" type="number" min="64" step="64"
+                    class="form-control"
+                    @keyup.enter="saveInlineField('memory', inlineEdit.memory)" />
+                  <button @click="saveInlineField('memory', inlineEdit.memory)"
+                    class="btn btn-primary btn-sm" :disabled="savingField.memory">
+                    {{ savingField.memory ? '...' : 'Save' }}
+                  </button>
+                </div>
+                <div class="inline-current">Current: <code>{{ config.memory || '—' }} MB</code></div>
               </div>
-              <div class="form-group">
-                <label class="form-label">Balloon (MB)</label>
-                <input v-if="editingConfig" v-model.number="editConfig.balloon" type="number" min="0" step="64" class="form-control" />
-                <div v-else class="config-value">{{ config.balloon ?? 0 }} MB</div>
+
+              <!-- CPU Type -->
+              <div class="form-group inline-field">
+                <label class="form-label">CPU Type</label>
+                <div class="inline-edit-row">
+                  <select v-model="inlineEdit.cpu" class="form-control">
+                    <option value="host">host</option>
+                    <option value="kvm64">kvm64</option>
+                    <option value="x86-64-v2-AES">x86-64-v2-AES</option>
+                    <option value="qemu64">qemu64</option>
+                  </select>
+                  <button @click="saveInlineField('cpu', inlineEdit.cpu)"
+                    class="btn btn-primary btn-sm" :disabled="savingField.cpu">
+                    {{ savingField.cpu ? '...' : 'Save' }}
+                  </button>
+                </div>
+                <div class="inline-current">Current: <code>{{ config.cpu || 'host' }}</code></div>
               </div>
-              <div class="form-group">
-                <label class="form-label">Boot Order</label>
-                <input v-if="editingConfig" v-model="editConfig.boot" class="form-control" placeholder="order=scsi0;ide2;net0" />
-                <div v-else class="config-value">{{ config.boot || '—' }}</div>
-              </div>
-              <div class="form-group">
+
+              <!-- BIOS -->
+              <div class="form-group inline-field">
                 <label class="form-label">BIOS</label>
-                <select v-if="editingConfig" v-model="editConfig.bios" class="form-control">
-                  <option value="">Default (SeaBIOS)</option>
-                  <option value="ovmf">OVMF (UEFI)</option>
-                </select>
-                <div v-else class="config-value">{{ config.bios || 'SeaBIOS' }}</div>
+                <div class="inline-edit-row">
+                  <select v-model="inlineEdit.bios" class="form-control">
+                    <option value="seabios">SeaBIOS (default)</option>
+                    <option value="ovmf">OVMF (UEFI)</option>
+                  </select>
+                  <button @click="saveInlineField('bios', inlineEdit.bios)"
+                    class="btn btn-primary btn-sm" :disabled="savingField.bios">
+                    {{ savingField.bios ? '...' : 'Save' }}
+                  </button>
+                </div>
+                <div class="inline-current">Current: <code>{{ config.bios || 'seabios' }}</code></div>
               </div>
-              <div class="form-group">
+
+              <!-- Machine Type -->
+              <div class="form-group inline-field">
                 <label class="form-label">Machine Type</label>
-                <input v-if="editingConfig" v-model="editConfig.machine" class="form-control" placeholder="pc-i440fx or q35" />
-                <div v-else class="config-value">{{ config.machine || 'default' }}</div>
+                <div class="inline-edit-row">
+                  <select v-model="inlineEdit.machine" class="form-control">
+                    <option value="">default</option>
+                    <option value="pc">pc</option>
+                    <option value="q35">q35</option>
+                    <option value="pc-i440fx-2.2">pc-i440fx-2.2</option>
+                  </select>
+                  <button @click="saveInlineField('machine', inlineEdit.machine)"
+                    class="btn btn-primary btn-sm" :disabled="savingField.machine">
+                    {{ savingField.machine ? '...' : 'Save' }}
+                  </button>
+                </div>
+                <div class="inline-current">Current: <code>{{ config.machine || 'default' }}</code></div>
               </div>
-              <div class="form-group">
-                <label class="form-label">Tags</label>
-                <input v-if="editingConfig" v-model="editConfig.tags" class="form-control" placeholder="tag1;tag2" />
-                <div v-else class="config-value">{{ config.tags || '—' }}</div>
+
+              <!-- Boot Disk / Order -->
+              <div class="form-group inline-field">
+                <label class="form-label">Boot Order</label>
+                <div class="inline-edit-row">
+                  <input v-model="inlineEdit.boot" class="form-control"
+                    placeholder="order=scsi0;ide2;net0"
+                    @keyup.enter="saveInlineField('boot', inlineEdit.boot)" />
+                  <button @click="saveInlineField('boot', inlineEdit.boot)"
+                    class="btn btn-primary btn-sm" :disabled="savingField.boot">
+                    {{ savingField.boot ? '...' : 'Save' }}
+                  </button>
+                </div>
+                <div class="inline-current">Current: <code>{{ config.boot || '—' }}</code></div>
               </div>
-              <div class="form-group config-grid-span2">
+
+              <!-- Sockets -->
+              <div class="form-group inline-field">
+                <label class="form-label">Sockets</label>
+                <div class="inline-edit-row">
+                  <input v-model.number="inlineEdit.sockets" type="number" min="1" max="8"
+                    class="form-control"
+                    @keyup.enter="saveInlineField('sockets', inlineEdit.sockets)" />
+                  <button @click="saveInlineField('sockets', inlineEdit.sockets)"
+                    class="btn btn-primary btn-sm" :disabled="savingField.sockets">
+                    {{ savingField.sockets ? '...' : 'Save' }}
+                  </button>
+                </div>
+                <div class="inline-current">Current: <code>{{ config.sockets || 1 }}</code></div>
+              </div>
+
+              <!-- Balloon (MB) -->
+              <div class="form-group inline-field">
+                <label class="form-label">Balloon (MB)</label>
+                <div class="inline-edit-row">
+                  <input v-model.number="inlineEdit.balloon" type="number" min="0" step="64"
+                    class="form-control"
+                    @keyup.enter="saveInlineField('balloon', inlineEdit.balloon)" />
+                  <button @click="saveInlineField('balloon', inlineEdit.balloon)"
+                    class="btn btn-primary btn-sm" :disabled="savingField.balloon">
+                    {{ savingField.balloon ? '...' : 'Save' }}
+                  </button>
+                </div>
+                <div class="inline-current">Current: <code>{{ config.balloon ?? 0 }} MB</code></div>
+              </div>
+
+              <!-- Description (full width) -->
+              <div class="form-group inline-field config-grid-span2">
                 <label class="form-label">Description</label>
-                <textarea v-if="editingConfig" v-model="editConfig.description" class="form-control" rows="3"></textarea>
-                <div v-else class="config-value pre-wrap">{{ config.description || '—' }}</div>
+                <textarea v-model="inlineEdit.description" class="form-control" rows="3"></textarea>
+                <div class="flex gap-1 mt-1">
+                  <button @click="saveInlineField('description', inlineEdit.description)"
+                    class="btn btn-primary btn-sm" :disabled="savingField.description">
+                    {{ savingField.description ? 'Saving...' : 'Save Description' }}
+                  </button>
+                </div>
               </div>
-              <div class="form-group">
-                <label class="form-label checkbox-label">
-                  <input v-if="editingConfig" v-model="editConfig.onboot" type="checkbox" />
-                  <span v-else :class="config.onboot ? 'badge badge-success' : 'badge badge-danger'">
-                    {{ config.onboot ? 'Yes' : 'No' }}
-                  </span>
-                  Start at boot
-                </label>
+
+              <!-- Boolean toggles row -->
+              <div class="form-group config-grid-span2">
+                <label class="form-label" style="margin-bottom:0.5rem;">Toggles</label>
+                <div class="toggle-row">
+                  <label class="toggle-item">
+                    <input type="checkbox" class="toggle-check"
+                      :checked="!!inlineEdit.numa"
+                      @change="saveInlineField('numa', $event.target.checked ? 1 : 0)" />
+                    <span class="toggle-label">NUMA</span>
+                    <span class="toggle-status" :class="inlineEdit.numa ? 'badge badge-success' : 'badge badge-info'">
+                      {{ inlineEdit.numa ? 'On' : 'Off' }}
+                    </span>
+                  </label>
+                  <label class="toggle-item">
+                    <input type="checkbox" class="toggle-check"
+                      :checked="!!inlineEdit.agent"
+                      @change="saveInlineField('agent', $event.target.checked ? 1 : 0)" />
+                    <span class="toggle-label">QEMU Agent</span>
+                    <span class="toggle-status" :class="inlineEdit.agent ? 'badge badge-success' : 'badge badge-info'">
+                      {{ inlineEdit.agent ? 'On' : 'Off' }}
+                    </span>
+                  </label>
+                  <label class="toggle-item">
+                    <input type="checkbox" class="toggle-check"
+                      :checked="!!inlineEdit.onboot"
+                      @change="saveInlineField('onboot', $event.target.checked ? 1 : 0)" />
+                    <span class="toggle-label">Start at Boot</span>
+                    <span class="toggle-status" :class="inlineEdit.onboot ? 'badge badge-success' : 'badge badge-danger'">
+                      {{ inlineEdit.onboot ? 'Yes' : 'No' }}
+                    </span>
+                  </label>
+                  <label class="toggle-item">
+                    <input type="checkbox" class="toggle-check"
+                      :checked="!!inlineEdit.protection"
+                      @change="saveInlineField('protection', $event.target.checked ? 1 : 0)" />
+                    <span class="toggle-label">Protection</span>
+                    <span class="toggle-status" :class="inlineEdit.protection ? 'badge badge-warning' : 'badge badge-info'">
+                      {{ inlineEdit.protection ? 'On' : 'Off' }}
+                    </span>
+                  </label>
+                </div>
               </div>
-              <div class="form-group">
-                <label class="form-label checkbox-label">
-                  <input v-if="editingConfig" v-model="editConfig.protection" type="checkbox" />
-                  <span v-else :class="config.protection ? 'badge badge-warning' : 'badge badge-info'">
-                    {{ config.protection ? 'On' : 'Off' }}
-                  </span>
-                  Protection
-                </label>
-              </div>
+
             </div>
           </div>
         </div>
@@ -277,13 +433,13 @@
             <table class="table">
               <thead>
                 <tr>
-                  <th>Key</th>
-                  <th>Storage</th>
+                  <th>Interface</th>
+                  <th>Storage Pool</th>
                   <th>Volume</th>
                   <th>Size</th>
                   <th>Format</th>
                   <th>Cache</th>
-                  <th>SSD</th>
+                  <th>SSD Emulation</th>
                   <th>Discard</th>
                   <th>Actions</th>
                 </tr>
@@ -296,16 +452,22 @@
                   <td><code>{{ disk.key }}</code></td>
                   <td>{{ disk.parsed.storage || '—' }}</td>
                   <td class="text-sm text-muted">{{ disk.parsed.volume }}</td>
-                  <td>{{ disk.parsed.size || '—' }}</td>
-                  <td>{{ disk.parsed.format || '—' }}</td>
-                  <td>{{ disk.parsed.cache || '—' }}</td>
+                  <td><strong>{{ formatDiskSize(disk.parsed.size) }}</strong></td>
+                  <td>{{ disk.parsed.format || 'raw' }}</td>
+                  <td>{{ disk.parsed.cache || 'none' }}</td>
                   <td>
-                    <span v-if="disk.parsed.ssd" class="badge badge-success">SSD</span>
-                    <span v-else class="text-muted">—</span>
+                    <button @click="toggleDiskFlag(disk, 'ssd')"
+                      :class="disk.parsed.ssd ? 'btn btn-success btn-xs' : 'btn btn-outline btn-xs'"
+                      :disabled="actioning" title="Toggle SSD emulation">
+                      {{ disk.parsed.ssd ? 'On' : 'Off' }}
+                    </button>
                   </td>
                   <td>
-                    <span v-if="disk.parsed.discard" class="badge badge-info">On</span>
-                    <span v-else class="text-muted">—</span>
+                    <button @click="toggleDiskFlag(disk, 'discard')"
+                      :class="disk.parsed.discard ? 'btn btn-success btn-xs' : 'btn btn-outline btn-xs'"
+                      :disabled="actioning" title="Toggle discard/TRIM">
+                      {{ disk.parsed.discard ? 'On' : 'Off' }}
+                    </button>
                   </td>
                   <td>
                     <div class="flex gap-1">
@@ -333,29 +495,37 @@
                 <tr>
                   <th>Interface</th>
                   <th>Model</th>
-                  <th>MAC</th>
+                  <th>MAC Address</th>
                   <th>Bridge</th>
                   <th>VLAN Tag</th>
                   <th>Firewall</th>
+                  <th>Rate (MB/s)</th>
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 <tr v-if="parsedNics.length === 0">
-                  <td colspan="7" class="text-muted text-center">No NICs configured</td>
+                  <td colspan="8" class="text-muted text-center">No NICs configured</td>
                 </tr>
                 <tr v-for="nic in parsedNics" :key="nic.key">
                   <td><code>{{ nic.key }}</code></td>
-                  <td>{{ nic.parsed.model }}</td>
+                  <td><span class="badge badge-info">{{ nic.parsed.model }}</span></td>
                   <td class="text-sm"><code>{{ nic.parsed.mac || '—' }}</code></td>
                   <td>{{ nic.parsed.bridge || '—' }}</td>
                   <td>{{ nic.parsed.vlan || '—' }}</td>
                   <td>
-                    <span v-if="nic.parsed.firewall" class="badge badge-success">On</span>
-                    <span v-else class="badge badge-danger">Off</span>
+                    <button @click="toggleNicFirewall(nic)"
+                      :class="nic.parsed.firewall ? 'btn btn-success btn-xs' : 'btn btn-outline btn-xs'"
+                      :disabled="actioning" title="Toggle firewall for this NIC">
+                      {{ nic.parsed.firewall ? 'On' : 'Off' }}
+                    </button>
                   </td>
+                  <td>{{ nic.parsed.rate || '—' }}</td>
                   <td>
-                    <button @click="removeNic(nic.key)" class="btn btn-danger btn-sm" :disabled="actioning">Remove</button>
+                    <div class="flex gap-1">
+                      <button @click="openEditNic(nic)" class="btn btn-outline btn-sm">Edit</button>
+                      <button @click="removeNic(nic.key)" class="btn btn-danger btn-sm" :disabled="actioning">Detach</button>
+                    </div>
                   </td>
                 </tr>
               </tbody>
@@ -727,6 +897,55 @@
       </div>
     </div>
 
+    <!-- Edit NIC Modal -->
+    <div v-if="showEditNicModal" class="modal" @click.self="showEditNicModal = false">
+      <div class="modal-content" @click.stop>
+        <div class="modal-header">
+          <h3>Edit NIC: {{ editNicKey }}</h3>
+          <button @click="showEditNicModal = false" class="btn-close">×</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Model</label>
+              <select v-model="editNicForm.model" class="form-control">
+                <option value="virtio">VirtIO (recommended)</option>
+                <option value="e1000">Intel E1000</option>
+                <option value="rtl8139">RTL8139</option>
+                <option value="vmxnet3">VMware vmxnet3</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Bridge</label>
+              <input v-model="editNicForm.bridge" class="form-control" placeholder="vmbr0" />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">VLAN Tag (optional)</label>
+              <input v-model.number="editNicForm.tag" type="number" class="form-control" placeholder="e.g. 10" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Rate Limit (MB/s, optional)</label>
+              <input v-model.number="editNicForm.rate" type="number" min="0" step="1" class="form-control" placeholder="e.g. 100" />
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label checkbox-label">
+              <input v-model="editNicForm.firewall" type="checkbox" />
+              Firewall enabled for this NIC
+            </label>
+          </div>
+          <div class="flex gap-1 mt-2">
+            <button @click="doEditNic" class="btn btn-primary" :disabled="actioning || !editNicForm.bridge">
+              {{ actioning ? 'Saving...' : 'Save NIC' }}
+            </button>
+            <button @click="showEditNicModal = false" class="btn btn-outline">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Create Snapshot Modal -->
     <div v-if="showSnapshotModal" class="modal" @click.self="showSnapshotModal = false">
       <div class="modal-content modal-sm" @click.stop>
@@ -835,7 +1054,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Line } from 'vue-chartjs'
 import {
@@ -905,14 +1124,108 @@ const showResizeModal = ref(false)
 const showAddNicModal = ref(false)
 const showSnapshotModal = ref(false)
 const showFirewallModal = ref(false)
+const showEditNicModal = ref(false)
 
 // Resize disk state
 const resizeDiskKey = ref('')
 const resizeDiskCurrentSize = ref('')
 const resizeSize = ref('')
 
+// Edit NIC state
+const editNicKey = ref('')
+const editNicForm = ref({ model: 'virtio', bridge: 'vmbr0', tag: null, rate: null, firewall: false })
+
+// Tag management
+const tagList = computed(() => {
+  if (!config.value?.tags) return []
+  return config.value.tags.split(';').map(t => t.trim()).filter(Boolean)
+})
+const showTagInput = ref(false)
+const newTagValue = ref('')
+const savingTags = ref(false)
+const tagInputRef = ref(null)
+
+const tagColorPalette = [
+  '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6',
+  '#ef4444', '#06b6d4', '#84cc16', '#f97316',
+]
+const tagColor = (tag) => {
+  let hash = 0
+  for (let i = 0; i < tag.length; i++) hash = tag.charCodeAt(i) + ((hash << 5) - hash)
+  return tagColorPalette[Math.abs(hash) % tagColorPalette.length]
+}
+
+const openTagInput = async () => {
+  showTagInput.value = true
+  newTagValue.value = ''
+  await nextTick()
+  tagInputRef.value?.focus()
+}
+
+const cancelTagInput = () => {
+  showTagInput.value = false
+  newTagValue.value = ''
+}
+
+const sanitizeTag = (val) => val.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9\-_]/g, '')
+
+const addTag = async () => {
+  const tag = sanitizeTag(newTagValue.value.trim())
+  if (!tag) { cancelTagInput(); return }
+  if (tagList.value.includes(tag)) {
+    toast.warning(`Tag "${tag}" already exists`)
+    return
+  }
+  const newTags = [...tagList.value, tag].join(';')
+  await saveTags(newTags)
+  cancelTagInput()
+}
+
+const removeTag = async (tag) => {
+  const newTags = tagList.value.filter(t => t !== tag).join(';')
+  await saveTags(newTags)
+}
+
+const saveTags = async (tagsString) => {
+  savingTags.value = true
+  try {
+    await api.pveVm.updateConfig(hostId.value, node.value, vmid.value, { tags: tagsString })
+    await loadConfig()
+    toast.success('Tags updated')
+  } catch (e) {
+    console.error(e)
+    toast.error('Failed to update tags')
+  } finally {
+    savingTags.value = false
+  }
+}
+
 // Edit config form
 const editConfig = ref({})
+
+// Inline config editing (per-field save, used by Config tab)
+const inlineEdit = ref({
+  name: '', cores: 1, memory: 512, cpu: 'host', bios: 'seabios',
+  machine: '', boot: '', sockets: 1, balloon: 0, description: '',
+  numa: 0, agent: 0, onboot: 0, protection: 0,
+})
+const savingField = ref({})
+
+const saveInlineField = async (field, value) => {
+  savingField.value = { ...savingField.value, [field]: true }
+  try {
+    const payload = { [field]: value }
+    await api.pveVm.updateConfig(hostId.value, node.value, vmid.value, payload)
+    toast.success(`${field} saved`)
+    await loadConfig()
+    inlineEdit.value[field] = config.value[field] ?? value
+  } catch (e) {
+    console.error(e)
+    toast.error(`Failed to save ${field}`)
+  } finally {
+    savingField.value = { ...savingField.value, [field]: false }
+  }
+}
 
 // Modal forms
 const cloneForm = ref({ newid: null, name: '', full: true, storage: '', target: '' })
@@ -1012,6 +1325,24 @@ const lineChartOptions = {
 const loadConfig = async () => {
   const res = await api.pveVm.getConfig(hostId.value, node.value, vmid.value)
   config.value = res.data
+  // Sync inlineEdit with fresh config
+  const c = res.data
+  inlineEdit.value = {
+    name: c.name || '',
+    cores: c.cores || 1,
+    memory: c.memory || 512,
+    cpu: c.cpu || 'host',
+    bios: c.bios || 'seabios',
+    machine: c.machine || '',
+    boot: c.boot || '',
+    sockets: c.sockets || 1,
+    balloon: c.balloon ?? 0,
+    description: c.description || '',
+    numa: c.numa || 0,
+    agent: c.agent || 0,
+    onboot: c.onboot || 0,
+    protection: c.protection || 0,
+  }
 }
 
 const loadStatus = async () => {
@@ -1361,6 +1692,110 @@ const doAddNic = async () => {
     await loadConfig()
   } catch (e) {
     console.error(e)
+  } finally {
+    actioning.value = false
+  }
+}
+
+const openEditNic = (nic) => {
+  editNicKey.value = nic.key
+  editNicForm.value = {
+    model: nic.parsed.model || 'virtio',
+    bridge: nic.parsed.bridge || 'vmbr0',
+    tag: nic.parsed.vlan ? parseInt(nic.parsed.vlan) : null,
+    rate: nic.parsed.rate ? parseFloat(nic.parsed.rate) : null,
+    firewall: !!nic.parsed.firewall,
+  }
+  showEditNicModal.value = true
+}
+
+const doEditNic = async () => {
+  if (!editNicForm.value.bridge) {
+    toast.error('Please enter a bridge name')
+    return
+  }
+  actioning.value = true
+  try {
+    // Build Proxmox NIC string: model=MAC,bridge=br,tag=n,firewall=0/1,rate=n
+    const f = editNicForm.value
+    // preserve original MAC by extracting from raw config
+    const rawNic = parsedNics.value.find(n => n.key === editNicKey.value)
+    const mac = rawNic?.parsed.mac || ''
+    let nicStr = `${f.model}=${mac}`
+    nicStr += `,bridge=${f.bridge}`
+    if (f.tag) nicStr += `,tag=${f.tag}`
+    if (f.rate) nicStr += `,rate=${f.rate}`
+    nicStr += `,firewall=${f.firewall ? 1 : 0}`
+    await api.pveVm.updateConfig(hostId.value, node.value, vmid.value, { [editNicKey.value]: nicStr })
+    toast.success(`${editNicKey.value} updated`)
+    showEditNicModal.value = false
+    await loadConfig()
+  } catch (e) {
+    console.error(e)
+    toast.error('Failed to update NIC')
+  } finally {
+    actioning.value = false
+  }
+}
+
+const toggleNicFirewall = async (nic) => {
+  actioning.value = true
+  try {
+    const mac = nic.parsed.mac || ''
+    const newFirewall = nic.parsed.firewall ? 0 : 1
+    let nicStr = `${nic.parsed.model}=${mac}`
+    nicStr += `,bridge=${nic.parsed.bridge || 'vmbr0'}`
+    if (nic.parsed.vlan) nicStr += `,tag=${nic.parsed.vlan}`
+    if (nic.parsed.rate) nicStr += `,rate=${nic.parsed.rate}`
+    nicStr += `,firewall=${newFirewall}`
+    await api.pveVm.updateConfig(hostId.value, node.value, vmid.value, { [nic.key]: nicStr })
+    toast.success(`Firewall ${newFirewall ? 'enabled' : 'disabled'} for ${nic.key}`)
+    await loadConfig()
+  } catch (e) {
+    console.error(e)
+    toast.error('Failed to toggle firewall')
+  } finally {
+    actioning.value = false
+  }
+}
+
+// ── Disk Helpers ──────────────────────────────────────────────────────────────
+
+const formatDiskSize = (sizeStr) => {
+  if (!sizeStr) return '—'
+  // Proxmox size strings: 32G, 512M, 1T, 100K
+  const match = sizeStr.match(/^([0-9.]+)([KMGT]?)$/i)
+  if (!match) return sizeStr
+  const num = parseFloat(match[1])
+  const unit = match[2].toUpperCase()
+  const unitMap = { K: 'KB', M: 'MB', G: 'GB', T: 'TB', '': 'B' }
+  return `${num} ${unitMap[unit] || unit}`
+}
+
+const toggleDiskFlag = async (disk, flag) => {
+  actioning.value = true
+  try {
+    // Rebuild the disk config string with the toggled flag
+    const p = disk.parsed
+    const newVal = flag === 'ssd' ? (p.ssd ? 0 : 1) : (p.discard ? 0 : 1)
+    // Build a minimal config string from known parts
+    let diskStr = `${p.storage}:${p.volume}`
+    if (p.size) diskStr += `,size=${p.size}`
+    if (p.format) diskStr += `,format=${p.format}`
+    if (p.cache) diskStr += `,cache=${p.cache}`
+    const ssdVal = flag === 'ssd' ? newVal : (p.ssd ? 1 : 0)
+    const discardVal = flag === 'discard' ? newVal : (p.discard ? 'on' : 0)
+    if (ssdVal) diskStr += `,ssd=1`
+    if (discardVal && discardVal !== 0) diskStr += `,discard=on`
+    if (!p.backup) diskStr += `,backup=0`
+    if (p.iothread) diskStr += `,iothread=1`
+    await api.pveVm.updateConfig(hostId.value, node.value, vmid.value, { [disk.key]: diskStr })
+    const label = flag === 'ssd' ? 'SSD emulation' : 'Discard'
+    toast.success(`${label} ${newVal ? 'enabled' : 'disabled'} for ${disk.key}`)
+    await loadConfig()
+  } catch (e) {
+    console.error(e)
+    toast.error(`Failed to toggle ${flag}`)
   } finally {
     actioning.value = false
   }
@@ -1869,6 +2304,72 @@ onUnmounted(() => {
   word-break: break-all;
 }
 
+/* Tag management */
+.tag-manager {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+  min-height: 2rem;
+}
+
+.tag-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.15rem 0.5rem;
+  border-radius: 9999px;
+  color: #fff;
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+  text-transform: lowercase;
+}
+
+.tag-remove {
+  background: none;
+  border: none;
+  color: rgba(255,255,255,0.8);
+  cursor: pointer;
+  font-size: 0.9rem;
+  line-height: 1;
+  padding: 0;
+  margin-left: 0.1rem;
+  display: flex;
+  align-items: center;
+}
+
+.tag-remove:hover {
+  color: #fff;
+}
+
+.tag-remove:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.tag-input-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.tag-input {
+  width: 130px;
+  padding: 0.2rem 0.5rem;
+  font-size: 0.8rem;
+  border: 1px solid var(--border-color);
+  border-radius: 0.375rem;
+  background: var(--background);
+  color: var(--text-primary);
+}
+
+.tag-input:focus {
+  outline: none;
+  border-color: var(--primary-color);
+}
+
 @keyframes spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
@@ -1877,5 +2378,94 @@ onUnmounted(() => {
 .spin {
   display: inline-block;
   animation: spin 0.8s linear infinite;
+}
+
+/* Inline config field editing */
+.inline-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.inline-edit-row {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.inline-edit-row .form-control {
+  flex: 1;
+}
+
+.inline-current {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+}
+
+.inline-current code {
+  font-size: 0.72rem;
+}
+
+/* Toggle row (boolean fields) */
+.toggle-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.toggle-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+  font-size: 0.875rem;
+}
+
+.toggle-check {
+  cursor: pointer;
+}
+
+.toggle-label {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.toggle-status {
+  font-size: 0.7rem;
+}
+
+.mt-1 { margin-top: 0.5rem; }
+
+/* Extra-small button variant for toggle cells */
+.btn-xs {
+  padding: 0.15rem 0.5rem;
+  font-size: 0.72rem;
+  border-radius: 0.25rem;
+  line-height: 1.4;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background 0.15s, color 0.15s;
+}
+
+.btn-xs.btn-success {
+  background-color: var(--secondary-color);
+  color: white;
+  border-color: var(--secondary-color);
+}
+
+.btn-xs.btn-outline {
+  background: transparent;
+  color: var(--text-secondary);
+  border-color: var(--border-color);
+}
+
+.btn-xs:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-xs:hover:not(:disabled) {
+  opacity: 0.85;
 }
 </style>

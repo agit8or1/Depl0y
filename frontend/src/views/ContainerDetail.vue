@@ -98,11 +98,79 @@
 
       <!-- Configuration Tab -->
       <div v-if="activeTab === 'config'">
+        <!-- Inline editable fields -->
+        <div class="card mb-2">
+          <div class="card-header"><h3>General</h3></div>
+          <div class="card-body">
+            <div class="inline-edit-grid">
+
+              <!-- Hostname -->
+              <div class="inline-edit-row">
+                <span class="inline-edit-label">Hostname</span>
+                <div class="inline-edit-control">
+                  <input v-model="inlineEdit.hostname" class="form-control form-control-sm" />
+                  <button @click="saveInlineField('hostname', inlineEdit.hostname)"
+                    class="btn btn-primary btn-sm" :disabled="savingField.hostname">
+                    {{ savingField.hostname ? 'Saving…' : 'Save' }}
+                  </button>
+                </div>
+              </div>
+
+              <!-- Cores -->
+              <div class="inline-edit-row">
+                <span class="inline-edit-label">CPUs (cores)</span>
+                <div class="inline-edit-control">
+                  <input v-model.number="inlineEdit.cores" type="number" min="1" class="form-control form-control-sm" style="width:90px;" />
+                  <button @click="saveInlineField('cores', inlineEdit.cores)"
+                    class="btn btn-primary btn-sm" :disabled="savingField.cores">
+                    {{ savingField.cores ? 'Saving…' : 'Save' }}
+                  </button>
+                </div>
+              </div>
+
+              <!-- Memory -->
+              <div class="inline-edit-row">
+                <span class="inline-edit-label">Memory (MB)</span>
+                <div class="inline-edit-control">
+                  <input v-model.number="inlineEdit.memory" type="number" min="16" step="16" class="form-control form-control-sm" style="width:110px;" />
+                  <button @click="saveInlineField('memory', inlineEdit.memory)"
+                    class="btn btn-primary btn-sm" :disabled="savingField.memory">
+                    {{ savingField.memory ? 'Saving…' : 'Save' }}
+                  </button>
+                </div>
+              </div>
+
+              <!-- Swap -->
+              <div class="inline-edit-row">
+                <span class="inline-edit-label">Swap (MB)</span>
+                <div class="inline-edit-control">
+                  <input v-model.number="inlineEdit.swap" type="number" min="0" step="16" class="form-control form-control-sm" style="width:110px;" />
+                  <button @click="saveInlineField('swap', inlineEdit.swap)"
+                    class="btn btn-primary btn-sm" :disabled="savingField.swap">
+                    {{ savingField.swap ? 'Saving…' : 'Save' }}
+                  </button>
+                </div>
+              </div>
+
+              <!-- Disk size / rootfs -->
+              <div class="inline-edit-row">
+                <span class="inline-edit-label">Disk (rootfs)</span>
+                <div class="inline-edit-control">
+                  <span class="config-value-inline text-sm">{{ config.rootfs || '—' }}</span>
+                  <button @click="openResizeModal" class="btn btn-outline btn-sm">Resize</button>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+
+        <!-- Full config edit (existing) -->
         <div class="card">
           <div class="card-header">
             <h3>Container Configuration</h3>
             <div class="flex gap-1">
-              <button v-if="!editMode" @click="enterEditMode" class="btn btn-outline btn-sm">Edit</button>
+              <button v-if="!editMode" @click="enterEditMode" class="btn btn-outline btn-sm">Edit All</button>
               <template v-else>
                 <button @click="saveConfig" class="btn btn-primary btn-sm" :disabled="savingConfig">
                   {{ savingConfig ? 'Saving...' : 'Save' }}
@@ -189,6 +257,109 @@
                 <span class="raw-config-key">{{ key }}</span>
                 <span class="raw-config-val">{{ typeof val === 'object' ? JSON.stringify(val) : val }}</span>
               </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Limits Tab -->
+      <div v-if="activeTab === 'limits'">
+        <div class="card">
+          <div class="card-header"><h3>Resource Limits</h3></div>
+          <div class="card-body">
+            <div class="limits-grid">
+
+              <!-- CPU Weight -->
+              <div class="limit-row">
+                <div class="limit-label-col">
+                  <span class="limit-label">CPU Weight</span>
+                  <span class="limit-hint">cpuunits — relative scheduling weight (8–512)</span>
+                </div>
+                <div class="limit-control-col">
+                  <div class="slider-row">
+                    <input
+                      v-model.number="limitsEdit.cpuunits"
+                      type="range" min="8" max="512" step="8"
+                      class="range-slider"
+                    />
+                    <input
+                      v-model.number="limitsEdit.cpuunits"
+                      type="number" min="8" max="512" step="8"
+                      class="form-control form-control-sm"
+                      style="width:80px;"
+                    />
+                  </div>
+                  <button @click="saveLimitField('cpuunits', limitsEdit.cpuunits)"
+                    class="btn btn-primary btn-sm" :disabled="savingLimit.cpuunits">
+                    {{ savingLimit.cpuunits ? 'Saving…' : 'Save' }}
+                  </button>
+                </div>
+              </div>
+
+              <!-- CPU Limit -->
+              <div class="limit-row">
+                <div class="limit-label-col">
+                  <span class="limit-label">CPU Limit</span>
+                  <span class="limit-hint">cpulimit — max CPU usage (0 = unlimited, e.g. 1.5)</span>
+                </div>
+                <div class="limit-control-col">
+                  <input
+                    v-model.number="limitsEdit.cpulimit"
+                    type="number" min="0" max="128" step="0.5"
+                    class="form-control form-control-sm"
+                    style="width:110px;"
+                    placeholder="0"
+                  />
+                  <button @click="saveLimitField('cpulimit', limitsEdit.cpulimit)"
+                    class="btn btn-primary btn-sm" :disabled="savingLimit.cpulimit">
+                    {{ savingLimit.cpulimit ? 'Saving…' : 'Save' }}
+                  </button>
+                </div>
+              </div>
+
+              <!-- Memory Swap -->
+              <div class="limit-row">
+                <div class="limit-label-col">
+                  <span class="limit-label">Memory Swap (MB)</span>
+                  <span class="limit-hint">swap — allocated swap space</span>
+                </div>
+                <div class="limit-control-col">
+                  <input
+                    v-model.number="limitsEdit.swap"
+                    type="number" min="0" step="16"
+                    class="form-control form-control-sm"
+                    style="width:110px;"
+                  />
+                  <button @click="saveLimitField('swap', limitsEdit.swap)"
+                    class="btn btn-primary btn-sm" :disabled="savingLimit.swap">
+                    {{ savingLimit.swap ? 'Saving…' : 'Save' }}
+                  </button>
+                </div>
+              </div>
+
+              <!-- Disk Quota -->
+              <div class="limit-row">
+                <div class="limit-label-col">
+                  <span class="limit-label">Disk Quota</span>
+                  <span class="limit-hint">quota — enable/disable disk quota enforcement</span>
+                </div>
+                <div class="limit-control-col">
+                  <label class="toggle-label">
+                    <input
+                      v-model.number="limitsEdit.quota"
+                      type="checkbox"
+                      :true-value="1"
+                      :false-value="0"
+                    />
+                    <span>{{ limitsEdit.quota ? 'Enabled' : 'Disabled' }}</span>
+                  </label>
+                  <button @click="saveLimitField('quota', limitsEdit.quota)"
+                    class="btn btn-primary btn-sm" :disabled="savingLimit.quota">
+                    {{ savingLimit.quota ? 'Saving…' : 'Save' }}
+                  </button>
+                </div>
+              </div>
+
             </div>
           </div>
         </div>
@@ -385,11 +556,44 @@
         </form>
       </div>
     </div>
+
+    <!-- Resize Disk Modal -->
+    <div v-if="showResizeModal" class="modal" @click="showResizeModal = false">
+      <div class="modal-content" @click.stop>
+        <div class="modal-header">
+          <h3>Resize rootfs — CT{{ vmid }}</h3>
+          <button @click="showResizeModal = false" class="btn-close">×</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label">Current size</label>
+            <div class="config-value text-sm">{{ config.rootfs || '—' }}</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Additional space (e.g. +5G, +500M)</label>
+            <input
+              v-model="resizeAmount"
+              class="form-control"
+              placeholder="+5G"
+              pattern="^\+[0-9]+[KMGT]$"
+              title="Must start with + followed by a number and unit (K, M, G, T)"
+            />
+            <div class="text-muted text-sm mt-1">Use format: +5G, +500M, +1T — must be an increase</div>
+          </div>
+          <div class="flex gap-1 mt-2">
+            <button @click="submitResize" class="btn btn-primary" :disabled="resizing || !resizeAmount">
+              {{ resizing ? 'Resizing…' : 'Resize' }}
+            </button>
+            <button @click="showResizeModal = false" class="btn btn-outline">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useToast } from 'vue-toastification'
 import api from '@/services/api'
@@ -430,11 +634,25 @@ const rrdData = ref([])
 const loadingRrd = ref(false)
 const rrdTimeframe = ref('hour')
 
+// Inline edit state (Config tab)
+const inlineEdit = ref({ hostname: '', cores: 1, memory: 512, swap: 0 })
+const savingField = ref({ hostname: false, cores: false, memory: false, swap: false })
+
+// Limits tab state
+const limitsEdit = ref({ cpuunits: 1024, cpulimit: 0, swap: 0, quota: 0 })
+const savingLimit = ref({ cpuunits: false, cpulimit: false, swap: false, quota: false })
+
+// Resize disk modal state
+const showResizeModal = ref(false)
+const resizeAmount = ref('')
+const resizing = ref(false)
+
 let pollInterval = null
 
 const tabs = [
   { id: 'overview', label: 'Overview' },
   { id: 'config', label: 'Config' },
+  { id: 'limits', label: 'Limits' },
   { id: 'snapshots', label: 'Snapshots' },
   { id: 'performance', label: 'Performance' },
   { id: 'terminal', label: 'Terminal' },
@@ -459,6 +677,22 @@ const parsedNets = computed(() => {
     })
 })
 
+// Sync inlineEdit and limitsEdit when config loads
+const syncEditStates = () => {
+  inlineEdit.value = {
+    hostname: config.value.hostname || '',
+    cores: config.value.cores || config.value.cpus || 1,
+    memory: config.value.memory || 512,
+    swap: config.value.swap !== undefined ? config.value.swap : 0,
+  }
+  limitsEdit.value = {
+    cpuunits: config.value.cpuunits !== undefined ? config.value.cpuunits : 1024,
+    cpulimit: config.value.cpulimit !== undefined ? config.value.cpulimit : 0,
+    swap: config.value.swap !== undefined ? config.value.swap : 0,
+    quota: config.value.quota !== undefined ? config.value.quota : 0,
+  }
+}
+
 const fetchAll = async () => {
   loading.value = true
   try {
@@ -469,6 +703,7 @@ const fetchAll = async () => {
     currentStats.value = statusRes.data || {}
     status.value = currentStats.value.status || 'unknown'
     config.value = configRes.data || {}
+    syncEditStates()
   } catch (error) {
     console.error('Failed to fetch container info:', error)
     toast.error('Failed to load container information')
@@ -502,7 +737,6 @@ const fetchSnapshots = async () => {
 // RRD computed helpers
 const rrdPoint = computed(() => {
   if (!rrdData.value || rrdData.value.length === 0) return null
-  // Find the last non-null data point
   for (let i = rrdData.value.length - 1; i >= 0; i--) {
     const p = rrdData.value[i]
     if (p && (p.cpu != null || p.mem != null)) return p
@@ -556,6 +790,36 @@ const action = async (act) => {
   }
 }
 
+// Inline single-field save (Config tab)
+const saveInlineField = async (field, value) => {
+  savingField.value[field] = true
+  try {
+    await api.pveNode.updateContainerConfig(hostId.value, node.value, vmid.value, { [field]: value })
+    toast.success(`${field} updated`)
+    await fetchAll()
+  } catch (error) {
+    console.error(`Failed to save ${field}:`, error)
+    toast.error(`Failed to save ${field}`)
+  } finally {
+    savingField.value[field] = false
+  }
+}
+
+// Limits tab single-field save
+const saveLimitField = async (field, value) => {
+  savingLimit.value[field] = true
+  try {
+    await api.pveNode.updateContainerConfig(hostId.value, node.value, vmid.value, { [field]: value })
+    toast.success(`${field} updated`)
+    await fetchAll()
+  } catch (error) {
+    console.error(`Failed to save ${field}:`, error)
+    toast.error(`Failed to save ${field}`)
+  } finally {
+    savingLimit.value[field] = false
+  }
+}
+
 const enterEditMode = () => {
   editConfig.value = {
     hostname: config.value.hostname || '',
@@ -589,6 +853,35 @@ const saveConfig = async () => {
     toast.error('Failed to save configuration')
   } finally {
     savingConfig.value = false
+  }
+}
+
+// Resize disk modal
+const openResizeModal = () => {
+  resizeAmount.value = ''
+  showResizeModal.value = true
+}
+
+const submitResize = async () => {
+  if (!resizeAmount.value) return
+  if (!resizeAmount.value.startsWith('+')) {
+    toast.error('Size must start with + (e.g. +5G)')
+    return
+  }
+  resizing.value = true
+  try {
+    await api.pveNode.resizeLxcDisk(hostId.value, node.value, vmid.value, {
+      disk: 'rootfs',
+      size: resizeAmount.value,
+    })
+    toast.success(`Disk resize to ${resizeAmount.value} initiated`)
+    showResizeModal.value = false
+    await fetchAll()
+  } catch (error) {
+    console.error('Failed to resize disk:', error)
+    toast.error('Failed to resize disk')
+  } finally {
+    resizing.value = false
   }
 }
 
@@ -689,7 +982,6 @@ const formatRateBytes = (val) => {
 const openCloneModal = async () => {
   cloneForm.value = { newid: null, hostname: '', target: '', full: true, storage: '' }
   showCloneModal.value = true
-  // Load next ID and cluster nodes in parallel
   loadingNextId.value = true
   try {
     const [nextIdRes, clusterRes] = await Promise.all([
@@ -697,7 +989,6 @@ const openCloneModal = async () => {
       api.pveNode.clusterStatus(hostId.value),
     ])
     cloneForm.value.newid = nextIdRes.data
-    // clusterStatus returns mixed entries (type=cluster + type=node); keep only nodes
     const allNodes = (clusterRes.data || []).filter(e => e.type === 'node')
     pveNodes.value = allNodes.filter(n => n.name !== node.value)
   } catch (e) {
@@ -876,6 +1167,125 @@ onUnmounted(() => {
   font-weight: 600;
 }
 
+/* Inline edit (Config tab) */
+.inline-edit-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.inline-edit-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.625rem 0;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.inline-edit-row:last-child {
+  border-bottom: none;
+}
+
+.inline-edit-label {
+  width: 160px;
+  flex-shrink: 0;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.inline-edit-control {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1;
+}
+
+.config-value-inline {
+  color: var(--text-primary);
+  font-family: monospace;
+  background: var(--bg-tertiary, var(--background, #1a1a2e));
+  border: 1px solid var(--border-color);
+  border-radius: 0.375rem;
+  padding: 0.35rem 0.6rem;
+  flex: 1;
+  min-width: 0;
+  word-break: break-all;
+}
+
+.form-control-sm {
+  padding: 0.3rem 0.6rem;
+  font-size: 0.875rem;
+}
+
+/* Limits tab */
+.limits-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.limit-row {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 1rem 0;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.limit-row:last-child {
+  border-bottom: none;
+}
+
+.limit-label-col {
+  width: 220px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.limit-label {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.limit-hint {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.limit-control-col {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex: 1;
+  flex-wrap: wrap;
+}
+
+.slider-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex: 1;
+}
+
+.range-slider {
+  flex: 1;
+  accent-color: var(--primary-color);
+  cursor: pointer;
+}
+
+.toggle-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+/* Full config edit */
 .config-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -884,6 +1294,10 @@ onUnmounted(() => {
 
 @media (max-width: 700px) {
   .config-grid { grid-template-columns: 1fr; }
+  .inline-edit-row { flex-direction: column; align-items: flex-start; }
+  .inline-edit-label { width: 100%; }
+  .limit-row { flex-direction: column; align-items: flex-start; }
+  .limit-label-col { width: 100%; }
 }
 
 .config-value {

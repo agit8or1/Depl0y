@@ -194,10 +194,19 @@
         <button @click="allSearch = ''; allStatusFilter = ''" class="btn btn-sm btn-secondary mt-1">Clear Filters</button>
       </div>
 
-      <div v-else class="table-container">
+      <div v-else class="table-container" style="position:relative;">
         <table class="table">
           <thead>
             <tr>
+              <th class="cb-col">
+                <input
+                  type="checkbox"
+                  :checked="allPageSelected"
+                  :indeterminate.prop="somePageSelected && !allPageSelected"
+                  @change="toggleSelectAll"
+                  title="Select all visible VMs"
+                />
+              </th>
               <th @click="allSortBy('vmid')" class="sortable">
                 VMID
                 <span class="sort-indicator" v-if="allSortField === 'vmid'">{{ allSortDirection === 'asc' ? '▲' : '▼' }}</span>
@@ -224,7 +233,15 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-for="vm in filteredAllVMs" :key="`${vm.hostId}-${vm.node}-${vm.vmid}`">
+            <tr v-for="vm in filteredAllVMs" :key="`${vm.hostId}-${vm.node}-${vm.vmid}`"
+              :class="{ 'row-selected': selectedVmKeys.has(vmKey(vm)) }">
+              <td class="cb-col">
+                <input
+                  type="checkbox"
+                  :checked="selectedVmKeys.has(vmKey(vm))"
+                  @change="toggleSelectVm(vm)"
+                />
+              </td>
               <td><strong>{{ vm.vmid }}</strong></td>
               <td>
                 <a
@@ -289,6 +306,33 @@
             </tr>
           </tbody>
         </table>
+
+        <!-- Bulk Action Bar -->
+        <div v-if="selectedVmKeys.size > 0" class="bulk-action-bar">
+          <span class="bulk-count">{{ selectedVmKeys.size }} VM{{ selectedVmKeys.size !== 1 ? 's' : '' }} selected</span>
+          <button
+            class="btn btn-primary btn-sm"
+            @click="bulkAction('start')"
+            :disabled="bulkRunning"
+          >
+            Start Selected ({{ selectedVmKeys.size }})
+          </button>
+          <button
+            class="btn btn-warning btn-sm"
+            @click="bulkAction('shutdown')"
+            :disabled="bulkRunning"
+          >
+            Shutdown Selected ({{ selectedVmKeys.size }})
+          </button>
+          <button
+            class="btn btn-danger btn-sm"
+            @click="bulkAction('stop')"
+            :disabled="bulkRunning"
+          >
+            Stop Selected ({{ selectedVmKeys.size }})
+          </button>
+          <a href="#" class="bulk-clear-link" @click.prevent="clearSelection">Clear Selection</a>
+        </div>
       </div>
     </div>
 
@@ -670,6 +714,79 @@ export default {
       }
     }
 
+    // ── Bulk selection ──────────────────────────────────────────────────────
+    const selectedVmKeys = ref(new Set())
+    const bulkRunning = ref(false)
+
+    const vmKey = (vm) => `${vm.hostId}:${vm.node}:${vm.vmid}`
+
+    const toggleSelectVm = (vm) => {
+      const key = vmKey(vm)
+      const newSet = new Set(selectedVmKeys.value)
+      if (newSet.has(key)) {
+        newSet.delete(key)
+      } else {
+        newSet.add(key)
+      }
+      selectedVmKeys.value = newSet
+    }
+
+    const allPageSelected = computed(() =>
+      filteredAllVMs.value.length > 0 &&
+      filteredAllVMs.value.every(vm => selectedVmKeys.value.has(vmKey(vm)))
+    )
+
+    const somePageSelected = computed(() =>
+      filteredAllVMs.value.some(vm => selectedVmKeys.value.has(vmKey(vm)))
+    )
+
+    const toggleSelectAll = () => {
+      if (allPageSelected.value) {
+        // deselect all visible
+        const newSet = new Set(selectedVmKeys.value)
+        filteredAllVMs.value.forEach(vm => newSet.delete(vmKey(vm)))
+        selectedVmKeys.value = newSet
+      } else {
+        // select all visible
+        const newSet = new Set(selectedVmKeys.value)
+        filteredAllVMs.value.forEach(vm => newSet.add(vmKey(vm)))
+        selectedVmKeys.value = newSet
+      }
+    }
+
+    const clearSelection = () => {
+      selectedVmKeys.value = new Set()
+    }
+
+    const bulkAction = async (action) => {
+      const vmsToAct = allVMs.value.filter(vm => selectedVmKeys.value.has(vmKey(vm)))
+      if (vmsToAct.length === 0) return
+
+      const actionFn = {
+        start: (vm) => api.pveVm.start(vm.hostId, vm.node, vm.vmid),
+        shutdown: (vm) => api.pveVm.shutdown(vm.hostId, vm.node, vm.vmid),
+        stop: (vm) => api.pveVm.stop(vm.hostId, vm.node, vm.vmid),
+      }[action]
+
+      bulkRunning.value = true
+      for (let i = 0; i < vmsToAct.length; i++) {
+        const vm = vmsToAct[i]
+        toast.info(`${action.charAt(0).toUpperCase() + action.slice(1)}ing VM ${vm.vmid}... (${i + 1}/${vmsToAct.length})`)
+        try {
+          await actionFn(vm)
+        } catch (err) {
+          console.error(`Bulk ${action} failed for VM ${vm.vmid}:`, err)
+          toast.error(`Failed to ${action} VM ${vm.vmid}`)
+        }
+        if (i < vmsToAct.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 300))
+        }
+      }
+      bulkRunning.value = false
+      clearSelection()
+      setTimeout(() => fetchAllProxmoxVMs(), 2000)
+    }
+
     // ── Tags helpers ────────────────────────────────────────────────────────
     const parseTags = (tagsStr) => {
       if (!tagsStr) return []
@@ -814,6 +931,16 @@ export default {
       parseTags,
       tagColor,
       anyVmHasTags,
+      // bulk selection
+      selectedVmKeys,
+      bulkRunning,
+      vmKey,
+      toggleSelectVm,
+      allPageSelected,
+      somePageSelected,
+      toggleSelectAll,
+      clearSelection,
+      bulkAction,
     }
   }
 }
@@ -1032,6 +1159,54 @@ export default {
   font-size: 0.75rem;
   color: var(--text-muted, #64748b);
   margin-right: 0.5rem;
+}
+
+/* ── Checkbox column ─────────────────────────────────────────────────────── */
+.cb-col {
+  width: 2rem;
+  text-align: center;
+  padding-left: 0.5rem;
+  padding-right: 0.25rem;
+}
+
+/* ── Selected row highlight ───────────────────────────────────────────────── */
+.row-selected td {
+  background-color: rgba(59, 130, 246, 0.07);
+}
+
+/* ── Bulk action bar ─────────────────────────────────────────────────────── */
+.bulk-action-bar {
+  position: sticky;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  padding: 0.6rem 1rem;
+  background: var(--surface);
+  border-top: 2px solid var(--primary-color, #3b82f6);
+  box-shadow: 0 -4px 16px rgba(0,0,0,0.15);
+  z-index: 10;
+}
+
+.bulk-count {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-right: 0.25rem;
+}
+
+.bulk-clear-link {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  text-decoration: underline;
+  margin-left: auto;
+}
+
+.bulk-clear-link:hover {
+  color: var(--text-primary);
 }
 
 /* ── VM Tags ──────────────────────────────────────────────────────────────── */

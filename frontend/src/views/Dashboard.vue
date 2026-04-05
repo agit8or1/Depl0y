@@ -139,8 +139,40 @@
           <router-link to="/deploy" class="action-button">
             <span class="action-icon">➕</span>
             <div>
-              <p class="action-title">Deploy New VM</p>
+              <p class="action-title">Deploy VM</p>
               <p class="action-desc">Create and deploy a new virtual machine</p>
+            </div>
+          </router-link>
+
+          <router-link to="/create-lxc" class="action-button">
+            <span class="action-icon">📦</span>
+            <div>
+              <p class="action-title">Create LXC</p>
+              <p class="action-desc">Provision a new LXC container</p>
+            </div>
+          </router-link>
+
+          <router-link to="/images" class="action-button">
+            <span class="action-icon">🖼️</span>
+            <div>
+              <p class="action-title">Browse Images</p>
+              <p class="action-desc">View and manage disk images</p>
+            </div>
+          </router-link>
+
+          <router-link to="/tasks" class="action-button">
+            <span class="action-icon">📋</span>
+            <div>
+              <p class="action-title">View Tasks</p>
+              <p class="action-desc">Monitor running and recent tasks</p>
+            </div>
+          </router-link>
+
+          <router-link to="/settings" class="action-button">
+            <span class="action-icon">🔄</span>
+            <div>
+              <p class="action-title">Check Updates</p>
+              <p class="action-desc">Review and apply system updates</p>
             </div>
           </router-link>
 
@@ -750,8 +782,8 @@ export default {
 }
 
 .quick-actions {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
   gap: 0.5rem;
 }
 

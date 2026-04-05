@@ -153,7 +153,84 @@
         </div>
       </div>
 
-      <!-- ── Section 3: Resource distribution table ── -->
+      <!-- ── Section 3: Top VMs by Resource Usage ── -->
+      <div class="card mb-2">
+        <div class="card-header">
+          <h3>Top VMs by Resource Usage</h3>
+          <span v-if="!topVmsLoading" class="top-vms-refresh-label">
+            Auto-refresh in {{ topVmsCountdown }}s
+          </span>
+          <button @click="fetchTopVms" class="btn btn-outline btn-sm" :disabled="topVmsLoading">
+            {{ topVmsLoading ? 'Loading…' : 'Refresh' }}
+          </button>
+        </div>
+
+        <div v-if="topVmsLoading && topVms.length === 0" class="loading-spinner"></div>
+
+        <div v-else-if="topVms.length === 0" class="text-center text-muted p-3">
+          No running VMs found across all hosts.
+        </div>
+
+        <div v-else class="table-container">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>VMID</th>
+                <th>Node</th>
+                <th>Host</th>
+                <th>CPU %</th>
+                <th>MEM %</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="vm in topVms"
+                :key="`${vm._hostId}-${vm.node}-${vm.vmid}`"
+                class="resource-row-link"
+                @click="navigateToResource(vm)"
+              >
+                <td>{{ vm.name || '—' }}</td>
+                <td><strong>{{ vm.vmid }}</strong></td>
+                <td>{{ vm.node || '—' }}</td>
+                <td class="text-sm text-muted">{{ vm._hostName || '—' }}</td>
+                <td>
+                  <div class="top-vm-bar-wrap">
+                    <div class="top-vm-bar">
+                      <div
+                        class="top-vm-bar-fill"
+                        :class="topVmCpuClass(vm.cpu)"
+                        :style="{ width: topVmCpuPct(vm.cpu) + '%' }"
+                      ></div>
+                    </div>
+                    <span class="top-vm-bar-label">{{ topVmCpuPct(vm.cpu) }}%</span>
+                  </div>
+                </td>
+                <td>
+                  <div class="top-vm-bar-wrap">
+                    <div class="top-vm-bar">
+                      <div
+                        class="top-vm-bar-fill"
+                        :class="topVmMemClass(vm.mem, vm.maxmem)"
+                        :style="{ width: topVmMemPct(vm.mem, vm.maxmem) + '%' }"
+                      ></div>
+                    </div>
+                    <span class="top-vm-bar-label">{{ topVmMemPct(vm.mem, vm.maxmem) }}%</span>
+                  </div>
+                </td>
+                <td>
+                  <span :class="['badge', vm.status === 'running' ? 'badge-success' : 'badge-danger']">
+                    {{ vm.status || '—' }}
+                  </span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ── Section 4: Resource distribution table ── -->
       <div class="card">
         <div class="card-header">
           <h3>All Resources</h3>
@@ -236,7 +313,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useToast } from 'vue-toastification'
 import api from '@/services/api'
@@ -250,6 +327,13 @@ const hosts = ref([])
 const allResources = ref([])  // flat list: each item has _hostId, _hostName injected
 const loading = ref(false)
 const loadError = ref(false)
+
+// Top VMs state
+const topVms = ref([])
+const topVmsLoading = ref(false)
+const topVmsCountdown = ref(30)
+let topVmsInterval = null
+let topVmsTickInterval = null
 
 // Filters
 const filterHost = ref('')
@@ -486,7 +570,88 @@ async function refresh() {
   await fetchAll()
 }
 
-onMounted(fetchAll)
+// ── Top VMs helpers ─────────────────────────────────────────────────────────
+function topVmCpuPct(cpu) {
+  if (cpu == null) return 0
+  return Math.round(cpu * 100)
+}
+function topVmCpuClass(cpu) {
+  const pct = topVmCpuPct(cpu)
+  if (pct >= 80) return 'fill--danger'
+  if (pct >= 60) return 'fill--warning'
+  return 'fill--ok'
+}
+function topVmMemPct(mem, maxmem) {
+  if (!mem || !maxmem) return 0
+  return Math.round((mem / maxmem) * 100)
+}
+function topVmMemClass(mem, maxmem) {
+  const pct = topVmMemPct(mem, maxmem)
+  if (pct >= 80) return 'fill--danger'
+  if (pct >= 60) return 'fill--warning'
+  return 'fill--ok'
+}
+
+async function fetchTopVms() {
+  topVmsLoading.value = true
+  topVmsCountdown.value = 30
+  try {
+    // Use already-loaded hosts if available, otherwise fetch
+    const hostList = hosts.value.length > 0 ? hosts.value : (await api.proxmox.listHosts()).data || []
+
+    const results = await Promise.allSettled(
+      hostList.map(host =>
+        api.pveNode.clusterResources(host.id, 'vm').then(res => ({
+          hostId: host.id,
+          hostName: host.name || host.hostname || `Host ${host.id}`,
+          resources: res.data || [],
+        }))
+      )
+    )
+
+    const vms = []
+    for (const result of results) {
+      if (result.status === 'fulfilled') {
+        const { hostId, hostName, resources } = result.value
+        for (const r of resources) {
+          if (r.type === 'qemu') {
+            vms.push({ ...r, _hostId: hostId, _hostName: hostName })
+          }
+        }
+      }
+    }
+
+    // Sort by CPU usage descending, take top 10
+    vms.sort((a, b) => (b.cpu || 0) - (a.cpu || 0))
+    topVms.value = vms.slice(0, 10)
+  } catch (err) {
+    console.error('Failed to fetch top VMs:', err)
+  } finally {
+    topVmsLoading.value = false
+  }
+}
+
+onMounted(() => {
+  fetchAll()
+  fetchTopVms()
+
+  // Auto-refresh Top VMs every 30 seconds
+  topVmsInterval = setInterval(() => {
+    if (document.visibilityState !== 'hidden') fetchTopVms()
+    topVmsCountdown.value = 30
+  }, 30000)
+
+  topVmsTickInterval = setInterval(() => {
+    if (document.visibilityState !== 'hidden' && topVmsCountdown.value > 0) {
+      topVmsCountdown.value--
+    }
+  }, 1000)
+})
+
+onUnmounted(() => {
+  clearInterval(topVmsInterval)
+  clearInterval(topVmsTickInterval)
+})
 </script>
 
 <style scoped>
@@ -735,6 +900,43 @@ onMounted(fetchAll)
 
 .resource-row-link:hover {
   background: var(--bg-secondary);
+}
+
+/* ── Top VMs table ───────────────────────────────────────────────────────── */
+.top-vms-refresh-label {
+  font-size: 0.75rem;
+  color: var(--text-muted, #888);
+  margin-right: 0.5rem;
+}
+
+.top-vm-bar-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 100px;
+}
+
+.top-vm-bar {
+  flex: 1;
+  height: 6px;
+  background: var(--border-color);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.top-vm-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.35s ease;
+}
+
+.top-vm-bar-label {
+  font-size: 0.72rem;
+  font-family: monospace;
+  color: var(--text-primary);
+  white-space: nowrap;
+  min-width: 2.5rem;
+  text-align: right;
 }
 
 /* ── Utilities ───────────────────────────────────────────────────────────── */

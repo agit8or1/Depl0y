@@ -219,6 +219,7 @@
                 <span class="sort-indicator" v-if="allSortField === 'hostName'">{{ allSortDirection === 'asc' ? '▲' : '▼' }}</span>
               </th>
               <th>CPU / Memory</th>
+              <th v-if="anyVmHasTags">Tags</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -245,6 +246,17 @@
               <td class="text-sm">{{ vm.hostName }}</td>
               <td class="text-sm">
                 {{ vm.cpus || '?' }} CPU / {{ formatBytes(vm.maxmem) }} RAM
+              </td>
+              <td v-if="anyVmHasTags">
+                <div class="vm-tags">
+                  <span
+                    v-for="tag in parseTags(vm.tags)"
+                    :key="tag"
+                    class="vm-tag-pill"
+                    :style="{ backgroundColor: tagColor(tag) }"
+                  >{{ tag }}</span>
+                  <span v-if="!parseTags(vm.tags).length" class="text-muted text-sm">—</span>
+                </div>
               </td>
               <td>
                 <div class="flex gap-1">
@@ -554,6 +566,7 @@ export default {
                   cpus: item.cpus,
                   maxmem: item.maxmem,
                   mem: item.mem,
+                  tags: item.tags || '',
                   _busy: false,
                 })
               })
@@ -656,6 +669,26 @@ export default {
         vm._busy = false
       }
     }
+
+    // ── Tags helpers ────────────────────────────────────────────────────────
+    const parseTags = (tagsStr) => {
+      if (!tagsStr) return []
+      // PVE tags are semicolon-separated
+      return tagsStr.split(';').map(t => t.trim()).filter(Boolean)
+    }
+
+    // Stable color per tag string (based on hash)
+    const tagColorPalette = [
+      '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6',
+      '#ef4444', '#06b6d4', '#84cc16', '#f97316',
+    ]
+    const tagColor = (tag) => {
+      let hash = 0
+      for (let i = 0; i < tag.length; i++) hash = tag.charCodeAt(i) + ((hash << 5) - hash)
+      return tagColorPalette[Math.abs(hash) % tagColorPalette.length]
+    }
+
+    const anyVmHasTags = computed(() => allVMs.value.some(vm => vm.tags))
 
     // ── Shared helpers ─────────────────────────────────────────────────────
     const formatBytes = (bytes) => {
@@ -777,6 +810,10 @@ export default {
       // shared
       formatBytes,
       getStatusBadgeClass,
+      // tags
+      parseTags,
+      tagColor,
+      anyVmHasTags,
     }
   }
 }
@@ -995,5 +1032,24 @@ export default {
   font-size: 0.75rem;
   color: var(--text-muted, #64748b);
   margin-right: 0.5rem;
+}
+
+/* ── VM Tags ──────────────────────────────────────────────────────────────── */
+.vm-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.vm-tag-pill {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-weight: 600;
+  padding: 0.1rem 0.4rem;
+  border-radius: 9999px;
+  color: #fff;
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+  text-transform: lowercase;
 }
 </style>

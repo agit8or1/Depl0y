@@ -159,8 +159,31 @@
                         ></div>
                       </div>
                       <span class="stat-bar-label">
-                        {{ formatGB(getNodeStat(datacenter.id, node.node_name).memory?.used) }} /
-                        {{ formatGB(getNodeStat(datacenter.id, node.node_name).memory?.total) }} GB
+                        {{ ramPct(getNodeStat(datacenter.id, node.node_name).memory) }}%
+                        ({{ formatGB(getNodeStat(datacenter.id, node.node_name).memory?.used) }} /
+                        {{ formatGB(getNodeStat(datacenter.id, node.node_name).memory?.total) }} GB)
+                      </span>
+                    </div>
+                  </template>
+                  <span v-else class="stat-skeleton">—</span>
+                </div>
+
+                <!-- Disk usage bar -->
+                <div class="live-stat-row">
+                  <span class="live-stat-label">Live Disk</span>
+                  <template v-if="getNodeStat(datacenter.id, node.node_name)">
+                    <div class="stat-bar-wrap">
+                      <div class="stat-bar">
+                        <div
+                          class="stat-bar-fill"
+                          :class="diskBarClass(getNodeStat(datacenter.id, node.node_name).rootfs)"
+                          :style="{ width: diskPct(getNodeStat(datacenter.id, node.node_name).rootfs) + '%' }"
+                        ></div>
+                      </div>
+                      <span class="stat-bar-label">
+                        {{ diskPct(getNodeStat(datacenter.id, node.node_name).rootfs) }}%
+                        ({{ formatGB(getNodeStat(datacenter.id, node.node_name).rootfs?.used) }} /
+                        {{ formatGB(getNodeStat(datacenter.id, node.node_name).rootfs?.total) }} GB)
                       </span>
                     </div>
                   </template>
@@ -559,6 +582,7 @@ export default {
             [key]: {
               cpu: status?.cpu ?? null,
               memory: status?.memory ?? null,
+              rootfs: status?.rootfs ?? null,
               uptime: status?.uptime ?? null,
               vmCount: Array.isArray(vms) ? vms.filter(v => v.type === 'qemu' || !v.type).length : 0,
               lxcCount: Array.isArray(lxcs) ? lxcs.length : 0,
@@ -597,8 +621,8 @@ export default {
     }
     const cpuBarClass = (cpu) => {
       const pct = cpuPct(cpu)
-      if (pct >= 90) return 'bar-danger'
-      if (pct >= 70) return 'bar-warning'
+      if (pct >= 80) return 'bar-danger'
+      if (pct >= 60) return 'bar-warning'
       return 'bar-success'
     }
 
@@ -609,10 +633,23 @@ export default {
     }
     const ramBarClass = (memory) => {
       const pct = ramPct(memory)
-      if (pct >= 90) return 'bar-danger'
-      if (pct >= 70) return 'bar-warning'
+      if (pct >= 80) return 'bar-danger'
+      if (pct >= 60) return 'bar-warning'
       return 'bar-success'
     }
+
+    // Disk helpers
+    const diskPct = (rootfs) => {
+      if (!rootfs || !rootfs.total) return 0
+      return Math.round((rootfs.used / rootfs.total) * 100)
+    }
+    const diskBarClass = (rootfs) => {
+      const pct = diskPct(rootfs)
+      if (pct >= 80) return 'bar-danger'
+      if (pct >= 60) return 'bar-warning'
+      return 'bar-success'
+    }
+
     const formatGB = (bytes) => {
       if (!bytes) return '0'
       return (bytes / (1024 * 1024 * 1024)).toFixed(1)
@@ -724,6 +761,8 @@ export default {
       cpuBarClass,
       ramPct,
       ramBarClass,
+      diskPct,
+      diskBarClass,
     }
   }
 }

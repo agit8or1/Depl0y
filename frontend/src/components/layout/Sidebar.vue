@@ -101,6 +101,21 @@
         <span>Security</span>
       </router-link>
 
+      <router-link v-if="isAdmin" to="/audit-log" class="nav-item">
+        <span class="icon">🔍</span>
+        <span>Audit Log</span>
+      </router-link>
+
+      <router-link v-if="isAdmin" to="/system-logs" class="nav-item">
+        <span class="icon">📜</span>
+        <span>System Logs</span>
+      </router-link>
+
+      <router-link v-if="isAdmin" to="/system-health" class="nav-item">
+        <span class="icon">💚</span>
+        <span>System Health</span>
+      </router-link>
+
       <router-link v-if="isAdmin && linuxAgentEnabled" to="/linux-vms" class="nav-item">
         <span class="icon">🛡️</span>
         <span>Linux VM Security</span>

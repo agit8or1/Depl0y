@@ -205,6 +205,12 @@ const router = createRouter({
       meta: { requiresAuth: true, requiresAdmin: true }
     },
     {
+      path: '/audit-log',
+      name: 'AuditLog',
+      component: () => import('@/views/AuditLog.vue'),
+      meta: { requiresAuth: true, requiresAdmin: true }
+    },
+    {
       path: '/profile',
       name: 'Profile',
       component: () => import('@/views/Profile.vue'),
@@ -299,6 +305,18 @@ const router = createRouter({
       name: 'CreatePVEVM',
       component: () => import('@/views/CreatePVEVM.vue'),
       meta: { requiresAuth: true, requiresOperator: true }
+    },
+    {
+      path: '/system-logs',
+      name: 'SystemLogs',
+      component: () => import('@/views/SystemLogs.vue'),
+      meta: { requiresAuth: true, requiresAdmin: true }
+    },
+    {
+      path: '/system-health',
+      name: 'SystemHealth',
+      component: () => import('@/views/SystemHealth.vue'),
+      meta: { requiresAuth: true, requiresAdmin: true }
     },
     {
       path: '/:pathMatch(.*)*',

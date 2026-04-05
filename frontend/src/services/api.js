@@ -572,11 +572,25 @@ export default {
     getSmartData: (h, node, disk) => api.get(`/pve-node/${h}/nodes/${node}/disks/${encodeURIComponent(disk)}/smart`),
   },
 
+  // Audit Log
+  audit: {
+    list: (params) => api.get('/audit/', { params }),
+  },
+
   // PBS Management
   pbsMgmt: {
     test: (id) => api.get(`/pbs-mgmt/${id}/test`),
     listDatastores: (id) => api.get(`/pbs-mgmt/${id}/datastores`),
     listGroups: (id, ds) => api.get(`/pbs-mgmt/${id}/datastores/${ds}/groups`),
     listSnapshots: (id, ds, params) => api.get(`/pbs-mgmt/${id}/datastores/${ds}/snapshots`, { params }),
+  },
+
+  // Notifications / Webhooks
+  notifications: {
+    listWebhooks: () => api.get('/notifications/webhooks'),
+    createWebhook: (data) => api.post('/notifications/webhooks', data),
+    updateWebhook: (id, data) => api.put(`/notifications/webhooks/${id}`, data),
+    deleteWebhook: (id) => api.delete(`/notifications/webhooks/${id}`),
+    testWebhook: (id) => api.post(`/notifications/webhooks/${id}/test`),
   },
 }

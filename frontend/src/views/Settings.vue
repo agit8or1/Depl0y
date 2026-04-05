@@ -602,6 +602,156 @@
       </div>
     </div>
 
+    <!-- Webhook Notifications Section (Admin Only) -->
+    <div class="card" v-if="user && user.role === 'admin'">
+      <div class="card-header">
+        <h3>Webhook Notifications</h3>
+        <button @click="showAddWebhookModal = true" class="btn btn-primary">
+          + Add Webhook
+        </button>
+      </div>
+      <div class="card-body">
+        <div class="info-box">
+          <p><strong>What are webhooks?</strong> Webhooks send HTTP POST requests to external URLs when VM events occur, allowing integration with Slack, Teams, custom scripts, and more.</p>
+          <p class="text-sm text-muted">Supported events: VM Start, VM Stop, VM Create, VM Delete, VM Error</p>
+        </div>
+
+        <div v-if="webhooksLoading" class="loading-message">
+          <div class="loading-spinner"></div>
+          <p>Loading webhooks...</p>
+        </div>
+
+        <div v-else-if="webhooks.length === 0" class="logs-empty" style="margin-top: 1rem;">
+          <p>No webhooks configured. Click "Add Webhook" to create one.</p>
+        </div>
+
+        <div v-else class="webhooks-list">
+          <div v-for="hook in webhooks" :key="hook.id" class="webhook-row">
+            <div class="webhook-info">
+              <div class="webhook-header-row">
+                <strong class="webhook-name">{{ hook.name }}</strong>
+                <span :class="['badge', hook.enabled ? 'badge-success' : 'badge-secondary']">
+                  {{ hook.enabled ? 'Enabled' : 'Disabled' }}
+                </span>
+              </div>
+              <p class="webhook-url text-sm text-muted">{{ hook.url }}</p>
+              <div class="webhook-events">
+                <span v-for="evt in hook.events" :key="evt" class="event-badge">{{ evt }}</span>
+              </div>
+            </div>
+            <div class="webhook-actions">
+              <button
+                @click="triggerTestWebhook(hook.id)"
+                class="btn btn-sm btn-outline"
+                :disabled="testingWebhook === hook.id"
+              >
+                {{ testingWebhook === hook.id ? 'Sending...' : 'Test' }}
+              </button>
+              <button
+                @click="deleteWebhookById(hook.id, hook.name)"
+                class="btn btn-sm btn-danger"
+                :disabled="deletingWebhook === hook.id"
+              >
+                {{ deletingWebhook === hook.id ? 'Deleting...' : 'Delete' }}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="webhooksError" class="error-message" style="margin-top: 1rem;">
+          {{ webhooksError }}
+        </div>
+      </div>
+    </div>
+
+    <!-- Add Webhook Modal -->
+    <div v-if="showAddWebhookModal" class="modal" @click="closeAddWebhookModal">
+      <div class="modal-content" @click.stop>
+        <div class="modal-header">
+          <h3>Add Webhook</h3>
+          <button @click="closeAddWebhookModal" class="btn-close">x</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label">Webhook Name <span style="color:#ef4444">*</span></label>
+            <input
+              v-model="webhookForm.name"
+              class="form-control"
+              placeholder="e.g. Slack Alerts"
+              :disabled="savingWebhook"
+            />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">URL <span style="color:#ef4444">*</span></label>
+            <input
+              v-model="webhookForm.url"
+              class="form-control"
+              placeholder="https://hooks.example.com/..."
+              type="url"
+              :disabled="savingWebhook"
+            />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Secret (optional)</label>
+            <input
+              v-model="webhookForm.secret"
+              class="form-control"
+              placeholder="Used to sign payloads with HMAC-SHA256"
+              type="password"
+              :disabled="savingWebhook"
+            />
+            <p class="text-xs text-muted" style="margin-top:0.25rem;">If set, a X-Depl0y-Signature header will be included with each request.</p>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Events <span style="color:#ef4444">*</span></label>
+            <div class="events-checkboxes">
+              <label v-for="evt in availableEvents" :key="evt.value" class="event-checkbox-label">
+                <input
+                  type="checkbox"
+                  :value="evt.value"
+                  v-model="webhookForm.events"
+                  :disabled="savingWebhook"
+                />
+                <span>{{ evt.label }}</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <div class="toggle-row" style="border:none; padding:0;">
+              <div>
+                <strong>Enabled</strong>
+                <p class="text-sm text-muted">Enable or disable this webhook without deleting it</p>
+              </div>
+              <label class="toggle-switch">
+                <input type="checkbox" v-model="webhookForm.enabled" :disabled="savingWebhook" />
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+          </div>
+
+          <div v-if="webhookFormError" class="error-message">
+            {{ webhookFormError }}
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button @click="closeAddWebhookModal" class="btn btn-outline" :disabled="savingWebhook">
+            Cancel
+          </button>
+          <button
+            @click="saveWebhook"
+            class="btn btn-primary"
+            :disabled="savingWebhook || !webhookForm.name || !webhookForm.url || webhookForm.events.length === 0"
+          >
+            {{ savingWebhook ? 'Saving...' : 'Add Webhook' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- About Section -->
     <div class="card">
       <div class="card-header">
@@ -951,6 +1101,110 @@ export default {
     const haSetupSuccess = ref(null)
     const haError = ref(null)
     const showHAManagement = ref(false)
+
+    // Webhook Notifications
+    const webhooks = ref([])
+    const webhooksLoading = ref(false)
+    const webhooksError = ref(null)
+    const showAddWebhookModal = ref(false)
+    const savingWebhook = ref(false)
+    const testingWebhook = ref(null)
+    const deletingWebhook = ref(null)
+    const webhookFormError = ref(null)
+    const webhookForm = ref({
+      name: '',
+      url: '',
+      secret: '',
+      events: [],
+      enabled: true
+    })
+    const availableEvents = [
+      { value: 'vm.start', label: 'VM Start' },
+      { value: 'vm.stop', label: 'VM Stop' },
+      { value: 'vm.create', label: 'VM Create' },
+      { value: 'vm.delete', label: 'VM Delete' },
+      { value: 'vm.error', label: 'VM Error' },
+    ]
+
+    const fetchWebhooks = async () => {
+      webhooksLoading.value = true
+      webhooksError.value = null
+      try {
+        const res = await api.notifications.listWebhooks()
+        webhooks.value = res.data.webhooks || []
+      } catch (error) {
+        // Non-admin or not yet configured — silently ignore
+      } finally {
+        webhooksLoading.value = false
+      }
+    }
+
+    const closeAddWebhookModal = () => {
+      showAddWebhookModal.value = false
+      webhookForm.value = { name: '', url: '', secret: '', events: [], enabled: true }
+      webhookFormError.value = null
+    }
+
+    const saveWebhook = async () => {
+      webhookFormError.value = null
+      if (!webhookForm.value.name.trim()) {
+        webhookFormError.value = 'Webhook name is required'
+        return
+      }
+      if (!webhookForm.value.url.trim()) {
+        webhookFormError.value = 'Webhook URL is required'
+        return
+      }
+      if (webhookForm.value.events.length === 0) {
+        webhookFormError.value = 'Select at least one event'
+        return
+      }
+      savingWebhook.value = true
+      try {
+        const payload = {
+          name: webhookForm.value.name.trim(),
+          url: webhookForm.value.url.trim(),
+          secret: webhookForm.value.secret || null,
+          events: webhookForm.value.events,
+          enabled: webhookForm.value.enabled
+        }
+        await api.notifications.createWebhook(payload)
+        toast.success('Webhook added successfully')
+        closeAddWebhookModal()
+        await fetchWebhooks()
+      } catch (error) {
+        webhookFormError.value = error.response?.data?.detail || 'Failed to save webhook'
+        toast.error('Failed to add webhook')
+      } finally {
+        savingWebhook.value = false
+      }
+    }
+
+    const triggerTestWebhook = async (hookId) => {
+      testingWebhook.value = hookId
+      try {
+        const res = await api.notifications.testWebhook(hookId)
+        toast.success(`Test sent — received HTTP ${res.data.response_code}`)
+      } catch (error) {
+        toast.error(error.response?.data?.detail || 'Failed to send test webhook')
+      } finally {
+        testingWebhook.value = null
+      }
+    }
+
+    const deleteWebhookById = async (hookId, hookName) => {
+      if (!confirm(`Delete webhook "${hookName}"?`)) return
+      deletingWebhook.value = hookId
+      try {
+        await api.notifications.deleteWebhook(hookId)
+        toast.success('Webhook deleted')
+        await fetchWebhooks()
+      } catch (error) {
+        toast.error(error.response?.data?.detail || 'Failed to delete webhook')
+      } finally {
+        deletingWebhook.value = null
+      }
+    }
 
     // Proxmox Integration preferences (localStorage-backed)
     const proxmoxHosts = ref([])
@@ -1436,6 +1690,7 @@ export default {
       checkForUpdates()
       checkHAStatus()
       fetchLinuxAgentSettings()
+      fetchWebhooks()
     })
 
     return {
@@ -1522,7 +1777,23 @@ export default {
       fetchProxmoxHosts,
       saveDefaultHost,
       saveConsoleSetting,
-      saveRefreshInterval
+      saveRefreshInterval,
+      // Webhooks
+      webhooks,
+      webhooksLoading,
+      webhooksError,
+      showAddWebhookModal,
+      savingWebhook,
+      testingWebhook,
+      deletingWebhook,
+      webhookFormError,
+      webhookForm,
+      availableEvents,
+      fetchWebhooks,
+      closeAddWebhookModal,
+      saveWebhook,
+      triggerTestWebhook,
+      deleteWebhookById,
     }
   }
 }
@@ -2240,5 +2511,123 @@ export default {
   .action-buttons button {
     width: 100%;
   }
+}
+
+/* Webhook Styles */
+.webhooks-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.webhook-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+  background-color: var(--background);
+  transition: border-color 0.2s;
+}
+
+.webhook-row:hover {
+  border-color: var(--primary-color);
+}
+
+.webhook-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.webhook-header-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.25rem;
+}
+
+.webhook-name {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.webhook-url {
+  margin: 0.25rem 0 0.5rem 0;
+  word-break: break-all;
+  font-family: monospace;
+  font-size: 0.8rem;
+}
+
+.webhook-events {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.event-badge {
+  display: inline-block;
+  padding: 0.125rem 0.5rem;
+  background: rgba(37, 99, 235, 0.1);
+  color: var(--primary-color);
+  border: 1px solid rgba(37, 99, 235, 0.3);
+  border-radius: 1rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.webhook-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-shrink: 0;
+  align-items: flex-start;
+}
+
+.events-checkboxes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.event-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 0.375rem;
+  cursor: pointer;
+  font-size: 0.875rem;
+  transition: border-color 0.15s, background 0.15s;
+  user-select: none;
+}
+
+.event-checkbox-label:hover {
+  border-color: var(--primary-color);
+  background: rgba(37, 99, 235, 0.05);
+}
+
+.event-checkbox-label input[type="checkbox"] {
+  accent-color: var(--primary-color);
+  width: 1rem;
+  height: 1rem;
+  cursor: pointer;
+}
+
+.badge-secondary {
+  background-color: #6b7280;
+  color: white;
+  padding: 0.2em 0.6em;
+  border-radius: 0.375rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.text-xs {
+  font-size: 0.75rem;
 }
 </style>

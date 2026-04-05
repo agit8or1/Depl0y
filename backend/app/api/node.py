@@ -271,6 +271,39 @@ def list_roles(host_id: int, db: Session = Depends(get_db), current_user=Depends
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/{host_id}/access/roles")
+def create_role(host_id: int, data: dict, db: Session = Depends(get_db),
+                current_user=Depends(require_admin)):
+    host = _get_host(host_id, db)
+    try:
+        _pve(host).access.roles.post(**data)
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/{host_id}/access/roles/{roleid}")
+def update_role(host_id: int, roleid: str, data: dict, db: Session = Depends(get_db),
+                current_user=Depends(require_admin)):
+    host = _get_host(host_id, db)
+    try:
+        _pve(host).access.roles(roleid).put(**data)
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/{host_id}/access/roles/{roleid}")
+def delete_role(host_id: int, roleid: str, db: Session = Depends(get_db),
+                current_user=Depends(require_admin)):
+    host = _get_host(host_id, db)
+    try:
+        _pve(host).access.roles(roleid).delete()
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/{host_id}/access/acl")
 def get_acl(host_id: int, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
     host = _get_host(host_id, db)

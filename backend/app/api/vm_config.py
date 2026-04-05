@@ -1,5 +1,5 @@
 """VM configuration, lifecycle, snapshots, clone, migrate — Proxmox-native control plane"""
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional, List, Any, Dict
@@ -747,5 +747,98 @@ def get_vm_rrddata(host_id: int, node: str, vmid: int,
         data = _pve(_svc(host)).nodes(node).qemu(vmid).rrddata.get(timeframe=timeframe, cf=cf)
         pve_cache.set(cache_key, data, ttl=60)
         return data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Tag management ────────────────────────────────────────────────────────────
+
+def _parse_tags(tags_str: str) -> List[str]:
+    """Parse a semicolon-separated Proxmox tags string into a list."""
+    if not tags_str:
+        return []
+    return [t.strip() for t in tags_str.split(";") if t.strip()]
+
+
+def _tags_to_str(tags: List[str]) -> str:
+    return ";".join(tags)
+
+
+@router.get("/{host_id}/tags")
+def list_all_tags(host_id: int, db: Session = Depends(get_db),
+                  current_user=Depends(get_current_user)):
+    """Return all unique tags used across all VMs in this cluster, with VM counts."""
+    host = _get_host(host_id, db)
+    pve = _pve(_svc(host))
+    try:
+        resources = pve.cluster.resources.get(type="vm")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    tag_counts: Dict[str, int] = {}
+    for item in resources:
+        raw_tags = item.get("tags", "")
+        for tag in _parse_tags(raw_tags):
+            tag_counts[tag] = tag_counts.get(tag, 0) + 1
+
+    return [{"tag": tag, "count": count} for tag, count in sorted(tag_counts.items())]
+
+
+@router.get("/{host_id}/tags/{tag}/vms")
+def list_vms_by_tag(host_id: int, tag: str, db: Session = Depends(get_db),
+                    current_user=Depends(get_current_user)):
+    """List all VMs that have the given tag."""
+    host = _get_host(host_id, db)
+    pve = _pve(_svc(host))
+    try:
+        resources = pve.cluster.resources.get(type="vm")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    matched = []
+    for item in resources:
+        if tag in _parse_tags(item.get("tags", "")):
+            matched.append(item)
+    return matched
+
+
+class TagBody(BaseModel):
+    tag: str
+
+
+@router.post("/{host_id}/{node}/{vmid}/tags")
+def add_vm_tag(host_id: int, node: str, vmid: int, body: TagBody,
+               db: Session = Depends(get_db), current_user=Depends(require_operator)):
+    """Append a tag to a VM (idempotent — won't duplicate)."""
+    host = _get_host(host_id, db)
+    pve = _pve(_svc(host))
+    tag = body.tag.strip().lower()
+    if not tag:
+        raise HTTPException(status_code=400, detail="Tag must not be empty")
+    try:
+        cfg = pve.nodes(node).qemu(vmid).config.get()
+        tags = _parse_tags(cfg.get("tags", ""))
+        if tag not in tags:
+            tags.append(tag)
+            pve.nodes(node).qemu(vmid).config.put(tags=_tags_to_str(tags))
+            pve_cache.clear_prefix(f"pve:{host_id}:")
+        return {"tags": tags}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/{host_id}/{node}/{vmid}/tags/{tag}")
+def remove_vm_tag(host_id: int, node: str, vmid: int, tag: str,
+                  db: Session = Depends(get_db), current_user=Depends(require_operator)):
+    """Remove a specific tag from a VM."""
+    host = _get_host(host_id, db)
+    pve = _pve(_svc(host))
+    try:
+        cfg = pve.nodes(node).qemu(vmid).config.get()
+        tags = _parse_tags(cfg.get("tags", ""))
+        tags = [t for t in tags if t != tag]
+        pve.nodes(node).qemu(vmid).config.put(tags=_tags_to_str(tags))
+        pve_cache.clear_prefix(f"pve:{host_id}:")
+        return {"tags": tags}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

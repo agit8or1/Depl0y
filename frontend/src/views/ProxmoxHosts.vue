@@ -2,8 +2,15 @@
   <div class="proxmox-hosts-page">
     <!-- Page Header -->
     <div class="page-header mb-2">
-      <h2>Proxmox Datacenters and Hosts</h2>
-      <p class="text-muted">Manage your Proxmox clusters and hypervisor nodes</p>
+      <div class="page-header-row">
+        <div>
+          <h2>Proxmox Datacenters and Hosts</h2>
+          <p class="text-muted">Manage your Proxmox clusters and hypervisor nodes</p>
+        </div>
+        <router-link to="/federation" class="btn btn-outline">
+          🌍 Federation View
+        </router-link>
+      </div>
     </div>
 
     <!-- Datacenters Section -->
@@ -26,7 +33,10 @@
             <tr>
               <th>Datacenter Name</th>
               <th>Hostname</th>
-              <th>Username</th>
+              <th>Cluster</th>
+              <th>Nodes</th>
+              <th>VMs / LXC</th>
+              <th>Latency</th>
               <th>iDRAC/iLO</th>
               <th>Status</th>
               <th>Last Poll</th>
@@ -37,7 +47,30 @@
             <tr v-for="host in hosts" :key="host.id">
               <td>{{ host.name }}</td>
               <td>{{ host.hostname }}:{{ host.port }}</td>
-              <td>{{ host.username }}</td>
+              <td>
+                <span v-if="getFedSummary(host.id)" class="text-sm">
+                  {{ getFedSummary(host.id).cluster_name || '—' }}
+                </span>
+                <span v-else class="text-muted text-sm">—</span>
+              </td>
+              <td>
+                <span v-if="getFedSummary(host.id)" class="text-sm">{{ getFedSummary(host.id).node_count }}</span>
+                <span v-else class="text-muted text-sm">—</span>
+              </td>
+              <td>
+                <span v-if="getFedSummary(host.id)" class="text-sm">
+                  {{ getFedSummary(host.id).vm_count }} / {{ getFedSummary(host.id).lxc_count }}
+                </span>
+                <span v-else class="text-muted text-sm">—</span>
+              </td>
+              <td>
+                <span v-if="getFedSummary(host.id)" class="text-sm">
+                  <span :class="latencyBadgeClass(getFedSummary(host.id).latency_ms)" class="badge">
+                    {{ getFedSummary(host.id).latency_ms != null ? getFedSummary(host.id).latency_ms + 'ms' : '—' }}
+                  </span>
+                </span>
+                <span v-else class="text-muted text-sm">—</span>
+              </td>
               <td>
                 <span v-if="host.idrac_hostname" class="text-sm">
                   <span class="badge badge-info">{{ host.idrac_type?.toUpperCase() }}</span>
@@ -415,6 +448,7 @@
 
 <script>
 import { ref, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import api from '@/services/api'
 import { useToast } from 'vue-toastification'
 
@@ -422,6 +456,7 @@ export default {
   name: 'ProxmoxHosts',
   setup() {
     const toast = useToast()
+    const router = useRouter()
     const hosts = ref([])
     const allNodes = ref([])
     const loading = ref(false)
@@ -430,6 +465,9 @@ export default {
     const showAddModal = ref(false)
     const showEditModal = ref(false)
     const useApiToken = ref(false)
+
+    // Federation summary keyed by host_id
+    const federationSummary = ref({})
 
     // Live stats keyed by "${hostId}-${nodeName}"
     const nodeStats = ref({})
@@ -467,6 +505,30 @@ export default {
       } finally {
         loading.value = false
       }
+    }
+
+    const fetchFederationSummary = async () => {
+      try {
+        const response = await api.proxmox.getFederationSummary()
+        const map = {}
+        for (const h of (response.data.hosts || [])) {
+          map[h.host_id] = h
+        }
+        federationSummary.value = map
+      } catch (error) {
+        console.error('Failed to fetch federation summary:', error)
+      }
+    }
+
+    const getFedSummary = (hostId) => {
+      return federationSummary.value[hostId] || null
+    }
+
+    const latencyBadgeClass = (ms) => {
+      if (ms == null) return 'badge-secondary'
+      if (ms < 100) return 'badge-success'
+      if (ms < 500) return 'badge-warning'
+      return 'badge-danger'
     }
 
     const addHost = async () => {
@@ -729,6 +791,7 @@ export default {
       fetchHosts().then(() => {
         handleRefreshAll()
       })
+      fetchFederationSummary()
     })
 
     return {
@@ -743,6 +806,7 @@ export default {
       useApiToken,
       newHost,
       nodeStats,
+      federationSummary,
       datacentersWithNodes,
       addHost,
       openEdit,
@@ -757,6 +821,8 @@ export default {
       formatUptime,
       formatGB,
       getNodeStat,
+      getFedSummary,
+      latencyBadgeClass,
       cpuPct,
       cpuBarClass,
       ramPct,
@@ -773,6 +839,13 @@ export default {
   margin-bottom: 1.5rem;
 }
 
+.page-header-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
 .page-header h2 {
   margin: 0 0 0.5rem 0;
   font-size: 1.75rem;
@@ -782,6 +855,11 @@ export default {
 
 .page-header .text-muted {
   font-size: 0.95rem;
+}
+
+.badge-warning {
+  background-color: #f59e0b;
+  color: #fff;
 }
 
 .btn-sm {

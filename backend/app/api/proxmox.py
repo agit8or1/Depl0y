@@ -9,9 +9,12 @@ from app.core.database import get_db
 from app.core.security import encrypt_data, decrypt_data
 from app.models import ProxmoxHost, ProxmoxNode
 from app.api.auth import get_current_user, require_admin
-from app.models import User
+from app.models import User, UserRole
 from app.services.proxmox import ProxmoxService, poll_proxmox_resources
+from app.core.cache import pve_cache
 import logging
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -118,8 +121,19 @@ async def list_proxmox_hosts(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """List all Proxmox hosts"""
-    hosts = db.query(ProxmoxHost).offset(skip).limit(limit).all()
+    """List Proxmox hosts. Admins see all; operators/viewers see only hosts they have permission for."""
+    from app.models.database import UserHostPermission
+    if current_user.role == UserRole.ADMIN:
+        hosts = db.query(ProxmoxHost).offset(skip).limit(limit).all()
+    else:
+        perms = db.query(UserHostPermission).filter(
+            UserHostPermission.user_id == current_user.id,
+            UserHostPermission.can_view == True,
+        ).all()
+        allowed_host_ids = {p.host_id for p in perms}
+        hosts = db.query(ProxmoxHost).filter(
+            ProxmoxHost.id.in_(allowed_host_ids)
+        ).offset(skip).limit(limit).all()
     return hosts
 
 
@@ -189,6 +203,138 @@ async def create_proxmox_host(
         raise HTTPException(status_code=400, detail=f"Failed to connect: {str(e)}")
 
     return new_host
+
+
+@router.get("/federation/summary")
+async def get_federation_summary(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Fetch aggregated summary across all registered Proxmox hosts in parallel. Cached for 60s."""
+    cache_key = "federation:summary"
+    cached = pve_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    hosts = db.query(ProxmoxHost).filter(ProxmoxHost.is_active == True).all()
+
+    def _fetch_host_summary(host: ProxmoxHost) -> dict:
+        """Fetch cluster/node/storage data for a single host. Runs in a thread."""
+        result = {
+            "host_id": host.id,
+            "host_name": host.name,
+            "api_url": f"https://{host.hostname}:{host.port}",
+            "cluster_name": None,
+            "status": "offline",
+            "node_count": 0,
+            "vm_count": 0,
+            "lxc_count": 0,
+            "storage_total_gb": 0.0,
+            "storage_used_gb": 0.0,
+            "cpu_usage_pct": 0.0,
+            "memory_total_bytes": 0,
+            "memory_used_bytes": 0,
+            "memory_usage_pct": 0.0,
+            "latency_ms": None,
+            "quorate": None,
+        }
+        try:
+            svc = ProxmoxService(host)
+            pve = svc.proxmox
+
+            t0 = time.time()
+            # Cluster status gives node list + quorum info + cluster name
+            cluster_status = pve.cluster.status.get()
+            result["latency_ms"] = round((time.time() - t0) * 1000)
+            result["status"] = "online"
+
+            # Extract cluster name and quorate flag from cluster record
+            for item in cluster_status:
+                if item.get("type") == "cluster":
+                    result["cluster_name"] = item.get("name")
+                    result["quorate"] = bool(item.get("quorate", 0))
+                elif item.get("type") == "node":
+                    result["node_count"] += 1
+
+            # Cluster resources — single call gives VMs, LXC, storage all at once
+            resources = pve.cluster.resources.get()
+
+            cpu_usages = []
+            mem_total = 0
+            mem_used = 0
+            storage_total = 0
+            storage_used = 0
+            vm_count = 0
+            lxc_count = 0
+
+            for r in resources:
+                rtype = r.get("type", "")
+                if rtype == "qemu":
+                    vm_count += 1
+                elif rtype == "lxc":
+                    lxc_count += 1
+                elif rtype == "node":
+                    cpu_val = r.get("cpu")
+                    if cpu_val is not None:
+                        cpu_usages.append(float(cpu_val))
+                    mem_total += r.get("maxmem", 0) or 0
+                    mem_used += r.get("mem", 0) or 0
+                elif rtype == "storage":
+                    storage_total += r.get("maxdisk", 0) or 0
+                    storage_used += r.get("disk", 0) or 0
+
+            result["vm_count"] = vm_count
+            result["lxc_count"] = lxc_count
+            result["memory_total_bytes"] = mem_total
+            result["memory_used_bytes"] = mem_used
+            result["memory_usage_pct"] = round((mem_used / mem_total * 100) if mem_total > 0 else 0.0, 1)
+            result["cpu_usage_pct"] = round((sum(cpu_usages) / len(cpu_usages) * 100) if cpu_usages else 0.0, 1)
+            result["storage_total_gb"] = round(storage_total / (1024 ** 3), 2)
+            result["storage_used_gb"] = round(storage_used / (1024 ** 3), 2)
+
+            # Determine cluster health
+            if result["quorate"] is True:
+                result["cluster_health"] = "healthy"
+            elif result["quorate"] is False:
+                result["cluster_health"] = "degraded"
+            else:
+                result["cluster_health"] = "unknown"
+
+        except Exception as e:
+            logger.warning(f"Federation summary failed for host {host.name}: {e}")
+            result["status"] = "offline"
+            result["cluster_health"] = "unknown"
+
+        return result
+
+    summaries = []
+    if hosts:
+        with ThreadPoolExecutor(max_workers=min(len(hosts), 10)) as executor:
+            futures = {executor.submit(_fetch_host_summary, h): h for h in hosts}
+            for future in as_completed(futures):
+                try:
+                    summaries.append(future.result())
+                except Exception as e:
+                    h = futures[future]
+                    logger.error(f"Unexpected error fetching federation summary for {h.name}: {e}")
+
+    # Sort by host_id for stable ordering
+    summaries.sort(key=lambda x: x["host_id"])
+
+    response = {
+        "hosts": summaries,
+        "fetched_at": datetime.utcnow().isoformat() + "Z",
+        "total_vms": sum(s["vm_count"] for s in summaries),
+        "total_lxc": sum(s["lxc_count"] for s in summaries),
+        "total_nodes": sum(s["node_count"] for s in summaries),
+        "total_storage_total_gb": round(sum(s["storage_total_gb"] for s in summaries), 2),
+        "total_storage_used_gb": round(sum(s["storage_used_gb"] for s in summaries), 2),
+        "online_hosts": sum(1 for s in summaries if s["status"] == "online"),
+        "offline_hosts": sum(1 for s in summaries if s["status"] == "offline"),
+    }
+
+    pve_cache.set(cache_key, response, ttl=60)
+    return response
 
 
 @router.get("/{host_id}", response_model=ProxmoxHostResponse)

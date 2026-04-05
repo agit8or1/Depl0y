@@ -183,6 +183,19 @@
         </button>
       </div>
 
+      <!-- Tag Filter Pills -->
+      <div v-if="allTagList.length > 0" class="tag-filter-bar">
+        <span class="tag-filter-label">Filter by tag:</span>
+        <button
+          v-for="tag in allTagList"
+          :key="tag"
+          :class="['tag-filter-pill', activeTagFilters.has(tag) ? 'tag-filter-pill-active' : '']"
+          :style="activeTagFilters.has(tag) ? { backgroundColor: tagColor(tag), color: '#fff', borderColor: tagColor(tag) } : { borderColor: tagColor(tag), color: tagColor(tag) }"
+          @click="toggleTagFilter(tag)"
+        >{{ tag }}</button>
+        <button v-if="activeTagFilters.size > 0" class="btn btn-sm btn-secondary" @click="activeTagFilters = new Set()">Clear tags</button>
+      </div>
+
       <div v-if="allLoading" class="loading-spinner"></div>
 
       <div v-else-if="allError" class="text-center text-muted" style="padding: 2rem;">
@@ -282,7 +295,7 @@
                 </div>
               </td>
               <td>
-                <div class="flex gap-1">
+                <div class="flex gap-1" style="align-items: center;">
                   <button
                     v-if="vm.status === 'running'"
                     @click="allShutdownVM(vm)"
@@ -306,6 +319,13 @@
                     :disabled="vm._busy"
                   >
                     Start
+                  </button>
+                  <button
+                    class="btn btn-outline btn-sm"
+                    title="Edit Tags"
+                    @click="openTagEditor(vm)"
+                  >
+                    Tags
                   </button>
                 </div>
               </td>
@@ -513,6 +533,48 @@
             {{ bulkRunning ? 'Running…' : 'Apply Tag' }}
           </button>
           <button v-if="bulkOpDone" @click="closeBulkModal" class="btn btn-secondary">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tag Editor Modal -->
+    <div v-if="showTagEditorModal" class="modal-overlay" @click.self="closeTagEditor">
+      <div class="modal-content" @click.stop style="max-width: 420px;">
+        <div class="modal-header">
+          <h3>Edit Tags — VM {{ tagEditorVm?.vmid }} ({{ tagEditorVm?.name || '' }})</h3>
+          <button @click="closeTagEditor" class="btn-close">×</button>
+        </div>
+        <div class="modal-body">
+          <div class="vm-tags" style="margin-bottom: 0.75rem; min-height: 2rem;">
+            <span
+              v-for="tag in tagEditorTags"
+              :key="tag"
+              class="vm-tag-pill"
+              :style="{ backgroundColor: tagColor(tag), cursor: 'pointer' }"
+              @click="removeTagFromEditor(tag)"
+              title="Click to remove"
+            >{{ tag }} ×</span>
+            <span v-if="tagEditorTags.length === 0" class="text-muted text-sm">No tags yet</span>
+          </div>
+          <div style="display: flex; gap: 0.5rem;">
+            <input
+              v-model="tagEditorInput"
+              type="text"
+              class="form-control"
+              placeholder="Add tag (letters, numbers, -_)"
+              @keyup.enter="addTagFromEditor"
+              @input="tagEditorInput = tagEditorInput.toLowerCase().replace(/[^a-z0-9\-_]/g, '')"
+              style="flex: 1;"
+            />
+            <button class="btn btn-primary btn-sm" @click="addTagFromEditor" :disabled="!tagEditorInput.trim()">Add</button>
+          </div>
+          <p class="text-muted text-sm" style="margin-top: 0.5rem;">Click a tag to remove it. Press Enter or "Add" to add a new tag.</p>
+        </div>
+        <div class="modal-footer">
+          <button @click="closeTagEditor" class="btn btn-secondary" :disabled="tagEditorSaving">Cancel</button>
+          <button @click="saveTagEditor" class="btn btn-primary" :disabled="tagEditorSaving">
+            {{ tagEditorSaving ? 'Saving…' : 'Save Tags' }}
+          </button>
         </div>
       </div>
     </div>
@@ -863,6 +925,15 @@ export default {
         )
       }
 
+      // Tag filter — AND logic: VM must have ALL active tag filters
+      if (activeTagFilters.value.size > 0) {
+        const required = [...activeTagFilters.value]
+        list = list.filter(vm => {
+          const vmTags = parseTags(vm.tags)
+          return required.every(t => vmTags.includes(t))
+        })
+      }
+
       // Sort
       const field = allSortField.value
       const dir = allSortDirection.value
@@ -1170,6 +1241,74 @@ export default {
 
     const anyVmHasTags = computed(() => allVMs.value.some(vm => vm.tags))
 
+    // ── Tag filter bar ──────────────────────────────────────────────────────
+    const activeTagFilters = ref(new Set())
+
+    const allTagList = computed(() => {
+      const tagSet = new Set()
+      allVMs.value.forEach(vm => parseTags(vm.tags).forEach(t => tagSet.add(t)))
+      return [...tagSet].sort()
+    })
+
+    const toggleTagFilter = (tag) => {
+      const s = new Set(activeTagFilters.value)
+      if (s.has(tag)) s.delete(tag)
+      else s.add(tag)
+      activeTagFilters.value = s
+    }
+
+    // ── Inline tag editor ───────────────────────────────────────────────────
+    const showTagEditorModal = ref(false)
+    const tagEditorVm = ref(null)
+    const tagEditorTags = ref([])
+    const tagEditorInput = ref('')
+    const tagEditorSaving = ref(false)
+
+    const openTagEditor = (vm) => {
+      tagEditorVm.value = vm
+      tagEditorTags.value = [...parseTags(vm.tags)]
+      tagEditorInput.value = ''
+      showTagEditorModal.value = true
+    }
+
+    const closeTagEditor = () => {
+      showTagEditorModal.value = false
+      tagEditorVm.value = null
+      tagEditorTags.value = []
+      tagEditorInput.value = ''
+    }
+
+    const addTagFromEditor = () => {
+      const t = tagEditorInput.value.trim()
+      if (!t) return
+      if (!tagEditorTags.value.includes(t)) tagEditorTags.value.push(t)
+      tagEditorInput.value = ''
+    }
+
+    const removeTagFromEditor = (tag) => {
+      tagEditorTags.value = tagEditorTags.value.filter(t => t !== tag)
+    }
+
+    const saveTagEditor = async () => {
+      if (!tagEditorVm.value) return
+      tagEditorSaving.value = true
+      const vm = tagEditorVm.value
+      try {
+        await api.pveVm.updateConfig(vm.hostId, vm.node, vm.vmid, {
+          tags: tagEditorTags.value.join(';'),
+        })
+        // Update local data immediately
+        vm.tags = tagEditorTags.value.join(';')
+        toast.success(`Tags saved for VM ${vm.vmid}`)
+        closeTagEditor()
+      } catch (err) {
+        const msg = err.response?.data?.detail || err.message || 'Unknown error'
+        toast.error(`Failed to save tags: ${msg}`)
+      } finally {
+        tagEditorSaving.value = false
+      }
+    }
+
     // ── Shared helpers ─────────────────────────────────────────────────────
     const formatBytes = (bytes) => {
       if (!bytes) return '0 B'
@@ -1294,6 +1433,21 @@ export default {
       parseTags,
       tagColor,
       anyVmHasTags,
+      // tag filter bar
+      activeTagFilters,
+      allTagList,
+      toggleTagFilter,
+      // inline tag editor
+      showTagEditorModal,
+      tagEditorVm,
+      tagEditorTags,
+      tagEditorInput,
+      tagEditorSaving,
+      openTagEditor,
+      closeTagEditor,
+      addTagFromEditor,
+      removeTagFromEditor,
+      saveTagEditor,
       // bulk selection
       selectedVmKeys,
       bulkRunning,
@@ -1607,6 +1761,51 @@ export default {
   white-space: nowrap;
   letter-spacing: 0.02em;
   text-transform: lowercase;
+}
+
+/* ── Tag Filter Bar ───────────────────────────────────────────────────────── */
+.tag-filter-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  padding: 0.5rem 1rem;
+  border-bottom: 1px solid var(--border, #e2e8f0);
+  background: var(--background);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.tag-filter-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted, #64748b);
+  white-space: nowrap;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-right: 0.25rem;
+}
+
+.tag-filter-pill {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.2rem 0.6rem;
+  border-radius: 9999px;
+  border: 1.5px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s, color 0.12s;
+  letter-spacing: 0.02em;
+}
+
+.tag-filter-pill:hover {
+  opacity: 0.8;
+}
+
+.tag-filter-pill-active {
+  font-weight: 700;
 }
 
 /* ── Bulk Op Results Table ──────────────────────────────────────────────────── */

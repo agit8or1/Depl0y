@@ -955,7 +955,139 @@
       </div>
     </template>
 
+      <!-- ─── Access Tab ─── -->
+      <div v-if="activeTab === 'access'">
+        <!-- Direct permissions on this VM -->
+        <div class="card mb-2">
+          <div class="card-header">
+            <h3>VM Access Control — <code>/vms/{{ vmid }}</code></h3>
+            <button @click="openVmGrantModal" class="btn btn-primary btn-sm">+ Grant Access</button>
+          </div>
+          <div v-if="loadingVmAcl" class="loading-spinner"></div>
+          <div v-else-if="vmAclDirect.length === 0" class="text-center text-muted" style="padding:1.5rem;">
+            No direct permissions on this VM.
+          </div>
+          <div v-else class="table-container">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>User / Group / Token</th>
+                  <th>Role</th>
+                  <th>Propagate</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(entry, idx) in vmAclDirect" :key="idx">
+                  <td>
+                    <span v-if="entry.type === 'group'" class="badge badge-warning" style="margin-right:0.4rem;">group</span>
+                    <span v-else-if="entry.type === 'token'" class="badge badge-info" style="margin-right:0.4rem;">token</span>
+                    <span v-else class="badge badge-secondary" style="margin-right:0.4rem;">user</span>
+                    {{ entry.ugid }}
+                  </td>
+                  <td><span class="badge badge-info">{{ entry.roleid }}</span></td>
+                  <td>
+                    <span :class="['badge', entry.propagate ? 'badge-success' : 'badge-secondary']">
+                      {{ entry.propagate ? 'Yes' : 'No' }}
+                    </span>
+                  </td>
+                  <td>
+                    <button @click="revokeVmAcl(entry)" class="btn btn-danger btn-sm">Revoke</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Inherited permissions -->
+        <div class="card">
+          <div class="card-header">
+            <h3>Inherited Permissions</h3>
+            <span class="text-sm text-muted">From parent paths — cannot be removed here</span>
+          </div>
+          <div v-if="loadingVmAcl" class="loading-spinner"></div>
+          <div v-else-if="vmAclInherited.length === 0" class="text-center text-muted" style="padding:1.5rem;">
+            No inherited permissions found.
+          </div>
+          <div v-else class="table-container">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Path</th>
+                  <th>User / Group / Token</th>
+                  <th>Role</th>
+                  <th>Propagate</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(entry, idx) in vmAclInherited" :key="idx" style="opacity:0.65;">
+                  <td><code>{{ entry.path }}</code></td>
+                  <td>
+                    <span v-if="entry.type === 'group'" class="badge badge-warning" style="margin-right:0.4rem;">group</span>
+                    <span v-else class="badge badge-secondary" style="margin-right:0.4rem;">{{ entry.type }}</span>
+                    {{ entry.ugid }}
+                  </td>
+                  <td><span class="badge badge-info">{{ entry.roleid }}</span></td>
+                  <td>
+                    <span :class="['badge', entry.propagate ? 'badge-success' : 'badge-secondary']">
+                      {{ entry.propagate ? 'Yes' : 'No' }}
+                    </span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
     <!-- ══════════════════════════════════════════════════════ MODALS ══ -->
+
+    <!-- Grant VM Access Modal -->
+    <div v-if="showVmGrantModal" class="modal" @click.self="showVmGrantModal = false">
+      <div class="modal-content" @click.stop>
+        <div class="modal-header">
+          <h3>Grant Access to VM {{ vmid }}</h3>
+          <button @click="showVmGrantModal = false" class="btn-close">×</button>
+        </div>
+        <form @submit.prevent="doGrantVmAcl" class="modal-body">
+          <div class="form-group">
+            <label class="form-label">User / Group / Token ID</label>
+            <input v-model="vmAclForm.ugid" class="form-control"
+              placeholder="user@pve or group@pve or user@pve!token" required />
+            <p class="text-xs text-muted mt-1">Enter a PVE user ID, group ID, or token.</p>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Type</label>
+            <select v-model="vmAclForm.ugtype" class="form-control">
+              <option value="user">User</option>
+              <option value="group">Group</option>
+              <option value="token">Token</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Role</label>
+            <div v-if="loadingVmRoles" class="text-sm text-muted">Loading roles...</div>
+            <select v-else v-model="vmAclForm.roleid" class="form-control" required>
+              <option value="" disabled>Select a role</option>
+              <option v-for="r in vmRoles" :key="r.roleid" :value="r.roleid">{{ r.roleid }}</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">
+              <input type="checkbox" v-model="vmAclForm.propagate" :true-value="1" :false-value="0" />
+              Propagate (apply to sub-paths)
+            </label>
+          </div>
+          <div class="flex gap-1 mt-2">
+            <button type="submit" class="btn btn-primary" :disabled="savingVmAcl">
+              {{ savingVmAcl ? 'Granting...' : 'Grant Access' }}
+            </button>
+            <button type="button" @click="showVmGrantModal = false" class="btn btn-outline">Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
 
     <!-- Delete Confirmation -->
     <div v-if="showDeleteConfirm" class="modal" @click.self="showDeleteConfirm = false">
@@ -1765,6 +1897,102 @@ const savingNotes = ref(false)
 const notesText = ref('')
 const activeTab = ref('overview')
 
+// ── Access tab state ───────────────────────────────────────────────────────────
+const vmAclAll = ref([])
+const loadingVmAcl = ref(false)
+const showVmGrantModal = ref(false)
+const savingVmAcl = ref(false)
+const vmRoles = ref([])
+const loadingVmRoles = ref(false)
+const vmAclForm = ref({ ugid: '', ugtype: 'user', roleid: '', propagate: 1 })
+
+const vmAclDirect = computed(() =>
+  vmAclAll.value.filter(e => e.path === `/vms/${vmid.value}`)
+)
+const vmAclInherited = computed(() =>
+  vmAclAll.value.filter(e => e.path !== `/vms/${vmid.value}` && e.propagate)
+)
+
+const loadVmAcl = async () => {
+  loadingVmAcl.value = true
+  try {
+    const resp = await api.pveNode.listAcl(hostId.value)
+    const all = resp.data || []
+    const vmPath = `/vms/${vmid.value}`
+    // Direct: entries explicitly on this VM path
+    // Inherited: entries on parent paths with propagate=1 (e.g. /, /pools/...)
+    vmAclAll.value = all.filter(e => {
+      if (e.path === vmPath) return true
+      // Inherited if propagate and path is an ancestor (/, /pools/...)
+      if (e.propagate && (e.path === '/' || e.path.startsWith('/pools/'))) return true
+      return false
+    })
+  } catch (e) {
+    console.error('Failed to load VM ACL', e)
+    toast.error('Failed to load VM access control')
+  } finally {
+    loadingVmAcl.value = false
+  }
+}
+
+const loadVmRoles = async () => {
+  if (vmRoles.value.length > 0) return
+  loadingVmRoles.value = true
+  try {
+    const resp = await api.pveNode.listRoles(hostId.value)
+    vmRoles.value = resp.data || []
+  } catch (e) {
+    console.error('Failed to load roles', e)
+  } finally {
+    loadingVmRoles.value = false
+  }
+}
+
+const openVmGrantModal = async () => {
+  vmAclForm.value = { ugid: '', ugtype: 'user', roleid: '', propagate: 1 }
+  showVmGrantModal.value = true
+  await loadVmRoles()
+}
+
+const doGrantVmAcl = async () => {
+  savingVmAcl.value = true
+  try {
+    await api.pveNode.updateAcl(hostId.value, {
+      path: `/vms/${vmid.value}`,
+      roles: vmAclForm.value.roleid,
+      ugid: vmAclForm.value.ugid,
+      delete: 0,
+      propagate: vmAclForm.value.propagate,
+    })
+    toast.success('Access granted')
+    showVmGrantModal.value = false
+    await loadVmAcl()
+  } catch (e) {
+    console.error(e)
+    toast.error(e.response?.data?.detail || 'Failed to grant access')
+  } finally {
+    savingVmAcl.value = false
+  }
+}
+
+const revokeVmAcl = async (entry) => {
+  if (!confirm(`Remove "${entry.roleid}" on /vms/${vmid.value} for "${entry.ugid}"?`)) return
+  try {
+    await api.pveNode.updateAcl(hostId.value, {
+      path: entry.path,
+      roles: entry.roleid,
+      ugid: entry.ugid,
+      delete: 1,
+      propagate: entry.propagate ? 1 : 0,
+    })
+    toast.success('Access revoked')
+    await loadVmAcl()
+  } catch (e) {
+    console.error(e)
+    toast.error('Failed to revoke access')
+  }
+}
+
 // Tab data
 const snapshots = ref([])
 const loadingSnapshots = ref(false)
@@ -2055,6 +2283,7 @@ const tabs = [
   { id: 'schedule', label: 'Power Schedule' },
   { id: 'performance', label: 'Performance' },
   { id: 'console', label: 'Console' },
+  { id: 'access', label: 'Access' },
 ]
 
 let pollInterval = null
@@ -2358,6 +2587,7 @@ const switchTab = (tab) => {
   if (tab === 'config') loadPending()
   if (tab === 'performance') loadPerfRrd()
   if (tab === 'disks') loadUnusedDisks()
+  if (tab === 'access') { loadVmAcl(); loadVmRoles() }
 }
 
 // ── Polling ────────────────────────────────────────────────────────────────────

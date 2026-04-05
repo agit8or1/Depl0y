@@ -100,6 +100,13 @@
                   Disable 2FA
                 </button>
                 <button
+                  @click="openHostAccessModal(user)"
+                  class="btn btn-outline btn-sm"
+                  title="Manage host access"
+                >
+                  Host Access
+                </button>
+                <button
                   @click="confirmDelete(user)"
                   class="btn btn-danger btn-sm"
                   title="Delete user"
@@ -237,6 +244,106 @@
               {{ resetting ? 'Resetting…' : 'Reset Password' }}
             </button>
             <button v-else @click="closeResetModal" class="btn btn-primary">Done</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Host Access Modal ────────────────────────────────── -->
+    <div v-if="showHostAccessModal" class="modal-overlay" @click.self="showHostAccessModal = false">
+      <div class="modal-content modal-lg">
+        <div class="modal-header">
+          <h3>Host Access — {{ hostAccessUser?.username }}</h3>
+          <button @click="showHostAccessModal = false" class="modal-close">×</button>
+        </div>
+        <div class="modal-body">
+          <p class="text-muted text-sm mb-2">
+            Admin users always see all hosts. For operator/viewer users, grant access to specific hosts here.
+          </p>
+
+          <!-- Current permissions -->
+          <div v-if="loadingHostPerms" class="loading-spinner"></div>
+          <div v-else>
+            <div v-if="hostPerms.length === 0" class="text-muted text-sm mb-2">
+              No host access granted. This user cannot see any Proxmox hosts.
+            </div>
+            <table v-else class="table mb-2">
+              <thead>
+                <tr>
+                  <th>Host</th>
+                  <th>Hostname</th>
+                  <th>View</th>
+                  <th>Manage</th>
+                  <th>Admin</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="perm in hostPerms" :key="perm.id">
+                  <td><strong>{{ perm.host_name }}</strong></td>
+                  <td class="text-sm text-muted">{{ perm.host_hostname }}</td>
+                  <td>
+                    <span :class="['badge', perm.can_view ? 'badge-success' : 'badge-secondary']">
+                      {{ perm.can_view ? 'Yes' : 'No' }}
+                    </span>
+                  </td>
+                  <td>
+                    <span :class="['badge', perm.can_manage ? 'badge-warning' : 'badge-secondary']">
+                      {{ perm.can_manage ? 'Yes' : 'No' }}
+                    </span>
+                  </td>
+                  <td>
+                    <span :class="['badge', perm.can_admin ? 'badge-danger' : 'badge-secondary']">
+                      {{ perm.can_admin ? 'Yes' : 'No' }}
+                    </span>
+                  </td>
+                  <td>
+                    <button @click="revokeHostPerm(perm)" class="btn btn-danger btn-sm">Revoke</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+
+            <!-- Grant access -->
+            <h4 style="margin-bottom:0.75rem;font-size:0.95rem;">Grant Access to Host</h4>
+            <div class="host-grant-form">
+              <div class="form-group">
+                <label class="form-label">Proxmox Host</label>
+                <select v-model="hostGrantForm.host_id" class="form-control">
+                  <option value="" disabled>Select a host</option>
+                  <option
+                    v-for="h in availableHostsForGrant"
+                    :key="h.id"
+                    :value="h.id"
+                  >{{ h.name }} ({{ h.hostname }})</option>
+                </select>
+              </div>
+              <div class="host-grant-toggles">
+                <label class="toggle-label">
+                  <input type="checkbox" v-model="hostGrantForm.can_view" />
+                  <span>View</span>
+                </label>
+                <label class="toggle-label">
+                  <input type="checkbox" v-model="hostGrantForm.can_manage" />
+                  <span>Manage</span>
+                </label>
+                <label class="toggle-label">
+                  <input type="checkbox" v-model="hostGrantForm.can_admin" />
+                  <span>Admin</span>
+                </label>
+              </div>
+              <button
+                @click="grantHostPerm"
+                class="btn btn-primary btn-sm"
+                :disabled="!hostGrantForm.host_id || savingHostPerm"
+              >
+                {{ savingHostPerm ? 'Granting...' : 'Grant Access' }}
+              </button>
+            </div>
+          </div>
+
+          <div class="modal-footer">
+            <button @click="showHostAccessModal = false" class="btn btn-outline">Close</button>
           </div>
         </div>
       </div>
@@ -458,6 +565,72 @@ export default {
       }
     }
 
+    // ── Host Access ──────────────────────────────────────────────────────────────
+    const showHostAccessModal = ref(false)
+    const hostAccessUser = ref(null)
+    const hostPerms = ref([])
+    const loadingHostPerms = ref(false)
+    const savingHostPerm = ref(false)
+    const allHosts = ref([])
+    const hostGrantForm = ref({ host_id: '', can_view: true, can_manage: false, can_admin: false })
+
+    const availableHostsForGrant = computed(() =>
+      allHosts.value.filter(h => !hostPerms.value.some(p => p.host_id === h.id))
+    )
+
+    const openHostAccessModal = async (user) => {
+      hostAccessUser.value = user
+      hostPerms.value = []
+      hostGrantForm.value = { host_id: '', can_view: true, can_manage: false, can_admin: false }
+      showHostAccessModal.value = true
+      loadingHostPerms.value = true
+      try {
+        const [permsResp, hostsResp] = await Promise.all([
+          api.users.listHostPermissions(user.id),
+          api.proxmox.listHosts(),
+        ])
+        hostPerms.value = permsResp.data || []
+        allHosts.value = hostsResp.data || []
+      } catch (error) {
+        toast.error('Failed to load host permissions')
+      } finally {
+        loadingHostPerms.value = false
+      }
+    }
+
+    const grantHostPerm = async () => {
+      if (!hostGrantForm.value.host_id) return
+      savingHostPerm.value = true
+      try {
+        await api.users.grantHostPermission(hostAccessUser.value.id, {
+          host_id: hostGrantForm.value.host_id,
+          can_view: hostGrantForm.value.can_view,
+          can_manage: hostGrantForm.value.can_manage,
+          can_admin: hostGrantForm.value.can_admin,
+        })
+        toast.success('Host access granted')
+        const permsResp = await api.users.listHostPermissions(hostAccessUser.value.id)
+        hostPerms.value = permsResp.data || []
+        hostGrantForm.value = { host_id: '', can_view: true, can_manage: false, can_admin: false }
+      } catch (error) {
+        toast.error(error.response?.data?.detail || 'Failed to grant host access')
+      } finally {
+        savingHostPerm.value = false
+      }
+    }
+
+    const revokeHostPerm = async (perm) => {
+      if (!confirm(`Revoke access to "${perm.host_name}" for ${hostAccessUser.value?.username}?`)) return
+      try {
+        await api.users.revokeHostPermission(hostAccessUser.value.id, perm.host_id)
+        toast.success('Host access revoked')
+        const permsResp = await api.users.listHostPermissions(hostAccessUser.value.id)
+        hostPerms.value = permsResp.data || []
+      } catch (error) {
+        toast.error('Failed to revoke host access')
+      }
+    }
+
     const formatRole = (role) => ({ admin: 'Admin', operator: 'Operator', viewer: 'Viewer' }[role] || role)
 
     const getRoleBadgeClass = (role) => ({
@@ -493,6 +666,10 @@ export default {
       disableTotp,
       confirmDelete, doDelete,
       formatRole, getRoleBadgeClass, formatDate, formatDateShort,
+      // Host access
+      showHostAccessModal, hostAccessUser, hostPerms, loadingHostPerms,
+      savingHostPerm, hostGrantForm, availableHostsForGrant,
+      openHostAccessModal, grantHostPerm, revokeHostPerm,
     }
   }
 }
@@ -710,4 +887,41 @@ export default {
 .mb-1 { margin-bottom: 0.5rem; }
 .mb-2 { margin-bottom: 1rem; }
 .mt-1 { margin-top: 0.5rem; }
+
+.modal-lg {
+  max-width: 720px;
+}
+
+.host-grant-form {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  padding: 0.75rem;
+  background: var(--background, #f9fafb);
+  border-radius: 0.375rem;
+  border: 1px solid var(--border-color);
+  margin-bottom: 1rem;
+}
+
+.host-grant-form .form-group {
+  margin-bottom: 0;
+  min-width: 200px;
+}
+
+.host-grant-toggles {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.toggle-label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  cursor: pointer;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
 </style>

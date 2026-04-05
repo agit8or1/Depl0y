@@ -25,6 +25,8 @@ from .database import (
     ApiKey,
     TotpBackupCode,
     RefreshToken,
+    VMGroup,
+    UserHostPermission,
 )
 from .security import (
     FailedLoginAttempt,
@@ -62,6 +64,8 @@ __all__ = [
     "ApiKey",
     "TotpBackupCode",
     "RefreshToken",
+    "VMGroup",
+    "UserHostPermission",
     "FailedLoginAttempt",
     "AccountLockout",
     "TokenBlacklist",

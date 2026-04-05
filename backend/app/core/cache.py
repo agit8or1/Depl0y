@@ -30,4 +30,20 @@ class TTLCache:
             for k in keys:
                 del self._cache[k]
 
+    def clear(self):
+        """Clear all cache entries."""
+        with self._lock:
+            self._cache.clear()
+
+    def stats(self) -> dict:
+        """Return cache statistics: size and list of non-expired keys."""
+        with self._lock:
+            now = time.time()
+            live_keys = [k for k, v in self._cache.items() if now < v['expires']]
+            return {
+                "size": len(live_keys),
+                "total_entries": len(self._cache),
+                "keys": live_keys,
+            }
+
 pve_cache = TTLCache()

@@ -170,6 +170,9 @@ export default {
     disableTotp: (id) => api.post(`/users/${id}/disable-totp`),
     invalidateSessions: (id) => api.post(`/users/invalidate-sessions/${id}`),
     invalidateAllSessions: () => api.post('/users/invalidate-sessions-all'),
+    listHostPermissions: (id) => api.get(`/users/${id}/host-permissions`),
+    grantHostPermission: (id, data) => api.post(`/users/${id}/host-permissions`, data),
+    revokeHostPermission: (id, hostId) => api.delete(`/users/${id}/host-permissions/${hostId}`),
   },
 
   // Proxmox
@@ -188,6 +191,7 @@ export default {
     getNodeNetwork: (nodeId) => api.get(`/proxmox/nodes/${nodeId}/network`),
     deleteNode: (nodeId) => api.delete(`/proxmox/nodes/${nodeId}`),
     updateNodeIdrac: (nodeId, data) => api.patch(`/proxmox/nodes/${nodeId}/idrac`, data),
+    getFederationSummary: () => api.get('/proxmox/federation/summary'),
   },
 
   // Virtual Machines
@@ -318,6 +322,12 @@ export default {
     dbCheck: () => api.post('/system/db-check'),
     health: () => api.get('/system/health'),
     getMetrics: () => api.get('/system/metrics'),
+    getSettings: () => api.get('/system/settings'),
+    updateSettings: (data) => api.patch('/system/settings', data),
+    getCacheStats: () => api.get('/system/cache/stats'),
+    clearCache: () => api.post('/system/cache/clear'),
+    dbVacuum: () => api.post('/system/db-vacuum'),
+    restartBackend: () => api.post('/system/restart'),
   },
 
   // Developer Tools
@@ -350,6 +360,13 @@ export default {
     ragListDocs: (vmId) => api.get(`/llm/ai-tune/${vmId}/rag/docs`),
     ragDeleteDoc: (vmId, docId) => api.delete(`/llm/ai-tune/${vmId}/rag/docs/${docId}`),
     getJobStatus: (vmId, jobId) => api.get(`/llm/ai-tune/${vmId}/apply/${jobId}`),
+    // Instance management (deployed VM proxy)
+    listInstances: () => api.get('/llm/instances'),
+    getInstanceModels: (hostId, node, vmid) => api.get(`/llm/instances/${hostId}/${node}/${vmid}/models`),
+    getInstanceStatus: (hostId, node, vmid) => api.get(`/llm/instances/${hostId}/${node}/${vmid}/status`),
+    pullInstanceModel: (hostId, node, vmid, model) => api.post(`/llm/instances/${hostId}/${node}/${vmid}/pull`, { model }),
+    deleteInstanceModel: (hostId, node, vmid, model) => api.delete(`/llm/instances/${hostId}/${node}/${vmid}/models/${encodeURIComponent(model)}`),
+    unloadInstanceModel: (hostId, node, vmid, model) => api.post(`/llm/instances/${hostId}/${node}/${vmid}/unload/${encodeURIComponent(model)}`),
   },
 
   // VM Import
@@ -572,6 +589,9 @@ export default {
     createUserToken: (h, uid, tid, data = {}) => api.post(`/pve-node/${h}/access/users/${uid}/tokens/${tid}`, data),
     deleteUserToken: (h, uid, tid) => api.delete(`/pve-node/${h}/access/users/${uid}/tokens/${tid}`),
     listRoles: (h) => api.get(`/pve-node/${h}/access/roles`),
+    createRole: (h, data) => api.post(`/pve-node/${h}/access/roles`, data),
+    updateRole: (h, roleid, data) => api.put(`/pve-node/${h}/access/roles/${encodeURIComponent(roleid)}`, data),
+    deleteRole: (h, roleid) => api.delete(`/pve-node/${h}/access/roles/${encodeURIComponent(roleid)}`),
     listAcl: (h) => api.get(`/pve-node/${h}/access/acl`),
     updateAcl: (h, data) => api.put(`/pve-node/${h}/access/acl`, data),
     listGroups: (h) => api.get(`/pve-node/${h}/access/groups`),
@@ -781,6 +801,25 @@ export default {
     getCephOsds: (hostId, node) => api.get(`/pve-node/${hostId}/nodes/${node}/ceph/osd`),
     getCephMons: (hostId, node) => api.get(`/pve-node/${hostId}/nodes/${node}/ceph/mon`),
     getCephPools: (hostId, node) => api.get(`/pve-node/${hostId}/nodes/${node}/ceph/pools`),
+  },
+
+  // VM Tags — Proxmox native tags (semicolon-separated in VM config)
+  vmTags: {
+    listAll: (hostId) => api.get(`/pve-vm/${hostId}/tags`),
+    getByTag: (hostId, tag) => api.get(`/pve-vm/${hostId}/tags/${encodeURIComponent(tag)}/vms`),
+    addTag: (hostId, node, vmid, tag) => api.post(`/pve-vm/${hostId}/${node}/${vmid}/tags`, { tag }),
+    removeTag: (hostId, node, vmid, tag) => api.delete(`/pve-vm/${hostId}/${node}/${vmid}/tags/${encodeURIComponent(tag)}`),
+  },
+
+  // VM Groups — local logical groups stored in Depl0y DB
+  vmGroups: {
+    list: () => api.get('/vm-groups/'),
+    get: (id) => api.get(`/vm-groups/${id}`),
+    create: (data) => api.post('/vm-groups/', data),
+    update: (id, data) => api.put(`/vm-groups/${id}`, data),
+    delete: (id) => api.delete(`/vm-groups/${id}`),
+    addVm: (id, vmid) => api.post(`/vm-groups/${id}/add-vm`, { vmid }),
+    removeVm: (id, vmid) => api.delete(`/vm-groups/${id}/remove-vm/${encodeURIComponent(vmid)}`),
   },
 
   // SDN — Software-Defined Networking

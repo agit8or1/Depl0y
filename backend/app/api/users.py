@@ -371,3 +371,137 @@ async def change_password(
     db.commit()
 
     return {"message": "Password changed successfully"}
+
+
+# ── Host Permissions ──────────────────────────────────────────────────────────
+
+class HostPermissionCreate(BaseModel):
+    host_id: int
+    can_view: bool = True
+    can_manage: bool = False
+    can_admin: bool = False
+
+
+class HostPermissionResponse(BaseModel):
+    id: int
+    user_id: int
+    host_id: int
+    can_view: bool
+    can_manage: bool
+    can_admin: bool
+    host_name: Optional[str] = None
+    host_hostname: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+@router.get("/{user_id}/host-permissions", response_model=List[HostPermissionResponse])
+async def list_user_host_permissions(
+    user_id: int,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """List which Proxmox hosts a user can access (admin only)."""
+    from app.models.database import UserHostPermission, ProxmoxHost
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    perms = db.query(UserHostPermission).filter(UserHostPermission.user_id == user_id).all()
+    result = []
+    for p in perms:
+        host = db.query(ProxmoxHost).filter(ProxmoxHost.id == p.host_id).first()
+        result.append(HostPermissionResponse(
+            id=p.id,
+            user_id=p.user_id,
+            host_id=p.host_id,
+            can_view=p.can_view,
+            can_manage=p.can_manage,
+            can_admin=p.can_admin,
+            host_name=host.name if host else None,
+            host_hostname=host.hostname if host else None,
+        ))
+    return result
+
+
+@router.post("/{user_id}/host-permissions", response_model=HostPermissionResponse)
+async def grant_user_host_permission(
+    user_id: int,
+    data: HostPermissionCreate,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Grant a user access to a Proxmox host (admin only)."""
+    from app.models.database import UserHostPermission, ProxmoxHost
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    host = db.query(ProxmoxHost).filter(ProxmoxHost.id == data.host_id).first()
+    if not host:
+        raise HTTPException(status_code=404, detail="Proxmox host not found")
+
+    existing = db.query(UserHostPermission).filter(
+        UserHostPermission.user_id == user_id,
+        UserHostPermission.host_id == data.host_id,
+    ).first()
+
+    if existing:
+        # Update existing permission
+        existing.can_view = data.can_view
+        existing.can_manage = data.can_manage
+        existing.can_admin = data.can_admin
+        db.commit()
+        db.refresh(existing)
+        return HostPermissionResponse(
+            id=existing.id,
+            user_id=existing.user_id,
+            host_id=existing.host_id,
+            can_view=existing.can_view,
+            can_manage=existing.can_manage,
+            can_admin=existing.can_admin,
+            host_name=host.name,
+            host_hostname=host.hostname,
+        )
+
+    perm = UserHostPermission(
+        user_id=user_id,
+        host_id=data.host_id,
+        can_view=data.can_view,
+        can_manage=data.can_manage,
+        can_admin=data.can_admin,
+    )
+    db.add(perm)
+    db.commit()
+    db.refresh(perm)
+    return HostPermissionResponse(
+        id=perm.id,
+        user_id=perm.user_id,
+        host_id=perm.host_id,
+        can_view=perm.can_view,
+        can_manage=perm.can_manage,
+        can_admin=perm.can_admin,
+        host_name=host.name,
+        host_hostname=host.hostname,
+    )
+
+
+@router.delete("/{user_id}/host-permissions/{host_id}")
+async def revoke_user_host_permission(
+    user_id: int,
+    host_id: int,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Revoke a user's access to a Proxmox host (admin only)."""
+    from app.models.database import UserHostPermission
+    perm = db.query(UserHostPermission).filter(
+        UserHostPermission.user_id == user_id,
+        UserHostPermission.host_id == host_id,
+    ).first()
+    if not perm:
+        raise HTTPException(status_code=404, detail="Permission not found")
+    db.delete(perm)
+    db.commit()
+    return {"message": "Permission revoked"}

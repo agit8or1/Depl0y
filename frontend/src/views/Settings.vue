@@ -451,6 +451,377 @@
       </div>
     </div>
 
+    <!-- ═══════════════════════════════════════════════════════════════════
+         GENERAL SETTINGS (admin only)
+         ═══════════════════════════════════════════════════════════════════ -->
+    <div class="card" v-if="user && user.role === 'admin'">
+      <div class="card-header">
+        <h3>General Settings</h3>
+        <button @click="saveGeneralSettings" class="btn btn-primary" :disabled="savingGeneral">
+          {{ savingGeneral ? 'Saving...' : 'Save' }}
+        </button>
+      </div>
+      <div class="card-body">
+        <div v-if="generalLoading" class="loading-message">
+          <div class="loading-spinner"></div>
+          <p>Loading settings...</p>
+        </div>
+        <div v-else>
+          <div class="settings-group">
+            <h5 class="subsection-title">Application</h5>
+            <div class="settings-form-grid">
+              <div class="form-group">
+                <label class="form-label">Application Name</label>
+                <input v-model="generalForm.app_name" class="form-control" placeholder="Depl0y" />
+                <p class="text-xs text-muted">Displayed in the browser title and header</p>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Application URL</label>
+                <input v-model="generalForm.app_url" class="form-control" placeholder="https://depl0y.example.com" />
+                <p class="text-xs text-muted">Used in email links and webhook callback URLs</p>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Default Language</label>
+                <select v-model="generalForm.default_language" class="form-control">
+                  <option value="en">English</option>
+                  <option value="de">German (coming soon)</option>
+                  <option value="fr">French (coming soon)</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Default Timezone</label>
+                <select v-model="generalForm.default_timezone" class="form-control">
+                  <option v-for="tz in timezoneOptions" :key="tz.value" :value="tz.value">{{ tz.label }}</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-group" style="margin-top:1.75rem;">
+            <h5 class="subsection-title">Session &amp; Security</h5>
+            <div class="settings-form-grid">
+              <div class="form-group">
+                <label class="form-label">Session Timeout (minutes)</label>
+                <input v-model.number="generalForm.session_timeout_minutes" type="number" min="5" max="1440" class="form-control" />
+                <p class="text-xs text-muted">How long before an idle session is expired (5–1440 min)</p>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Max Login Attempts Before Lockout</label>
+                <input v-model.number="generalForm.max_login_attempts" type="number" min="1" max="20" class="form-control" />
+                <p class="text-xs text-muted">Failed attempts before the account is temporarily locked</p>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Lockout Duration (minutes)</label>
+                <input v-model.number="generalForm.lockout_duration_minutes" type="number" min="1" max="1440" class="form-control" />
+                <p class="text-xs text-muted">How long the lockout lasts before allowing new attempts</p>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div v-if="generalError" class="error-message" style="margin-top:1rem;">{{ generalError }}</div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         EMAIL / SMTP SETTINGS (admin only)
+         ═══════════════════════════════════════════════════════════════════ -->
+    <div class="card" v-if="user && user.role === 'admin'">
+      <div class="card-header">
+        <h3>Email / SMTP Configuration</h3>
+        <div class="flex gap-2">
+          <button @click="sendTestEmail" class="btn btn-outline" :disabled="testingEmail || savingSmtp">
+            {{ testingEmail ? 'Sending...' : 'Test Email' }}
+          </button>
+          <button @click="saveSmtpSettings" class="btn btn-primary" :disabled="savingSmtp">
+            {{ savingSmtp ? 'Saving...' : 'Save' }}
+          </button>
+        </div>
+      </div>
+      <div class="card-body">
+        <div v-if="smtpLoading" class="loading-message">
+          <div class="loading-spinner"></div>
+          <p>Loading SMTP settings...</p>
+        </div>
+        <div v-else class="settings-form-grid">
+          <div class="form-group">
+            <label class="form-label">SMTP Host</label>
+            <input v-model="smtpForm.smtp_host" class="form-control" placeholder="smtp.example.com" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">SMTP Port</label>
+            <input v-model.number="smtpForm.smtp_port" type="number" class="form-control" placeholder="587" />
+            <p class="text-xs text-muted">587 (STARTTLS) or 465 (SSL)</p>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Username</label>
+            <input v-model="smtpForm.smtp_username" class="form-control" placeholder="user@example.com" autocomplete="off" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Password</label>
+            <input v-model="smtpForm.smtp_password" type="password" class="form-control" autocomplete="new-password" placeholder="••••••••" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">From Address</label>
+            <input v-model="smtpForm.smtp_from" class="form-control" placeholder="noreply@example.com" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">From Name</label>
+            <input v-model="smtpForm.smtp_from_name" class="form-control" placeholder="Depl0y" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Notification Recipient</label>
+            <input v-model="smtpForm.smtp_to" class="form-control" placeholder="admin@example.com" />
+            <p class="text-xs text-muted">Where to send notification and test emails</p>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Use TLS/SSL</label>
+            <div class="toggle-row" style="border:none; padding:0; margin-top:0.5rem;">
+              <div>
+                <p class="text-sm text-muted">Enable STARTTLS (port 587) or SSL (port 465)</p>
+              </div>
+              <label class="toggle-switch">
+                <input type="checkbox" v-model="smtpFormTls" />
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+          </div>
+        </div>
+        <div v-if="testEmailResult" :class="['info-box', testEmailError ? 'alert-danger' : 'alert-success']" style="margin-top:1rem;">
+          {{ testEmailResult }}
+        </div>
+        <div v-if="smtpError" class="error-message" style="margin-top:1rem;">{{ smtpError }}</div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         PROXMOX VM DEFAULTS (admin only)
+         ═══════════════════════════════════════════════════════════════════ -->
+    <div class="card" v-if="user && user.role === 'admin'">
+      <div class="card-header">
+        <h3>Proxmox VM Defaults</h3>
+        <button @click="savePveDefaults" class="btn btn-primary" :disabled="savingPveDefaults">
+          {{ savingPveDefaults ? 'Saving...' : 'Save' }}
+        </button>
+      </div>
+      <div class="card-body">
+        <div v-if="pveDefaultsLoading" class="loading-message">
+          <div class="loading-spinner"></div>
+          <p>Loading defaults...</p>
+        </div>
+        <div v-else>
+          <p class="text-sm text-muted" style="margin-bottom:1.25rem;">These values pre-fill the Create VM form for every new virtual machine.</p>
+          <div class="settings-form-grid">
+            <div class="form-group">
+              <label class="form-label">Default CPU Type</label>
+              <select v-model="pveDefaultsForm.pve_default_cpu_type" class="form-control">
+                <option value="host">host (best performance)</option>
+                <option value="kvm64">kvm64 (max compatibility)</option>
+                <option value="qemu64">qemu64</option>
+                <option value="x86-64-v2-AES">x86-64-v2-AES</option>
+                <option value="x86-64-v3">x86-64-v3</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Default Network Bridge</label>
+              <input v-model="pveDefaultsForm.pve_default_bridge" class="form-control" placeholder="vmbr0" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Default VM Storage</label>
+              <input v-model="pveDefaultsForm.pve_default_storage" class="form-control" placeholder="local-lvm" />
+              <p class="text-xs text-muted">Storage pool for VM disks</p>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Default ISO Storage</label>
+              <input v-model="pveDefaultsForm.pve_default_iso_storage" class="form-control" placeholder="local" />
+              <p class="text-xs text-muted">Storage pool where ISO images are kept</p>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Template VM ID</label>
+              <input v-model.number="pveDefaultsForm.pve_template_vmid" type="number" class="form-control" placeholder="9000" />
+              <p class="text-xs text-muted">Base template VMID used for linked clones</p>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Proxmox Web Console URL Pattern</label>
+              <input v-model="pveDefaultsForm.pve_console_url_pattern" class="form-control" placeholder="https://{host}:8006/#v1:0:18:4::::::::" />
+              <p class="text-xs text-muted">Use {host} as a placeholder for the Proxmox hostname</p>
+            </div>
+          </div>
+        </div>
+        <div v-if="pveDefaultsError" class="error-message" style="margin-top:1rem;">{{ pveDefaultsError }}</div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         BACKUP DEFAULTS (admin only)
+         ═══════════════════════════════════════════════════════════════════ -->
+    <div class="card" v-if="user && user.role === 'admin'">
+      <div class="card-header">
+        <h3>Backup Defaults</h3>
+        <button @click="saveBackupDefaults" class="btn btn-primary" :disabled="savingBackupDefaults">
+          {{ savingBackupDefaults ? 'Saving...' : 'Save' }}
+        </button>
+      </div>
+      <div class="card-body">
+        <div v-if="backupDefaultsLoading" class="loading-message">
+          <div class="loading-spinner"></div>
+          <p>Loading backup defaults...</p>
+        </div>
+        <div v-else>
+          <p class="text-sm text-muted" style="margin-bottom:1.25rem;">Default values used when creating new backup jobs.</p>
+          <div class="settings-form-grid">
+            <div class="form-group">
+              <label class="form-label">Default Backup Storage</label>
+              <input v-model="backupDefaultsForm.backup_default_storage" class="form-control" placeholder="local" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Default Backup Schedule (cron)</label>
+              <input v-model="backupDefaultsForm.backup_default_schedule" class="form-control" placeholder="0 2 * * *" />
+              <p class="text-xs text-muted">Cron expression, e.g. <code>0 2 * * *</code> = daily at 2am</p>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Keep Last N Backups</label>
+              <input v-model.number="backupDefaultsForm.backup_keep_last" type="number" min="1" max="365" class="form-control" placeholder="7" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Keep Daily Backups</label>
+              <input v-model.number="backupDefaultsForm.backup_keep_daily" type="number" min="0" max="365" class="form-control" placeholder="7" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Keep Weekly Backups</label>
+              <input v-model.number="backupDefaultsForm.backup_keep_weekly" type="number" min="0" max="52" class="form-control" placeholder="4" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Keep Monthly Backups</label>
+              <input v-model.number="backupDefaultsForm.backup_keep_monthly" type="number" min="0" max="24" class="form-control" placeholder="3" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Email Notification</label>
+              <select v-model="backupDefaultsForm.backup_email_notification" class="form-control">
+                <option value="never">Never</option>
+                <option value="failure">On failure only</option>
+                <option value="always">Always</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div v-if="backupDefaultsError" class="error-message" style="margin-top:1rem;">{{ backupDefaultsError }}</div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         MAINTENANCE (admin only)
+         ═══════════════════════════════════════════════════════════════════ -->
+    <div class="card" v-if="user && user.role === 'admin'">
+      <div class="card-header">
+        <h3>Maintenance</h3>
+      </div>
+      <div class="card-body">
+
+        <!-- Database -->
+        <div class="settings-group">
+          <h5 class="subsection-title">Database Maintenance</h5>
+          <p class="text-sm text-muted" style="margin-bottom:0.75rem;">Run database utilities to optimise performance and verify integrity.</p>
+          <div class="action-buttons">
+            <button @click="runDbVacuum" class="btn btn-outline" :disabled="runningVacuum">
+              {{ runningVacuum ? 'Running...' : 'VACUUM (Reclaim Space)' }}
+            </button>
+            <button @click="runDbCheck" class="btn btn-outline" :disabled="runningDbCheck">
+              {{ runningDbCheck ? 'Checking...' : 'Integrity Check' }}
+            </button>
+          </div>
+          <div v-if="vacuumResult" :class="['info-box', vacuumResult.success ? 'alert-success' : 'alert-danger']" style="margin-top:0.75rem;">
+            <span v-if="vacuumResult.success">
+              VACUUM complete. Freed {{ formatBytes(vacuumResult.freed_bytes) }}
+              ({{ formatBytes(vacuumResult.size_before_bytes) }} → {{ formatBytes(vacuumResult.size_after_bytes) }})
+            </span>
+            <span v-else>{{ vacuumResult.message }}</span>
+          </div>
+          <div v-if="dbCheckResult" :class="['info-box', dbCheckResult.ok ? 'alert-success' : 'alert-danger']" style="margin-top:0.75rem;">
+            Integrity check: <strong>{{ dbCheckResult.ok ? 'OK' : 'FAILED' }}</strong>
+            <span v-if="!dbCheckResult.ok"> — {{ dbCheckResult.results.join(', ') }}</span>
+          </div>
+        </div>
+
+        <!-- Cache -->
+        <div class="settings-group" style="margin-top:1.75rem;">
+          <h5 class="subsection-title">Cache Management</h5>
+          <p class="text-sm text-muted" style="margin-bottom:0.75rem;">The PVE TTL cache stores recent Proxmox API responses. Clearing it forces fresh data on next request.</p>
+          <div class="action-buttons">
+            <button @click="fetchCacheStats" class="btn btn-outline" :disabled="loadingCacheStats">
+              {{ loadingCacheStats ? 'Loading...' : 'View Cache Stats' }}
+            </button>
+            <button @click="clearCache" class="btn btn-outline" :disabled="clearingCache">
+              {{ clearingCache ? 'Clearing...' : 'Clear PVE Cache' }}
+            </button>
+          </div>
+          <div v-if="cacheStats" class="info-box" style="margin-top:0.75rem;">
+            <div class="cache-stats-grid">
+              <div class="info-item">
+                <span class="info-label">Live Keys</span>
+                <span class="info-value">{{ cacheStats.size }}</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">Total Entries</span>
+                <span class="info-value">{{ cacheStats.total_entries }}</span>
+              </div>
+            </div>
+            <div v-if="cacheStats.keys && cacheStats.keys.length > 0" style="margin-top:0.75rem;">
+              <p class="text-xs text-muted" style="margin-bottom:0.25rem;">Cached keys:</p>
+              <div class="cache-keys-list">
+                <code v-for="k in cacheStats.keys.slice(0, 20)" :key="k" class="cache-key-tag">{{ k }}</code>
+                <span v-if="cacheStats.keys.length > 20" class="text-xs text-muted">... and {{ cacheStats.keys.length - 20 }} more</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Log Level -->
+        <div class="settings-group" style="margin-top:1.75rem;">
+          <h5 class="subsection-title">Log Level</h5>
+          <p class="text-sm text-muted" style="margin-bottom:0.75rem;">Change the verbosity of the backend application log. Stored in system settings — takes effect after the next restart.</p>
+          <div class="form-group" style="max-width:250px;">
+            <select v-model="logLevelSetting" class="form-control">
+              <option value="DEBUG">DEBUG (most verbose)</option>
+              <option value="INFO">INFO</option>
+              <option value="WARNING">WARNING</option>
+              <option value="ERROR">ERROR (least verbose)</option>
+            </select>
+          </div>
+          <div class="action-buttons" style="margin-top:0.5rem;">
+            <button @click="saveLogLevel" class="btn btn-primary" :disabled="savingLogLevel">
+              {{ savingLogLevel ? 'Saving...' : 'Save Log Level' }}
+            </button>
+          </div>
+        </div>
+
+        <!-- System Restart -->
+        <div class="settings-group" style="margin-top:1.75rem;">
+          <h5 class="subsection-title">System Restart</h5>
+          <div class="warning-box" style="margin-bottom:1rem;">
+            <div class="status-icon">⚠</div>
+            <div>
+              <p><strong>Restart Backend Service</strong></p>
+              <p class="text-sm">This will restart the Depl0y backend process. The UI will be temporarily unavailable for a few seconds.</p>
+            </div>
+          </div>
+          <div v-if="!showRestartConfirm">
+            <button @click="showRestartConfirm = true" class="btn btn-danger">Restart Backend</button>
+          </div>
+          <div v-else class="restart-confirm-box">
+            <p class="text-sm" style="margin-bottom:0.75rem;"><strong>Are you sure?</strong> The service will restart in 3 seconds after you confirm.</p>
+            <div class="action-buttons">
+              <button @click="showRestartConfirm = false" class="btn btn-outline">Cancel</button>
+              <button @click="restartBackend" class="btn btn-danger" :disabled="restarting">
+                {{ restarting ? `Restarting... (${restartCountdown}s)` : 'Confirm Restart' }}
+              </button>
+            </div>
+          </div>
+          <div v-if="restartError" class="error-message" style="margin-top:0.75rem;">{{ restartError }}</div>
+        </div>
+
+      </div>
+    </div>
+
     <!-- Setup Instructions Modal -->
     <div v-if="showSetupInstructions" class="modal" @click="showSetupInstructions = false">
       <div class="modal-content modal-large" @click.stop>
@@ -1953,6 +2324,315 @@ export default {
       }
     }
 
+    // ── General Settings ────────────────────────────────────────────────────
+    const generalLoading = ref(false)
+    const savingGeneral = ref(false)
+    const generalError = ref(null)
+    const generalForm = ref({
+      app_name: 'Depl0y',
+      app_url: '',
+      default_language: 'en',
+      default_timezone: 'UTC',
+      session_timeout_minutes: 60,
+      max_login_attempts: 5,
+      lockout_duration_minutes: 15,
+    })
+
+    const timezoneOptions = [
+      { value: 'UTC', label: 'UTC' },
+      { value: 'America/New_York', label: 'America/New_York (EST/EDT)' },
+      { value: 'America/Chicago', label: 'America/Chicago (CST/CDT)' },
+      { value: 'America/Denver', label: 'America/Denver (MST/MDT)' },
+      { value: 'America/Los_Angeles', label: 'America/Los_Angeles (PST/PDT)' },
+      { value: 'America/Sao_Paulo', label: 'America/Sao_Paulo (BRT)' },
+      { value: 'Europe/London', label: 'Europe/London (GMT/BST)' },
+      { value: 'Europe/Paris', label: 'Europe/Paris (CET/CEST)' },
+      { value: 'Europe/Berlin', label: 'Europe/Berlin (CET/CEST)' },
+      { value: 'Europe/Moscow', label: 'Europe/Moscow (MSK)' },
+      { value: 'Asia/Dubai', label: 'Asia/Dubai (GST)' },
+      { value: 'Asia/Kolkata', label: 'Asia/Kolkata (IST)' },
+      { value: 'Asia/Singapore', label: 'Asia/Singapore (SGT)' },
+      { value: 'Asia/Tokyo', label: 'Asia/Tokyo (JST)' },
+      { value: 'Asia/Shanghai', label: 'Asia/Shanghai (CST)' },
+      { value: 'Australia/Sydney', label: 'Australia/Sydney (AEST/AEDT)' },
+      { value: 'Pacific/Auckland', label: 'Pacific/Auckland (NZST/NZDT)' },
+    ]
+
+    const fetchGeneralSettings = async () => {
+      generalLoading.value = true
+      try {
+        const res = await api.system.getSettings()
+        const s = res.data
+        generalForm.value.app_name = s.app_name || 'Depl0y'
+        generalForm.value.app_url = s.app_url || ''
+        generalForm.value.default_language = s.default_language || 'en'
+        generalForm.value.default_timezone = s.default_timezone || 'UTC'
+        generalForm.value.session_timeout_minutes = parseInt(s.session_timeout_minutes) || 60
+        generalForm.value.max_login_attempts = parseInt(s.max_login_attempts) || 5
+        generalForm.value.lockout_duration_minutes = parseInt(s.lockout_duration_minutes) || 15
+        // Also seed SMTP form from loaded settings
+        smtpForm.value.smtp_host = s.smtp_host || ''
+        smtpForm.value.smtp_port = parseInt(s.smtp_port) || 587
+        smtpForm.value.smtp_username = s.smtp_username || ''
+        smtpForm.value.smtp_password = s.smtp_password || ''
+        smtpForm.value.smtp_from = s.smtp_from || ''
+        smtpForm.value.smtp_from_name = s.smtp_from_name || ''
+        smtpForm.value.smtp_to = s.smtp_to || ''
+        smtpFormTls.value = (s.smtp_tls || 'true').toLowerCase() !== 'false'
+        // Proxmox defaults
+        pveDefaultsForm.value.pve_default_cpu_type = s.pve_default_cpu_type || 'host'
+        pveDefaultsForm.value.pve_default_bridge = s.pve_default_bridge || 'vmbr0'
+        pveDefaultsForm.value.pve_default_storage = s.pve_default_storage || 'local-lvm'
+        pveDefaultsForm.value.pve_default_iso_storage = s.pve_default_iso_storage || 'local'
+        pveDefaultsForm.value.pve_template_vmid = parseInt(s.pve_template_vmid) || 9000
+        pveDefaultsForm.value.pve_console_url_pattern = s.pve_console_url_pattern || ''
+        // Backup defaults
+        backupDefaultsForm.value.backup_default_storage = s.backup_default_storage || ''
+        backupDefaultsForm.value.backup_default_schedule = s.backup_default_schedule || '0 2 * * *'
+        backupDefaultsForm.value.backup_keep_last = parseInt(s.backup_keep_last) || 7
+        backupDefaultsForm.value.backup_keep_daily = parseInt(s.backup_keep_daily) || 7
+        backupDefaultsForm.value.backup_keep_weekly = parseInt(s.backup_keep_weekly) || 4
+        backupDefaultsForm.value.backup_keep_monthly = parseInt(s.backup_keep_monthly) || 3
+        backupDefaultsForm.value.backup_email_notification = s.backup_email_notification || 'failure'
+        // Log level
+        logLevelSetting.value = s.log_level || 'INFO'
+      } catch {
+        // Non-admin — silently ignore
+      } finally {
+        generalLoading.value = false
+      }
+    }
+
+    const saveGeneralSettings = async () => {
+      savingGeneral.value = true
+      generalError.value = null
+      try {
+        await api.system.updateSettings({
+          app_name: generalForm.value.app_name,
+          app_url: generalForm.value.app_url,
+          default_language: generalForm.value.default_language,
+          default_timezone: generalForm.value.default_timezone,
+          session_timeout_minutes: String(generalForm.value.session_timeout_minutes),
+          max_login_attempts: String(generalForm.value.max_login_attempts),
+          lockout_duration_minutes: String(generalForm.value.lockout_duration_minutes),
+        })
+        toast.success('General settings saved')
+      } catch (error) {
+        generalError.value = error.response?.data?.detail || 'Failed to save general settings'
+        toast.error('Failed to save general settings')
+      } finally {
+        savingGeneral.value = false
+      }
+    }
+
+    // ── SMTP Settings ────────────────────────────────────────────────────────
+    const smtpLoading = ref(false)
+    const savingSmtp = ref(false)
+    const smtpError = ref(null)
+    const smtpFormTls = ref(true)
+    const smtpForm = ref({
+      smtp_host: '',
+      smtp_port: 587,
+      smtp_username: '',
+      smtp_password: '',
+      smtp_from: '',
+      smtp_from_name: '',
+      smtp_to: '',
+    })
+
+    const saveSmtpSettings = async () => {
+      savingSmtp.value = true
+      smtpError.value = null
+      try {
+        const payload = { ...smtpForm.value }
+        payload.smtp_port = String(payload.smtp_port)
+        payload.smtp_tls = smtpFormTls.value ? 'true' : 'false'
+        // Don't store empty passwords — skip if blank
+        if (!payload.smtp_password) delete payload.smtp_password
+        await api.system.updateSettings(payload)
+        toast.success('SMTP settings saved')
+      } catch (error) {
+        smtpError.value = error.response?.data?.detail || 'Failed to save SMTP settings'
+        toast.error('Failed to save SMTP settings')
+      } finally {
+        savingSmtp.value = false
+      }
+    }
+
+    // ── Proxmox VM Defaults ──────────────────────────────────────────────────
+    const pveDefaultsLoading = ref(false)
+    const savingPveDefaults = ref(false)
+    const pveDefaultsError = ref(null)
+    const pveDefaultsForm = ref({
+      pve_default_cpu_type: 'host',
+      pve_default_bridge: 'vmbr0',
+      pve_default_storage: 'local-lvm',
+      pve_default_iso_storage: 'local',
+      pve_template_vmid: 9000,
+      pve_console_url_pattern: '',
+    })
+
+    const savePveDefaults = async () => {
+      savingPveDefaults.value = true
+      pveDefaultsError.value = null
+      try {
+        const payload = { ...pveDefaultsForm.value }
+        payload.pve_template_vmid = String(payload.pve_template_vmid)
+        await api.system.updateSettings(payload)
+        toast.success('Proxmox VM defaults saved')
+      } catch (error) {
+        pveDefaultsError.value = error.response?.data?.detail || 'Failed to save Proxmox defaults'
+        toast.error('Failed to save Proxmox VM defaults')
+      } finally {
+        savingPveDefaults.value = false
+      }
+    }
+
+    // ── Backup Defaults ──────────────────────────────────────────────────────
+    const backupDefaultsLoading = ref(false)
+    const savingBackupDefaults = ref(false)
+    const backupDefaultsError = ref(null)
+    const backupDefaultsForm = ref({
+      backup_default_storage: '',
+      backup_default_schedule: '0 2 * * *',
+      backup_keep_last: 7,
+      backup_keep_daily: 7,
+      backup_keep_weekly: 4,
+      backup_keep_monthly: 3,
+      backup_email_notification: 'failure',
+    })
+
+    const saveBackupDefaults = async () => {
+      savingBackupDefaults.value = true
+      backupDefaultsError.value = null
+      try {
+        const payload = {}
+        for (const [k, v] of Object.entries(backupDefaultsForm.value)) {
+          payload[k] = String(v)
+        }
+        await api.system.updateSettings(payload)
+        toast.success('Backup defaults saved')
+      } catch (error) {
+        backupDefaultsError.value = error.response?.data?.detail || 'Failed to save backup defaults'
+        toast.error('Failed to save backup defaults')
+      } finally {
+        savingBackupDefaults.value = false
+      }
+    }
+
+    // ── Maintenance ─────────────────────────────────────────────────────────
+    const runningVacuum = ref(false)
+    const vacuumResult = ref(null)
+    const runningDbCheck = ref(false)
+    const dbCheckResult = ref(null)
+    const loadingCacheStats = ref(false)
+    const cacheStats = ref(null)
+    const clearingCache = ref(false)
+    const logLevelSetting = ref('INFO')
+    const savingLogLevel = ref(false)
+    const showRestartConfirm = ref(false)
+    const restarting = ref(false)
+    const restartCountdown = ref(5)
+    const restartError = ref(null)
+    let _restartTimer = null
+
+    const formatBytes = (bytes) => {
+      if (!bytes) return '0 B'
+      const k = 1024
+      const sizes = ['B', 'KB', 'MB', 'GB']
+      const i = Math.floor(Math.log(bytes) / Math.log(k))
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
+    }
+
+    const runDbVacuum = async () => {
+      runningVacuum.value = true
+      vacuumResult.value = null
+      try {
+        const res = await api.system.dbVacuum()
+        vacuumResult.value = res.data
+        toast.success('VACUUM completed successfully')
+      } catch (error) {
+        vacuumResult.value = { success: false, message: error.response?.data?.detail || 'VACUUM failed' }
+        toast.error('VACUUM failed')
+      } finally {
+        runningVacuum.value = false
+      }
+    }
+
+    const runDbCheck = async () => {
+      runningDbCheck.value = true
+      dbCheckResult.value = null
+      try {
+        const res = await api.system.dbCheck()
+        dbCheckResult.value = res.data
+        toast.success(res.data.ok ? 'Integrity check passed' : 'Integrity check FAILED')
+      } catch (error) {
+        toast.error('Integrity check failed')
+      } finally {
+        runningDbCheck.value = false
+      }
+    }
+
+    const fetchCacheStats = async () => {
+      loadingCacheStats.value = true
+      try {
+        const res = await api.system.getCacheStats()
+        cacheStats.value = res.data
+      } catch (error) {
+        toast.error('Failed to load cache stats')
+      } finally {
+        loadingCacheStats.value = false
+      }
+    }
+
+    const clearCache = async () => {
+      clearingCache.value = true
+      try {
+        await api.system.clearCache()
+        toast.success('PVE cache cleared')
+        cacheStats.value = null
+      } catch (error) {
+        toast.error('Failed to clear cache')
+      } finally {
+        clearingCache.value = false
+      }
+    }
+
+    const saveLogLevel = async () => {
+      savingLogLevel.value = true
+      try {
+        await api.system.updateSettings({ log_level: logLevelSetting.value })
+        toast.success(`Log level set to ${logLevelSetting.value}. Restart backend to apply.`)
+      } catch (error) {
+        toast.error('Failed to save log level')
+      } finally {
+        savingLogLevel.value = false
+      }
+    }
+
+    const restartBackend = async () => {
+      restarting.value = true
+      restartError.value = null
+      restartCountdown.value = 5
+      try {
+        await api.system.restartBackend()
+        toast.warning('Backend is restarting…')
+        // Countdown then reload
+        _restartTimer = setInterval(() => {
+          restartCountdown.value--
+          if (restartCountdown.value <= 0) {
+            clearInterval(_restartTimer)
+            window.location.reload()
+          }
+        }, 1000)
+      } catch (error) {
+        restartError.value = error.response?.data?.detail || 'Failed to trigger restart'
+        toast.error('Failed to restart backend')
+        restarting.value = false
+        showRestartConfirm.value = false
+      }
+    }
+
     onMounted(() => {
       fetchUser()
       fetchSystemInfo()
@@ -1964,6 +2644,7 @@ export default {
       fetchLinuxAgentSettings()
       fetchWebhooks()
       fetchNotifRules()
+      fetchGeneralSettings()
     })
 
     return {
@@ -2084,6 +2765,53 @@ export default {
       triggerTestWebhook,
       deleteWebhookById,
       deliveryTimeAgo,
+      // General Settings
+      generalLoading,
+      savingGeneral,
+      generalError,
+      generalForm,
+      timezoneOptions,
+      saveGeneralSettings,
+      // SMTP
+      smtpLoading,
+      savingSmtp,
+      smtpError,
+      smtpForm,
+      smtpFormTls,
+      saveSmtpSettings,
+      // Proxmox VM Defaults
+      pveDefaultsLoading,
+      savingPveDefaults,
+      pveDefaultsError,
+      pveDefaultsForm,
+      savePveDefaults,
+      // Backup Defaults
+      backupDefaultsLoading,
+      savingBackupDefaults,
+      backupDefaultsError,
+      backupDefaultsForm,
+      saveBackupDefaults,
+      // Maintenance
+      runningVacuum,
+      vacuumResult,
+      runningDbCheck,
+      dbCheckResult,
+      loadingCacheStats,
+      cacheStats,
+      clearingCache,
+      logLevelSetting,
+      savingLogLevel,
+      showRestartConfirm,
+      restarting,
+      restartCountdown,
+      restartError,
+      formatBytes,
+      runDbVacuum,
+      runDbCheck,
+      fetchCacheStats,
+      clearCache,
+      saveLogLevel,
+      restartBackend,
     }
   }
 }
@@ -3055,5 +3783,75 @@ export default {
   color: rgba(255, 255, 255, 0.4);
   font-size: 0.68rem;
   text-align: right;
+}
+
+/* ── Settings sections shared styles ──────────────────────────────────────── */
+.settings-group {
+  padding-bottom: 0.5rem;
+}
+
+.settings-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1.25rem;
+}
+
+.card-body {
+  padding: 1.5rem 2rem;
+}
+
+/* ── Cache stats ──────────────────────────────────────────────────────────── */
+.cache-stats-grid {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.5rem;
+}
+
+.cache-keys-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.25rem;
+}
+
+.cache-key-tag {
+  background: rgba(37, 99, 235, 0.1);
+  border: 1px solid rgba(37, 99, 235, 0.25);
+  color: var(--primary-color);
+  padding: 0.1rem 0.4rem;
+  border-radius: 0.25rem;
+  font-size: 0.72rem;
+  font-family: monospace;
+}
+
+/* ── Restart confirm ──────────────────────────────────────────────────────── */
+.restart-confirm-box {
+  background: rgba(239, 68, 68, 0.05);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 0.5rem;
+  padding: 1rem 1.25rem;
+}
+
+/* ── Info-box variants ────────────────────────────────────────────────────── */
+.info-box.alert-success {
+  background: rgba(16, 185, 129, 0.1);
+  border-color: #10b981;
+  color: var(--text-primary);
+}
+
+.info-box.alert-danger {
+  background: rgba(239, 68, 68, 0.08);
+  border-color: #ef4444;
+  color: var(--text-primary);
+}
+
+/* ── Flex utility ─────────────────────────────────────────────────────────── */
+.flex {
+  display: flex;
+}
+
+.gap-2 {
+  gap: 0.5rem;
 }
 </style>

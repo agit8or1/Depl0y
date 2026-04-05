@@ -539,3 +539,36 @@ class RefreshToken(Base):
     revoked_at = Column(DateTime, nullable=True)
 
     user = relationship("User", backref="refresh_tokens")
+
+
+class VMGroup(Base):
+    """Logical VM grouping (beyond Proxmox tags) — stored locally in Depl0y DB"""
+    __tablename__ = "vm_groups"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), unique=True, nullable=False)
+    description = Column(String(500), nullable=True)
+    color = Column(String(7), default="#3b82f6", nullable=False)  # hex color
+    host_id = Column(Integer, ForeignKey("proxmox_hosts.id"), nullable=True)
+    vmids = Column(Text, default="[]", nullable=False)  # JSON array of vmid strings
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    host = relationship("ProxmoxHost", backref="vm_groups")
+
+
+class UserHostPermission(Base):
+    """Depl0y-level permission: which local users can access which Proxmox hosts."""
+    __tablename__ = "user_host_permissions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    host_id = Column(Integer, ForeignKey("proxmox_hosts.id"), nullable=False)
+    can_view = Column(Boolean, default=True, nullable=False)
+    can_manage = Column(Boolean, default=False, nullable=False)
+    can_admin = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (UniqueConstraint("user_id", "host_id", name="uq_user_host_perm"),)
+
+    user = relationship("User", backref="host_permissions")
+    host = relationship("ProxmoxHost", backref="user_permissions")

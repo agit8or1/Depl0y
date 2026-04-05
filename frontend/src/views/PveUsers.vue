@@ -128,6 +128,84 @@
       </div>
     </div>
 
+    <!-- Roles Tab -->
+    <div v-if="activeTab === 'roles'" class="card">
+      <div class="card-header">
+        <h3>Roles</h3>
+        <button @click="openCreateRoleModal" class="btn btn-primary">+ Create Role</button>
+      </div>
+
+      <div v-if="loadingRolesList" class="loading-spinner"></div>
+
+      <div v-else-if="rolesList.length === 0" class="text-center text-muted" style="padding: 2rem;">
+        <p>No roles found.</p>
+      </div>
+
+      <div v-else class="table-container">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Role ID</th>
+              <th>Type</th>
+              <th>Privileges</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <template v-for="role in rolesList" :key="role.roleid">
+              <tr>
+                <td>
+                  <strong>{{ role.roleid }}</strong>
+                </td>
+                <td>
+                  <span :class="['badge', role.special ? 'badge-warning' : 'badge-info']">
+                    {{ role.special ? 'Built-in' : 'Custom' }}
+                  </span>
+                </td>
+                <td>
+                  <button
+                    @click="toggleRoleExpand(role.roleid)"
+                    class="btn btn-outline btn-sm"
+                  >
+                    {{ expandedRoles.has(role.roleid) ? 'Hide' : 'Show' }}
+                    {{ countPrivileges(role) }} privileges
+                  </button>
+                </td>
+                <td>
+                  <div class="flex gap-1">
+                    <button
+                      v-if="!role.special"
+                      @click="openEditRoleModal(role)"
+                      class="btn btn-outline btn-sm"
+                    >Edit</button>
+                    <button
+                      v-if="!role.special"
+                      @click="deleteRole(role.roleid)"
+                      class="btn btn-danger btn-sm"
+                    >Delete</button>
+                    <span v-if="role.special" class="text-muted text-sm">Read-only</span>
+                  </div>
+                </td>
+              </tr>
+              <!-- Expanded privileges row -->
+              <tr v-if="expandedRoles.has(role.roleid)">
+                <td colspan="4" style="padding: 0.5rem 1rem 1rem; background: var(--background, #f9fafb);">
+                  <div class="privilege-grid">
+                    <span
+                      v-for="priv in getPrivileges(role)"
+                      :key="priv"
+                      class="priv-badge"
+                    >{{ priv }}</span>
+                    <span v-if="getPrivileges(role).length === 0" class="text-muted text-sm">No privileges</span>
+                  </div>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
     <!-- Groups Tab -->
     <div v-if="activeTab === 'groups'" class="card">
       <div class="card-header">
@@ -433,6 +511,42 @@
       </div>
     </div>
 
+    <!-- Create / Edit Role Modal -->
+    <div v-if="showRoleModal" class="modal" @click="showRoleModal = false">
+      <div class="modal-content modal-large" @click.stop>
+        <div class="modal-header">
+          <h3>{{ editingRole ? 'Edit Role' : 'Create Role' }} — {{ editingRole ? editingRole.roleid : '' }}</h3>
+          <button @click="showRoleModal = false" class="btn-close">×</button>
+        </div>
+        <form @submit.prevent="saveRole" class="modal-body">
+          <div v-if="!editingRole" class="form-group">
+            <label class="form-label">Role ID</label>
+            <input v-model="roleForm.roleid" class="form-control" placeholder="MyRole" required />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Privileges</label>
+            <p class="text-xs text-muted mb-1">Select the privileges this role grants:</p>
+            <div class="priv-checkbox-grid">
+              <label
+                v-for="priv in allPrivileges"
+                :key="priv"
+                class="priv-checkbox-item"
+              >
+                <input type="checkbox" :value="priv" v-model="roleForm.privs" />
+                <span class="priv-name">{{ priv }}</span>
+              </label>
+            </div>
+          </div>
+          <div class="flex gap-1 mt-2">
+            <button type="submit" class="btn btn-primary" :disabled="savingRole">
+              {{ savingRole ? 'Saving...' : (editingRole ? 'Update Role' : 'Create Role') }}
+            </button>
+            <button type="button" @click="showRoleModal = false" class="btn btn-outline">Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
     <!-- Create Group Modal -->
     <div v-if="showCreateGroupModal" class="modal" @click="showCreateGroupModal = false">
       <div class="modal-content" @click.stop>
@@ -477,6 +591,7 @@ export default {
     const tabs = [
       { id: 'users', label: 'Users' },
       { id: 'acl', label: 'Access Control' },
+      { id: 'roles', label: 'Roles' },
       { id: 'groups', label: 'Groups' }
     ]
     const activeTab = ref('users')
@@ -786,6 +901,106 @@ export default {
       }
     }
 
+    // ── Roles Management ──────────────────────────────────────────────────────
+    const rolesList = ref([])
+    const loadingRolesList = ref(false)
+    const expandedRoles = ref(new Set())
+    const showRoleModal = ref(false)
+    const editingRole = ref(null)
+    const savingRole = ref(false)
+    const roleForm = ref({ roleid: '', privs: [] })
+
+    // All available Proxmox privileges
+    const allPrivileges = [
+      'VM.Allocate', 'VM.Audit', 'VM.Backup', 'VM.Clone', 'VM.Config.CDROM',
+      'VM.Config.CPU', 'VM.Config.Cloudinit', 'VM.Config.Disk', 'VM.Config.HWType',
+      'VM.Config.Memory', 'VM.Config.MoveConfig', 'VM.Config.Net', 'VM.Config.Options',
+      'VM.Console', 'VM.Migrate', 'VM.Monitor', 'VM.PowerMgmt', 'VM.Snapshot',
+      'VM.Snapshot.Rollback',
+      'Datastore.Allocate', 'Datastore.AllocateSpace', 'Datastore.AllocateTemplate',
+      'Datastore.Audit',
+      'Sys.Audit', 'Sys.Console', 'Sys.Incoming', 'Sys.Modify', 'Sys.PowerMgmt',
+      'Sys.Syslog',
+      'Permissions.Modify',
+      'Pool.Allocate', 'Pool.Audit',
+      'SDN.Allocate', 'SDN.Audit', 'SDN.Use',
+      'Realm.AllocateUser',
+    ].sort()
+
+    const fetchRolesList = async () => {
+      loadingRolesList.value = true
+      try {
+        const response = await api.pveNode.listRoles(hostId.value)
+        rolesList.value = response.data || []
+        roles.value = rolesList.value
+      } catch (error) {
+        console.error('Failed to fetch roles:', error)
+        toast.error('Failed to load roles')
+      } finally {
+        loadingRolesList.value = false
+      }
+    }
+
+    const toggleRoleExpand = (roleid) => {
+      const s = new Set(expandedRoles.value)
+      if (s.has(roleid)) s.delete(roleid)
+      else s.add(roleid)
+      expandedRoles.value = s
+    }
+
+    const countPrivileges = (role) => getPrivileges(role).length
+
+    const getPrivileges = (role) => {
+      if (!role.privs) return []
+      if (Array.isArray(role.privs)) return role.privs
+      return role.privs.split(',').map(p => p.trim()).filter(Boolean)
+    }
+
+    const openCreateRoleModal = () => {
+      editingRole.value = null
+      roleForm.value = { roleid: '', privs: [] }
+      showRoleModal.value = true
+    }
+
+    const openEditRoleModal = (role) => {
+      editingRole.value = role
+      roleForm.value = { roleid: role.roleid, privs: getPrivileges(role) }
+      showRoleModal.value = true
+    }
+
+    const saveRole = async () => {
+      savingRole.value = true
+      try {
+        const privString = roleForm.value.privs.join(',')
+        if (editingRole.value) {
+          await api.pveNode.updateRole(hostId.value, editingRole.value.roleid, { privs: privString })
+          toast.success('Role updated')
+        } else {
+          await api.pveNode.createRole(hostId.value, { roleid: roleForm.value.roleid, privs: privString })
+          toast.success('Role created')
+        }
+        showRoleModal.value = false
+        await fetchRolesList()
+      } catch (error) {
+        console.error('Failed to save role:', error)
+        toast.error(error.response?.data?.detail || 'Failed to save role')
+      } finally {
+        savingRole.value = false
+      }
+    }
+
+    const deleteRole = async (roleid) => {
+      if (!confirm(`Delete role "${roleid}"? This cannot be undone.`)) return
+      try {
+        await api.pveNode.deleteRole(hostId.value, roleid)
+        toast.success('Role deleted')
+        await fetchRolesList()
+      } catch (error) {
+        console.error('Failed to delete role:', error)
+        toast.error(error.response?.data?.detail || 'Failed to delete role')
+      }
+    }
+
     // ── Tab switching ──────────────────────────────────────────────────────
     const switchTab = (tabId) => {
       activeTab.value = tabId
@@ -794,6 +1009,8 @@ export default {
         fetchRoles()
       } else if (tabId === 'groups') {
         fetchGroups()
+      } else if (tabId === 'roles') {
+        fetchRolesList()
       }
     }
 
@@ -890,6 +1107,23 @@ export default {
       newGroup,
       createGroup,
       deleteGroup,
+      // roles
+      rolesList,
+      loadingRolesList,
+      expandedRoles,
+      showRoleModal,
+      editingRole,
+      savingRole,
+      roleForm,
+      allPrivileges,
+      fetchRolesList,
+      toggleRoleExpand,
+      countPrivileges,
+      getPrivileges,
+      openCreateRoleModal,
+      openEditRoleModal,
+      saveRole,
+      deleteRole,
       // helpers
       extractRealm,
       formatTokenId,
@@ -1062,5 +1296,56 @@ export default {
 .badge-secondary {
   background: var(--background, #f3f4f6);
   color: var(--text-secondary, #6b7280);
+}
+
+/* Roles tab */
+.privilege-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  padding: 0.25rem 0;
+}
+
+.priv-badge {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  background: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+  font-family: monospace;
+}
+
+.priv-checkbox-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 0.4rem;
+  max-height: 400px;
+  overflow-y: auto;
+  border: 1px solid var(--border-color);
+  border-radius: 0.375rem;
+  padding: 0.75rem;
+}
+
+.priv-checkbox-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+  padding: 0.2rem 0.25rem;
+  border-radius: 0.25rem;
+  transition: background 0.1s;
+}
+
+.priv-checkbox-item:hover {
+  background: var(--background, #f3f4f6);
+}
+
+.priv-name {
+  font-size: 0.8125rem;
+  font-family: monospace;
+  color: var(--text-primary);
 }
 </style>

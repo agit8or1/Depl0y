@@ -261,6 +261,111 @@ def get_metrics(
     }
 
 
+@router.get("/settings")
+def get_all_settings(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+) -> Dict[str, Any]:
+    """Return all system settings as a key→value dict (admin only)"""
+    rows = db.query(SystemSettings).all()
+    return {row.key: row.value for row in rows}
+
+
+@router.patch("/settings")
+def update_settings(
+    updates: Dict[str, str],
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+) -> Dict[str, Any]:
+    """Bulk-upsert system settings (admin only). Accepts a dict of key→value pairs."""
+    try:
+        for key, value in updates.items():
+            row = db.query(SystemSettings).filter(SystemSettings.key == key).first()
+            if row:
+                row.value = value
+            else:
+                row = SystemSettings(key=key, value=value)
+                db.add(row)
+        db.commit()
+        return {"success": True, "updated": list(updates.keys())}
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to update settings: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to update settings: {e}")
+
+
+@router.get("/cache/stats")
+def cache_stats(
+    current_user: User = Depends(require_admin),
+) -> Dict[str, Any]:
+    """Return PVE TTL cache statistics (admin only)"""
+    from app.core.cache import pve_cache
+    return pve_cache.stats()
+
+
+@router.post("/cache/clear")
+def clear_cache(
+    current_user: User = Depends(require_admin),
+) -> Dict[str, str]:
+    """Clear the entire PVE TTL cache (admin only)"""
+    from app.core.cache import pve_cache
+    pve_cache.clear()
+    logger.info(f"PVE cache cleared by {current_user.username}")
+    return {"success": "true", "message": "Cache cleared successfully"}
+
+
+@router.post("/db-vacuum")
+def db_vacuum(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+) -> Dict[str, Any]:
+    """Run SQLite VACUUM to reclaim disk space (admin only)"""
+    from app.core.config import settings as app_settings
+
+    db_path = app_settings.DATABASE_URL.replace("sqlite:///", "")
+    try:
+        # Get size before vacuum
+        size_before = os.path.getsize(db_path) if os.path.exists(db_path) else 0
+        conn = sqlite3.connect(db_path)
+        conn.execute("VACUUM")
+        conn.close()
+        size_after = os.path.getsize(db_path) if os.path.exists(db_path) else 0
+        freed = max(0, size_before - size_after)
+        logger.info(f"DB VACUUM completed by {current_user.username}. Freed: {freed} bytes")
+        return {
+            "success": True,
+            "size_before_bytes": size_before,
+            "size_after_bytes": size_after,
+            "freed_bytes": freed,
+        }
+    except Exception as e:
+        logger.error(f"DB VACUUM failed: {e}")
+        raise HTTPException(status_code=500, detail=f"VACUUM failed: {e}")
+
+
+@router.post("/restart")
+def restart_backend(
+    current_user: User = Depends(require_admin),
+) -> Dict[str, str]:
+    """Schedule a backend service restart (admin only). Returns immediately; restart happens after 3s."""
+    import subprocess
+    import threading
+
+    logger.warning(f"Backend restart requested by {current_user.username}")
+
+    def _do_restart():
+        import time as _time
+        _time.sleep(3)
+        try:
+            subprocess.run(["systemctl", "restart", "depl0y-backend"], check=False)
+        except Exception as exc:
+            logger.error(f"Restart subprocess failed: {exc}")
+
+    t = threading.Thread(target=_do_restart, daemon=True)
+    t.start()
+    return {"success": "true", "message": "Backend restart scheduled in 3 seconds"}
+
+
 @router.put("/version")
 def update_version(new_version: str, db: Session = Depends(get_db)) -> Dict[str, str]:
     """Update system version (admin only)"""

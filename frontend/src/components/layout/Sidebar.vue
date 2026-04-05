@@ -21,6 +21,10 @@
         <span class="icon">📊</span>
         <span>Dashboard</span>
       </router-link>
+      <router-link to="/federation" class="nav-item" @click="handleNavClick">
+        <span class="icon">🌍</span>
+        <span>Federation View</span>
+      </router-link>
       <router-link to="/datacenter" class="nav-item" @click="handleNavClick">
         <span class="icon">🏢</span>
         <span>Datacenter</span>

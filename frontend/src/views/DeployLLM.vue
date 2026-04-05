@@ -9,13 +9,232 @@
       </div>
     </div>
 
+    <!-- Top-level tab bar -->
+    <div class="top-tab-bar">
+      <button :class="['top-tab', { active: topTab === 'catalog' }]" @click="topTab = 'catalog'">Model Catalog</button>
+      <button :class="['top-tab', { active: topTab === 'deploy' }]" @click="topTab = 'deploy'">Deploy New</button>
+      <button :class="['top-tab', { active: topTab === 'instances' }]" @click="switchToInstances()">
+        Deployed Instances
+        <span v-if="instancesCount > 0" class="tab-badge">{{ instancesCount }}</span>
+      </button>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <!-- MODEL CATALOG TAB                                      -->
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <div v-if="topTab === 'catalog'" class="tab-panel">
+      <div class="catalog-filters">
+        <div class="filter-group">
+          <label class="filter-label">Category</label>
+          <div class="filter-pills">
+            <button
+              v-for="cat in catalogCategories"
+              :key="cat.id"
+              :class="['pill', { active: catalogCatFilter === cat.id }]"
+              @click="catalogCatFilter = cat.id"
+            >{{ cat.label }}</button>
+          </div>
+        </div>
+        <div class="filter-group">
+          <label class="filter-label">Size</label>
+          <div class="filter-pills">
+            <button :class="['pill', { active: catalogSizeFilter === 'all' }]" @click="catalogSizeFilter = 'all'">All</button>
+            <button :class="['pill', { active: catalogSizeFilter === 'small' }]" @click="catalogSizeFilter = 'small'">&lt;2 GB</button>
+            <button :class="['pill', { active: catalogSizeFilter === 'medium' }]" @click="catalogSizeFilter = 'medium'">2–8 GB</button>
+            <button :class="['pill', { active: catalogSizeFilter === 'large' }]" @click="catalogSizeFilter = 'large'">&gt;8 GB</button>
+          </div>
+        </div>
+      </div>
+
+      <div v-for="cat in visibleCatalogCategories" :key="cat.id" class="catalog-section">
+        <h3 class="catalog-section-title">{{ cat.icon }} {{ cat.label }}</h3>
+        <div class="catalog-grid">
+          <div
+            v-for="m in cat.models"
+            :key="m.id"
+            :class="['catalog-card', { selected: selectedCatalogModels.includes(m.id) }]"
+          >
+            <div class="catalog-card-header">
+              <span class="catalog-model-name">{{ m.name }}</span>
+              <span class="catalog-model-size">{{ m.size_gb }} GB</span>
+            </div>
+            <p class="catalog-model-desc">{{ m.description }}</p>
+            <div class="catalog-model-meta">
+              <span class="meta-chip">{{ m.params }}</span>
+              <span class="meta-chip">{{ m.context_len }}</span>
+              <span class="meta-chip vram">VRAM: {{ m.vram }}</span>
+            </div>
+            <div class="catalog-card-footer">
+              <button
+                v-if="!selectedCatalogModels.includes(m.id)"
+                class="btn btn-sm btn-outline"
+                @click="addCatalogModel(m)"
+              >+ Select</button>
+              <button
+                v-else
+                class="btn btn-sm btn-selected"
+                @click="removeCatalogModel(m.id)"
+              >&#10003; Selected</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="selectedCatalogModels.length > 0" class="catalog-selection-bar">
+        <span>{{ selectedCatalogModels.length }} model(s) selected</span>
+        <button class="btn btn-primary" @click="goDeployWithCatalogModels()">Deploy with selected models →</button>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <!-- DEPLOYED INSTANCES TAB                                 -->
+    <!-- ═══════════════════════════════════════════════════════ -->
+    <div v-if="topTab === 'instances'" class="tab-panel">
+      <div class="instances-toolbar">
+        <button class="btn btn-secondary btn-sm" @click="loadInstances()" :disabled="instancesLoading">
+          <span v-if="instancesLoading"><div class="spinner inline small"></div></span>
+          <span v-else>&#8635; Refresh</span>
+        </button>
+      </div>
+
+      <div v-if="instancesLoading && instances.length === 0" class="card loading-card">
+        <div class="spinner"></div>
+        <p>Loading instances...</p>
+      </div>
+
+      <div v-else-if="instances.length === 0" class="card empty-state">
+        <div class="empty-icon">&#129302;</div>
+        <h3>No LLM instances found</h3>
+        <p>VMs tagged with <code>llm</code> or <code>ai</code> will appear here.</p>
+        <button class="btn btn-primary" @click="topTab = 'deploy'">Deploy your first LLM →</button>
+      </div>
+
+      <div v-else>
+        <div
+          v-for="inst in instances"
+          :key="inst.vmid + '-' + inst.host_id"
+          class="instance-card"
+        >
+          <div class="instance-header" @click="toggleInstance(inst)">
+            <div class="instance-status-dot" :class="inst.status === 'running' ? 'dot-green' : 'dot-gray'"></div>
+            <div class="instance-info">
+              <span class="instance-name">{{ inst.name }}</span>
+              <span class="instance-meta">
+                {{ inst.host_name || 'host-' + inst.host_id }} / {{ inst.node }} / {{ inst.vmid }}
+                <span v-if="inst.ip_address"> · {{ inst.ip_address }}</span>
+                <span v-if="inst.engine"> · {{ inst.engine }}</span>
+              </span>
+            </div>
+            <div class="instance-actions-quick">
+              <a
+                v-if="inst.ip_address && inst.status === 'running'"
+                :href="'http://' + inst.ip_address + ':11434'"
+                target="_blank"
+                class="btn btn-xs btn-outline"
+                @click.stop
+              >Ollama API</a>
+              <a
+                v-if="inst.ip_address && inst.status === 'running' && inst.ui_type === 'open-webui'"
+                :href="'http://' + inst.ip_address + ':3000'"
+                target="_blank"
+                class="btn btn-xs btn-outline"
+                @click.stop
+              >Open WebUI</a>
+              <span :class="['status-badge', 'status-' + inst.status]">{{ inst.status }}</span>
+            </div>
+            <span class="expand-arrow">{{ expandedInstances.includes(inst.vmid) ? '▲' : '▼' }}</span>
+          </div>
+
+          <!-- Expanded panel -->
+          <div v-if="expandedInstances.includes(inst.vmid)" class="instance-detail">
+            <!-- Ollama status check -->
+            <div v-if="!instStatus[inst.vmid]" class="inst-loading">
+              <div class="spinner small"></div> Checking Ollama status...
+            </div>
+
+            <template v-else>
+              <div v-if="!instStatus[inst.vmid].reachable" class="info-box warning">
+                Ollama is not reachable: {{ instStatus[inst.vmid].error || 'offline' }}.
+                The VM may still be starting or Ollama is not installed.
+              </div>
+
+              <template v-else>
+                <!-- Running models -->
+                <div class="inst-section">
+                  <h4 class="inst-section-title">Loaded in VRAM</h4>
+                  <div v-if="instStatus[inst.vmid].models_loaded.length === 0" class="muted-text">No models currently loaded.</div>
+                  <div v-else class="model-chip-row">
+                    <div v-for="m in instStatus[inst.vmid].models_loaded" :key="m.name" class="model-chip loaded-chip">
+                      <span>{{ m.name }}</span>
+                      <span class="chip-size">{{ formatModelSize(m.size) }}</span>
+                      <button class="btn-chip-action" @click="unloadModel(inst, m.name)" title="Unload from VRAM">&#9111;</button>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Installed models -->
+                <div class="inst-section">
+                  <h4 class="inst-section-title">Installed Models</h4>
+                  <div v-if="instStatus[inst.vmid].models_installed.length === 0" class="muted-text">No models installed yet.</div>
+                  <table v-else class="models-table">
+                    <thead>
+                      <tr><th>Model</th><th>Size</th><th>Modified</th><th></th></tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="m in instStatus[inst.vmid].models_installed" :key="m.name">
+                        <td class="model-name-cell">{{ m.name }}</td>
+                        <td class="model-size-cell">{{ formatModelSize(m.size) }}</td>
+                        <td class="model-date-cell">{{ formatDate(m.modified_at) }}</td>
+                        <td>
+                          <button class="btn btn-xs btn-danger" @click="deleteModel(inst, m.name)">Delete</button>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <!-- Pull model -->
+                <div class="inst-section">
+                  <h4 class="inst-section-title">Pull Model</h4>
+                  <div class="pull-row">
+                    <input
+                      v-model="pullModelInputs[inst.vmid]"
+                      class="form-control pull-input"
+                      placeholder="e.g. llama3.2:3b"
+                      @keyup.enter="pullModel(inst)"
+                    />
+                    <button
+                      class="btn btn-primary btn-sm"
+                      :disabled="pullingModel[inst.vmid]"
+                      @click="pullModel(inst)"
+                    >
+                      <span v-if="pullingModel[inst.vmid]"><div class="spinner inline small"></div> Pulling...</span>
+                      <span v-else>Pull</span>
+                    </button>
+                  </div>
+                  <!-- Pull progress -->
+                  <div v-if="pullProgress[inst.vmid]" class="pull-progress-box">
+                    <div class="pull-progress-status">{{ pullProgress[inst.vmid].status }}</div>
+                    <div v-if="pullProgress[inst.vmid].total" class="pull-progress-bar-wrap">
+                      <div class="pull-progress-bar" :style="{ width: Math.round((pullProgress[inst.vmid].completed / pullProgress[inst.vmid].total) * 100) + '%' }"></div>
+                    </div>
+                    <div v-if="pullProgress[inst.vmid].error" class="error-box">{{ pullProgress[inst.vmid].error }}</div>
+                  </div>
+                </div>
+              </template>
+            </template>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Loading -->
-    <div v-if="loading" class="card loading-card">
+    <div v-if="topTab === 'deploy' && loading" class="card loading-card">
       <div class="spinner"></div>
       <p>Loading catalog...</p>
     </div>
 
-    <template v-else>
+    <template v-if="topTab === 'deploy' && !loading">
 
       <!-- ═══════════════════════════════════════════════════════ -->
       <!-- MODE PICKER (shown before any steps)                   -->
@@ -1237,6 +1456,57 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useToast } from 'vue-toastification'
 import api from '@/services/api'
 
+// ─── Static model catalog for the catalog browser tab ────────────────────
+const CATALOG_CATEGORIES = [
+  {
+    id: 'chat',
+    label: 'Chat / General',
+    icon: '💬',
+    models: [
+      { id: 'llama3.2:1b',    name: 'Llama 3.2 1B',       params: '1B',   size_gb: 0.8,  context_len: '128K', vram: '2 GB',  description: "Meta's smallest Llama 3.2. Fastest responses, minimal RAM. Great for quick Q&A and testing." },
+      { id: 'llama3.2:3b',    name: 'Llama 3.2 3B',       params: '3B',   size_gb: 2.0,  context_len: '128K', vram: '3 GB',  description: 'Balanced speed and quality. Solid CPU-only choice for chat and document tasks.' },
+      { id: 'llama3.2:8b',    name: 'Llama 3.2 8B',       params: '8B',   size_gb: 4.7,  context_len: '128K', vram: '6 GB',  description: "Meta's 8B Llama 3.2. Excellent quality-to-cost ratio. Ideal general-purpose model." },
+      { id: 'qwen2.5:0.5b',   name: 'Qwen 2.5 0.5B',      params: '0.5B', size_gb: 0.4,  context_len: '32K',  vram: '1 GB',  description: 'Alibaba Qwen 2.5 ultra-small. Runs anywhere, good for simple completions.' },
+      { id: 'qwen2.5:1.5b',   name: 'Qwen 2.5 1.5B',      params: '1.5B', size_gb: 1.0,  context_len: '32K',  vram: '2 GB',  description: 'Qwen 2.5 1.5B. Strong multilingual support for its size.' },
+      { id: 'qwen2.5:3b',     name: 'Qwen 2.5 3B',        params: '3B',   size_gb: 1.9,  context_len: '32K',  vram: '3 GB',  description: 'Alibaba Qwen 2.5 3B. Excellent multilingual support, strong benchmarks.' },
+      { id: 'qwen2.5:7b',     name: 'Qwen 2.5 7B',        params: '7B',   size_gb: 4.4,  context_len: '128K', vram: '5 GB',  description: 'Qwen 2.5 7B — among the best 7B models for multilingual tasks and reasoning.' },
+      { id: 'phi3.5',         name: 'Phi-3.5 Mini',       params: '3.8B', size_gb: 2.2,  context_len: '128K', vram: '3 GB',  description: "Microsoft Phi-3.5 Mini. Surprisingly capable reasoning for its compact size." },
+      { id: 'gemma2:2b',      name: 'Gemma 2 2B',         params: '2B',   size_gb: 1.6,  context_len: '8K',   vram: '2 GB',  description: "Google Gemma 2 2B. Very efficient for basic tasks, fast on CPU." },
+      { id: 'gemma2:9b',      name: 'Gemma 2 9B',         params: '9B',   size_gb: 5.4,  context_len: '8K',   vram: '8 GB',  description: 'Google Gemma 2 9B. Strong quality with manageable resource needs.' },
+    ],
+  },
+  {
+    id: 'code',
+    label: 'Code',
+    icon: '💻',
+    models: [
+      { id: 'codellama:7b',         name: 'Code Llama 7B',        params: '7B',   size_gb: 3.8,  context_len: '16K',  vram: '5 GB',  description: "Meta's Code Llama 7B. Purpose-built for code generation, completion, and debugging." },
+      { id: 'deepseek-coder:1.3b',  name: 'DeepSeek Coder 1.3B',  params: '1.3B', size_gb: 0.8,  context_len: '16K',  vram: '2 GB',  description: 'Lightweight DeepSeek Coder. Fast code completions on CPU.' },
+      { id: 'deepseek-coder:6.7b',  name: 'DeepSeek Coder 6.7B',  params: '6.7B', size_gb: 3.8,  context_len: '16K',  vram: '5 GB',  description: 'DeepSeek Coder 6.7B. Excellent at multi-language code tasks.' },
+      { id: 'qwen2.5-coder:1.5b',   name: 'Qwen2.5-Coder 1.5B',   params: '1.5B', size_gb: 1.0,  context_len: '32K',  vram: '2 GB',  description: 'Qwen2.5-Coder 1.5B. Strong coding benchmarks in a tiny package.' },
+      { id: 'qwen2.5-coder:7b',     name: 'Qwen2.5-Coder 7B',     params: '7B',   size_gb: 4.4,  context_len: '128K', vram: '5 GB',  description: 'Qwen2.5-Coder 7B. Excellent across 92+ languages. Top coding benchmark scores.' },
+    ],
+  },
+  {
+    id: 'vision',
+    label: 'Vision',
+    icon: '👁️',
+    models: [
+      { id: 'llava:7b',      name: 'LLaVA 7B',     params: '7B',  size_gb: 4.5,  context_len: '4K',  vram: '6 GB',  description: 'LLaVA 7B — multimodal model for visual question answering and image understanding.' },
+      { id: 'bakllava',      name: 'BakLLaVA',     params: '7B',  size_gb: 4.1,  context_len: '4K',  vram: '6 GB',  description: 'BakLLaVA — Mistral-based visual model. Capable image description and chat.' },
+    ],
+  },
+  {
+    id: 'embedding',
+    label: 'Embedding',
+    icon: '🔢',
+    models: [
+      { id: 'nomic-embed-text',   name: 'Nomic Embed Text',   params: '137M', size_gb: 0.3, context_len: '8K',  vram: '0.5 GB', description: 'High-quality text embeddings for RAG pipelines and semantic search. Very fast.' },
+      { id: 'mxbai-embed-large',  name: 'mxbai-embed-large',  params: '335M', size_gb: 0.7, context_len: '512', vram: '1 GB',   description: 'State-of-the-art sentence embeddings. Best retrieval quality for RAG.' },
+    ],
+  },
+]
+
 // Simple mode model choices per use-case
 const USE_CASE_MODELS = {
   chat: [
@@ -1296,6 +1566,165 @@ export default {
     const toast = useToast()
 
     // ── mode: null | 'simple' | 'advanced' ────────────────────────
+    // ── top-level tab ──────────────────────────────────────────
+    const topTab = ref('catalog')
+
+    // ── catalog tab state ──────────────────────────────────────
+    const catalogCatFilter = ref('all')
+    const catalogSizeFilter = ref('all')
+    const selectedCatalogModels = ref([])
+
+    const catalogCategories = computed(() => [
+      { id: 'all', label: 'All' },
+      ...CATALOG_CATEGORIES.map(c => ({ id: c.id, label: c.label })),
+    ])
+
+    const visibleCatalogCategories = computed(() => {
+      return CATALOG_CATEGORIES
+        .filter(cat => catalogCatFilter.value === 'all' || cat.id === catalogCatFilter.value)
+        .map(cat => ({
+          ...cat,
+          models: cat.models.filter(m => {
+            if (catalogSizeFilter.value === 'small') return m.size_gb < 2
+            if (catalogSizeFilter.value === 'medium') return m.size_gb >= 2 && m.size_gb <= 8
+            if (catalogSizeFilter.value === 'large') return m.size_gb > 8
+            return true
+          }),
+        }))
+        .filter(cat => cat.models.length > 0)
+    })
+
+    function addCatalogModel(m) { if (!selectedCatalogModels.value.includes(m.id)) selectedCatalogModels.value.push(m.id) }
+    function removeCatalogModel(id) { selectedCatalogModels.value = selectedCatalogModels.value.filter(x => x !== id) }
+    function goDeployWithCatalogModels() { topTab.value = 'deploy' }
+
+    // ── deployed instances tab state ───────────────────────────
+    const instances = ref([])
+    const instancesLoading = ref(false)
+    const expandedInstances = ref([])
+    const instStatus = ref({})
+    const pullModelInputs = ref({})
+    const pullProgress = ref({})
+    const pullingModel = ref({})
+
+    const instancesCount = computed(() => instances.value.length)
+
+    async function loadInstances() {
+      instancesLoading.value = true
+      try {
+        const res = await api.llm.listInstances()
+        instances.value = res.data
+      } catch (e) {
+        toast.error('Failed to load LLM instances')
+      } finally {
+        instancesLoading.value = false
+      }
+    }
+
+    async function switchToInstances() {
+      topTab.value = 'instances'
+      if (instances.value.length === 0) await loadInstances()
+    }
+
+    async function toggleInstance(inst) {
+      const id = inst.vmid
+      if (expandedInstances.value.includes(id)) {
+        expandedInstances.value = expandedInstances.value.filter(x => x !== id)
+      } else {
+        expandedInstances.value.push(id)
+        await refreshInstStatus(inst)
+      }
+    }
+
+    async function refreshInstStatus(inst) {
+      try {
+        const res = await api.llm.getInstanceStatus(inst.host_id, inst.node, inst.vmid)
+        instStatus.value = { ...instStatus.value, [inst.vmid]: res.data }
+      } catch (e) {
+        instStatus.value = { ...instStatus.value, [inst.vmid]: { reachable: false, error: 'Request failed' } }
+      }
+    }
+
+    async function pullModel(inst) {
+      const model = (pullModelInputs.value[inst.vmid] || '').trim()
+      if (!model) { toast.warning('Enter a model name'); return }
+      pullingModel.value = { ...pullingModel.value, [inst.vmid]: true }
+      pullProgress.value = { ...pullProgress.value, [inst.vmid]: { status: 'Starting pull...', completed: 0, total: 0 } }
+
+      try {
+        const token = localStorage.getItem('access_token')
+        const response = await fetch(
+          `/api/v1/llm/instances/${inst.host_id}/${inst.node}/${inst.vmid}/pull`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify({ model }),
+          }
+        )
+        const reader = response.body.getReader()
+        const decoder = new TextDecoder()
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          const lines = decoder.decode(value).split('\n').filter(l => l.trim())
+          for (const line of lines) {
+            try {
+              const obj = JSON.parse(line)
+              if (obj.error) {
+                pullProgress.value = { ...pullProgress.value, [inst.vmid]: { ...pullProgress.value[inst.vmid], error: obj.error, status: 'Error' } }
+              } else {
+                pullProgress.value = { ...pullProgress.value, [inst.vmid]: {
+                  status: obj.status || 'Pulling...',
+                  completed: obj.completed || 0,
+                  total: obj.total || 0,
+                }}
+              }
+            } catch (_) {}
+          }
+        }
+        toast.success(`Model ${model} pulled successfully`)
+        pullModelInputs.value = { ...pullModelInputs.value, [inst.vmid]: '' }
+        await refreshInstStatus(inst)
+      } catch (e) {
+        toast.error(`Pull failed: ${e.message}`)
+        pullProgress.value = { ...pullProgress.value, [inst.vmid]: { status: 'Failed', error: e.message } }
+      } finally {
+        pullingModel.value = { ...pullingModel.value, [inst.vmid]: false }
+      }
+    }
+
+    async function deleteModel(inst, modelName) {
+      if (!confirm(`Delete model "${modelName}" from VM? This cannot be undone.`)) return
+      try {
+        await api.llm.deleteInstanceModel(inst.host_id, inst.node, inst.vmid, modelName)
+        toast.success(`Deleted ${modelName}`)
+        await refreshInstStatus(inst)
+      } catch (e) {
+        toast.error(e.response?.data?.detail || `Failed to delete ${modelName}`)
+      }
+    }
+
+    async function unloadModel(inst, modelName) {
+      try {
+        await api.llm.unloadInstanceModel(inst.host_id, inst.node, inst.vmid, modelName)
+        toast.success(`Unloaded ${modelName} from VRAM`)
+        await refreshInstStatus(inst)
+      } catch (e) {
+        toast.error(e.response?.data?.detail || `Failed to unload ${modelName}`)
+      }
+    }
+
+    function formatModelSize(bytes) {
+      if (!bytes) return '?'
+      const gb = bytes / 1073741824
+      return gb >= 1 ? gb.toFixed(1) + ' GB' : Math.round(bytes / 1048576) + ' MB'
+    }
+
+    function formatDate(dt) {
+      if (!dt) return ''
+      try { return new Date(dt).toLocaleDateString() } catch { return dt }
+    }
+
     const mode = ref(null)
 
     // Advanced wizard steps
@@ -1764,6 +2193,17 @@ export default {
     }
 
     return {
+      // top-level tabs
+      topTab, switchToInstances,
+      // catalog tab
+      catalogCatFilter, catalogSizeFilter, catalogCategories, visibleCatalogCategories,
+      selectedCatalogModels, addCatalogModel, removeCatalogModel, goDeployWithCatalogModels,
+      // instances tab
+      instances, instancesLoading, instancesCount, loadInstances,
+      expandedInstances, toggleInstance, instStatus, refreshInstStatus,
+      pullModelInputs, pullProgress, pullingModel, pullModel,
+      deleteModel, unloadModel, formatModelSize, formatDate,
+      // deploy wizard
       mode, steps, currentStep, simpleSteps, simpleStep, simpleAnswers, simpleRec, selectSimpleModel, USE_CASE_MODELS,
       loading, deploying, deployError, deployedAccessUrl, deployedVmId, progressData, getDeployStage,
       catalog, proxmoxHosts, nodes, nodesLoading, storageList, storageLoading, sortedStorageList, gpuDevices, gpuLoading,
@@ -2364,5 +2804,216 @@ code {
   .option-grid, .model-grid { grid-template-columns: 1fr; }
   .review-grid { grid-template-columns: 1fr; }
   .grid-cols-2, .grid-cols-3 { grid-template-columns: 1fr; }
+  .catalog-grid { grid-template-columns: 1fr; }
 }
+
+/* ── top-level tab bar ──────────────────────────────────── */
+.top-tab-bar {
+  display: flex;
+  gap: 0;
+  border-bottom: 2px solid #e5e7eb;
+  margin-bottom: 1.5rem;
+}
+.top-tab {
+  padding: 0.65rem 1.4rem;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: #6b7280;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -2px;
+  transition: color 0.15s, border-color 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.top-tab:hover { color: #374151; }
+.top-tab.active { color: #3b82f6; border-bottom-color: #3b82f6; }
+.tab-badge {
+  background: #3b82f6;
+  color: white;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.1rem 0.45rem;
+  border-radius: 10px;
+  min-width: 1.2rem;
+  text-align: center;
+}
+.tab-panel { }
+
+/* ── catalog tab ────────────────────────────────────────── */
+.catalog-filters {
+  display: flex;
+  gap: 2rem;
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+}
+.filter-group { display: flex; flex-direction: column; gap: 0.4rem; }
+.filter-label { font-size: 0.75rem; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em; }
+.filter-pills { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.pill {
+  padding: 0.3rem 0.85rem;
+  border: 1px solid #d1d5db;
+  border-radius: 20px;
+  background: white;
+  cursor: pointer;
+  font-size: 0.8rem;
+  color: #374151;
+  transition: all 0.15s;
+}
+.pill:hover { border-color: #3b82f6; color: #3b82f6; }
+.pill.active { background: #3b82f6; color: white; border-color: #3b82f6; }
+
+.catalog-section { margin-bottom: 2rem; }
+.catalog-section-title { font-size: 1rem; font-weight: 700; color: #374151; margin: 0 0 0.75rem; }
+
+.catalog-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 0.9rem;
+}
+.catalog-card {
+  border: 2px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 1rem;
+  background: #fafafa;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.catalog-card:hover { border-color: #93c5fd; box-shadow: 0 2px 8px rgba(59,130,246,0.1); }
+.catalog-card.selected { border-color: #3b82f6; background: #eff6ff; box-shadow: 0 0 0 3px rgba(59,130,246,0.12); }
+.catalog-card-header { display: flex; justify-content: space-between; align-items: baseline; }
+.catalog-model-name { font-weight: 700; font-size: 0.92rem; color: #111; }
+.catalog-model-size { font-size: 0.78rem; color: #6b7280; font-family: monospace; }
+.catalog-model-desc { font-size: 0.8rem; color: #555; line-height: 1.4; margin: 0; flex-grow: 1; }
+.catalog-model-meta { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.meta-chip {
+  font-size: 0.7rem;
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
+  border-radius: 4px;
+  padding: 0.1rem 0.4rem;
+  color: #374151;
+}
+.meta-chip.vram { background: #fef3c7; border-color: #fde68a; color: #92400e; }
+.catalog-card-footer { margin-top: 0.3rem; }
+
+.btn-sm { padding: 0.35rem 0.8rem; font-size: 0.8rem; border-radius: 6px; border: none; cursor: pointer; font-weight: 600; transition: all 0.15s; }
+.btn-xs { padding: 0.2rem 0.55rem; font-size: 0.75rem; border-radius: 5px; border: none; cursor: pointer; font-weight: 600; transition: all 0.15s; }
+.btn-outline { background: white; border: 1px solid #d1d5db; color: #374151; }
+.btn-outline:hover { border-color: #3b82f6; color: #3b82f6; }
+.btn-selected { background: #eff6ff; border: 1px solid #3b82f6; color: #1d4ed8; }
+.btn-danger { background: #fee2e2; color: #dc2626; border: 1px solid #fca5a5; }
+.btn-danger:hover { background: #fecaca; }
+
+.catalog-selection-bar {
+  position: sticky;
+  bottom: 1rem;
+  background: #1e293b;
+  color: white;
+  border-radius: 12px;
+  padding: 0.85rem 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+  margin-top: 1rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+/* ── instances tab ──────────────────────────────────────── */
+.instances-toolbar { display: flex; gap: 0.75rem; margin-bottom: 1rem; align-items: center; }
+.empty-state { text-align: center; padding: 3rem 2rem; }
+.empty-icon { font-size: 3rem; margin-bottom: 0.75rem; }
+.empty-state h3 { margin: 0 0 0.5rem; }
+.empty-state p { color: #6b7280; margin: 0 0 1.5rem; }
+
+.instance-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  margin-bottom: 0.75rem;
+  overflow: hidden;
+  background: white;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+.instance-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.instance-header:hover { background: #f8fafc; }
+.instance-status-dot {
+  width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+}
+.dot-green { background: #22c55e; box-shadow: 0 0 0 3px rgba(34,197,94,0.2); }
+.dot-gray { background: #9ca3af; }
+.instance-info { flex: 1; min-width: 0; }
+.instance-name { display: block; font-weight: 700; font-size: 0.95rem; color: #111; }
+.instance-meta { font-size: 0.78rem; color: #6b7280; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.instance-actions-quick { display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; }
+.expand-arrow { color: #9ca3af; font-size: 0.75rem; flex-shrink: 0; }
+
+.status-badge {
+  font-size: 0.7rem; font-weight: 700; padding: 0.15rem 0.5rem;
+  border-radius: 10px; text-transform: uppercase; letter-spacing: 0.04em;
+}
+.status-running { background: #d1fae5; color: #065f46; }
+.status-stopped { background: #f3f4f6; color: #6b7280; }
+.status-creating { background: #dbeafe; color: #1d4ed8; }
+.status-error { background: #fee2e2; color: #dc2626; }
+.status-unknown { background: #f3f4f6; color: #6b7280; }
+
+.instance-detail {
+  border-top: 1px solid #f3f4f6;
+  padding: 1rem 1.25rem;
+  background: #fafafa;
+}
+.inst-loading { display: flex; align-items: center; gap: 0.6rem; color: #6b7280; font-size: 0.85rem; }
+.inst-section { margin-bottom: 1.25rem; }
+.inst-section:last-child { margin-bottom: 0; }
+.inst-section-title { font-size: 0.82rem; font-weight: 700; color: #374151; text-transform: uppercase; letter-spacing: 0.05em; margin: 0 0 0.6rem; }
+.muted-text { font-size: 0.85rem; color: #9ca3af; font-style: italic; }
+
+.model-chip-row { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.model-chip {
+  display: flex; align-items: center; gap: 0.4rem;
+  background: #eff6ff; border: 1px solid #bfdbfe;
+  border-radius: 20px; padding: 0.3rem 0.75rem;
+  font-size: 0.8rem; color: #1d4ed8;
+}
+.loaded-chip { background: #d1fae5; border-color: #6ee7b7; color: #065f46; }
+.chip-size { font-size: 0.72rem; color: inherit; opacity: 0.7; }
+.btn-chip-action {
+  background: none; border: none; cursor: pointer; padding: 0 0.1rem;
+  color: inherit; font-size: 1rem; line-height: 1; opacity: 0.6;
+  transition: opacity 0.15s;
+}
+.btn-chip-action:hover { opacity: 1; }
+
+.models-table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
+.models-table th { text-align: left; padding: 0.4rem 0.6rem; font-size: 0.72rem; color: #6b7280; font-weight: 600; text-transform: uppercase; border-bottom: 1px solid #e5e7eb; }
+.models-table td { padding: 0.45rem 0.6rem; border-bottom: 1px solid #f3f4f6; color: #374151; }
+.model-name-cell { font-family: monospace; font-size: 0.82rem; }
+.model-size-cell { color: #6b7280; white-space: nowrap; }
+.model-date-cell { color: #9ca3af; font-size: 0.78rem; }
+
+.pull-row { display: flex; gap: 0.6rem; align-items: center; }
+.pull-input { flex: 1; }
+.pull-progress-box {
+  margin-top: 0.75rem;
+  background: #f8fafc; border: 1px solid #e2e8f0;
+  border-radius: 6px; padding: 0.6rem 0.85rem;
+  font-size: 0.82rem;
+}
+.pull-progress-status { color: #475569; margin-bottom: 0.4rem; }
+.pull-progress-bar-wrap { background: #e2e8f0; border-radius: 4px; height: 6px; overflow: hidden; }
+.pull-progress-bar { height: 100%; background: #3b82f6; transition: width 0.3s; border-radius: 4px; }
 </style>

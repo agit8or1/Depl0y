@@ -77,6 +77,12 @@ const router = createRouter({
       meta: { requiresAuth: true }
     },
     {
+      path: '/federation',
+      name: 'FederatedDashboard',
+      component: () => import('@/views/FederatedDashboard.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
       path: '/proxmox/:hostId/nodes/:node',
       name: 'NodeDetail',
       component: () => import('@/views/NodeDetail.vue'),
@@ -371,6 +377,12 @@ const router = createRouter({
       name: 'SnapshotManager',
       component: () => import('@/views/SnapshotManager.vue'),
       meta: { requiresAuth: true }
+    },
+    {
+      path: '/vm-groups',
+      name: 'VMGroups',
+      component: () => import('@/views/VMGroups.vue'),
+      meta: { requiresAuth: true, requiresOperator: true }
     },
     {
       path: '/:pathMatch(.*)*',

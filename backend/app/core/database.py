@@ -180,3 +180,20 @@ def init_db():
             conn.commit()
         except Exception:
             pass
+
+        # Create vm_groups table for logical VM groupings
+        try:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS vm_groups (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name VARCHAR(100) NOT NULL UNIQUE,
+                    description VARCHAR(500),
+                    color VARCHAR(7) NOT NULL DEFAULT '#3b82f6',
+                    host_id INTEGER REFERENCES proxmox_hosts(id),
+                    vmids TEXT NOT NULL DEFAULT '[]',
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+            """))
+            conn.commit()
+        except Exception:
+            pass

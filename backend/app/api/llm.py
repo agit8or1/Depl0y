@@ -2159,3 +2159,330 @@ def _generate_ai_tune_recommendations(diag: dict) -> dict:
         recs.append("No running LLM services detected. Ensure Ollama/llama.cpp/ComfyUI is running.")
 
     return {"text": "\n".join(recs), "actions": actions}
+
+
+# ---------------------------------------------------------------------------
+# LLM Instance management — proxy to Ollama API on deployed VMs
+# ---------------------------------------------------------------------------
+
+
+def _get_vm_ip(vm_id: int, db: Session) -> str:
+    """Return the IP address for a VM, raising HTTPException if unavailable."""
+    vm = db.query(VirtualMachine).filter(VirtualMachine.id == vm_id).first()
+    if not vm:
+        raise HTTPException(status_code=404, detail="VM not found")
+    if not vm.ip_address:
+        raise HTTPException(
+            status_code=400,
+            detail="VM has no IP address recorded. Ensure it is running and the IP is set.",
+        )
+    return vm.ip_address
+
+
+def _get_proxmox_vm_ip(host_id: int, node_name: str, vmid: int, db: Session) -> Optional[str]:
+    """Try to get VM IP via Proxmox guest agent, falling back to VM record."""
+    import urllib.request
+    import ssl
+
+    host = db.query(ProxmoxHost).filter(ProxmoxHost.id == host_id).first()
+    if not host:
+        return None
+
+    # First check if we have a local DB record with a matching vmid
+    from app.core.security import decrypt_data
+    vm_record = None
+    for vm in db.query(VirtualMachine).filter(
+        VirtualMachine.proxmox_host_id == host_id,
+    ).all():
+        if vm.vmid == vmid:
+            vm_record = vm
+            break
+
+    if vm_record and vm_record.ip_address:
+        return vm_record.ip_address
+
+    # Try Proxmox guest agent
+    try:
+        from app.services.proxmox import ProxmoxService
+        svc = ProxmoxService(host)
+        agent_data = svc.proxmox.nodes(node_name).qemu(vmid).agent("network-get-interfaces").get()
+        for iface in agent_data.get("result", []):
+            for addr in iface.get("ip-addresses", []):
+                ip = addr.get("ip-address", "")
+                if addr.get("ip-address-type") == "ipv4" and not ip.startswith("127."):
+                    return ip
+    except Exception:
+        pass
+
+    return None
+
+
+@router.get("/instances")
+def list_llm_instances(
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """List all VMs tagged with 'llm' or 'llm-deploy' across all Proxmox hosts,
+    combined with LLMDeployment records in our DB."""
+    result = []
+
+    # Pull from all registered Proxmox hosts
+    hosts = db.query(ProxmoxHost).filter(ProxmoxHost.is_active == True).all()
+    for host in hosts:
+        try:
+            from app.services.proxmox import ProxmoxService
+            svc = ProxmoxService(host)
+            nodes_data = svc.proxmox.nodes.get()
+            for node_info in nodes_data:
+                node_name = node_info.get("node")
+                if not node_name:
+                    continue
+                try:
+                    vms = svc.proxmox.nodes(node_name).qemu.get()
+                except Exception:
+                    continue
+                for vm in vms:
+                    tags_raw = vm.get("tags", "") or ""
+                    tags = [t.strip() for t in tags_raw.replace(";", ",").split(",") if t.strip()]
+                    is_llm = any(t in ("llm", "llm-deploy", "ai") for t in tags)
+                    if not is_llm:
+                        continue
+
+                    vmid = vm.get("vmid")
+                    # Lookup local DB record
+                    vm_record = None
+                    for v in db.query(VirtualMachine).filter(VirtualMachine.proxmox_host_id == host.id).all():
+                        if v.vmid == vmid:
+                            vm_record = v
+                            break
+
+                    llm_dep = None
+                    if vm_record:
+                        llm_dep = db.query(LLMDeployment).filter(LLMDeployment.vm_id == vm_record.id).first()
+
+                    ip = vm_record.ip_address if vm_record else None
+                    result.append({
+                        "host_id": host.id,
+                        "host_name": host.name,
+                        "node": node_name,
+                        "vmid": vmid,
+                        "vm_id": vm_record.id if vm_record else None,
+                        "name": vm.get("name", f"vm-{vmid}"),
+                        "status": vm.get("status", "unknown"),
+                        "tags": tags,
+                        "ip_address": ip,
+                        "engine": llm_dep.engine if llm_dep else None,
+                        "model": llm_dep.model if llm_dep else None,
+                        "ui_type": llm_dep.ui_type if llm_dep else None,
+                        "gpu_enabled": llm_dep.gpu_enabled if llm_dep else False,
+                        "ollama_port": 11434,
+                        "webui_port": 3000,
+                        "created_at": llm_dep.created_at.isoformat() if llm_dep else None,
+                    })
+        except Exception as e:
+            logger.warning(f"Failed to query host {host.name} for LLM instances: {e}")
+
+    # Also include any DB deployments not yet in Proxmox (e.g. still creating)
+    deps = db.query(LLMDeployment).order_by(LLMDeployment.created_at.desc()).all()
+    existing_vm_ids = {r["vm_id"] for r in result if r["vm_id"]}
+    for dep in deps:
+        if dep.vm_id in existing_vm_ids:
+            continue
+        vm = db.query(VirtualMachine).filter(VirtualMachine.id == dep.vm_id).first()
+        if not vm:
+            continue
+        result.append({
+            "host_id": vm.proxmox_host_id,
+            "host_name": None,
+            "node": None,
+            "vmid": vm.vmid,
+            "vm_id": vm.id,
+            "name": vm.name,
+            "status": vm.status.value if vm.status else "unknown",
+            "tags": ["llm"],
+            "ip_address": vm.ip_address,
+            "engine": dep.engine,
+            "model": dep.model,
+            "ui_type": dep.ui_type,
+            "gpu_enabled": dep.gpu_enabled,
+            "ollama_port": 11434,
+            "webui_port": 3000,
+            "created_at": dep.created_at.isoformat(),
+        })
+
+    return result
+
+
+@router.get("/instances/{host_id}/{node}/{vmid}/models")
+async def get_instance_models(
+    host_id: int,
+    node: str,
+    vmid: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Proxy to VM's Ollama API: GET /api/tags — list installed models."""
+    import httpx
+
+    ip = _get_proxmox_vm_ip(host_id, node, vmid, db)
+    if not ip:
+        raise HTTPException(status_code=400, detail="Cannot resolve VM IP address")
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.get(f"http://{ip}:11434/api/tags")
+            r.raise_for_status()
+            return r.json()
+    except httpx.ConnectError:
+        raise HTTPException(status_code=503, detail="Ollama is not reachable on this VM. It may still be starting.")
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail="Ollama did not respond in time.")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Ollama proxy error: {e}")
+
+
+@router.post("/instances/{host_id}/{node}/{vmid}/pull")
+async def pull_instance_model(
+    host_id: int,
+    node: str,
+    vmid: int,
+    body: Dict[str, Any] = Body(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_operator),
+):
+    """Proxy POST /api/pull to VM Ollama — streams JSON progress lines."""
+    import httpx
+    from fastapi.responses import StreamingResponse
+
+    ip = _get_proxmox_vm_ip(host_id, node, vmid, db)
+    if not ip:
+        raise HTTPException(status_code=400, detail="Cannot resolve VM IP address")
+
+    model = body.get("model", "")
+    if not model:
+        raise HTTPException(status_code=400, detail="model is required")
+
+    async def stream():
+        try:
+            async with httpx.AsyncClient(timeout=None) as client:
+                async with client.stream(
+                    "POST",
+                    f"http://{ip}:11434/api/pull",
+                    json={"model": model, "stream": True},
+                ) as resp:
+                    async for chunk in resp.aiter_bytes():
+                        yield chunk
+        except httpx.ConnectError:
+            import json
+            yield json.dumps({"error": "Ollama not reachable on VM"}).encode()
+        except Exception as e:
+            import json
+            yield json.dumps({"error": str(e)}).encode()
+
+    return StreamingResponse(stream(), media_type="application/x-ndjson")
+
+
+@router.delete("/instances/{host_id}/{node}/{vmid}/models/{model:path}")
+async def delete_instance_model(
+    host_id: int,
+    node: str,
+    vmid: int,
+    model: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_operator),
+):
+    """Proxy DELETE /api/delete to VM Ollama — remove an installed model."""
+    import httpx
+
+    ip = _get_proxmox_vm_ip(host_id, node, vmid, db)
+    if not ip:
+        raise HTTPException(status_code=400, detail="Cannot resolve VM IP address")
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            r = await client.delete(
+                f"http://{ip}:11434/api/delete",
+                json={"model": model},
+            )
+            if r.status_code == 404:
+                raise HTTPException(status_code=404, detail=f"Model '{model}' not found on VM")
+            r.raise_for_status()
+            return {"success": True, "model": model}
+    except HTTPException:
+        raise
+    except httpx.ConnectError:
+        raise HTTPException(status_code=503, detail="Ollama is not reachable on this VM.")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Ollama proxy error: {e}")
+
+
+@router.get("/instances/{host_id}/{node}/{vmid}/status")
+async def get_instance_status(
+    host_id: int,
+    node: str,
+    vmid: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Check if Ollama is responding on a VM, return loaded models and basic info."""
+    import httpx
+
+    ip = _get_proxmox_vm_ip(host_id, node, vmid, db)
+    if not ip:
+        return {"reachable": False, "ip": None, "models_loaded": [], "error": "IP not resolved"}
+
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            # Check /api/ps for running/loaded models
+            ps_resp = await client.get(f"http://{ip}:11434/api/ps")
+            ps_data = ps_resp.json() if ps_resp.status_code == 200 else {}
+            loaded = ps_data.get("models", [])
+
+            # Also get installed models list
+            tags_resp = await client.get(f"http://{ip}:11434/api/tags")
+            tags_data = tags_resp.json() if tags_resp.status_code == 200 else {}
+            installed = tags_data.get("models", [])
+
+        return {
+            "reachable": True,
+            "ip": ip,
+            "ollama_port": 11434,
+            "models_loaded": loaded,
+            "models_installed": installed,
+            "error": None,
+        }
+    except httpx.ConnectError:
+        return {"reachable": False, "ip": ip, "models_loaded": [], "models_installed": [], "error": "Connection refused"}
+    except httpx.TimeoutException:
+        return {"reachable": False, "ip": ip, "models_loaded": [], "models_installed": [], "error": "Timeout"}
+    except Exception as e:
+        return {"reachable": False, "ip": ip, "models_loaded": [], "models_installed": [], "error": str(e)}
+
+
+@router.post("/instances/{host_id}/{node}/{vmid}/unload/{model:path}")
+async def unload_instance_model(
+    host_id: int,
+    node: str,
+    vmid: int,
+    model: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_operator),
+):
+    """Unload a model from VRAM by generating with keep_alive=0."""
+    import httpx
+
+    ip = _get_proxmox_vm_ip(host_id, node, vmid, db)
+    if not ip:
+        raise HTTPException(status_code=400, detail="Cannot resolve VM IP address")
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            r = await client.post(
+                f"http://{ip}:11434/api/generate",
+                json={"model": model, "keep_alive": 0, "prompt": ""},
+            )
+            return {"success": True, "model": model, "message": "Model unloaded from VRAM"}
+    except httpx.ConnectError:
+        raise HTTPException(status_code=503, detail="Ollama is not reachable on this VM.")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Unload error: {e}")

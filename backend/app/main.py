@@ -7,6 +7,7 @@ from app.core.config import settings
 from app.core.database import init_db
 from app.api import auth, users, proxmox, vms, isos, cloud_images, updates, dashboard, bug_report, logs, docs, setup, system_updates, ha, system, llm, vm_agent, security, idrac, pbs, audit, notifications
 from app.api import vm_config, node as pve_node, console as pve_console, pbs_mgmt, pve_firewall, cluster as pve_cluster, sdn
+from app.api import vm_groups
 from app.middleware.security import SecurityHeadersMiddleware
 from app.middleware.rate_limit import RateLimitMiddleware
 from app.middleware.ip_filter import IPFilterMiddleware
@@ -324,6 +325,7 @@ app.include_router(notifications.router, prefix=f"{settings.API_V1_PREFIX}/notif
 app.include_router(pve_firewall.router, prefix=f"{settings.API_V1_PREFIX}/pve-firewall", tags=["PVE Firewall"])
 app.include_router(pve_cluster.router, prefix=f"{settings.API_V1_PREFIX}/cluster", tags=["Cluster Operations"])
 app.include_router(sdn.router, prefix=f"{settings.API_V1_PREFIX}", tags=["SDN"])
+app.include_router(vm_groups.router, prefix=f"{settings.API_V1_PREFIX}/vm-groups", tags=["VM Groups"])
 
 
 if __name__ == "__main__":

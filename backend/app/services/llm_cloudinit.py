@@ -90,7 +90,7 @@ class LLMCloudInitService:
                 "cat > /etc/systemd/system/ollama.service.d/override.conf << 'OLLAMA_CONF_EOF'",
                 "[Service]",
                 "Environment=\"OLLAMA_MODELS=/usr/share/ollama/.ollama/models\"",
-                "Environment=\"OLLAMA_KEEP_ALIVE=60m\"",
+                "Environment=\"OLLAMA_KEEP_ALIVE=0\"",
                 "Environment=\"OLLAMA_FLASH_ATTENTION=1\"",
                 "Environment=\"OLLAMA_MAX_LOADED_MODELS=1\"",
                 "Environment=\"OLLAMA_NUM_PARALLEL=1\"",
@@ -564,9 +564,11 @@ _WF = {
 }
 
 # In-memory stores (cleared on service restart)
-_job_captions = {}   # pid -> (top_text, bottom_text)
-_job_progress = {}   # pid -> {step, total, status}
-_raw_images   = {}   # pid -> bytes  (textless base image for caption regen)
+_job_captions  = {}    # pid -> (top_text, bottom_text)
+_job_progress  = {}    # pid -> {step, total, status}
+_raw_images    = {}    # pid -> bytes  (textless base image for caption regen)
+_comfy_active  = False # set True immediately when /generate submits a job; cleared by _track_ws_progress
+_llm_active    = False # set True while _call_llm_captions is running; prevents /generate racing with LLM load
 
 FONT_PATHS = [
     "/usr/share/fonts/truetype/msttcorefonts/Impact.ttf",
@@ -740,6 +742,15 @@ def _parse_caption_json(text):
 
 
 def _call_llm_captions(topic, style, model, extra=""):
+    global _llm_active
+    _llm_active = True
+    try:
+        return _call_llm_captions_inner(topic, style, model, extra)
+    finally:
+        _llm_active = False
+
+
+def _call_llm_captions_inner(topic, style, model, extra=""):
     user_msg = _CAPTION_USER.format(topic=topic, style=style)
     if extra:
         user_msg += "\n\n" + extra
@@ -776,7 +787,7 @@ def _call_llm_captions(topic, style, model, extra=""):
                 headers={"Content-Type": "application/json"}
             )
             text = ""
-            # timeout=180: large models (e.g. qwen2.5:7b) take 60-120s to load
+            # timeout=180: models like qwen2.5:3b take 30-90s to load
             # from disk on a CPU-only VM before the first token arrives.
             # Per-token latency once streaming starts is well under 180s.
             with urllib.request.urlopen(req, timeout=180) as r:
@@ -801,40 +812,44 @@ def _call_llm_captions(topic, style, model, extra=""):
     return None
 
 
+def _kill_ollama_runner():
+    """Kill the Ollama runner subprocess (llama.cpp process that holds model weights).
+    This is the only reliable way to free model RAM before ComfyUI runs —
+    the Ollama API has race conditions where /api/ps shows empty while the
+    runner is still loading and holding gigabytes of malloc'd memory.
+    The meme-app runs as root so no sudo needed.
+    The parent 'ollama serve' process stays alive and respawns a runner on next use."""
+    import subprocess
+    # Use the full binary path to avoid matching shell scripts/commands that
+    # contain "ollama runner" as text in their arguments.
+    try:
+        subprocess.run(["pkill", "-9", "-f", "/usr/local/bin/ollama runner"],
+                       capture_output=True, timeout=5)
+    except Exception:
+        pass
+    # Wait for the process to die and the kernel to reclaim its malloc'd pages
+    deadline = time.time() + 10
+    while time.time() < deadline:
+        try:
+            result = subprocess.run(["pgrep", "-f", "/usr/local/bin/ollama runner"],
+                                    capture_output=True, timeout=3)
+            if result.returncode != 0:
+                break  # no runner found — memory freed
+        except Exception:
+            break
+        time.sleep(0.5)
+    time.sleep(1)  # extra buffer
+
+
 def _unload_model(model):
     """Evict large models from Ollama RAM so ComfyUI has headroom.
-    Sends keep_alive=0 then polls /api/ps until the model is gone —
-    kernel page reclaim after mmap release takes 10-30s, so we must
-    wait for confirmation before starting the memory-hungry ComfyUI job.
-    Small models (<=2GB) are skipped — cheap to reload."""
+    Uses _kill_ollama_runner() which directly kills the llama.cpp subprocess —
+    more reliable than the API which has a race window while the runner is loading.
+    Small models (<=3GB) are skipped — cheap to reload and low memory impact."""
     _SMALL = {"llama3.2:1b", "llama3.2:1b-instruct-q8_0", "llama3.2:3b"}
     if model in _SMALL:
         return
-    try:
-        payload = json.dumps(
-            {"model": model, "prompt": "", "stream": False, "keep_alive": 0}
-        ).encode()
-        urllib.request.urlopen(
-            urllib.request.Request(
-                OLLAMA_URL + "/api/generate", data=payload,
-                headers={"Content-Type": "application/json"}
-            ), timeout=30
-        )
-    except Exception:
-        pass
-    # Poll until model is no longer listed in /api/ps (max 45s)
-    deadline = time.time() + 45
-    while time.time() < deadline:
-        try:
-            with urllib.request.urlopen(OLLAMA_URL + "/api/ps", timeout=3) as r:
-                ps = json.loads(r.read())
-            loaded = [m.get("name", "") for m in ps.get("models", [])]
-            if not any(model.split(":")[0] in n for n in loaded):
-                break
-        except Exception:
-            break
-        time.sleep(2)
-    time.sleep(3)  # extra buffer for kernel to reclaim pages
+    _kill_ollama_runner()
 
 
 def _free_comfy():
@@ -1171,8 +1186,10 @@ def _submit_comfy(image_prompt):
 
 def _track_ws_progress(pid, client_id):
     import websocket as _ws
+    global _comfy_active
     prog = _job_progress.setdefault(pid, {"step": 0, "total": 6, "status": "queued"})
     def on_msg(ws, msg):
+        global _comfy_active
         try:
             d = json.loads(msg)
             t = d.get("type", "")
@@ -1187,6 +1204,7 @@ def _track_ws_progress(pid, client_id):
                 prog["status"] = "running"
             elif t in ("execution_success", "execution_error", "execution_interrupted"):
                 prog["status"] = "done"
+                _comfy_active  = False
                 ws.close()
         except Exception:
             pass
@@ -1196,6 +1214,11 @@ def _track_ws_progress(pid, client_id):
         on_error=lambda ws, e: None,
         on_close=lambda ws, *a: None,
     ).run_forever(ping_timeout=300)
+    _comfy_active = False  # ensure flag cleared if WS closes without completion event
+    # Free ComfyUI model weights from RAM after inference completes.
+    # Keeps DreamShaper (~2 GB) from sitting idle between requests.
+    # _free_comfy() skips if a new job is already queued/running.
+    threading.Thread(target=lambda: (time.sleep(5), _free_comfy()), daemon=True).start()
 
 
 def _fetch_raw_from_history(pid):
@@ -1256,7 +1279,12 @@ def suggest():
 
 
 def _comfy_busy():
-    """Return True if ComfyUI has a job actively running or queued."""
+    """Return True if ComfyUI has a job actively running or queued.
+    Uses _comfy_active flag to cover the race window between _submit_comfy()
+    returning and the job appearing in ComfyUI's /queue API."""
+    global _comfy_active
+    if _comfy_active:
+        return True
     try:
         with urllib.request.urlopen(COMFY_URL + "/queue", timeout=3) as r:
             q = json.loads(r.read())
@@ -1268,23 +1296,35 @@ def _comfy_busy():
 @app.route("/suggest/ai", methods=["POST"])
 def suggest_ai():
     """AI-powered caption generation. Image prompt is always textless."""
+    global _llm_active
     data  = request.get_json() or {}
     topic = data.get("topic", "funny meme")
     style = data.get("style", "Any")
     model = data.get("model", "") or "llama3.2:1b"
-    if _comfy_busy():
-        return jsonify({"error": "Image generation in progress — wait for it to finish before requesting new captions"}), 503
-    _free_comfy()   # release ComfyUI model weights before loading LLM
-    image_prompt = _build_image_prompt(topic, style)
-    caption_data = _call_llm_captions(topic, style, model)
-    if not caption_data:
-        return jsonify({"error": "LLM did not return valid captions"}), 500
-    return jsonify({
-        "top_text":     caption_data["top_text"],
-        "bottom_text":  caption_data["bottom_text"],
-        "alternatives": caption_data["alternatives"],
-        "image_prompt": image_prompt,
-    })
+    # Set _llm_active=True HERE — before any I/O — so /generate's wait loop sees it
+    # immediately on arrival, closing the race window where /generate could check the
+    # flag before this thread even parses the request body.
+    _SMALL = {"llama3.2:1b", "llama3.2:1b-instruct-q8_0", "llama3.2:3b"}
+    is_large_model = model not in _SMALL
+    if is_large_model:
+        _llm_active = True
+    try:
+        if _comfy_busy():
+            return jsonify({"error": "Image generation in progress — wait for it to finish before requesting new captions"}), 503
+        _free_comfy()   # release ComfyUI model weights before loading LLM
+        image_prompt = _build_image_prompt(topic, style)
+        caption_data = _call_llm_captions(topic, style, model)
+        if not caption_data:
+            return jsonify({"error": "LLM did not return valid captions"}), 500
+        return jsonify({
+            "top_text":     caption_data["top_text"],
+            "bottom_text":  caption_data["bottom_text"],
+            "alternatives": caption_data["alternatives"],
+            "image_prompt": image_prompt,
+        })
+    finally:
+        if is_large_model:
+            _llm_active = False
 
 
 @app.route("/generate", methods=["POST"])
@@ -1301,18 +1341,32 @@ def generate():
                                         data.get("style", "Any")))
     top_text     = _wrap_text(data.get("top_text",    ""), 8)
     bottom_text  = _wrap_text(data.get("bottom_text", ""), 8)
-    _unload_model(model)
-    # Explicitly drop page cache so kernel reclaims LLM pages before ComfyUI allocates
+    global _comfy_active
+    # Wait for any in-progress LLM call to finish (max 3 min) before touching memory.
+    # getSuggestions() fires /suggest/ai without await — user can click a template card
+    # immediately, causing /generate to race with an LLM that is still loading.
+    deadline = time.time() + 180
+    while _llm_active and time.time() < deadline:
+        time.sleep(0.5)
+    # Kill the Ollama runner subprocess unconditionally — the only reliable way to
+    # free its RAM before ComfyUI loads. We always kill regardless of model size
+    # because the *previous* LLM call (e.g. from /suggest/ai or /captions/regen)
+    # may have used a large model even if this /generate request uses a small one.
+    _kill_ollama_runner()
+    # Explicitly drop page cache so kernel reclaims any remaining LLM pages
     try:
         with open("/proc/sys/vm/drop_caches", "w") as _f:
             _f.write("1\n")
     except Exception:
         pass
+    _comfy_active = True   # flag set before submission to close the race window
     try:
         pid, client_id = _submit_comfy(image_prompt)
     except urllib.error.URLError as e:
+        _comfy_active = False
         return jsonify({"error": "ComfyUI unavailable: " + str(e)}), 503
     except Exception as e:
+        _comfy_active = False
         return jsonify({"error": str(e)}), 500
     _job_captions[pid] = (top_text, bottom_text)
     _job_progress[pid] = {"step": 0, "total": 6, "status": "queued"}
@@ -1327,6 +1381,7 @@ def captions_regen():
     Body: {prompt_id, topic, style, model}  OR  {prompt_id, top_text, bottom_text}
     Returns: {meme_b64, caption: {top_text, bottom_text}}
     """
+    global _llm_active
     data = request.get_json() or {}
     pid  = data.get("prompt_id", "")
     raw  = _raw_images.get(pid)
@@ -1339,10 +1394,21 @@ def captions_regen():
         topic  = data.get("topic", "funny meme")
         style  = data.get("style", "Any")
         model  = data.get("model") or "llama3.2:1b"
-        if _comfy_busy():
-            return jsonify({"error": "Image generation in progress — wait for it to finish"}), 503
-        _free_comfy()
-        result = _call_llm_captions(topic, style, model)
+        _SMALL = {"llama3.2:1b", "llama3.2:1b-instruct-q8_0", "llama3.2:3b"}
+        is_large_model = model not in _SMALL
+        # Set _llm_active=True HERE before checking _comfy_busy() — same pattern as
+        # suggest_ai(). This closes the race window where /generate could slip through
+        # between the _comfy_busy() check and _call_llm_captions() setting the flag.
+        if is_large_model:
+            _llm_active = True
+        try:
+            if _comfy_busy():
+                return jsonify({"error": "Image generation in progress — wait for it to finish"}), 503
+            _free_comfy()
+            result = _call_llm_captions(topic, style, model)
+        finally:
+            if is_large_model:
+                _llm_active = False
         if not result:
             return jsonify({"error": "LLM caption generation failed"}), 500
         top    = result["top_text"]
@@ -1467,7 +1533,10 @@ if __name__ == "__main__":
                 "systemctl enable comfyui",
                 "systemctl start comfyui",
                 "",
-                "# Install Ollama and pull qwen2.5:7b (structured JSON output for captions)",
+                "# Install Ollama and pull caption models",
+                "# IMPORTANT: only pull models <=2GB. Models >=4GB allocate that much",
+                "# anonymous RAM (mmap disabled by default in Ollama), which can trigger",
+                "# host-level OOM on overcommitted Proxmox nodes and kill the QEMU process.",
                 "echo 'Installing Ollama for meme caption suggestions...'",
                 "curl -fsSL https://ollama.ai/install.sh | sh",
                 "systemctl enable ollama",
@@ -1477,7 +1546,10 @@ if __name__ == "__main__":
                 "  ollama list >/dev/null 2>&1 && break",
                 "  sleep 2",
                 "done",
-                "OLLAMA_MODELS=/usr/share/ollama/.ollama/models ollama pull qwen2.5:7b",
+                "# qwen2.5:3b (~1.9GB) — best caption quality that's safe for this host",
+                "OLLAMA_MODELS=/usr/share/ollama/.ollama/models ollama pull qwen2.5:3b",
+                "# llama3.2:1b (~1.2GB) — fast fallback model",
+                "OLLAMA_MODELS=/usr/share/ollama/.ollama/models ollama pull llama3.2:1b",
                 "",
                 "# Install Flask + Pillow in own venv (avoids Ubuntu 24.04 externally-managed-environment error)",
                 "python3 -m venv /opt/meme-app-env",

@@ -96,7 +96,11 @@
           <div v-else class="nodes-grid">
             <div v-for="node in datacenter.nodes" :key="node.id" class="node-card">
               <div class="node-header">
-                <h5>{{ node.node_name }}</h5>
+                <h5>
+                  <router-link :to="`/proxmox/${datacenter.id}/nodes/${node.node_name}`" class="node-link">
+                    {{ node.node_name }}
+                  </router-link>
+                </h5>
                 <span :class="['badge', node.status === 'online' ? 'badge-success' : 'badge-danger']">
                   {{ node.status || 'unknown' }}
                 </span>
@@ -730,6 +734,13 @@ export default {
   margin: 0;
   font-size: 1.125rem;
   font-weight: 600;
+}
+.node-link {
+  color: #3b82f6;
+  text-decoration: none;
+}
+.node-link:hover {
+  text-decoration: underline;
 }
 
 .node-stats {

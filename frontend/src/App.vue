@@ -1,9 +1,9 @@
 <template>
   <div id="app" class="app-container">
-    <Sidebar v-if="isAuthenticated" />
-    <div class="main-content" :class="{ 'full-width': !isAuthenticated }">
-      <Header v-if="isAuthenticated" />
-      <main class="content">
+    <Sidebar v-if="isAuthenticated && !isFullscreen" />
+    <div class="main-content" :class="{ 'full-width': !isAuthenticated || isFullscreen }">
+      <Header v-if="isAuthenticated && !isFullscreen" />
+      <main :class="isFullscreen ? 'content-fullscreen' : 'content'">
         <router-view />
       </main>
     </div>
@@ -14,6 +14,7 @@
 <script>
 import { computed } from 'vue'
 import { useAuthStore } from '@/store/auth'
+import { useRoute } from 'vue-router'
 import Sidebar from '@/components/layout/Sidebar.vue'
 import Header from '@/components/layout/Header.vue'
 
@@ -25,10 +26,13 @@ export default {
   },
   setup() {
     const authStore = useAuthStore()
+    const route = useRoute()
     const isAuthenticated = computed(() => authStore.isAuthenticated)
+    const isFullscreen = computed(() => route.meta?.layout === 'fullscreen')
 
     return {
-      isAuthenticated
+      isAuthenticated,
+      isFullscreen
     }
   }
 }
@@ -57,6 +61,14 @@ export default {
   flex: 1;
   padding: 2rem;
   overflow-y: auto;
+}
+
+.content-fullscreen {
+  flex: 1;
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 @media (max-width: 768px) {

@@ -65,6 +65,102 @@ const router = createRouter({
       meta: { requiresAuth: true }
     },
     {
+      path: '/proxmox/:hostId/nodes/:node',
+      name: 'NodeDetail',
+      component: () => import('@/views/NodeDetail.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/proxmox/:hostId/nodes/:node/vms/:vmid',
+      name: 'VMDetail',
+      component: () => import('@/views/VMDetail.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/proxmox/:hostId/nodes/:node/containers/:vmid',
+      name: 'ContainerDetail',
+      component: () => import('@/views/ContainerDetail.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/proxmox/:hostId/nodes/:node/tasks',
+      name: 'NodeTasks',
+      component: () => import('@/views/NodeTasks.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/proxmox/:hostId/nodes/:node/storage',
+      name: 'StorageBrowser',
+      component: () => import('@/views/StorageBrowser.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/proxmox/:hostId/cluster',
+      name: 'Cluster',
+      component: () => import('@/views/Cluster.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/proxmox/:hostId/backup',
+      name: 'BackupManager',
+      component: () => import('@/views/BackupManager.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/backup',
+      name: 'Backup',
+      component: () => import('@/views/Backup.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/proxmox/:hostId/users',
+      name: 'PveUsers',
+      component: () => import('@/views/PveUsers.vue'),
+      meta: { requiresAuth: true, requiresAdmin: true }
+    },
+    {
+      path: '/proxmox/:hostId/pools',
+      name: 'PvePools',
+      component: () => import('@/views/PvePools.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/proxmox/:hostId/firewall',
+      name: 'PveFirewall',
+      component: () => import('@/views/PveFirewall.vue'),
+      meta: { requiresAuth: true, requiresAdmin: true }
+    },
+    {
+      path: '/proxmox/:hostId/nodes/:node/console/:vmid',
+      name: 'VMConsole',
+      component: () => import('@/views/VMConsole.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/proxmox/:hostId/:node/:vmid/console',
+      name: 'Console',
+      component: () => import('@/views/Console.vue'),
+      meta: { requiresAuth: true, layout: 'fullscreen' }
+    },
+    {
+      path: '/proxmox/:hostId/nodes/:node/terminal',
+      name: 'NodeTerminal',
+      component: () => import('@/views/Terminal.vue'),
+      meta: { requiresAuth: true, layout: 'fullscreen' }
+    },
+    {
+      path: '/proxmox/:hostId/nodes/:node/lxc/:vmid/terminal',
+      name: 'ContainerTerminal',
+      component: () => import('@/views/Terminal.vue'),
+      meta: { requiresAuth: true, layout: 'fullscreen' }
+    },
+    {
+      path: '/proxmox/:hostId/nodes/:node/lxc/:vmid',
+      name: 'LxcContainerDetail',
+      component: () => import('@/views/ContainerDetail.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
       path: '/images',
       name: 'Images',
       component: () => import('@/views/Images.vue'),
@@ -137,6 +233,36 @@ const router = createRouter({
       name: 'IDracManagement',
       component: () => import('@/views/IDracManagement.vue'),
       meta: { requiresAuth: true, requiresOperator: true }
+    },
+    {
+      path: '/proxmox/:hostId/nodes/:node/:vmid',
+      name: 'VMDetailDirect',
+      component: () => import('@/views/VMDetail.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/proxmox/:hostId/storage',
+      name: 'StorageBrowserHost',
+      component: () => import('@/views/StorageBrowser.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/proxmox/:hostId/tasks',
+      name: 'HostTasks',
+      component: () => import('@/views/Tasks.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/tasks',
+      name: 'Tasks',
+      component: () => import('@/views/Tasks.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/containers',
+      name: 'Containers',
+      component: () => import('@/views/Containers.vue'),
+      meta: { requiresAuth: true }
     },
     {
       path: '/:pathMatch(.*)*',

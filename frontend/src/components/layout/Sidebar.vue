@@ -51,6 +51,16 @@
         <span>Proxmox Hosts</span>
       </router-link>
 
+      <router-link v-if="isOperator" to="/containers" class="nav-item">
+        <span class="icon">📦</span>
+        <span>Containers</span>
+      </router-link>
+
+      <router-link to="/tasks" class="nav-item">
+        <span class="icon">📋</span>
+        <span>Task Log</span>
+      </router-link>
+
       <router-link v-if="isOperator" to="/idrac" class="nav-item">
         <span class="icon">🖧</span>
         <span>iDRAC / iLO</span>

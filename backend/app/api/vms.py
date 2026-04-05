@@ -164,6 +164,84 @@ async def list_vms(
     return all_vms
 
 
+@router.post("/adopt", response_model=VMResponse, status_code=status.HTTP_201_CREATED)
+async def adopt_vm(
+    data: dict,
+    current_user: User = Depends(require_operator),
+    db: Session = Depends(get_db),
+):
+    """Register an existing Proxmox VM into Depl0y tracking without deploying anything."""
+    import logging
+    from app.models import ProxmoxNode
+    from app.core.security import encrypt_data
+
+    logger = logging.getLogger(__name__)
+
+    vmid = data.get("vmid")
+    proxmox_host_id = data.get("proxmox_host_id")
+    node_name = data.get("node")
+    node_id = data.get("node_id")
+
+    if not vmid or not proxmox_host_id:
+        raise HTTPException(status_code=400, detail="vmid and proxmox_host_id are required")
+
+    # Prevent duplicate adoption
+    existing = db.query(VirtualMachine).filter(VirtualMachine.vmid == int(vmid)).first()
+    if existing:
+        raise HTTPException(status_code=409, detail=f"VM with vmid {vmid} is already tracked by Depl0y")
+
+    # Resolve node_id from node name if not provided directly
+    if not node_id and node_name:
+        node_record = (
+            db.query(ProxmoxNode)
+            .filter(ProxmoxNode.host_id == int(proxmox_host_id), ProxmoxNode.node_name == node_name)
+            .first()
+        )
+        if node_record:
+            node_id = node_record.id
+
+    # Parse os_type
+    os_type_str = data.get("os_type", "other")
+    try:
+        os_type_enum = OSType(os_type_str)
+    except ValueError:
+        os_type_enum = OSType.OTHER
+
+    # Parse status
+    status_str = data.get("status", "stopped")
+    try:
+        vm_status = VMStatus(status_str)
+    except ValueError:
+        vm_status = VMStatus.STOPPED
+
+    vm_name = data.get("name") or f"VM-{vmid}"
+
+    adopted_vm = VirtualMachine(
+        vmid=int(vmid),
+        name=vm_name,
+        hostname=vm_name,  # Use name as hostname placeholder
+        proxmox_host_id=int(proxmox_host_id),
+        node_id=node_id,
+        os_type=os_type_enum,
+        cpu_cores=int(data.get("cpu_cores", 1)),
+        memory=int(data.get("memory_mb", 512)),
+        disk_size=int(data.get("disk_gb", 0)),
+        username="unknown",
+        password=encrypt_data(""),  # Encrypted empty placeholder
+        status=vm_status,
+        description="Adopted from Proxmox — not deployed by Depl0y",
+        created_by=current_user.id,
+        deployed_at=datetime.utcnow(),
+    )
+
+    db.add(adopted_vm)
+    db.commit()
+    db.refresh(adopted_vm)
+
+    logger.info(f"VM {vmid} ({vm_name}) adopted into Depl0y by user {current_user.username}")
+    return adopted_vm
+
+
 @router.post("/", response_model=VMResponse, status_code=status.HTTP_201_CREATED)
 async def create_vm(
     vm_data: VMCreate,

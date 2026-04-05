@@ -104,7 +104,9 @@ export default {
     getMe: () => api.get('/auth/me'),
     setupTOTP: () => api.post('/auth/totp/setup'),
     verifyTOTP: (code) => api.post('/auth/totp/verify', { code }),
-    disableTOTP: (code) => api.post('/auth/totp/disable', { code })
+    disableTOTP: (code) => api.post('/auth/totp/disable', { code }),
+    changePassword: (data) => api.patch('/auth/me/password', data),
+    updateMe: (data) => api.patch('/auth/me', data)
   },
 
   // Users
@@ -151,7 +153,8 @@ export default {
     powerOffByVmid: (vmid, node) => api.post(`/vms/control/${node}/${vmid}/shutdown`),
     restartByVmid: (vmid, node) => api.post(`/vms/control/${node}/${vmid}/restart`),
     deleteByVmid: (vmid, node) => api.delete(`/vms/control/${node}/${vmid}/delete`),
-    getAgentIP: (node, vmid) => api.get(`/vms/control/${node}/${vmid}/ip`)
+    getAgentIP: (node, vmid) => api.get(`/vms/control/${node}/${vmid}/ip`),
+    adoptVm: (data) => api.post('/vms/adopt', data),
   },
 
   // ISOs

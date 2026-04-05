@@ -479,10 +479,10 @@ export default {
           api.proxmox.getNodeStorage(form.value.node_id),
           api.proxmox.getNodeNetwork(form.value.node_id),
         ])
-        storages.value = (storRes.data || []).filter(s =>
+        storages.value = (storRes.data.storage || []).filter(s =>
           s.content && (s.content.includes('images') || s.content.includes('rootdir'))
         )
-        networks.value = (netRes.data || []).filter(n =>
+        networks.value = (netRes.data.network || []).filter(n =>
           n.type === 'bridge' || n.iface?.startsWith('vmbr')
         )
         if (networks.value.length) form.value.network_bridge = networks.value[0].iface

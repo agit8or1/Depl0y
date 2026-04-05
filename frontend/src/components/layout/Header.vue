@@ -14,10 +14,11 @@
     </div>
 
     <div class="header-right">
-      <div class="user-info">
+      <NotificationBell />
+      <router-link to="/profile" class="user-info user-info-link">
         <span class="username">{{ username }}</span>
         <span class="user-role badge badge-info">{{ userRole }}</span>
-      </div>
+      </router-link>
 
       <button @click="handleLogout" class="btn btn-outline">
         Logout
@@ -31,11 +32,13 @@ import { computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/store/auth'
 import GlobalSearch from '@/components/layout/GlobalSearch.vue'
+import NotificationBell from '@/components/layout/NotificationBell.vue'
 
 export default {
   name: 'Header',
   components: {
-    GlobalSearch
+    GlobalSearch,
+    NotificationBell
   },
   emits: ['toggle-sidebar'],
   setup() {
@@ -154,6 +157,17 @@ export default {
   display: flex;
   align-items: center;
   gap: 0.75rem;
+}
+
+.user-info-link {
+  text-decoration: none;
+  border-radius: 6px;
+  padding: 0.25rem 0.5rem;
+  transition: background 0.2s;
+}
+
+.user-info-link:hover {
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .username {

@@ -308,6 +308,31 @@ async def get_current_user_info(current_user: User = Depends(get_current_user)):
     return current_user
 
 
+class PasswordChangeRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+
+@router.patch("/me/password")
+async def change_own_password(
+    data: PasswordChangeRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Change current user's password"""
+    if not verify_password(data.current_password, current_user.hashed_password):
+        raise HTTPException(status_code=400, detail="Incorrect current password")
+
+    if len(data.new_password) < 8:
+        raise HTTPException(status_code=400, detail="New password must be at least 8 characters")
+
+    current_user.hashed_password = get_password_hash(data.new_password)
+    current_user.updated_at = datetime.utcnow()
+    db.commit()
+
+    return {"message": "Password changed"}
+
+
 @router.post("/totp/setup", response_model=TOTPSetupResponse)
 async def setup_totp(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Setup TOTP 2FA for current user"""

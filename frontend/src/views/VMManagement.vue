@@ -744,6 +744,7 @@
                 <th>Status</th>
                 <th>Node</th>
                 <th>Host</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
@@ -757,6 +758,15 @@
                 </td>
                 <td class="text-sm mono">{{ vm.node || '—' }}</td>
                 <td class="text-sm text-muted">{{ vm.hostName || vm.hostId }}</td>
+                <td>
+                  <button
+                    class="btn btn-primary btn-sm"
+                    :disabled="adoptingVMs.has(`${vm.hostId}-${vm.vmid}`)"
+                    @click="adoptVm(vm)"
+                  >
+                    {{ adoptingVMs.has(`${vm.hostId}-${vm.vmid}`) ? 'Adopting...' : 'Adopt' }}
+                  </button>
+                </td>
               </tr>
             </tbody>
           </table>
@@ -1012,6 +1022,34 @@ export default {
     const unmanagedVMs = ref([])
     const loadingUnmanaged = ref(false)
     const unmanagedExpanded = ref(false)
+    const adoptingVMs = ref(new Set()) // set of vmids currently being adopted
+
+    const adoptVm = async (vm) => {
+      const key = `${vm.hostId}-${vm.vmid}`
+      adoptingVMs.value = new Set([...adoptingVMs.value, key])
+      try {
+        await api.vms.adoptVm({
+          vmid: vm.vmid,
+          name: vm.name,
+          node: vm.node,
+          proxmox_host_id: vm.hostId,
+          status: vm.status,
+          cpu_cores: vm.maxcpu || 1,
+          memory_mb: vm.maxmem ? Math.round(vm.maxmem / 1024 / 1024) : 512,
+        })
+        unmanagedVMs.value = unmanagedVMs.value.filter(v => !(v.vmid === vm.vmid && v.hostId === vm.hostId))
+        toast.success('VM adopted into Depl0y')
+        // Refresh managed VMs list so the adopted VM appears
+        await loadVMs()
+      } catch (err) {
+        const msg = err?.response?.data?.detail || 'Failed to adopt VM'
+        toast.error(msg)
+      } finally {
+        const next = new Set(adoptingVMs.value)
+        next.delete(key)
+        adoptingVMs.value = next
+      }
+    }
 
     const loadUnmanagedVMs = async () => {
       loadingUnmanaged.value = true
@@ -1031,6 +1069,8 @@ export default {
                 node: item.node,
                 hostId: host.id,
                 hostName: host.name || host.host,
+                maxcpu: item.maxcpu || item.cpus || 1,
+                maxmem: item.maxmem || 0,
               })
             })
           } catch { /* skip unreachable hosts */ }
@@ -1833,6 +1873,7 @@ export default {
       selectRagVM, installRag, loadRagDocs, ragIngestDoc, ragDoQuery, ragDeleteDoc,
       // Unmanaged VMs
       unmanagedVMs, loadingUnmanaged, unmanagedExpanded, loadUnmanagedVMs,
+      adoptingVMs, adoptVm,
     }
   }
 }

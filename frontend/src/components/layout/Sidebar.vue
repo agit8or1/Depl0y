@@ -107,6 +107,11 @@
       </router-link>
 
       <!-- System -->
+      <router-link to="/profile" class="nav-item">
+        <span class="icon">👤</span>
+        <span>My Profile</span>
+      </router-link>
+
       <router-link to="/documentation" class="nav-item">
         <span class="icon">📖</span>
         <span>Documentation</span>

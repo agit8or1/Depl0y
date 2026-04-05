@@ -177,6 +177,24 @@
             Current: <strong>{{ themeOptions.find(t => t.value === currentTheme)?.label }}</strong>
           </p>
         </div>
+
+        <!-- Language Selector -->
+        <div class="settings-group" style="margin-top: 1.75rem;">
+          <h5 class="subsection-title">Language</h5>
+          <p class="text-sm text-muted">Select the language for the Depl0y interface. Takes effect immediately.</p>
+          <div class="form-group" style="max-width: 300px; margin-top: 0.75rem;">
+            <label class="form-label">Interface Language</label>
+            <select
+              v-model="currentLocale"
+              @change="handleLocaleChange"
+              class="form-control"
+            >
+              <option value="en">English (EN)</option>
+              <option value="de">Deutsch (DE)</option>
+              <option value="fr">Français (FR)</option>
+            </select>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -457,9 +475,12 @@
     <div class="card" v-if="user && user.role === 'admin'">
       <div class="card-header">
         <h3>General Settings</h3>
-        <button @click="saveGeneralSettings" class="btn btn-primary" :disabled="savingGeneral">
-          {{ savingGeneral ? 'Saving...' : 'Save' }}
-        </button>
+        <div class="flex gap-2">
+          <button @click="resetGeneralDefaults" class="btn btn-outline btn-sm">Reset Defaults</button>
+          <button @click="saveGeneralSettings" class="btn btn-primary" :disabled="savingGeneral">
+            {{ savingGeneral ? 'Saving...' : 'Save' }}
+          </button>
+        </div>
       </div>
       <div class="card-body">
         <div v-if="generalLoading" class="loading-message">
@@ -472,48 +493,64 @@
             <div class="settings-form-grid">
               <div class="form-group">
                 <label class="form-label">Application Name</label>
-                <input v-model="generalForm.app_name" class="form-control" placeholder="Depl0y" />
+                <input v-model="generalForm.app_name" class="form-control" placeholder="Depl0y" @input="markDirty('general')" />
                 <p class="text-xs text-muted">Displayed in the browser title and header</p>
               </div>
               <div class="form-group">
                 <label class="form-label">Application URL</label>
-                <input v-model="generalForm.app_url" class="form-control" placeholder="https://depl0y.example.com" />
-                <p class="text-xs text-muted">Used in email links and webhook callback URLs</p>
+                <input v-model="generalForm.app_url" class="form-control" placeholder="https://depl0y.example.com" @input="markDirty('general')" />
+                <p class="text-xs text-muted">The public URL of this instance — used in email links and webhook callback URLs</p>
               </div>
               <div class="form-group">
                 <label class="form-label">Default Language</label>
-                <select v-model="generalForm.default_language" class="form-control">
+                <select v-model="generalForm.default_language" class="form-control" @change="markDirty('general')">
                   <option value="en">English</option>
                   <option value="de">German (coming soon)</option>
                   <option value="fr">French (coming soon)</option>
                 </select>
+                <p class="text-xs text-muted">Interface language for all users</p>
               </div>
               <div class="form-group">
                 <label class="form-label">Default Timezone</label>
-                <select v-model="generalForm.default_timezone" class="form-control">
+                <select v-model="generalForm.default_timezone" class="form-control" @change="markDirty('general')">
                   <option v-for="tz in timezoneOptions" :key="tz.value" :value="tz.value">{{ tz.label }}</option>
                 </select>
+                <p class="text-xs text-muted">Used when displaying timestamps in reports and logs</p>
               </div>
             </div>
           </div>
 
           <div class="settings-group" style="margin-top:1.75rem;">
             <h5 class="subsection-title">Session &amp; Security</h5>
+            <p class="text-sm text-muted" style="margin-bottom:1rem;">These settings are enforced server-side on every login. Changes take effect on the next login.</p>
             <div class="settings-form-grid">
               <div class="form-group">
                 <label class="form-label">Session Timeout (minutes)</label>
-                <input v-model.number="generalForm.session_timeout_minutes" type="number" min="5" max="1440" class="form-control" />
-                <p class="text-xs text-muted">How long before an idle session is expired (5–1440 min)</p>
+                <input v-model.number="generalForm.session_timeout_minutes" type="number" min="5" max="10080" class="form-control" @input="markDirty('general')" />
+                <p class="text-xs text-muted">JWT expiry duration set at login. Min 5 min, max 10080 min (7 days). Default: 480 min (8 hours).</p>
+                <p v-if="generalValidationErrors.session_timeout_minutes" class="text-xs" style="color:#ef4444; margin-top:0.2rem;">{{ generalValidationErrors.session_timeout_minutes }}</p>
               </div>
               <div class="form-group">
                 <label class="form-label">Max Login Attempts Before Lockout</label>
-                <input v-model.number="generalForm.max_login_attempts" type="number" min="1" max="20" class="form-control" />
-                <p class="text-xs text-muted">Failed attempts before the account is temporarily locked</p>
+                <input v-model.number="generalForm.max_login_attempts" type="number" min="1" max="100" class="form-control" @input="markDirty('general')" />
+                <p class="text-xs text-muted">Consecutive failed logins before the account is temporarily locked. Prevents brute-force attacks.</p>
+                <p v-if="generalValidationErrors.max_login_attempts" class="text-xs" style="color:#ef4444; margin-top:0.2rem;">{{ generalValidationErrors.max_login_attempts }}</p>
               </div>
               <div class="form-group">
                 <label class="form-label">Lockout Duration (minutes)</label>
-                <input v-model.number="generalForm.lockout_duration_minutes" type="number" min="1" max="1440" class="form-control" />
-                <p class="text-xs text-muted">How long the lockout lasts before allowing new attempts</p>
+                <input v-model.number="generalForm.lockout_duration_minutes" type="number" min="1" max="1440" class="form-control" @input="markDirty('general')" />
+                <p class="text-xs text-muted">How long the lockout lasts before new attempts are allowed. Locked accounts are automatically released after this period.</p>
+              </div>
+              <div class="form-group">
+                <label class="form-label">IP Allowlist (CIDR, comma-separated)</label>
+                <input v-model="generalForm.ip_allowlist" class="form-control" placeholder="e.g. 192.168.1.0/24, 10.0.0.1/32" @input="markDirty('general')" />
+                <p class="text-xs text-muted">If set, only these IP ranges may log in. Leave blank to allow all IPs. Example: <code>192.168.0.0/16, 10.0.0.1/32</code></p>
+                <p v-if="generalValidationErrors.ip_allowlist" class="text-xs" style="color:#ef4444; margin-top:0.2rem;">{{ generalValidationErrors.ip_allowlist }}</p>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Password Policy (comma-separated rules)</label>
+                <input v-model="generalForm.password_policy" class="form-control" placeholder="e.g. min_length:12, uppercase, numbers, symbols" @input="markDirty('general')" />
+                <p class="text-xs text-muted">Rules enforced on new passwords. Options: <code>min_length:N</code>, <code>uppercase</code>, <code>numbers</code>, <code>symbols</code>. Leave blank for no policy beyond the 8-character minimum.</p>
               </div>
             </div>
           </div>
@@ -529,6 +566,7 @@
       <div class="card-header">
         <h3>Email / SMTP Configuration</h3>
         <div class="flex gap-2">
+          <button @click="resetSmtpDefaults" class="btn btn-outline btn-sm">Reset Defaults</button>
           <button @click="sendTestEmail" class="btn btn-outline" :disabled="testingEmail || savingSmtp">
             {{ testingEmail ? 'Sending...' : 'Test Email' }}
           </button>
@@ -545,42 +583,48 @@
         <div v-else class="settings-form-grid">
           <div class="form-group">
             <label class="form-label">SMTP Host</label>
-            <input v-model="smtpForm.smtp_host" class="form-control" placeholder="smtp.example.com" />
+            <input v-model="smtpForm.smtp_host" class="form-control" placeholder="smtp.example.com" @input="markDirty('smtp')" />
+            <p class="text-xs text-muted">Hostname of your outgoing mail server</p>
           </div>
           <div class="form-group">
             <label class="form-label">SMTP Port</label>
-            <input v-model.number="smtpForm.smtp_port" type="number" class="form-control" placeholder="587" />
-            <p class="text-xs text-muted">587 (STARTTLS) or 465 (SSL)</p>
+            <input v-model.number="smtpForm.smtp_port" type="number" class="form-control" placeholder="587" @input="markDirty('smtp')" />
+            <p class="text-xs text-muted">587 (STARTTLS, recommended) or 465 (SSL/TLS) or 25 (unencrypted)</p>
+            <p v-if="smtpValidationErrors.smtp_port" class="text-xs" style="color:#ef4444; margin-top:0.2rem;">{{ smtpValidationErrors.smtp_port }}</p>
           </div>
           <div class="form-group">
             <label class="form-label">Username</label>
-            <input v-model="smtpForm.smtp_username" class="form-control" placeholder="user@example.com" autocomplete="off" />
+            <input v-model="smtpForm.smtp_username" class="form-control" placeholder="user@example.com" autocomplete="off" @input="markDirty('smtp')" />
+            <p class="text-xs text-muted">SMTP authentication username (usually an email address)</p>
           </div>
           <div class="form-group">
             <label class="form-label">Password</label>
-            <input v-model="smtpForm.smtp_password" type="password" class="form-control" autocomplete="new-password" placeholder="••••••••" />
+            <input v-model="smtpForm.smtp_password" type="password" class="form-control" autocomplete="new-password" placeholder="••••••••" @input="markDirty('smtp')" />
+            <p class="text-xs text-muted">Leave blank to keep the existing password unchanged</p>
           </div>
           <div class="form-group">
             <label class="form-label">From Address</label>
-            <input v-model="smtpForm.smtp_from" class="form-control" placeholder="noreply@example.com" />
+            <input v-model="smtpForm.smtp_from" class="form-control" placeholder="noreply@example.com" @input="markDirty('smtp')" />
+            <p class="text-xs text-muted">The sender address shown in outgoing emails</p>
           </div>
           <div class="form-group">
             <label class="form-label">From Name</label>
-            <input v-model="smtpForm.smtp_from_name" class="form-control" placeholder="Depl0y" />
+            <input v-model="smtpForm.smtp_from_name" class="form-control" placeholder="Depl0y" @input="markDirty('smtp')" />
+            <p class="text-xs text-muted">Display name shown alongside the from address</p>
           </div>
           <div class="form-group">
             <label class="form-label">Notification Recipient</label>
-            <input v-model="smtpForm.smtp_to" class="form-control" placeholder="admin@example.com" />
-            <p class="text-xs text-muted">Where to send notification and test emails</p>
+            <input v-model="smtpForm.smtp_to" class="form-control" placeholder="admin@example.com" @input="markDirty('smtp')" />
+            <p class="text-xs text-muted">Where to send system notifications and test emails</p>
           </div>
           <div class="form-group">
             <label class="form-label">Use TLS/SSL</label>
             <div class="toggle-row" style="border:none; padding:0; margin-top:0.5rem;">
               <div>
-                <p class="text-sm text-muted">Enable STARTTLS (port 587) or SSL (port 465)</p>
+                <p class="text-sm text-muted">Enable STARTTLS (port 587) or SSL (port 465). Strongly recommended for security.</p>
               </div>
               <label class="toggle-switch">
-                <input type="checkbox" v-model="smtpFormTls" />
+                <input type="checkbox" v-model="smtpFormTls" @change="markDirty('smtp')" />
                 <span class="toggle-slider"></span>
               </label>
             </div>
@@ -820,6 +864,72 @@
         </div>
 
       </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         SYSTEM HEALTH (admin only)
+         ═══════════════════════════════════════════════════════════════════ -->
+    <div class="card" v-if="user && user.role === 'admin'">
+      <div class="card-header">
+        <h3>System Health</h3>
+        <button @click="fetchSystemHealth" class="btn btn-outline" :disabled="loadingHealth">
+          {{ loadingHealth ? 'Checking...' : 'Refresh' }}
+        </button>
+      </div>
+      <div class="card-body">
+        <div v-if="loadingHealth && !healthData" class="loading-message">
+          <div class="loading-spinner"></div>
+          <p>Running health checks...</p>
+        </div>
+        <div v-else-if="healthData" class="health-checks-grid">
+          <div class="health-check-item" :class="healthData.checks.db === 'ok' ? 'health-ok' : 'health-fail'">
+            <div class="health-check-icon">{{ healthData.checks.db === 'ok' ? '✓' : '✗' }}</div>
+            <div>
+              <strong>Database</strong>
+              <p class="text-xs text-muted">{{ healthData.checks.db === 'ok' ? 'Connected and responding' : 'Connection failed' }}</p>
+            </div>
+          </div>
+          <div class="health-check-item" :class="healthData.checks.smtp === 'configured' ? 'health-ok' : 'health-warn'">
+            <div class="health-check-icon">{{ healthData.checks.smtp === 'configured' ? '✓' : '!' }}</div>
+            <div>
+              <strong>SMTP Email</strong>
+              <p class="text-xs text-muted">{{ healthData.checks.smtp === 'configured' ? 'SMTP host is configured' : 'Not configured — email sending is disabled' }}</p>
+            </div>
+          </div>
+          <div class="health-check-item" :class="healthData.checks.hosts > 0 ? 'health-ok' : 'health-warn'">
+            <div class="health-check-icon">{{ healthData.checks.hosts > 0 ? '✓' : '!' }}</div>
+            <div>
+              <strong>Proxmox Hosts</strong>
+              <p class="text-xs text-muted">{{ healthData.checks.hosts }} host{{ healthData.checks.hosts !== 1 ? 's' : '' }} configured</p>
+            </div>
+          </div>
+          <div class="health-check-item" :class="healthData.checks.encryption === 'ok' ? 'health-ok' : 'health-fail'">
+            <div class="health-check-icon">{{ healthData.checks.encryption === 'ok' ? '✓' : '✗' }}</div>
+            <div>
+              <strong>Encryption Key</strong>
+              <p class="text-xs text-muted">{{ healthData.checks.encryption === 'ok' ? 'Encryption key is set' : 'Encryption key missing — credentials cannot be decrypted' }}</p>
+            </div>
+          </div>
+          <div class="health-check-item" :class="(healthData.checks.disk_free_gb !== null && healthData.checks.disk_free_gb > 1) ? 'health-ok' : 'health-warn'">
+            <div class="health-check-icon">{{ (healthData.checks.disk_free_gb !== null && healthData.checks.disk_free_gb > 1) ? '✓' : '!' }}</div>
+            <div>
+              <strong>Disk Space</strong>
+              <p class="text-xs text-muted">
+                <span v-if="healthData.checks.disk_free_gb !== null">{{ healthData.checks.disk_free_gb }} GB free at DB location</span>
+                <span v-else>Unable to determine disk space</span>
+              </p>
+            </div>
+          </div>
+        </div>
+        <div v-else>
+          <p class="text-sm text-muted">Click Refresh to run health checks.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Unsaved changes warning banner -->
+    <div v-if="hasDirtySection" class="unsaved-changes-banner">
+      <span>You have unsaved changes in: {{ dirtySections.join(', ') }}</span>
     </div>
 
     <!-- Setup Instructions Modal -->
@@ -1570,14 +1680,49 @@
 </template>
 
 <script>
-import { ref, onMounted, nextTick } from 'vue'
+import { ref, onMounted, nextTick, computed } from 'vue'
+import { onBeforeRouteLeave } from 'vue-router'
 import api from '@/services/api'
 import { useToast } from 'vue-toastification'
+import { setLocale, getCurrentLocale } from '@/i18n/index.js'
 
 export default {
   name: 'Settings',
+
   setup() {
     const toast = useToast()
+
+    // ── Dirty tracking for unsaved-changes warning ─────────────────────────
+    const _dirty = ref({})  // { section: true/false }
+
+    const markDirty = (section) => {
+      _dirty.value = { ..._dirty.value, [section]: true }
+    }
+    const clearDirty = (section) => {
+      const d = { ..._dirty.value }
+      delete d[section]
+      _dirty.value = d
+    }
+    const dirtySections = computed(() =>
+      Object.entries(_dirty.value)
+        .filter(([, v]) => v)
+        .map(([k]) => k)
+    )
+    const hasDirtySection = computed(() => dirtySections.value.length > 0)
+
+    // Warn when navigating away with unsaved changes
+    onBeforeRouteLeave((to, from, next) => {
+      if (hasDirtySection.value) {
+        const confirmed = window.confirm(
+          `You have unsaved changes in: ${dirtySections.value.join(', ')}.\n\nLeave without saving?`
+        )
+        if (!confirmed) {
+          next(false)
+          return
+        }
+      }
+      next()
+    })
 
     // ── Theme ──────────────────────────────────────────────────────────────
     const themeOptions = [
@@ -1597,6 +1742,15 @@ export default {
       } else {
         root.setAttribute('data-theme', theme)
       }
+    }
+
+    // ── Language / i18n ─────────────────────────────────────────────────────
+    const currentLocale = ref(getCurrentLocale())
+
+    const handleLocaleChange = () => {
+      setLocale(currentLocale.value)
+      // Reload the page so all components pick up the new locale immediately
+      window.location.reload()
     }
 
     const systemInfo = ref(null)
@@ -2328,15 +2482,111 @@ export default {
     const generalLoading = ref(false)
     const savingGeneral = ref(false)
     const generalError = ref(null)
+    const generalValidationErrors = ref({})
+    const smtpValidationErrors = ref({})
     const generalForm = ref({
       app_name: 'Depl0y',
       app_url: '',
       default_language: 'en',
       default_timezone: 'UTC',
-      session_timeout_minutes: 60,
+      session_timeout_minutes: 480,
       max_login_attempts: 5,
       lockout_duration_minutes: 15,
+      ip_allowlist: '',
+      password_policy: '',
     })
+
+    const _GENERAL_DEFAULTS = {
+      app_name: 'Depl0y',
+      app_url: '',
+      default_language: 'en',
+      default_timezone: 'UTC',
+      session_timeout_minutes: 480,
+      max_login_attempts: 5,
+      lockout_duration_minutes: 15,
+      ip_allowlist: '',
+      password_policy: '',
+    }
+
+    const resetGeneralDefaults = () => {
+      if (!confirm('Reset all General Settings to their default values?')) return
+      Object.assign(generalForm.value, _GENERAL_DEFAULTS)
+      generalValidationErrors.value = {}
+      toast.info('General settings reset to defaults — click Save to apply')
+      markDirty('general')
+    }
+
+    const _validateGeneralForm = () => {
+      const errors = {}
+      const timeout = Number(generalForm.value.session_timeout_minutes)
+      if (!timeout || timeout < 5 || timeout > 10080) {
+        errors.session_timeout_minutes = 'Must be between 5 and 10080 minutes'
+      }
+      const attempts = Number(generalForm.value.max_login_attempts)
+      if (!attempts || attempts < 1 || attempts > 100) {
+        errors.max_login_attempts = 'Must be between 1 and 100'
+      }
+      const allowlist = (generalForm.value.ip_allowlist || '').trim()
+      if (allowlist) {
+        const bad = []
+        allowlist.split(',').forEach(raw => {
+          const entry = raw.trim()
+          if (!entry) return
+          // Basic CIDR format check
+          const cidrRe = /^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$|^[0-9a-fA-F:]+(?:\/\d{1,3})?$/
+          if (!cidrRe.test(entry)) bad.push(entry)
+        })
+        if (bad.length > 0) {
+          errors.ip_allowlist = `Invalid CIDR: ${bad.join(', ')}`
+        }
+      }
+      generalValidationErrors.value = errors
+      return Object.keys(errors).length === 0
+    }
+
+    const _validateSmtpForm = () => {
+      const errors = {}
+      const port = Number(smtpForm.value.smtp_port)
+      if (smtpForm.value.smtp_port !== '' && (!Number.isInteger(port) || port < 1 || port > 65535)) {
+        errors.smtp_port = 'Port must be between 1 and 65535'
+      }
+      smtpValidationErrors.value = errors
+      return Object.keys(errors).length === 0
+    }
+
+    // ── System Health ────────────────────────────────────────────────────────
+    const healthData = ref(null)
+    const loadingHealth = ref(false)
+
+    const fetchSystemHealth = async () => {
+      loadingHealth.value = true
+      try {
+        const res = await api.system.health()
+        healthData.value = res.data
+      } catch (error) {
+        toast.error('Failed to load health data')
+      } finally {
+        loadingHealth.value = false
+      }
+    }
+
+    // ── SMTP Reset Defaults ──────────────────────────────────────────────────
+    const resetSmtpDefaults = () => {
+      if (!confirm('Reset SMTP settings to defaults? This will clear all SMTP configuration.')) return
+      smtpForm.value = {
+        smtp_host: '',
+        smtp_port: 587,
+        smtp_username: '',
+        smtp_password: '',
+        smtp_from: '',
+        smtp_from_name: '',
+        smtp_to: '',
+      }
+      smtpFormTls.value = true
+      smtpValidationErrors.value = {}
+      toast.info('SMTP settings reset — click Save to apply')
+      markDirty('smtp')
+    }
 
     const timezoneOptions = [
       { value: 'UTC', label: 'UTC' },
@@ -2367,9 +2617,11 @@ export default {
         generalForm.value.app_url = s.app_url || ''
         generalForm.value.default_language = s.default_language || 'en'
         generalForm.value.default_timezone = s.default_timezone || 'UTC'
-        generalForm.value.session_timeout_minutes = parseInt(s.session_timeout_minutes) || 60
+        generalForm.value.session_timeout_minutes = parseInt(s.session_timeout_minutes) || 480
         generalForm.value.max_login_attempts = parseInt(s.max_login_attempts) || 5
         generalForm.value.lockout_duration_minutes = parseInt(s.lockout_duration_minutes) || 15
+        generalForm.value.ip_allowlist = s.ip_allowlist || ''
+        generalForm.value.password_policy = s.password_policy || ''
         // Also seed SMTP form from loaded settings
         smtpForm.value.smtp_host = s.smtp_host || ''
         smtpForm.value.smtp_port = parseInt(s.smtp_port) || 587
@@ -2404,6 +2656,10 @@ export default {
     }
 
     const saveGeneralSettings = async () => {
+      if (!_validateGeneralForm()) {
+        toast.error('Please fix validation errors before saving')
+        return
+      }
       savingGeneral.value = true
       generalError.value = null
       try {
@@ -2415,8 +2671,11 @@ export default {
           session_timeout_minutes: String(generalForm.value.session_timeout_minutes),
           max_login_attempts: String(generalForm.value.max_login_attempts),
           lockout_duration_minutes: String(generalForm.value.lockout_duration_minutes),
+          ip_allowlist: generalForm.value.ip_allowlist || '',
+          password_policy: generalForm.value.password_policy || '',
         })
         toast.success('General settings saved')
+        clearDirty('general')
       } catch (error) {
         generalError.value = error.response?.data?.detail || 'Failed to save general settings'
         toast.error('Failed to save general settings')
@@ -2441,6 +2700,10 @@ export default {
     })
 
     const saveSmtpSettings = async () => {
+      if (!_validateSmtpForm()) {
+        toast.error('Please fix validation errors before saving')
+        return
+      }
       savingSmtp.value = true
       smtpError.value = null
       try {
@@ -2451,6 +2714,7 @@ export default {
         if (!payload.smtp_password) delete payload.smtp_password
         await api.system.updateSettings(payload)
         toast.success('SMTP settings saved')
+        clearDirty('smtp')
       } catch (error) {
         smtpError.value = error.response?.data?.detail || 'Failed to save SMTP settings'
         toast.error('Failed to save SMTP settings')
@@ -2645,6 +2909,7 @@ export default {
       fetchWebhooks()
       fetchNotifRules()
       fetchGeneralSettings()
+      fetchSystemHealth()
     })
 
     return {
@@ -2652,6 +2917,9 @@ export default {
       themeOptions,
       currentTheme,
       setTheme,
+      // Language
+      currentLocale,
+      handleLocaleChange,
       isNewerThanLatest,
       systemInfo,
       user,
@@ -2765,20 +3033,33 @@ export default {
       triggerTestWebhook,
       deleteWebhookById,
       deliveryTimeAgo,
+      // Dirty tracking / unsaved changes
+      markDirty,
+      clearDirty,
+      dirtySections,
+      hasDirtySection,
       // General Settings
       generalLoading,
       savingGeneral,
       generalError,
+      generalValidationErrors,
       generalForm,
       timezoneOptions,
       saveGeneralSettings,
+      resetGeneralDefaults,
       // SMTP
       smtpLoading,
       savingSmtp,
       smtpError,
+      smtpValidationErrors,
       smtpForm,
       smtpFormTls,
       saveSmtpSettings,
+      resetSmtpDefaults,
+      // System Health
+      healthData,
+      loadingHealth,
+      fetchSystemHealth,
       // Proxmox VM Defaults
       pveDefaultsLoading,
       savingPveDefaults,
@@ -3721,7 +4002,7 @@ export default {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: rgba(255, 255, 255, 0.4);
+  color: rgba(255, 255, 255, 0.65);
   margin: 0 0 0.4rem 0;
 }
 
@@ -3741,7 +4022,7 @@ export default {
 }
 
 .delivery-log-header {
-  color: rgba(255, 255, 255, 0.35);
+  color: rgba(255, 255, 255, 0.65);
   font-weight: 600;
   font-size: 0.68rem;
   text-transform: uppercase;
@@ -3752,7 +4033,7 @@ export default {
 }
 
 .delivery-event {
-  color: rgba(255, 255, 255, 0.7);
+  color: rgba(255, 255, 255, 0.85);
   font-family: monospace;
   font-size: 0.72rem;
 }
@@ -3780,7 +4061,7 @@ export default {
 }
 
 .delivery-time {
-  color: rgba(255, 255, 255, 0.4);
+  color: rgba(255, 255, 255, 0.65);
   font-size: 0.68rem;
   text-align: right;
 }
@@ -3853,5 +4134,76 @@ export default {
 
 .gap-2 {
   gap: 0.5rem;
+}
+
+/* ── System Health checks ──────────────────────────────────────────────────── */
+.health-checks-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 0.75rem;
+}
+
+.health-check-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.875rem 1rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--border-color);
+  background: var(--background);
+}
+
+.health-check-icon {
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.health-ok .health-check-icon {
+  background: rgba(34, 197, 94, 0.15);
+  color: #16a34a;
+}
+
+.health-fail .health-check-icon {
+  background: rgba(239, 68, 68, 0.15);
+  color: #dc2626;
+}
+
+.health-warn .health-check-icon {
+  background: rgba(234, 179, 8, 0.15);
+  color: #ca8a04;
+}
+
+/* ── Unsaved changes banner ────────────────────────────────────────────────── */
+.unsaved-changes-banner {
+  position: fixed;
+  bottom: 1.5rem;
+  right: 1.5rem;
+  background: #f59e0b;
+  color: #1c1917;
+  padding: 0.75rem 1.25rem;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  z-index: 999;
+  animation: slideIn 0.2s ease-out;
+}
+
+@keyframes slideIn {
+  from { transform: translateY(1rem); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+/* ── btn-sm ────────────────────────────────────────────────────────────────── */
+.btn-sm {
+  padding: 0.3rem 0.75rem;
+  font-size: 0.8rem;
 }
 </style>

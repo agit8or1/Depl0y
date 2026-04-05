@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel, EmailStr
 from typing import Optional, List
 from datetime import datetime, timedelta
+import ipaddress
 import qrcode
 import io
 import base64
@@ -303,6 +304,77 @@ def _get_brute_force_setting(db: Session, key: str, default: int) -> int:
         return default
 
 
+def _get_str_setting(db: Session, key: str, default: str = "") -> str:
+    """Helper to read a string system setting."""
+    from app.models.database import SystemSettings
+    row = db.query(SystemSettings).filter(SystemSettings.key == key).first()
+    return row.value if row else default
+
+
+def _check_ip_allowlist(db: Session, client_ip: str) -> Optional[str]:
+    """
+    Check if client_ip is permitted by the ip_allowlist setting.
+    Returns an error message if blocked, None if allowed.
+    """
+    allowlist_raw = _get_str_setting(db, "ip_allowlist", "").strip()
+    if not allowlist_raw:
+        return None  # No allowlist configured — all IPs permitted
+
+    entries = [e.strip() for e in allowlist_raw.split(",") if e.strip()]
+    if not entries:
+        return None
+
+    try:
+        client_addr = ipaddress.ip_address(client_ip)
+    except ValueError:
+        return "Login not allowed from this IP address"
+
+    for entry in entries:
+        try:
+            network = ipaddress.ip_network(entry, strict=False)
+            if client_addr in network:
+                return None  # IP is allowed
+        except ValueError:
+            continue
+
+    return "Login not allowed from this IP address"
+
+
+def _validate_password_policy(db: Session, password: str) -> Optional[str]:
+    """
+    Validate password against the password_policy setting.
+    Returns an error message if policy is not met, None if valid.
+    Policy is stored as a comma-separated list of requirements:
+      min_length:N, uppercase, numbers, symbols
+    """
+    policy_raw = _get_str_setting(db, "password_policy", "").strip()
+    if not policy_raw:
+        return None  # No policy configured
+
+    requirements = [r.strip() for r in policy_raw.split(",") if r.strip()]
+
+    for req in requirements:
+        if req.startswith("min_length:"):
+            try:
+                min_len = int(req.split(":")[1])
+                if len(password) < min_len:
+                    return f"Password must be at least {min_len} characters long"
+            except (IndexError, ValueError):
+                pass
+        elif req == "uppercase":
+            if not any(c.isupper() for c in password):
+                return "Password must contain at least one uppercase letter"
+        elif req == "numbers":
+            if not any(c.isdigit() for c in password):
+                return "Password must contain at least one number"
+        elif req == "symbols":
+            import re as _re
+            if not _re.search(r'[^a-zA-Z0-9]', password):
+                return "Password must contain at least one symbol"
+
+    return None
+
+
 def _record_failed_login(db: Session, username: str, ip_address: str, user_agent: str):
     """Record a failed login attempt and lock the account if threshold exceeded."""
     from app.models.security import FailedLoginAttempt, AccountLockout, SecurityEvent
@@ -465,7 +537,19 @@ def _finalize_login(
             pass
 
     token_version = getattr(user, "token_version", 0) or 0
-    access_token = create_access_token(data={"sub": user.username, "tv": token_version})
+
+    # Read session timeout from system settings (default 480 minutes = 8 hours)
+    try:
+        session_timeout_minutes = int(_get_str_setting(db, "session_timeout_minutes", "480") or "480")
+        if session_timeout_minutes < 5:
+            session_timeout_minutes = 480
+    except (ValueError, TypeError):
+        session_timeout_minutes = 480
+
+    access_token = create_access_token(
+        data={"sub": user.username, "tv": token_version},
+        expires_delta=timedelta(minutes=session_timeout_minutes),
+    )
     refresh_token_value = create_refresh_token(data={"sub": user.username, "tv": token_version})
 
     # Store refresh token in DB for rotation/revocation
@@ -525,6 +609,11 @@ async def login(credentials: LoginRequest, request: Request, db: Session = Depen
 
     client_ip = request.client.host if request.client else "unknown"
     user_agent = request.headers.get("user-agent", "")
+
+    # IP allowlist check
+    ip_block_msg = _check_ip_allowlist(db, client_ip)
+    if ip_block_msg:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=ip_block_msg)
 
     # Brute-force: check if account is locked
     lockout_msg = _check_account_lockout(db, credentials.username)
@@ -850,6 +939,11 @@ async def change_own_password(
 
     if len(data.new_password) < 8:
         raise HTTPException(status_code=400, detail="New password must be at least 8 characters")
+
+    # Enforce password policy
+    policy_error = _validate_password_policy(db, data.new_password)
+    if policy_error:
+        raise HTTPException(status_code=400, detail=policy_error)
 
     current_user.hashed_password = get_password_hash(data.new_password)
     current_user.updated_at = datetime.utcnow()

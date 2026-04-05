@@ -240,7 +240,7 @@
               <!-- Tags -->
               <td>
                 <div v-if="ct.tags" class="tags-row">
-                  <span v-for="tag in parseTags(ct.tags)" :key="tag" class="tag-pill">{{ tag }}</span>
+                  <TagBadge v-for="tag in parseTags(ct.tags)" :key="tag" :tag="tag" small />
                 </div>
                 <span v-else class="text-muted">—</span>
               </td>
@@ -315,12 +315,13 @@ import { useToast } from 'vue-toastification'
 import { formatBytes, formatUptime } from '@/utils/proxmox'
 import { detectOs } from '@/utils/osIcons'
 import SkeletonLoader from '@/components/SkeletonLoader.vue'
+import TagBadge from '@/components/TagBadge.vue'
 
 const REFRESH_SECS = 30
 
 export default {
   name: 'Containers',
-  components: { SkeletonLoader },
+  components: { SkeletonLoader, TagBadge },
   setup() {
     const toast = useToast()
     const router = useRouter()

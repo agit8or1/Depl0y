@@ -3,13 +3,13 @@
     <div class="login-card">
       <div class="login-header">
         <h1 class="login-logo">Depl<span class="logo-zero">0</span>y</h1>
-        <p class="login-subtitle">VM Deployment Panel</p>
+        <p class="login-subtitle">{{ t('login.title') }}</p>
       </div>
 
       <!-- Step 1: Username + Password -->
       <form v-if="step === 'credentials'" @submit.prevent="handleLogin" class="login-form">
         <div class="form-group">
-          <label for="username" class="form-label">Username</label>
+          <label for="username" class="form-label">{{ t('login.username') }}</label>
           <input
             id="username"
             v-model="credentials.username"
@@ -22,7 +22,7 @@
         </div>
 
         <div class="form-group">
-          <label for="password" class="form-label">Password</label>
+          <label for="password" class="form-label">{{ t('login.password') }}</label>
           <input
             id="password"
             v-model="credentials.password"
@@ -40,7 +40,7 @@
           class="btn btn-primary btn-block"
           :disabled="loading"
         >
-          {{ loading ? 'Logging in...' : 'Login' }}
+          {{ loading ? t('login.logging_in') : t('login.login') }}
         </button>
       </form>
 
@@ -48,13 +48,13 @@
       <div v-else-if="step === '2fa'" class="login-form">
         <div class="twofa-header">
           <div class="twofa-icon">&#128274;</div>
-          <h2 class="twofa-title">Two-Factor Authentication</h2>
-          <p class="twofa-subtitle">Enter the code from your authenticator app, or use a backup code.</p>
+          <h2 class="twofa-title">{{ t('login.2fa_title') }}</h2>
+          <p class="twofa-subtitle">{{ t('login.2fa_subtitle') }}</p>
         </div>
 
         <form @submit.prevent="handleTwoFA">
           <div v-if="!useBackupCode" class="form-group">
-            <label for="totp" class="form-label">6-Digit Code</label>
+            <label for="totp" class="form-label">{{ t('login.2fa_code_label') }}</label>
             <input
               id="totp"
               ref="totpInput"
@@ -70,7 +70,7 @@
           </div>
 
           <div v-else class="form-group">
-            <label for="backup" class="form-label">Backup Code</label>
+            <label for="backup" class="form-label">{{ t('login.2fa_backup_label') }}</label>
             <input
               id="backup"
               ref="backupInput"
@@ -91,7 +91,7 @@
             class="btn btn-primary btn-block"
             :disabled="loading || totpCode.length < 6"
           >
-            {{ loading ? 'Verifying...' : 'Verify' }}
+            {{ loading ? t('login.verifying') : t('login.verify') }}
           </button>
         </form>
 
@@ -101,21 +101,21 @@
             type="button"
             @click="toggleBackupCode"
           >
-            {{ useBackupCode ? 'Use authenticator app instead' : 'Use a backup code instead' }}
+            {{ useBackupCode ? t('login.use_authenticator') : t('login.use_backup_code') }}
           </button>
           <button
             class="btn-link btn-link-secondary"
             type="button"
             @click="backToCredentials"
           >
-            Back to login
+            {{ t('login.back_to_login') }}
           </button>
         </div>
       </div>
 
       <div class="login-footer">
         <p class="text-muted text-sm text-center">
-          Open Source VM Deployment Platform
+          {{ t('login.footer') }}
         </p>
       </div>
     </div>
@@ -126,12 +126,14 @@
 import { ref, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/store/auth'
+import { useI18n } from '@/i18n/index.js'
 
 export default {
   name: 'Login',
   setup() {
     const router = useRouter()
     const authStore = useAuthStore()
+    const { t } = useI18n()
 
     const step = ref('credentials')
     const credentials = ref({ username: '', password: '' })
@@ -157,7 +159,7 @@ export default {
           await nextTick()
           totpInput.value?.focus()
         } else {
-          errorMsg.value = result.error || 'Login failed'
+          errorMsg.value = result.error || t('login.failed')
         }
       } finally {
         loading.value = false
@@ -173,7 +175,7 @@ export default {
         if (result.success) {
           router.push('/')
         } else {
-          errorMsg.value = result.error || 'Verification failed'
+          errorMsg.value = result.error || t('login.verification_failed')
           totpCode.value = ''
           await nextTick()
           if (useBackupCode.value) {
@@ -208,6 +210,7 @@ export default {
     }
 
     return {
+      t,
       step,
       credentials,
       totpCode,

@@ -323,12 +323,12 @@
               </td>
               <td v-if="anyVmHasTags">
                 <div class="vm-tags">
-                  <span
+                  <TagBadge
                     v-for="tag in parseTags(vm.tags)"
                     :key="tag"
-                    class="vm-tag-pill"
-                    :style="{ backgroundColor: tagColor(tag) }"
-                  >{{ tag }}</span>
+                    :tag="tag"
+                    small
+                  />
                   <span v-if="!parseTags(vm.tags).length" class="text-muted text-sm">—</span>
                 </div>
               </td>
@@ -592,14 +592,13 @@
         </div>
         <div class="modal-body">
           <div class="vm-tags" style="margin-bottom: 0.75rem; min-height: 2rem;">
-            <span
+            <TagBadge
               v-for="tag in tagEditorTags"
               :key="tag"
-              class="vm-tag-pill"
-              :style="{ backgroundColor: tagColor(tag), cursor: 'pointer' }"
-              @click="removeTagFromEditor(tag)"
-              title="Click to remove"
-            >{{ tag }} ×</span>
+              :tag="tag"
+              :removable="true"
+              @remove="removeTagFromEditor"
+            />
             <span v-if="tagEditorTags.length === 0" class="text-muted text-sm">No tags yet</span>
           </div>
           <div style="display: flex; gap: 0.5rem;">
@@ -696,10 +695,12 @@ import { useRoute, useRouter } from 'vue-router'
 import api from '@/services/api'
 import { useToast } from 'vue-toastification'
 import SkeletonLoader from '@/components/SkeletonLoader.vue'
+import TagBadge from '@/components/TagBadge.vue'
+import { tagColor as _tagColor } from '@/utils/tagColors'
 
 export default {
   name: 'VirtualMachines',
-  components: { SkeletonLoader },
+  components: { SkeletonLoader, TagBadge },
   setup() {
     const route = useRoute()
     const router = useRouter()
@@ -1335,16 +1336,8 @@ export default {
       return tagsStr.split(';').map(t => t.trim()).filter(Boolean)
     }
 
-    // Stable color per tag string (based on hash)
-    const tagColorPalette = [
-      '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6',
-      '#ef4444', '#06b6d4', '#84cc16', '#f97316',
-    ]
-    const tagColor = (tag) => {
-      let hash = 0
-      for (let i = 0; i < tag.length; i++) hash = tag.charCodeAt(i) + ((hash << 5) - hash)
-      return tagColorPalette[Math.abs(hash) % tagColorPalette.length]
-    }
+    // Use shared deterministic tag color utility
+    const tagColor = _tagColor
 
     const anyVmHasTags = computed(() => allVMs.value.some(vm => vm.tags))
 

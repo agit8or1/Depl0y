@@ -287,7 +287,7 @@ export default {
   background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 8px;
-  color: rgba(255, 255, 255, 0.7);
+  color: rgba(255, 255, 255, 0.85);
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s, color 0.15s;
 }
@@ -367,7 +367,7 @@ export default {
   border: none;
   cursor: pointer;
   font-size: 0.72rem;
-  color: rgba(255, 255, 255, 0.55);
+  color: rgba(255, 255, 255, 0.75);
   padding: 2px 6px;
   border-radius: 4px;
   transition: color 0.15s, background 0.15s;
@@ -396,7 +396,7 @@ export default {
   border: none;
   cursor: pointer;
   font-size: 0.75rem;
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(255, 255, 255, 0.75);
   padding: 0.45rem 0.5rem;
   transition: color 0.15s, border-color 0.15s;
   border-bottom: 2px solid transparent;
@@ -420,7 +420,7 @@ export default {
   padding: 1px 5px;
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.6);
+  color: rgba(255, 255, 255, 0.75);
 }
 
 .tab-count-unread {
@@ -455,7 +455,7 @@ export default {
   align-items: center;
   justify-content: center;
   padding: 2rem 1rem;
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(255, 255, 255, 0.65);
   font-size: 0.8rem;
   gap: 0.25rem;
   text-align: center;
@@ -524,14 +524,14 @@ export default {
 
 .notif-item-time {
   font-size: 0.67rem;
-  color: rgba(255, 255, 255, 0.4);
+  color: rgba(255, 255, 255, 0.65);
   white-space: nowrap;
   flex-shrink: 0;
 }
 
 .notif-item-message {
   font-size: 0.75rem;
-  color: rgba(255, 255, 255, 0.6);
+  color: rgba(255, 255, 255, 0.75);
   margin: 0;
   line-height: 1.4;
   display: -webkit-box;
@@ -565,7 +565,7 @@ export default {
   border: none;
   cursor: pointer;
   font-size: 1rem;
-  color: rgba(255, 255, 255, 0.25);
+  color: rgba(255, 255, 255, 0.5);
   padding: 0 10px;
   align-self: center;
   flex-shrink: 0;

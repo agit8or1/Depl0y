@@ -16,183 +16,183 @@
     <nav class="sidebar-nav">
 
       <!-- ── Overview ── -->
-      <div class="nav-section-label">Overview</div>
+      <div class="nav-section-label">{{ t('nav.section.overview') }}</div>
       <router-link to="/" class="nav-item" @click="handleNavClick">
         <span class="icon">📊</span>
-        <span>Dashboard</span>
+        <span>{{ t('nav.dashboard') }}</span>
       </router-link>
       <router-link to="/federation" class="nav-item" @click="handleNavClick">
         <span class="icon">🌍</span>
-        <span>Federation View</span>
+        <span>{{ t('nav.federation') }}</span>
       </router-link>
       <router-link to="/datacenter" class="nav-item" @click="handleNavClick">
         <span class="icon">🏢</span>
-        <span>Datacenter</span>
+        <span>{{ t('nav.datacenter') }}</span>
       </router-link>
       <router-link to="/tasks" class="nav-item" @click="handleNavClick">
         <span class="icon">📋</span>
-        <span>Task Log</span>
+        <span>{{ t('nav.tasklog') }}</span>
       </router-link>
 
       <!-- ── Compute ── -->
-      <div class="nav-section-label">Compute</div>
+      <div class="nav-section-label">{{ t('nav.section.compute') }}</div>
       <router-link v-if="isOperator" to="/containers" class="nav-item" @click="handleNavClick">
         <span class="icon">📦</span>
-        <span>Containers</span>
+        <span>{{ t('nav.containers') }}</span>
       </router-link>
       <router-link v-if="isOperator" to="/create-lxc" class="nav-item" @click="handleNavClick">
         <span class="icon">➕</span>
-        <span>Create LXC</span>
+        <span>{{ t('nav.create_lxc') }}</span>
       </router-link>
       <router-link v-if="isOperator" to="/create-pve-vm" class="nav-item" @click="handleNavClick">
         <span class="icon">➕</span>
-        <span>Create VM (PVE)</span>
+        <span>{{ t('nav.create_vm_pve') }}</span>
       </router-link>
       <router-link v-if="isOperator" to="/deploy" class="nav-item" @click="handleNavClick">
         <span class="icon">🚀</span>
-        <span>Deploy VM</span>
+        <span>{{ t('nav.deploy_vm') }}</span>
       </router-link>
       <router-link v-if="isOperator" to="/import-vm" class="nav-item" @click="handleNavClick">
         <span class="icon">📥</span>
-        <span>Import VM</span>
+        <span>{{ t('nav.import_vm') }}</span>
       </router-link>
       <router-link v-if="isOperator" to="/llm-deploy" class="nav-item" @click="handleNavClick">
         <span class="icon">🤖</span>
-        <span>LLM Deploy</span>
+        <span>{{ t('nav.llm_deploy') }}</span>
       </router-link>
       <router-link to="/templates" class="nav-item" @click="handleNavClick">
         <span class="icon">📄</span>
-        <span>Templates</span>
+        <span>{{ t('nav.templates') }}</span>
       </router-link>
       <router-link to="/vms" class="nav-item" @click="handleNavClick">
         <span class="icon">🖥️</span>
-        <span>Virtual Machines</span>
+        <span>{{ t('nav.vms') }}</span>
       </router-link>
       <router-link v-if="isOperator" to="/vm-management" class="nav-item" @click="handleNavClick">
         <span class="icon">🛠️</span>
-        <span>VM Management</span>
+        <span>{{ t('nav.vm_management') }}</span>
       </router-link>
       <router-link v-if="isOperator" to="/vm-groups" class="nav-item" @click="handleNavClick">
         <span class="icon">🗃️</span>
-        <span>VM Groups</span>
+        <span>{{ t('nav.vm_groups') }}</span>
       </router-link>
       <router-link v-if="isOperator" to="/bulk-ops" class="nav-item" @click="handleNavClick">
         <span class="icon">⚡</span>
-        <span>Bulk Operations</span>
+        <span>{{ t('nav.bulk_ops') }}</span>
       </router-link>
 
       <!-- ── Infrastructure ── -->
-      <div class="nav-section-label">Infrastructure</div>
+      <div class="nav-section-label">{{ t('nav.section.infrastructure') }}</div>
       <router-link to="/backup" class="nav-item" @click="handleNavClick">
         <span class="icon">💾</span>
-        <span>Backup</span>
+        <span>{{ t('nav.backup') }}</span>
       </router-link>
       <router-link to="/snapshots" class="nav-item" @click="handleNavClick">
         <span class="icon">📷</span>
-        <span>Snapshots</span>
+        <span>{{ t('nav.snapshots') }}</span>
       </router-link>
       <router-link v-if="isAdmin" to="/ha-management" class="nav-item" @click="handleNavClick">
         <span class="icon">🔄</span>
-        <span>HA Management</span>
+        <span>{{ t('nav.ha_management') }}</span>
       </router-link>
       <router-link v-if="isOperator" to="/replication" class="nav-item" @click="handleNavClick">
         <span class="icon">🔁</span>
-        <span>Replication</span>
+        <span>{{ t('nav.replication') }}</span>
       </router-link>
       <router-link v-if="isOperator" to="/idrac" class="nav-item" @click="handleNavClick">
         <span class="icon">🖧</span>
-        <span>iDRAC / iLO</span>
+        <span>{{ t('nav.idrac') }}</span>
       </router-link>
       <router-link v-if="isOperator" to="/network" class="nav-item" @click="handleNavClick">
         <span class="icon">🔌</span>
-        <span>Network Management</span>
+        <span>{{ t('nav.network') }}</span>
       </router-link>
       <router-link v-if="isAdmin" to="/sdn" class="nav-item" @click="handleNavClick">
         <span class="icon">🕸️</span>
-        <span>SDN / VNets</span>
+        <span>{{ t('nav.sdn') }}</span>
       </router-link>
       <router-link to="/images" class="nav-item" @click="handleNavClick">
         <span class="icon">💿</span>
-        <span>Images</span>
+        <span>{{ t('nav.images') }}</span>
       </router-link>
       <router-link to="/proxmox" class="nav-item" @click="handleNavClick">
         <span class="icon">🌐</span>
-        <span>Proxmox Hosts</span>
+        <span>{{ t('nav.proxmox_hosts') }}</span>
       </router-link>
       <router-link v-if="isAdmin" to="/storage-management" class="nav-item" @click="handleNavClick">
         <span class="icon">🗄️</span>
-        <span>Storage Management</span>
+        <span>{{ t('nav.storage_management') }}</span>
       </router-link>
       <router-link v-if="isAdmin" to="/pools" class="nav-item" @click="handleNavClick">
         <span class="icon">🗂️</span>
-        <span>Resource Pools</span>
+        <span>{{ t('nav.resource_pools') }}</span>
       </router-link>
 
       <!-- ── Admin ── -->
-      <div v-if="isAdmin" class="nav-section-label">Admin</div>
+      <div v-if="isAdmin" class="nav-section-label">{{ t('nav.section.admin') }}</div>
       <router-link v-if="isAdmin" to="/audit-log" class="nav-item" @click="handleNavClick">
         <span class="icon">🔍</span>
-        <span>Audit Log</span>
+        <span>{{ t('nav.audit_log') }}</span>
       </router-link>
       <router-link v-if="isAdmin && linuxAgentEnabled" to="/linux-vms" class="nav-item" @click="handleNavClick">
         <span class="icon">🛡️</span>
-        <span>Linux VM Security</span>
+        <span>{{ t('nav.linux_vm_security') }}</span>
       </router-link>
       <router-link v-if="isAdmin" to="/security" class="nav-item" @click="handleNavClick">
         <span class="icon">🔒</span>
-        <span>Security</span>
+        <span>{{ t('nav.security') }}</span>
       </router-link>
       <router-link v-if="isAdmin" to="/alerts" class="nav-item" @click="handleNavClick">
         <span class="icon">🚨</span>
-        <span>Alert Rules</span>
+        <span>{{ t('nav.alert_rules') }}</span>
       </router-link>
       <router-link v-if="isAdmin" to="/system-health" class="nav-item" @click="handleNavClick">
         <span class="icon">💚</span>
-        <span>System Health</span>
+        <span>{{ t('nav.system_health') }}</span>
       </router-link>
       <router-link v-if="isAdmin" to="/system-logs" class="nav-item" @click="handleNavClick">
         <span class="icon">📜</span>
-        <span>System Logs</span>
+        <span>{{ t('nav.system_logs') }}</span>
       </router-link>
       <router-link v-if="isAdmin" to="/users" class="nav-item" @click="handleNavClick">
         <span class="icon">👥</span>
-        <span>Users</span>
+        <span>{{ t('nav.users') }}</span>
       </router-link>
       <router-link v-if="isAdmin" to="/integrations" class="nav-item" @click="handleNavClick">
         <span class="icon">🔗</span>
-        <span>Integrations</span>
+        <span>{{ t('nav.integrations') }}</span>
       </router-link>
       <router-link v-if="isAdmin" to="/api-explorer" class="nav-item" @click="handleNavClick">
         <span class="icon">⚡</span>
-        <span>API Explorer</span>
+        <span>{{ t('nav.api_explorer') }}</span>
       </router-link>
 
       <!-- ── Account ── -->
-      <div class="nav-section-label">Account</div>
+      <div class="nav-section-label">{{ t('nav.section.account') }}</div>
       <router-link to="/about" class="nav-item" @click="handleNavClick">
         <span class="icon">ℹ️</span>
-        <span>About</span>
+        <span>{{ t('nav.about') }}</span>
       </router-link>
       <router-link to="/documentation" class="nav-item" @click="handleNavClick">
         <span class="icon">📖</span>
-        <span>Documentation</span>
+        <span>{{ t('nav.documentation') }}</span>
       </router-link>
       <router-link to="/profile" class="nav-item" @click="handleNavClick">
         <span class="icon">👤</span>
-        <span>My Profile</span>
+        <span>{{ t('nav.my_profile') }}</span>
       </router-link>
       <router-link to="/settings" class="nav-item" @click="handleNavClick">
         <span class="icon">⚙️</span>
-        <span>Settings</span>
+        <span>{{ t('nav.settings') }}</span>
       </router-link>
       <router-link to="/support" class="nav-item nav-item-heart" @click="handleNavClick">
         <span class="icon">❤️</span>
-        <span>Support Project</span>
+        <span>{{ t('nav.support') }}</span>
       </router-link>
 
       <a href="https://github.com/agit8or1/Depl0y/issues" target="_blank" rel="noopener noreferrer" class="nav-item">
         <span class="icon">🐛</span>
-        <span>Report Bug</span>
+        <span>{{ t('nav.report_bug') }}</span>
       </a>
     </nav>
 
@@ -207,6 +207,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useAuthStore } from '@/store/auth'
 import api from '@/services/api'
+import { useI18n } from '@/i18n/index.js'
 
 export default {
   name: 'Sidebar',
@@ -219,6 +220,7 @@ export default {
   emits: ['close'],
   setup(props, { emit }) {
     const authStore = useAuthStore()
+    const { t } = useI18n()
     const isAdmin = computed(() => authStore.isAdmin)
     const isOperator = computed(() => authStore.isOperator || authStore.isAdmin)
     const appVersion = ref('1.8.0') // Fallback version
@@ -259,6 +261,7 @@ export default {
     })
 
     return {
+      t,
       isAdmin,
       isOperator,
       appVersion,

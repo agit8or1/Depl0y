@@ -196,6 +196,19 @@
           <h3>Config Update</h3>
           <p class="tab-desc">Update settings on all selected VMs. Leave blank to keep current value.</p>
 
+          <!-- Preset selector -->
+          <div class="cfg-preset-bar" v-if="cfgPresets.length > 0 || true">
+            <div class="cfg-preset-controls">
+              <select class="select" style="flex:1;" @change="loadCfgPreset($event.target.value); $event.target.value = ''">
+                <option value="">Load preset…</option>
+                <option v-for="p in cfgPresets" :key="p.name" :value="p.name">{{ p.name }}</option>
+              </select>
+              <button class="btn btn-xs btn-outline" @click="openSaveCfgPresetModal" title="Save current config as preset">
+                Save Preset
+              </button>
+            </div>
+          </div>
+
           <div class="form-section">
             <div class="form-row">
               <label>CPU Cores</label>
@@ -242,35 +255,91 @@
             <button class="btn btn-primary" :disabled="!hasSelection || executing" @click="runConfig">
               ✔ Apply Config to {{ selectedVms.length }} VMs
             </button>
+            <button
+              v-if="cfgFailedVms.length > 0"
+              class="btn btn-warning"
+              :disabled="executing"
+              @click="retryFailedConfig"
+              title="Retry only failed VMs"
+            >
+              ↺ Retry {{ cfgFailedVms.length }} Failed
+            </button>
           </div>
 
-          <!-- Preview table -->
+          <!-- Preview table with diff -->
           <div class="preview-table-wrap" v-if="configPreviewData.length > 0">
-            <h4>Preview ({{ configPreviewData.length }} VMs)</h4>
+            <div class="preview-table-header">
+              <h4>Preview — {{ configPreviewData.length }} VMs</h4>
+              <div class="preview-legend">
+                <span class="legend-item legend-change">Will change</span>
+                <span class="legend-item legend-nochange">Already set</span>
+                <span class="legend-item legend-error">Error</span>
+              </div>
+            </div>
             <table class="preview-table">
               <thead>
                 <tr>
                   <th>VM</th>
                   <th>Node</th>
-                  <th>Changes</th>
+                  <th>Field</th>
+                  <th>Current</th>
+                  <th>New Value</th>
+                  <th>Status</th>
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="row in configPreviewData" :key="`prev-${row.vmid}`">
-                  <td>{{ row.vm_name || row.vmid }}</td>
-                  <td>{{ row.node }}</td>
-                  <td>
-                    <div v-if="row.error" class="preview-error">{{ row.error }}</div>
-                    <div v-else-if="Object.keys(row.diff).length === 0" class="preview-nochange">No change</div>
-                    <div v-else class="preview-diff">
-                      <span v-for="(change, key) in row.diff" :key="key" class="diff-item">
-                        <strong>{{ key }}</strong>: {{ formatVal(change.from) }} → {{ formatVal(change.to) }}
-                      </span>
-                    </div>
-                  </td>
-                </tr>
+                <template v-for="row in configPreviewData" :key="`prev-${row.vmid}`">
+                  <tr v-if="row.error" class="preview-row-error">
+                    <td><strong>{{ row.vm_name || row.vmid }}</strong></td>
+                    <td>{{ row.node }}</td>
+                    <td colspan="3"><span class="preview-error">{{ row.error }}</span></td>
+                    <td><span class="badge-preview badge-preview-error">Error</span></td>
+                  </tr>
+                  <tr v-else-if="!row.diff || Object.keys(row.diff).length === 0" class="preview-row-nochange">
+                    <td><strong>{{ row.vm_name || row.vmid }}</strong></td>
+                    <td>{{ row.node }}</td>
+                    <td colspan="3"><span class="preview-nochange">All values already at target</span></td>
+                    <td><span class="badge-preview badge-preview-skip">Already set</span></td>
+                  </tr>
+                  <template v-else>
+                    <tr
+                      v-for="(change, field, idx) in row.diff"
+                      :key="`prev-${row.vmid}-${field}`"
+                      class="preview-row-change"
+                    >
+                      <td v-if="idx === 0" :rowspan="Object.keys(row.diff).length"><strong>{{ row.vm_name || row.vmid }}</strong></td>
+                      <td v-if="idx === 0" :rowspan="Object.keys(row.diff).length">{{ row.node }}</td>
+                      <td class="preview-field">{{ field }}</td>
+                      <td class="preview-from">{{ formatVal(change.from) }}</td>
+                      <td class="preview-to">{{ formatVal(change.to) }}</td>
+                      <td v-if="idx === 0" :rowspan="Object.keys(row.diff).length"><span class="badge-preview badge-preview-change">{{ Object.keys(row.diff).length }} change{{ Object.keys(row.diff).length !== 1 ? 's' : '' }}</span></td>
+                    </tr>
+                  </template>
+                </template>
               </tbody>
             </table>
+            <div class="preview-summary">
+              {{ configPreviewData.filter(r => r.diff && Object.keys(r.diff).length > 0).length }} VMs will change ·
+              {{ configPreviewData.filter(r => !r.error && (!r.diff || Object.keys(r.diff).length === 0)).length }} already set ·
+              {{ configPreviewData.filter(r => r.error).length }} errors
+            </div>
+          </div>
+
+          <!-- Save preset modal -->
+          <div v-if="showSaveCfgPresetModal" class="modal-backdrop" @click.self="showSaveCfgPresetModal = false">
+            <div class="mini-modal">
+              <div class="mini-modal-header">
+                <span>Save Config Preset</span>
+                <button @click="showSaveCfgPresetModal = false" style="background:none;border:none;cursor:pointer;font-size:1.2rem;color:var(--text-muted);">×</button>
+              </div>
+              <div class="mini-modal-body">
+                <input v-model="newCfgPresetName" type="text" class="input" placeholder="Preset name…" @keyup.enter="saveCfgPreset" />
+              </div>
+              <div class="mini-modal-footer">
+                <button class="btn btn-secondary btn-xs" @click="showSaveCfgPresetModal = false">Cancel</button>
+                <button class="btn btn-primary btn-xs" @click="saveCfgPreset" :disabled="!newCfgPresetName.trim()">Save</button>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -622,6 +691,61 @@ export default {
     const configPreviewData = ref([])
     const previewLoading = ref(false)
 
+    // Config preset management
+    const CFG_PRESETS_KEY = 'depl0y_bulk_cfg_presets'
+    const cfgPresets = ref([])
+    const showSaveCfgPresetModal = ref(false)
+    const newCfgPresetName = ref('')
+    const cfgFailedVms = ref([])
+
+    function loadCfgPresets() {
+      try { cfgPresets.value = JSON.parse(localStorage.getItem(CFG_PRESETS_KEY) || '[]') } catch { cfgPresets.value = [] }
+    }
+
+    function openSaveCfgPresetModal() {
+      newCfgPresetName.value = ''
+      showSaveCfgPresetModal.value = true
+    }
+
+    function saveCfgPreset() {
+      const name = newCfgPresetName.value.trim()
+      if (!name) return
+      const preset = {
+        name,
+        cores: cfgCores.value,
+        memory: cfgMemory.value,
+        tagsAdd: cfgTagsAdd.value,
+        tagsRemove: cfgTagsRemove.value,
+        agent: cfgAgent.value,
+        onboot: cfgOnboot.value,
+        balloon: cfgBalloon.value,
+      }
+      const list = cfgPresets.value.filter(p => p.name !== name)
+      list.push(preset)
+      localStorage.setItem(CFG_PRESETS_KEY, JSON.stringify(list))
+      cfgPresets.value = list
+      showSaveCfgPresetModal.value = false
+      toast.success(`Preset "${name}" saved`)
+    }
+
+    function loadCfgPreset(name) {
+      if (!name) return
+      const preset = cfgPresets.value.find(p => p.name === name)
+      if (!preset) return
+      cfgCores.value = preset.cores ?? null
+      cfgMemory.value = preset.memory ?? null
+      cfgTagsAdd.value = preset.tagsAdd || ''
+      cfgTagsRemove.value = preset.tagsRemove || ''
+      cfgAgent.value = preset.agent || ''
+      cfgOnboot.value = preset.onboot || ''
+      cfgBalloon.value = preset.balloon ?? null
+      configPreviewData.value = []
+      cfgFailedVms.value = []
+      toast.info(`Loaded preset "${name}"`)
+    }
+
+    loadCfgPresets()
+
     // ── Migrate ───────────────────────────────────────────────────────────
     const migrateHostId = ref('')
     const migrateNode = ref('')
@@ -935,19 +1059,62 @@ export default {
     const runConfig = async () => {
       if (!hasSelection.value) return
       executing.value = true
+      cfgFailedVms.value = []
       initExecResults()
 
       try {
         const res = await api.vmBulk.bulkConfig(buildConfigPayload())
         mergeExecResults(res.data.results)
-        const failed = res.data.results.filter(r => r.error).length
-        if (failed > 0) {
-          toast.warning(`Config updated on ${res.data.results.length - failed} VMs, ${failed} failed`)
+        const failed = res.data.results.filter(r => r.error)
+        if (failed.length > 0) {
+          // Track failed VMs for retry
+          cfgFailedVms.value = selectedVms.value.filter(sv =>
+            failed.some(f => f.host_id === sv.host_id && f.node === sv.node && f.vmid === sv.vmid)
+          )
+          toast.warning(`Config updated on ${res.data.results.length - failed.length} VMs, ${failed.length} failed`)
         } else {
           toast.success('Config updated on all selected VMs')
         }
       } catch (e) {
         toast.error('Bulk config update failed')
+      } finally {
+        executing.value = false
+      }
+    }
+
+    const retryFailedConfig = async () => {
+      if (!cfgFailedVms.value.length) return
+      executing.value = true
+      const retryTargets = cfgFailedVms.value
+      cfgFailedVms.value = []
+
+      // Init exec results for retry
+      executionResults.value = retryTargets.map(v => ({
+        host_id: v.host_id,
+        node: v.node,
+        vmid: v.vmid,
+        name: v.name,
+        status: 'pending',
+        upid: null,
+        error: null,
+      }))
+
+      try {
+        const payload = buildConfigPayload()
+        payload.vms = retryTargets.map(v => ({ host_id: v.host_id, node: v.node, vmid: v.vmid }))
+        const res = await api.vmBulk.bulkConfig(payload)
+        mergeExecResults(res.data.results)
+        const stillFailed = res.data.results.filter(r => r.error)
+        if (stillFailed.length > 0) {
+          cfgFailedVms.value = retryTargets.filter(sv =>
+            stillFailed.some(f => f.host_id === sv.host_id && f.node === sv.node && f.vmid === sv.vmid)
+          )
+          toast.warning(`Retry: ${res.data.results.length - stillFailed.length} succeeded, ${stillFailed.length} still failing`)
+        } else {
+          toast.success('Retry successful — all VMs updated')
+        }
+      } catch (e) {
+        toast.error('Retry failed')
       } finally {
         executing.value = false
       }
@@ -1110,6 +1277,8 @@ export default {
       snapTemplate, snapDescription, snapIncludeRam, snapDeleteDays,
       cfgCores, cfgMemory, cfgTagsAdd, cfgTagsRemove, cfgAgent, cfgOnboot, cfgBalloon,
       configPreviewData, previewLoading,
+      cfgPresets, showSaveCfgPresetModal, newCfgPresetName, cfgFailedVms,
+      openSaveCfgPresetModal, saveCfgPreset, loadCfgPreset,
       migrateHostId, migrateNode, migrateOnline, migrateLocalDisks, targetNodes,
       scripts, activeScript, scriptHostId, cleanupDays, requiredTags,
       auditCpuThreshold, auditRamThreshold, scriptRunning, scriptResults,
@@ -1119,7 +1288,7 @@ export default {
       isSelected, toggleSelect, selectAll, selectFiltered, deselectAll, deselectVm,
       applyFilters, hostName,
       runPower, runSnapshot, runDeleteSnapshots,
-      previewConfig, runConfig, formatVal,
+      previewConfig, runConfig, retryFailedConfig, formatVal,
       loadTargetNodes, runMigrate,
       runScript, downloadScriptReport,
       abortExec, clearResults, downloadReport, rowClass,
@@ -1779,6 +1948,140 @@ export default {
 .badge-error { background: rgba(239,68,68,0.2); color: #ef4444; }
 
 .cell-warn { color: #f59e0b; font-weight: 600; }
+
+/* ── Config preset bar ── */
+.cfg-preset-bar {
+  margin-bottom: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--border, #2d3748);
+}
+
+.cfg-preset-controls {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+/* ── Enhanced preview table ── */
+.preview-table-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.preview-table-header h4 {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.preview-legend {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.legend-item {
+  font-size: 0.72rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 0.25rem;
+}
+
+.legend-change {
+  background: rgba(59, 130, 246, 0.15);
+  color: #3b82f6;
+}
+
+.legend-nochange {
+  background: rgba(107, 114, 128, 0.15);
+  color: #9ca3af;
+}
+
+.legend-error {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+
+.preview-row-change { background: rgba(59, 130, 246, 0.04); }
+.preview-row-nochange { background: rgba(107, 114, 128, 0.04); }
+.preview-row-error { background: rgba(239, 68, 68, 0.04); }
+
+.preview-field { font-family: monospace; font-size: 0.78rem; color: var(--text-muted, #6b7280); }
+.preview-from { font-size: 0.8rem; color: #ef4444; }
+.preview-to { font-size: 0.8rem; color: #22c55e; font-weight: 500; }
+
+.badge-preview {
+  display: inline-block;
+  padding: 0.12rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.badge-preview-change { background: rgba(59, 130, 246, 0.2); color: #3b82f6; }
+.badge-preview-skip { background: rgba(107, 114, 128, 0.2); color: #9ca3af; }
+.badge-preview-error { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
+
+.preview-summary {
+  margin-top: 0.5rem;
+  font-size: 0.78rem;
+  color: var(--text-muted, #6b7280);
+  text-align: right;
+}
+
+/* ── Save preset mini modal ── */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.mini-modal {
+  background: var(--card-bg, #1e2533);
+  border: 1px solid var(--border, #2d3748);
+  border-radius: 0.5rem;
+  width: 320px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.mini-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border, #2d3748);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.mini-modal-body {
+  padding: 1rem;
+}
+
+.mini-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  border-top: 1px solid var(--border, #2d3748);
+}
+
+/* ── btn-outline (for preset controls) ── */
+.btn-outline {
+  background: transparent;
+  border: 1px solid var(--border, #2d3748);
+  color: var(--text, #e2e8f0);
+}
+.btn-outline:hover:not(:disabled) {
+  background: rgba(255,255,255,0.06);
+}
 
 /* ── Responsive ── */
 @media (max-width: 900px) {

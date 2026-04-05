@@ -5,6 +5,15 @@
       <aside class="groups-sidebar">
         <div class="sidebar-header">
           <h3>VM Groups</h3>
+          <div class="sidebar-header-actions">
+            <button class="icon-btn" title="Export Groups" @click="exportGroups">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            </button>
+            <label class="icon-btn" title="Import Groups">
+              <input type="file" accept=".json" style="display:none;" ref="importFileInput" @change="importGroups" />
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            </label>
+          </div>
         </div>
 
         <!-- All VMs -->
@@ -19,8 +28,26 @@
           <span class="sidebar-count">{{ allVMs.length }}</span>
         </div>
 
+        <!-- Smart Groups section -->
+        <div class="sidebar-section-header">Smart Groups</div>
+        <div
+          v-for="sg in smartGroups"
+          :key="sg.key"
+          :class="['sidebar-item', selectedView.type === 'smart' && selectedView.value === sg.key ? 'sidebar-item-active' : '']"
+          @click="selectSmartGroup(sg)"
+        >
+          <span class="sidebar-item-icon" :style="{ color: sg.color }">
+            <svg v-if="sg.key === 'running'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>
+            <svg v-else-if="sg.key === 'stopped'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><rect x="9" y="9" width="6" height="6"/></svg>
+            <svg v-else-if="sg.key === 'high-cpu'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+            <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          </span>
+          <span class="sidebar-item-label">{{ sg.label }}</span>
+          <span class="sidebar-count">{{ smartGroupCount(sg) }}</span>
+        </div>
+
         <!-- By Tag section -->
-        <div class="sidebar-section-header">By Tag</div>
+        <div class="sidebar-section-header" style="margin-top: 0.5rem;">By Tag</div>
         <div v-if="tagsLoading" class="sidebar-loading">Loading…</div>
         <div v-else-if="allTags.length === 0" class="sidebar-empty">No tags found</div>
         <div
@@ -31,7 +58,7 @@
         >
           <span class="tag-dot" :style="{ backgroundColor: tagColor(tagEntry.tag) }"></span>
           <span class="sidebar-item-label">{{ tagEntry.tag }}</span>
-          <span class="sidebar-count">{{ tagEntry.count }}</span>
+          <span class="sidebar-count" :style="{ backgroundColor: tagColor(tagEntry.tag) + '22', color: tagColor(tagEntry.tag) }">{{ tagEntry.count }}</span>
         </div>
 
         <!-- My Groups section -->
@@ -74,11 +101,29 @@
           <VMTable :vms="filteredMainVMs" :loading="vmsLoading" @edit-tags="openTagEditor" />
         </div>
 
+        <!-- Smart group view -->
+        <div v-else-if="selectedView.type === 'smart' && activeSmart">
+          <div class="main-header">
+            <div style="display: flex; align-items: center; gap: 0.75rem;">
+              <span class="smart-group-icon" :style="{ backgroundColor: activeSmart.color + '22', color: activeSmart.color }">
+                <svg v-if="activeSmart.key === 'running'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>
+                <svg v-else-if="activeSmart.key === 'stopped'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><rect x="9" y="9" width="6" height="6"/></svg>
+                <svg v-else-if="activeSmart.key === 'high-cpu'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              </span>
+              <h2 style="margin: 0;">{{ activeSmart.label }}</h2>
+            </div>
+            <span class="text-muted text-sm">{{ smartVMs.length }} VM{{ smartVMs.length !== 1 ? 's' : '' }}</span>
+          </div>
+          <div class="smart-group-desc">{{ activeSmart.description }}</div>
+          <VMTable :vms="smartVMs" :loading="vmsLoading" @edit-tags="openTagEditor" />
+        </div>
+
         <!-- Tag view -->
         <div v-else-if="selectedView.type === 'tag'">
           <div class="main-header">
             <div style="display: flex; align-items: center; gap: 0.75rem;">
-              <span class="tag-badge" :style="{ backgroundColor: tagColor(selectedView.value) }">{{ selectedView.value }}</span>
+              <TagBadge :tag="selectedView.value" />
               <h2 style="margin: 0;">Tag: {{ selectedView.value }}</h2>
             </div>
             <span class="text-muted text-sm">{{ tagVMs.length }} VM{{ tagVMs.length !== 1 ? 's' : '' }}</span>
@@ -217,14 +262,13 @@
         </div>
         <div class="modal-body">
           <div class="vm-tags" style="margin-bottom: 0.75rem; min-height: 2rem;">
-            <span
+            <TagBadge
               v-for="tag in tagEditorTags"
               :key="tag"
-              class="vm-tag-pill"
-              :style="{ backgroundColor: tagColor(tag), cursor: 'pointer' }"
-              @click="removeTagFromEditor(tag)"
-              title="Click to remove"
-            >{{ tag }} ×</span>
+              :tag="tag"
+              :removable="true"
+              @remove="removeTagFromEditor"
+            />
             <span v-if="tagEditorTags.length === 0" class="text-muted text-sm">No tags yet</span>
           </div>
           <div style="display: flex; gap: 0.5rem;">
@@ -274,6 +318,8 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import api from '@/services/api'
 import { useToast } from 'vue-toastification'
+import TagBadge from '@/components/TagBadge.vue'
+import { tagColor as _tagColor } from '@/utils/tagColors'
 
 // ── Inner VMTable component ──────────────────────────────────────────────────
 const VMTable = {
@@ -284,15 +330,6 @@ const VMTable = {
   },
   emits: ['edit-tags'],
   setup(props, { emit }) {
-    const tagColorPalette = [
-      '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6',
-      '#ef4444', '#06b6d4', '#84cc16', '#f97316',
-    ]
-    const tagColor = (tag) => {
-      let hash = 0
-      for (let i = 0; i < tag.length; i++) hash = tag.charCodeAt(i) + ((hash << 5) - hash)
-      return tagColorPalette[Math.abs(hash) % tagColorPalette.length]
-    }
     const parseTags = (s) => (s || '').split(';').map(t => t.trim()).filter(Boolean)
     const formatBytes = (b) => {
       if (!b) return '—'
@@ -301,7 +338,25 @@ const VMTable = {
       return Math.round((b / Math.pow(1024, i)) * 100) / 100 + ' ' + sizes[i]
     }
     const statusClass = (s) => ({ running: 'badge-success', stopped: 'badge-danger', paused: 'badge-warning' }[(s || '').toLowerCase()] || 'badge-info')
-    return { tagColor, parseTags, formatBytes, statusClass, emit }
+    const cpuPct = (vm) => vm.cpu != null ? (vm.cpu * 100).toFixed(1) + '%' : '—'
+    const memPct = (vm) => (vm.maxmem && vm.mem != null) ? ((vm.mem / vm.maxmem) * 100).toFixed(1) + '%' : '—'
+    return { parseTags, formatBytes, statusClass, cpuPct, memPct, emit }
+  },
+  components: {
+    TagBadge: {
+      name: 'TagBadge',
+      props: { tag: String, small: Boolean },
+      setup(props) {
+        const colors = ['#ef4444','#f97316','#eab308','#22c55e','#14b8a6','#3b82f6','#8b5cf6','#ec4899','#06b6d4','#84cc16','#f43f5e','#6366f1']
+        const bg = computed(() => { let h=0; for(let i=0;i<props.tag.length;i++) h=props.tag.charCodeAt(i)+((h<<5)-h); return colors[Math.abs(h)%colors.length] })
+        const r = computed(() => parseInt(bg.value.slice(1,3),16))
+        const g = computed(() => parseInt(bg.value.slice(3,5),16))
+        const b = computed(() => parseInt(bg.value.slice(5,7),16))
+        const fg = computed(() => (0.299*r.value+0.587*g.value+0.114*b.value)/255>0.5?'#1a2332':'#ffffff')
+        return { bg, fg }
+      },
+      template: `<span :style="{backgroundColor:bg,color:fg}" style="display:inline-flex;align-items:center;font-size:0.65rem;font-weight:600;padding:0.1rem 0.4rem;border-radius:9999px;white-space:nowrap;letter-spacing:0.02em;text-transform:lowercase;">{{ tag }}</span>`
+    }
   },
   template: `
     <div>
@@ -311,7 +366,8 @@ const VMTable = {
         <table class="table">
           <thead>
             <tr>
-              <th>VMID</th><th>Name</th><th>Status</th><th>Node</th><th>Host</th><th>CPU/RAM</th><th>Tags</th><th>Actions</th>
+              <th>VMID</th><th>Name</th><th>Status</th><th>Node</th><th>Host</th>
+              <th>CPU%</th><th>Memory</th><th>Tags</th><th>Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -321,10 +377,27 @@ const VMTable = {
               <td><span :class="['badge', statusClass(vm.status)]">{{ vm.status }}</span></td>
               <td><span class="badge badge-info">{{ vm.node }}</span></td>
               <td class="text-sm">{{ vm.hostName }}</td>
-              <td class="text-sm">{{ vm.cpus || '?' }} CPU / {{ formatBytes(vm.maxmem) }}</td>
+              <td class="text-sm">
+                <span v-if="vm.status === 'running' && vm.cpu != null">
+                  <div class="mini-bar-wrap">
+                    <div class="mini-bar"><div class="mini-bar-fill" :class="vm.cpu > 0.7 ? 'mini-bar-high' : vm.cpu > 0.4 ? 'mini-bar-mid' : 'mini-bar-low'" :style="{width: Math.min(vm.cpu*100,100)+'%'}"></div></div>
+                    <span>{{ (vm.cpu*100).toFixed(1) }}%</span>
+                  </div>
+                </span>
+                <span v-else class="text-muted">—</span>
+              </td>
+              <td class="text-sm">
+                <span v-if="vm.maxmem">
+                  <div class="mini-bar-wrap">
+                    <div class="mini-bar"><div class="mini-bar-fill" :class="(vm.mem/vm.maxmem)>0.8?'mini-bar-high':(vm.mem/vm.maxmem)>0.5?'mini-bar-mid':'mini-bar-low'" :style="{width: Math.min((vm.mem/vm.maxmem)*100,100)+'%'}"></div></div>
+                    <span>{{ formatBytes(vm.mem) }}/{{ formatBytes(vm.maxmem) }}</span>
+                  </div>
+                </span>
+                <span v-else class="text-muted">—</span>
+              </td>
               <td>
                 <div class="vm-tags">
-                  <span v-for="tag in parseTags(vm.tags)" :key="tag" class="vm-tag-pill" :style="{ backgroundColor: tagColor(tag) }">{{ tag }}</span>
+                  <TagBadge v-for="tag in parseTags(vm.tags)" :key="tag" :tag="tag" :small="true" />
                   <span v-if="!parseTags(vm.tags).length" class="text-muted text-sm">—</span>
                 </div>
               </td>
@@ -341,9 +414,10 @@ const VMTable = {
 
 export default {
   name: 'VMGroups',
-  components: { VMTable },
+  components: { VMTable, TagBadge },
   setup() {
     const toast = useToast()
+    const importFileInput = ref(null)
 
     // ── Color palette ───────────────────────────────────────────────────
     const colorPalette = [
@@ -351,14 +425,35 @@ export default {
       '#ef4444', '#06b6d4', '#84cc16', '#f97316',
     ]
 
-    const tagColorPalette = colorPalette
-    const tagColor = (tag) => {
-      let hash = 0
-      for (let i = 0; i < tag.length; i++) hash = tag.charCodeAt(i) + ((hash << 5) - hash)
-      return tagColorPalette[Math.abs(hash) % tagColorPalette.length]
+    const tagColor = _tagColor
+    const parseTags = (s) => (s || '').split(';').map(t => t.trim()).filter(Boolean)
+
+    // ── Smart Groups definition ─────────────────────────────────────────
+    const smartGroups = [
+      { key: 'running', label: 'Running VMs', color: '#22c55e', description: 'VMs that are currently powered on and running.' },
+      { key: 'stopped', label: 'Stopped VMs', color: '#ef4444', description: 'VMs that are powered off or stopped.' },
+      { key: 'high-cpu', label: 'High CPU', color: '#f97316', description: 'VMs with CPU usage above 70% (requires live data from cluster resources).' },
+      { key: 'untagged', label: 'Untagged', color: '#8b5cf6', description: 'VMs that have no tags assigned.' },
+    ]
+
+    const activeSmart = ref(null)
+
+    const smartGroupCount = (sg) => {
+      return allVMs.value.filter(vm => smartFilter(sg.key, vm)).length
     }
 
-    const parseTags = (s) => (s || '').split(';').map(t => t.trim()).filter(Boolean)
+    const smartFilter = (key, vm) => {
+      if (key === 'running') return vm.status === 'running'
+      if (key === 'stopped') return vm.status === 'stopped'
+      if (key === 'high-cpu') return vm.cpu != null && vm.cpu > 0.7
+      if (key === 'untagged') return !parseTags(vm.tags).length
+      return false
+    }
+
+    const smartVMs = computed(() => {
+      if (!activeSmart.value) return []
+      return allVMs.value.filter(vm => smartFilter(activeSmart.value.key, vm))
+    })
 
     // ── Data state ──────────────────────────────────────────────────────
     const allVMs = ref([])
@@ -376,11 +471,13 @@ export default {
     const selectAll = () => {
       selectedView.value = { type: 'all', value: null }
       selectedGroup.value = null
+      activeSmart.value = null
     }
 
     const selectTag = (tag) => {
       selectedView.value = { type: 'tag', value: tag }
       selectedGroup.value = null
+      activeSmart.value = null
       loadTagVMs(tag)
       renameTagInput.value = ''
       mergeTagTarget.value = ''
@@ -389,11 +486,17 @@ export default {
     const selectGroup = (group) => {
       selectedView.value = { type: 'group', value: group.id }
       selectedGroup.value = group
+      activeSmart.value = null
+    }
+
+    const selectSmartGroup = (sg) => {
+      selectedView.value = { type: 'smart', value: sg.key }
+      selectedGroup.value = null
+      activeSmart.value = sg
     }
 
     // ── Computed VM lists ───────────────────────────────────────────────
     const hostCount = computed(() => new Set(allVMs.value.map(v => v.hostId)).size)
-
     const filteredMainVMs = computed(() => allVMs.value)
 
     const tagVMs = ref([])
@@ -401,8 +504,6 @@ export default {
 
     const loadTagVMs = async (tag) => {
       tagVMsLoading.value = true
-      tagVMs.value = []
-      // Filter locally from allVMs
       tagVMs.value = allVMs.value.filter(vm => parseTags(vm.tags).includes(tag))
       tagVMsLoading.value = false
     }
@@ -435,7 +536,9 @@ export default {
                   name: item.name,
                   status: item.status || 'unknown',
                   cpus: item.cpus,
+                  cpu: item.cpu,
                   maxmem: item.maxmem,
+                  mem: item.mem,
                   tags: item.tags || '',
                   _busy: false,
                 })
@@ -446,10 +549,7 @@ export default {
           })
         )
         allVMs.value = results
-        // Refresh tag VMs if viewing a tag
-        if (selectedView.value.type === 'tag') {
-          loadTagVMs(selectedView.value.value)
-        }
+        if (selectedView.value.type === 'tag') loadTagVMs(selectedView.value.value)
       } catch (e) {
         console.error('Failed to fetch hosts:', e)
         toast.error('Failed to load VMs')
@@ -459,7 +559,6 @@ export default {
     }
 
     const fetchTags = async () => {
-      if (!hosts.value.length) return
       tagsLoading.value = true
       const tagMap = {}
       try {
@@ -479,7 +578,6 @@ export default {
       try {
         const res = await api.vmGroups.list()
         groups.value = res.data || []
-        // Refresh selectedGroup if editing
         if (selectedGroup.value) {
           const refreshed = groups.value.find(g => g.id === selectedGroup.value.id)
           if (refreshed) selectedGroup.value = refreshed
@@ -491,10 +589,7 @@ export default {
       }
     }
 
-    // Watch allVMs to recompute tags
-    watch(allVMs, () => {
-      fetchTags()
-    })
+    watch(allVMs, () => { fetchTags() })
 
     onMounted(async () => {
       await fetchVMs()
@@ -519,9 +614,7 @@ export default {
           await api.pveVm.updateConfig(vm.hostId, vm.node, vm.vmid, { tags: tags.join(';') })
           vm.tags = tags.join(';')
           ok++
-        } catch (e) {
-          fail++
-        }
+        } catch (e) { fail++ }
       }
       tagOpRunning.value = false
       toast.success(`Renamed tag on ${ok} VMs${fail ? `, ${fail} failed` : ''}`)
@@ -539,15 +632,12 @@ export default {
       let ok = 0, fail = 0
       for (const vm of affected) {
         try {
-          let tags = parseTags(vm.tags)
-          tags = tags.filter(t => t !== srcTag)
+          let tags = parseTags(vm.tags).filter(t => t !== srcTag)
           if (!tags.includes(dstTag)) tags.push(dstTag)
           await api.pveVm.updateConfig(vm.hostId, vm.node, vm.vmid, { tags: tags.join(';') })
           vm.tags = tags.join(';')
           ok++
-        } catch (e) {
-          fail++
-        }
+        } catch (e) { fail++ }
       }
       tagOpRunning.value = false
       toast.success(`Merged tag on ${ok} VMs${fail ? `, ${fail} failed` : ''}`)
@@ -567,9 +657,7 @@ export default {
           await api.pveVm.updateConfig(vm.hostId, vm.node, vm.vmid, { tags: tags.join(';') })
           vm.tags = tags.join(';')
           ok++
-        } catch (e) {
-          fail++
-        }
+        } catch (e) { fail++ }
       }
       tagOpRunning.value = false
       toast.success(`Removed tag from ${ok} VMs${fail ? `, ${fail} failed` : ''}`)
@@ -717,18 +805,88 @@ export default {
       }
     }
 
+    // ── Import / Export Groups ──────────────────────────────────────────
+    const exportGroups = () => {
+      const exportData = groups.value.map(g => ({
+        name: g.name,
+        description: g.description || null,
+        color: g.color || '#3b82f6',
+        vmids: g.vmids || [],
+      }))
+      const json = JSON.stringify({ version: 1, groups: exportData }, null, 2)
+      const blob = new Blob([json], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `vm-groups-export-${Date.now()}.json`
+      a.click()
+      URL.revokeObjectURL(url)
+      toast.success(`Exported ${exportData.length} group${exportData.length !== 1 ? 's' : ''}`)
+    }
+
+    const importGroups = async (event) => {
+      const file = event.target.files?.[0]
+      if (!file) return
+      // Reset input so same file can be re-imported
+      event.target.value = ''
+      try {
+        const text = await file.text()
+        const parsed = JSON.parse(text)
+        let importList = []
+        if (Array.isArray(parsed)) {
+          importList = parsed
+        } else if (parsed && Array.isArray(parsed.groups)) {
+          importList = parsed.groups
+        } else {
+          throw new Error('Invalid format: expected { groups: [...] } or an array')
+        }
+
+        // Validate each group
+        for (const g of importList) {
+          if (!g.name || typeof g.name !== 'string') throw new Error('Each group must have a name string')
+          if (g.vmids && !Array.isArray(g.vmids)) throw new Error('vmids must be an array')
+        }
+
+        if (!confirm(`Import ${importList.length} group${importList.length !== 1 ? 's' : ''}? Existing groups with the same name will not be replaced.`)) return
+
+        let ok = 0, fail = 0
+        for (const g of importList) {
+          try {
+            await api.vmGroups.create({
+              name: g.name,
+              description: g.description || null,
+              color: g.color || '#3b82f6',
+              vmids: (g.vmids || []).map(String),
+            })
+            ok++
+          } catch (e) {
+            fail++
+            console.warn(`Failed to import group "${g.name}":`, e)
+          }
+        }
+
+        toast.success(`Imported ${ok} group${ok !== 1 ? 's' : ''}${fail ? `, ${fail} failed` : ''}`)
+        await fetchGroups()
+      } catch (e) {
+        toast.error(`Import failed: ${e.message}`)
+      }
+    }
+
     return {
       colorPalette, tagColor,
+      importFileInput,
       allVMs, vmsLoading, allTags, tagsLoading, groups, groupsLoading,
       selectedView, selectedGroup, hostCount,
       filteredMainVMs, tagVMs, tagVMsLoading, groupVMs,
-      selectAll, selectTag, selectGroup,
+      selectAll, selectTag, selectGroup, selectSmartGroup,
+      smartGroups, activeSmart, smartVMs, smartGroupCount,
       renameTagInput, mergeTagTarget, tagOpRunning, renameTag, mergeTag, deleteTag,
       showGroupModal, editingGroup, groupForm, groupSaving, vmSelectorSearch,
       filteredSelectorVMs, openCreateGroupModal, openEditGroupModal, closeGroupModal, saveGroup,
       showDeleteGroupModal, groupToDelete, confirmDeleteGroup, deleteGroup,
       showTagEditorModal, tagEditorVm, tagEditorTags, tagEditorInput, tagEditorSaving,
       openTagEditor, closeTagEditor, addTagFromEditor, removeTagFromEditor, saveTagEditor,
+      exportGroups, importGroups,
     }
   }
 }
@@ -766,6 +924,9 @@ export default {
 .sidebar-header {
   padding: 1rem 1rem 0.5rem;
   border-bottom: 1px solid var(--border, #e2e8f0);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .sidebar-header h3 {
@@ -773,6 +934,12 @@ export default {
   font-size: 1rem;
   font-weight: 600;
   color: var(--text-primary);
+}
+
+.sidebar-header-actions {
+  display: flex;
+  gap: 0.25rem;
+  align-items: center;
 }
 
 .sidebar-section-header {
@@ -814,6 +981,8 @@ export default {
 .sidebar-item-icon {
   flex-shrink: 0;
   color: var(--text-muted);
+  display: flex;
+  align-items: center;
 }
 
 .sidebar-item-label {
@@ -831,6 +1000,7 @@ export default {
   border-radius: 9999px;
   padding: 0.1rem 0.4rem;
   font-weight: 600;
+  transition: background 0.15s, color 0.15s;
 }
 
 .tag-dot {
@@ -914,6 +1084,27 @@ export default {
   border: 1px solid var(--border, #e2e8f0);
 }
 
+/* ── Smart group styles ────────────────────────────────────────────────── */
+.smart-group-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+
+.smart-group-desc {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  margin-bottom: 1rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--surface);
+  border-radius: 0.375rem;
+  border: 1px solid var(--border, #e2e8f0);
+}
+
 /* ── Tag management panel ──────────────────────────────────────────────── */
 .tag-mgmt-panel {
   padding: 0.75rem 1rem;
@@ -924,6 +1115,39 @@ export default {
   gap: 1rem;
   align-items: flex-end;
   flex-wrap: wrap;
+}
+
+/* ── VM table mini bars ─────────────────────────────────────────────────── */
+.mini-bar-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.mini-bar {
+  width: 48px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border, #e2e8f0);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.mini-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s;
+}
+
+.mini-bar-low { background: #22c55e; }
+.mini-bar-mid { background: #f59e0b; }
+.mini-bar-high { background: #ef4444; }
+
+/* ── VM Tags display ─────────────────────────────────────────────────────── */
+.vm-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
 }
 
 /* ── Modals ──────────────────────────────────────────────────────────────── */
@@ -1023,6 +1247,7 @@ export default {
   background: var(--background);
   color: var(--text-primary);
   font-size: 0.875rem;
+  box-sizing: border-box;
 }
 
 .form-control:focus {
@@ -1084,25 +1309,6 @@ export default {
 
 .vm-selector-info {
   flex: 1;
-}
-
-/* ── Tags display ────────────────────────────────────────────────────────── */
-.vm-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.25rem;
-}
-
-.vm-tag-pill {
-  display: inline-block;
-  font-size: 0.65rem;
-  font-weight: 600;
-  padding: 0.1rem 0.4rem;
-  border-radius: 9999px;
-  color: #fff;
-  white-space: nowrap;
-  letter-spacing: 0.02em;
-  text-transform: lowercase;
 }
 
 /* ── Shared ──────────────────────────────────────────────────────────────── */

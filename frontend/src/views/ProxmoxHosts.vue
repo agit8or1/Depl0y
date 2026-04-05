@@ -152,6 +152,7 @@
               class="btn btn-primary btn-sm flex-1 text-center">
               Open Cluster
             </router-link>
+            <button @click="openDetailDrawer(host)" class="btn btn-outline btn-sm" title="View Details">Details</button>
             <button @click="testConnection(host.id)" class="btn btn-outline btn-sm" :disabled="testing[host.id]" title="Test Connection">
               {{ testing[host.id] ? '...' : 'Test' }}
             </button>
@@ -340,6 +341,205 @@
         </div>
       </div>
     </div>
+
+    <!-- ── Host Detail Side Drawer ── -->
+    <transition name="drawer-slide">
+      <div v-if="showDetailDrawer" class="drawer-backdrop" @click.self="closeDetailDrawer">
+        <div class="detail-drawer">
+          <div class="drawer-header">
+            <div class="drawer-title-row">
+              <div>
+                <h3 class="drawer-title">{{ drawerHost && drawerHost.name }}</h3>
+                <div class="drawer-subtitle text-sm text-muted">
+                  <code>{{ drawerHost && drawerHost.hostname }}:{{ drawerHost && drawerHost.port }}</code>
+                </div>
+              </div>
+              <button class="btn-close" @click="closeDetailDrawer">&#215;</button>
+            </div>
+            <!-- Quick action buttons -->
+            <div class="drawer-quick-actions flex gap-1 mt-1">
+              <router-link
+                v-if="drawerHost"
+                :to="`/proxmox/${drawerHost.id}/cluster`"
+                class="btn btn-primary btn-sm"
+                @click="closeDetailDrawer">
+                Open Cluster Overview
+              </router-link>
+              <router-link
+                v-if="drawerHost"
+                :to="`/proxmox/${drawerHost.id}/cluster`"
+                class="btn btn-outline btn-sm"
+                @click="closeDetailDrawer">
+                View VMs
+              </router-link>
+              <button
+                v-if="drawerHost"
+                class="btn btn-outline btn-sm"
+                :disabled="testing[drawerHost.id]"
+                @click="testConnection(drawerHost.id)">
+                {{ testing[drawerHost.id] ? 'Testing...' : 'Test Connection' }}
+              </button>
+            </div>
+          </div>
+
+          <div class="drawer-body">
+            <!-- Federation / Cluster info -->
+            <div v-if="drawerHost && getFedSummary(drawerHost.id)" class="drawer-section">
+              <div class="drawer-section-title">Cluster Info</div>
+              <div class="drawer-info-grid">
+                <div class="di-row">
+                  <span class="di-label">Cluster</span>
+                  <span class="di-value">{{ getFedSummary(drawerHost.id).cluster_name || 'Standalone' }}</span>
+                </div>
+                <div class="di-row">
+                  <span class="di-label">API URL</span>
+                  <span class="di-value font-mono text-sm">{{ getFedSummary(drawerHost.id).api_url || `https://${drawerHost.hostname}:${drawerHost.port}` }}</span>
+                </div>
+                <div class="di-row">
+                  <span class="di-label">Status</span>
+                  <span :class="['badge', getFedSummary(drawerHost.id).status === 'online' ? 'badge-success' : 'badge-danger']">
+                    {{ getFedSummary(drawerHost.id).status || 'unknown' }}
+                  </span>
+                </div>
+                <div class="di-row">
+                  <span class="di-label">Health</span>
+                  <span :class="['badge', getFedSummary(drawerHost.id).cluster_health === 'healthy' ? 'badge-success' : getFedSummary(drawerHost.id).cluster_health === 'degraded' ? 'badge-warning' : 'badge-secondary']">
+                    {{ getFedSummary(drawerHost.id).cluster_health || 'unknown' }}
+                  </span>
+                </div>
+                <div class="di-row">
+                  <span class="di-label">Latency</span>
+                  <span :class="['badge', latencyBadgeClass(getFedSummary(drawerHost.id).latency_ms)]">
+                    {{ getFedSummary(drawerHost.id).latency_ms != null ? getFedSummary(drawerHost.id).latency_ms + 'ms' : '—' }}
+                  </span>
+                </div>
+                <div class="di-row">
+                  <span class="di-label">VMs / LXC</span>
+                  <span class="di-value">
+                    <span class="badge badge-info">{{ getFedSummary(drawerHost.id).vm_count }} VMs</span>
+                    <span class="badge badge-secondary ml-1">{{ getFedSummary(drawerHost.id).lxc_count }} LXC</span>
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Live Node Metrics -->
+            <div class="drawer-section">
+              <div class="drawer-section-title">
+                Live Node Metrics
+                <span v-if="drawerLoadingNodes" class="text-muted text-xs"> Loading…</span>
+              </div>
+
+              <div v-if="drawerNodes.length === 0 && !drawerLoadingNodes" class="text-muted text-sm">
+                No nodes discovered.
+              </div>
+
+              <div
+                v-for="node in drawerNodes"
+                :key="node.node_name"
+                class="drawer-node-card"
+              >
+                <div class="dnc-header">
+                  <span class="dnc-name">{{ node.node_name }}</span>
+                  <span :class="['badge', node.status === 'online' ? 'badge-success' : 'badge-danger']">
+                    {{ node.status || 'unknown' }}
+                  </span>
+                </div>
+
+                <template v-if="drawerHost && getNodeStat(drawerHost.id, node.node_name)">
+                  <div class="dnc-bars">
+                    <div class="dnc-bar-row">
+                      <span class="dnc-bar-label">CPU</span>
+                      <div class="dnc-bar-wrap">
+                        <div class="dnc-bar">
+                          <div
+                            class="dnc-bar-fill"
+                            :class="cpuBarClass(getNodeStat(drawerHost.id, node.node_name).cpu)"
+                            :style="{ width: cpuPct(getNodeStat(drawerHost.id, node.node_name).cpu) + '%' }"
+                          ></div>
+                        </div>
+                        <span class="dnc-bar-pct">{{ cpuPct(getNodeStat(drawerHost.id, node.node_name).cpu) }}%</span>
+                      </div>
+                    </div>
+                    <div class="dnc-bar-row">
+                      <span class="dnc-bar-label">RAM</span>
+                      <div class="dnc-bar-wrap">
+                        <div class="dnc-bar">
+                          <div
+                            class="dnc-bar-fill"
+                            :class="ramBarClass(getNodeStat(drawerHost.id, node.node_name).memory)"
+                            :style="{ width: ramPct(getNodeStat(drawerHost.id, node.node_name).memory) + '%' }"
+                          ></div>
+                        </div>
+                        <span class="dnc-bar-pct">
+                          {{ ramPct(getNodeStat(drawerHost.id, node.node_name).memory) }}%
+                          <span class="text-muted text-xs">({{ formatGB(getNodeStat(drawerHost.id, node.node_name).memory?.used) }}/{{ formatGB(getNodeStat(drawerHost.id, node.node_name).memory?.total) }} GB)</span>
+                        </span>
+                      </div>
+                    </div>
+                    <div class="dnc-bar-row">
+                      <span class="dnc-bar-label">Disk</span>
+                      <div class="dnc-bar-wrap">
+                        <div class="dnc-bar">
+                          <div
+                            class="dnc-bar-fill"
+                            :class="diskBarClass(getNodeStat(drawerHost.id, node.node_name).rootfs)"
+                            :style="{ width: diskPct(getNodeStat(drawerHost.id, node.node_name).rootfs) + '%' }"
+                          ></div>
+                        </div>
+                        <span class="dnc-bar-pct">
+                          {{ diskPct(getNodeStat(drawerHost.id, node.node_name).rootfs) }}%
+                          <span class="text-muted text-xs">({{ formatGB(getNodeStat(drawerHost.id, node.node_name).rootfs?.used) }}/{{ formatGB(getNodeStat(drawerHost.id, node.node_name).rootfs?.total) }} GB)</span>
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="dnc-meta text-xs text-muted">
+                    Uptime: {{ formatUptime(getNodeStat(drawerHost.id, node.node_name).uptime) }} &nbsp;|&nbsp;
+                    {{ getNodeStat(drawerHost.id, node.node_name).vmCount }} VMs &nbsp;|&nbsp;
+                    {{ getNodeStat(drawerHost.id, node.node_name).lxcCount }} LXC
+                  </div>
+                </template>
+                <div v-else-if="drawerLoadingNodes" class="text-muted text-xs">Loading stats…</div>
+                <div v-else class="text-muted text-xs">No live data available</div>
+              </div>
+            </div>
+
+            <!-- Recent Tasks -->
+            <div class="drawer-section">
+              <div class="drawer-section-title">
+                Recent Tasks
+                <span v-if="drawerTasksLoading" class="text-muted text-xs"> Loading…</span>
+              </div>
+
+              <div v-if="!drawerTasksLoading && drawerTasks.length === 0" class="text-muted text-sm">
+                No recent tasks found.
+              </div>
+
+              <div v-else class="drawer-tasks-list">
+                <div
+                  v-for="task in drawerTasks"
+                  :key="task.upid"
+                  class="drawer-task-item"
+                >
+                  <div class="dt-row">
+                    <span
+                      :class="['dt-status-dot', task.status === 'OK' || task.status === 'ok' ? 'dot-ok' : task.status === 'running' ? 'dot-running' : 'dot-error']"
+                    ></span>
+                    <span class="dt-type">{{ task.type || task.upid?.split(':')[5] || '—' }}</span>
+                    <span class="dt-id text-muted text-xs">{{ task.id || '' }}</span>
+                  </div>
+                  <div class="dt-meta text-xs text-muted">
+                    Node: {{ task.node }} &nbsp;|&nbsp; {{ task.user || '—' }}
+                    <span v-if="task.endtime"> &nbsp;|&nbsp; {{ formatTaskTime(task.endtime) }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </transition>
 
     <!-- Edit Host Modal -->
     <div v-if="showEditModal" class="modal" @click="showEditModal = false">
@@ -540,6 +740,92 @@ export default {
       idrac_type: '', idrac_hostname: '', idrac_port: 443,
       idrac_username: '', idrac_password: '',
     })
+
+    // ── Detail Drawer state ────────────────────────────────────────────────
+    const showDetailDrawer = ref(false)
+    const drawerHost = ref(null)
+    const drawerNodes = ref([])
+    const drawerTasks = ref([])
+    const drawerLoadingNodes = ref(false)
+    const drawerTasksLoading = ref(false)
+
+    const openDetailDrawer = async (host) => {
+      drawerHost.value = host
+      showDetailDrawer.value = true
+      drawerNodes.value = []
+      drawerTasks.value = []
+
+      // Load nodes
+      drawerLoadingNodes.value = true
+      try {
+        const res = await api.proxmox.listNodes(host.id)
+        drawerNodes.value = res.data || []
+
+        // Load live stats for each drawer node
+        const tasks = drawerNodes.value.map(node => {
+          const key = `${host.id}-${node.node_name}`
+          if (nodeStats.value[key]) return Promise.resolve()
+          return Promise.allSettled([
+            api.pveNode.nodeStatus(host.id, node.node_name),
+            api.pveNode.nodeVms(host.id, node.node_name),
+            api.pveNode.containers(host.id, node.node_name),
+          ]).then(([statusRes, vmsRes, lxcRes]) => {
+            const status = statusRes.status === 'fulfilled' ? statusRes.value.data : null
+            const vms = vmsRes.status === 'fulfilled' ? vmsRes.value.data : []
+            const lxcs = lxcRes.status === 'fulfilled' ? lxcRes.value.data : []
+            nodeStats.value = {
+              ...nodeStats.value,
+              [key]: {
+                cpu: status?.cpu ?? null,
+                memory: status?.memory ?? null,
+                rootfs: status?.rootfs ?? null,
+                uptime: status?.uptime ?? null,
+                vmCount: Array.isArray(vms) ? vms.filter(v => v.type === 'qemu' || !v.type).length : 0,
+                lxcCount: Array.isArray(lxcs) ? lxcs.length : 0,
+              }
+            }
+          }).catch(() => {})
+        })
+        await Promise.allSettled(tasks)
+      } catch {
+        // ignore
+      } finally {
+        drawerLoadingNodes.value = false
+      }
+
+      // Load recent tasks
+      drawerTasksLoading.value = true
+      try {
+        const nodeList = drawerNodes.value.slice(0, 3)
+        const allTasks = []
+        for (const node of nodeList) {
+          try {
+            const res = await api.pveNode.listTasks(host.id, node.node_name, { limit: 5 })
+            const tasks = res.data || []
+            for (const t of tasks) {
+              allTasks.push({ ...t, node: node.node_name })
+            }
+          } catch { /* ignore */ }
+        }
+        allTasks.sort((a, b) => (b.starttime || 0) - (a.starttime || 0))
+        drawerTasks.value = allTasks.slice(0, 5)
+      } catch {
+        // ignore
+      } finally {
+        drawerTasksLoading.value = false
+      }
+    }
+
+    const closeDetailDrawer = () => {
+      showDetailDrawer.value = false
+      drawerHost.value = null
+    }
+
+    const formatTaskTime = (ts) => {
+      if (!ts) return '—'
+      return new Date(ts * 1000).toLocaleString()
+    }
+    // ─────────────────────────────────────────────────────────────────────
 
     const fetchHosts = async () => {
       loading.value = true
@@ -981,6 +1267,16 @@ export default {
       ramBarClass,
       diskPct,
       diskBarClass,
+      // Drawer
+      showDetailDrawer,
+      drawerHost,
+      drawerNodes,
+      drawerTasks,
+      drawerLoadingNodes,
+      drawerTasksLoading,
+      openDetailDrawer,
+      closeDetailDrawer,
+      formatTaskTime,
     }
   }
 }
@@ -1477,6 +1773,245 @@ export default {
   color: var(--text-secondary);
   margin-top: 0.5rem;
 }
+
+/* ── Detail Drawer ────────────────────────────────────────────────────────── */
+
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 500;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.detail-drawer {
+  width: 420px;
+  max-width: 95vw;
+  height: 100%;
+  background: var(--surface, var(--bg-card, #1e1e2e));
+  border-left: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: -4px 0 24px rgba(0, 0, 0, 0.4);
+}
+
+/* Slide transition */
+.drawer-slide-enter-active,
+.drawer-slide-leave-active {
+  transition: transform 0.28s cubic-bezier(0.25, 0.8, 0.25, 1),
+              opacity 0.25s ease;
+}
+
+.drawer-slide-enter-from,
+.drawer-slide-leave-to {
+  transform: translateX(100%);
+  opacity: 0;
+}
+
+.drawer-header {
+  padding: 1.25rem 1.5rem 1rem;
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+
+.drawer-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.drawer-title {
+  margin: 0 0 0.15rem 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.drawer-subtitle { margin-top: 0.1rem; }
+
+.drawer-quick-actions {
+  flex-wrap: wrap;
+}
+
+.drawer-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 0 1.5rem 0;
+}
+
+/* Drawer sections */
+.drawer-section {
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.drawer-section:last-child { border-bottom: none; }
+
+.drawer-section-title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted, #888);
+  margin-bottom: 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+/* Info grid */
+.drawer-info-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.di-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.di-label {
+  min-width: 72px;
+  color: var(--text-secondary, var(--text-muted, #888));
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.di-value {
+  color: var(--text-primary);
+  word-break: break-all;
+}
+
+.font-mono { font-family: monospace; }
+
+/* Drawer node cards */
+.drawer-node-card {
+  background: var(--background, var(--bg-secondary, #2a2a3e));
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.drawer-node-card:last-child { margin-bottom: 0; }
+
+.dnc-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.625rem;
+}
+
+.dnc-name {
+  font-size: 0.9rem;
+  font-weight: 600;
+  font-family: monospace;
+  color: var(--text-primary);
+}
+
+.dnc-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.dnc-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+}
+
+.dnc-bar-label {
+  min-width: 3rem;
+  color: var(--text-secondary, var(--text-muted, #888));
+  font-weight: 500;
+}
+
+.dnc-bar-wrap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.dnc-bar {
+  flex: 1;
+  height: 6px;
+  background: var(--border-color);
+  border-radius: 3px;
+  overflow: hidden;
+  min-width: 60px;
+}
+
+.dnc-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.4s ease;
+}
+
+.dnc-bar-pct {
+  font-size: 0.75rem;
+  font-family: monospace;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.dnc-meta {
+  margin-top: 0.5rem;
+  padding-top: 0.4rem;
+  border-top: 1px dashed var(--border-color);
+}
+
+/* Tasks list */
+.drawer-tasks-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.drawer-task-item {
+  padding: 0.5rem 0.75rem;
+  background: var(--background, var(--bg-secondary, #2a2a3e));
+  border: 1px solid var(--border-color);
+  border-radius: 0.375rem;
+}
+
+.dt-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  margin-bottom: 0.2rem;
+}
+
+.dt-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.dot-ok      { background: #10b981; }
+.dot-running { background: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,0.2); }
+.dot-error   { background: #ef4444; }
+
+.dt-type {
+  font-weight: 600;
+  color: var(--text-primary);
+  flex: 1;
+}
+
+.dt-id { font-family: monospace; }
+
+.dt-meta { color: var(--text-secondary, var(--text-muted, #888)); }
 
 /* ── Utility ──────────────────────────────────────────────────────────────── */
 

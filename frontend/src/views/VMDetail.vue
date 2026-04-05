@@ -106,20 +106,13 @@
           </div>
           <div class="card-body" style="padding:0.75rem 1.5rem 1rem;">
             <div class="tag-manager">
-              <span
+              <TagBadge
                 v-for="tag in tagList"
                 :key="tag"
-                class="tag-pill"
-                :style="{ backgroundColor: tagColor(tag) }"
-              >
-                {{ tag }}
-                <button
-                  class="tag-remove"
-                  @click="removeTag(tag)"
-                  :disabled="savingTags"
-                  title="Remove tag"
-                >&times;</button>
-              </span>
+                :tag="tag"
+                :removable="!savingTags"
+                @remove="removeTag"
+              />
               <span v-if="tagList.length === 0 && !showTagInput" class="text-muted text-sm">No tags</span>
 
               <span v-if="showTagInput" class="tag-input-wrap">
@@ -1992,6 +1985,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { Line } from 'vue-chartjs'
 import TaskProgressModal from '@/components/TaskProgressModal.vue'
 import PerformanceCharts from '@/components/PerformanceCharts.vue'
+import TagBadge from '@/components/TagBadge.vue'
+import { tagColor as _tagColorUtil } from '@/utils/tagColors'
 import {
   Chart as ChartJS,
   CategoryScale, LinearScale, PointElement, LineElement,
@@ -2301,15 +2296,7 @@ const newTagValue = ref('')
 const savingTags = ref(false)
 const tagInputRef = ref(null)
 
-const tagColorPalette = [
-  '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6',
-  '#ef4444', '#06b6d4', '#84cc16', '#f97316',
-]
-const tagColor = (tag) => {
-  let hash = 0
-  for (let i = 0; i < tag.length; i++) hash = tag.charCodeAt(i) + ((hash << 5) - hash)
-  return tagColorPalette[Math.abs(hash) % tagColorPalette.length]
-}
+const tagColor = _tagColorUtil
 
 const openTagInput = async () => {
   showTagInput.value = true

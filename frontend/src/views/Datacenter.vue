@@ -22,53 +22,246 @@
     </div>
 
     <template v-else>
-      <!-- ── Section 1: Summary stat cards ── -->
-      <div class="stat-row mb-2">
-        <div class="stat-card">
-          <div class="stat-value">{{ summary.totalHosts }}</div>
-          <div class="stat-label">Hosts</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-value">{{ summary.totalNodes }}</div>
-          <div class="stat-label">Nodes</div>
-        </div>
-        <div class="stat-card stat-card--split">
-          <div>
-            <div class="stat-value stat-value--green">{{ summary.vmsRunning }}</div>
-            <div class="stat-label">VMs Running</div>
+      <!-- ── Section 1: Cluster Efficiency + Resource Charts ── -->
+      <div class="resource-overview-grid mb-2">
+
+        <!-- Efficiency Score Card -->
+        <div class="card efficiency-card">
+          <div class="card-header">
+            <h3>Cluster Efficiency</h3>
           </div>
-          <div class="stat-divider">/</div>
-          <div>
-            <div class="stat-value">{{ summary.vmsTotal }}</div>
-            <div class="stat-label">VMs Total</div>
+          <div class="efficiency-body">
+            <div class="efficiency-score-ring">
+              <svg viewBox="0 0 100 100" class="efficiency-svg">
+                <!-- background ring -->
+                <circle cx="50" cy="50" r="40" class="ring-bg" />
+                <!-- fill ring -->
+                <circle
+                  cx="50" cy="50" r="40"
+                  class="ring-fill"
+                  :class="efficiencyRingClass"
+                  :style="efficiencyRingStyle"
+                  stroke-linecap="round"
+                  transform="rotate(-90 50 50)"
+                />
+                <text x="50" y="46" text-anchor="middle" class="ring-value">{{ clusterEfficiency }}</text>
+                <text x="50" y="60" text-anchor="middle" class="ring-label">/ 100</text>
+              </svg>
+            </div>
+            <div class="efficiency-breakdown">
+              <div class="eff-row">
+                <span class="eff-label">Avg CPU</span>
+                <div class="eff-bar-wrap">
+                  <div class="eff-bar">
+                    <div class="eff-bar-fill" :class="barClass(summary.avgCpuRatio)"
+                      :style="{ width: summary.avgCpuPct + '%' }"></div>
+                  </div>
+                  <span class="eff-pct">{{ summary.avgCpuPct }}%</span>
+                </div>
+              </div>
+              <div class="eff-row">
+                <span class="eff-label">Avg RAM</span>
+                <div class="eff-bar-wrap">
+                  <div class="eff-bar">
+                    <div class="eff-bar-fill" :class="barClass(summary.avgMemRatio)"
+                      :style="{ width: summary.avgMemPct + '%' }"></div>
+                  </div>
+                  <span class="eff-pct">{{ summary.avgMemPct }}%</span>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
-        <div class="stat-card stat-card--split">
-          <div>
-            <div class="stat-value stat-value--green">{{ summary.lxcRunning }}</div>
-            <div class="stat-label">LXC Running</div>
+
+        <!-- Resource Donut Chart -->
+        <div class="card donut-card">
+          <div class="card-header">
+            <h3>Resource Allocation</h3>
           </div>
-          <div class="stat-divider">/</div>
-          <div>
-            <div class="stat-value">{{ summary.lxcTotal }}</div>
-            <div class="stat-label">LXC Total</div>
+          <div class="donut-body">
+            <div class="donut-chart-wrap">
+              <svg viewBox="0 0 120 120" class="donut-svg">
+                <!-- CPU donut (outer ring) -->
+                <circle cx="60" cy="60" r="50" class="donut-bg" />
+                <circle
+                  cx="60" cy="60" r="50"
+                  class="donut-used"
+                  :style="cpuDonutStyle"
+                  transform="rotate(-90 60 60)"
+                  stroke-linecap="butt"
+                />
+                <!-- RAM donut (inner ring) -->
+                <circle cx="60" cy="60" r="36" class="donut-bg" />
+                <circle
+                  cx="60" cy="60" r="36"
+                  class="donut-used donut-used--mem"
+                  :style="memDonutStyle"
+                  transform="rotate(-90 60 60)"
+                  stroke-linecap="butt"
+                />
+                <!-- Center text -->
+                <text x="60" y="55" text-anchor="middle" class="donut-center-label">CPU/RAM</text>
+                <text x="60" y="70" text-anchor="middle" class="donut-center-sub">Usage</text>
+              </svg>
+            </div>
+            <div class="donut-legend">
+              <div class="legend-item">
+                <span class="legend-dot legend-dot--cpu"></span>
+                <span class="legend-text">CPU Used: {{ summary.avgCpuPct }}%</span>
+              </div>
+              <div class="legend-item">
+                <span class="legend-dot legend-dot--mem"></span>
+                <span class="legend-text">RAM Used: {{ summary.avgMemPct }}%</span>
+              </div>
+              <div class="legend-sep"></div>
+              <div class="legend-item">
+                <span class="legend-text text-muted">Total Cores: {{ summary.totalCpuCores }}</span>
+              </div>
+              <div class="legend-item">
+                <span class="legend-text text-muted">Total RAM: {{ formatBytes(summary.memTotal) }}</span>
+              </div>
+            </div>
           </div>
         </div>
-        <div class="stat-card">
-          <div class="stat-value">{{ summary.totalCpuCores }}</div>
-          <div class="stat-label">CPU Cores</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-value-sm">
-            {{ formatBytes(summary.memUsed) }}
-            <span class="stat-value-sep">/</span>
-            {{ formatBytes(summary.memTotal) }}
+
+        <!-- VM Distribution Mini Pie -->
+        <div class="card vm-dist-card">
+          <div class="card-header">
+            <h3>Guest Distribution</h3>
           </div>
-          <div class="stat-label">RAM Used / Total</div>
+          <div class="vm-dist-body">
+            <!-- Mini pie SVG -->
+            <svg viewBox="0 0 80 80" class="vm-pie-svg">
+              <!-- Running slice (green) -->
+              <circle cx="40" cy="40" r="30"
+                class="pie-slice pie-slice--running"
+                :style="vmRunningSlice"
+                transform="rotate(-90 40 40)"
+              />
+              <!-- Paused slice (amber) -->
+              <circle cx="40" cy="40" r="30"
+                class="pie-slice pie-slice--paused"
+                :style="vmPausedSlice"
+                transform="rotate(-90 40 40)"
+              />
+              <!-- center -->
+              <circle cx="40" cy="40" r="18" class="pie-center" />
+              <text x="40" y="37" text-anchor="middle" class="pie-center-val">{{ summary.totalGuests }}</text>
+              <text x="40" y="49" text-anchor="middle" class="pie-center-sub">Guests</text>
+            </svg>
+            <div class="vm-dist-legend">
+              <div class="vd-item">
+                <span class="vd-dot vd-dot--running"></span>
+                <span class="vd-label">Running</span>
+                <span class="vd-val">{{ summary.vmsRunning + summary.lxcRunning }}</span>
+              </div>
+              <div class="vd-item">
+                <span class="vd-dot vd-dot--stopped"></span>
+                <span class="vd-label">Stopped</span>
+                <span class="vd-val">{{ summary.totalGuests - summary.vmsRunning - summary.lxcRunning - summary.vmsPaused }}</span>
+              </div>
+              <div class="vd-item">
+                <span class="vd-dot vd-dot--paused"></span>
+                <span class="vd-label">Paused</span>
+                <span class="vd-val">{{ summary.vmsPaused }}</span>
+              </div>
+              <div class="vd-sep"></div>
+              <div class="vd-item">
+                <span class="vd-label text-muted">VMs</span>
+                <span class="vd-val">{{ summary.vmsTotal }}</span>
+              </div>
+              <div class="vd-item">
+                <span class="vd-label text-muted">LXC</span>
+                <span class="vd-val">{{ summary.lxcTotal }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Quick stat cards -->
+        <div class="card stat-summary-card">
+          <div class="card-header">
+            <h3>Cluster Totals</h3>
+          </div>
+          <div class="stat-summary-body">
+            <div class="ss-row">
+              <div class="ss-icon">&#128386;</div>
+              <div>
+                <div class="ss-value">{{ summary.totalHosts }}</div>
+                <div class="ss-label">Hosts</div>
+              </div>
+            </div>
+            <div class="ss-row">
+              <div class="ss-icon">&#9881;</div>
+              <div>
+                <div class="ss-value">{{ summary.totalNodes }}</div>
+                <div class="ss-label">Nodes</div>
+              </div>
+            </div>
+            <div class="ss-row">
+              <div class="ss-icon">&#128190;</div>
+              <div>
+                <div class="ss-value">{{ formatBytes(summary.storageTotal) }}</div>
+                <div class="ss-label">Storage ({{ storageUsedPct }}% used)</div>
+              </div>
+            </div>
+            <div class="ss-row">
+              <div class="ss-icon">&#9654;</div>
+              <div>
+                <div class="ss-value stat-green">{{ summary.vmsRunning + summary.lxcRunning }}</div>
+                <div class="ss-label">Guests Running</div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
-      <!-- ── Section 2: Per-host panels ── -->
+      <!-- ── Section 2: VM Distribution Map ── -->
+      <div class="section-title mb-1">VM Distribution Map</div>
+      <div class="node-distribution-grid mb-2">
+        <div
+          v-for="nd in nodeDistribution"
+          :key="`${nd.hostId}-${nd.node}`"
+          class="node-dist-card"
+          :class="{ 'node-dist-card--warn': nd.imbalanced }"
+          @mouseenter="hoveredNode = nd"
+          @mouseleave="hoveredNode = null"
+        >
+          <!-- Imbalance warning badge -->
+          <div v-if="nd.imbalanced" class="imbalance-badge" title="This node holds >80% of cluster guests">
+            &#9888; Imbalanced
+          </div>
+          <div class="nd-header">
+            <div class="nd-name">{{ nd.node }}</div>
+            <span class="nd-host-label">{{ nd.hostName }}</span>
+          </div>
+          <div class="nd-counts">
+            <span class="nd-count-pill nd-count-pill--vm">&#128421; {{ nd.vms }} VM</span>
+            <span class="nd-count-pill nd-count-pill--lxc">&#128230; {{ nd.lxcs }} LXC</span>
+          </div>
+          <div class="nd-bar-wrap">
+            <div class="nd-bar" :style="{ width: nd.guestSharePct + '%' }"
+              :class="nd.imbalanced ? 'nd-bar--warn' : 'nd-bar--ok'"></div>
+          </div>
+          <div class="nd-share-label text-xs text-muted">{{ nd.guestSharePct }}% of cluster guests</div>
+
+          <!-- Tooltip on hover -->
+          <div v-if="hoveredNode === nd" class="nd-tooltip">
+            <div class="ndt-title">{{ nd.node }} — {{ nd.hostName }}</div>
+            <div class="ndt-row"><span>VMs:</span> <strong>{{ nd.vms }}</strong></div>
+            <div class="ndt-row"><span>LXC:</span> <strong>{{ nd.lxcs }}</strong></div>
+            <div class="ndt-row"><span>Total Guests:</span> <strong>{{ nd.vms + nd.lxcs }}</strong></div>
+            <div class="ndt-row"><span>Share:</span> <strong>{{ nd.guestSharePct }}%</strong></div>
+            <div v-if="nd.imbalanced" class="ndt-warn">Node is overloaded with guests</div>
+          </div>
+        </div>
+
+        <div v-if="nodeDistribution.length === 0" class="text-muted text-sm p-3">
+          No node distribution data available yet.
+        </div>
+      </div>
+
+      <!-- ── Section 3: Per-host panels ── -->
       <div class="section-title mb-1">Hosts</div>
       <div v-if="hostPanels.length === 0" class="card mb-2">
         <div class="card-body text-center text-muted p-3">No hosts configured.</div>
@@ -153,7 +346,7 @@
         </div>
       </div>
 
-      <!-- ── Section 3: Top VMs by Resource Usage ── -->
+      <!-- ── Section 4: Top VMs by Resource Usage ── -->
       <div class="card mb-2">
         <div class="card-header">
           <h3>Top VMs by Resource Usage</h3>
@@ -230,7 +423,93 @@
         </div>
       </div>
 
-      <!-- ── Section 4: Network Overview ── -->
+      <!-- ── Section 5: Resource Trends ── -->
+      <div class="card mb-2">
+        <div
+          class="card-header collapsible-header"
+          @click="trendsExpanded = !trendsExpanded"
+          style="cursor: pointer;"
+        >
+          <h3>Resource Trends</h3>
+          <div class="collapsible-header-right">
+            <div v-if="trendsExpanded" class="trend-time-selector" @click.stop>
+              <button
+                v-for="tf in timeframes"
+                :key="tf.value"
+                :class="['trend-tf-btn', { active: selectedTimeframe === tf.value }]"
+                @click="setTimeframe(tf.value)"
+              >{{ tf.label }}</button>
+            </div>
+            <span v-if="trendsLoading" class="text-muted text-sm">Loading…</span>
+            <span class="collapse-chevron" :class="{ 'chevron-open': trendsExpanded }">&#9660;</span>
+          </div>
+        </div>
+
+        <template v-if="trendsExpanded">
+          <div v-if="trendsLoading && trendData.length === 0" class="loading-spinner"></div>
+          <div v-else-if="trendData.length === 0" class="text-center text-muted p-3">
+            No trend data available.
+          </div>
+          <div v-else class="trends-body">
+            <div class="trend-section">
+              <div class="trend-label">Cluster CPU Trend</div>
+              <div class="sparkline-wrap">
+                <svg :viewBox="`0 0 ${sparklineW} ${sparklineH}`" class="sparkline-svg">
+                  <polyline
+                    :points="cpuSparklinePoints"
+                    class="sparkline-line sparkline-line--cpu"
+                    fill="none"
+                  />
+                  <polyline
+                    :points="cpuSparklineArea"
+                    class="sparkline-area sparkline-area--cpu"
+                    fill="url(#cpuGrad)"
+                  />
+                  <defs>
+                    <linearGradient id="cpuGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stop-color="#6366f1" stop-opacity="0.35" />
+                      <stop offset="100%" stop-color="#6366f1" stop-opacity="0.02" />
+                    </linearGradient>
+                  </defs>
+                </svg>
+                <div class="sparkline-stats">
+                  <span class="sp-stat">Avg: <strong>{{ cpuTrendAvg }}%</strong></span>
+                  <span class="sp-stat">Peak: <strong>{{ cpuTrendPeak }}%</strong></span>
+                </div>
+              </div>
+            </div>
+            <div class="trend-section">
+              <div class="trend-label">Cluster Memory Trend</div>
+              <div class="sparkline-wrap">
+                <svg :viewBox="`0 0 ${sparklineW} ${sparklineH}`" class="sparkline-svg">
+                  <polyline
+                    :points="memSparklinePoints"
+                    class="sparkline-line sparkline-line--mem"
+                    fill="none"
+                  />
+                  <polyline
+                    :points="memSparklineArea"
+                    class="sparkline-area sparkline-area--mem"
+                    fill="url(#memGrad)"
+                  />
+                  <defs>
+                    <linearGradient id="memGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stop-color="#10b981" stop-opacity="0.35" />
+                      <stop offset="100%" stop-color="#10b981" stop-opacity="0.02" />
+                    </linearGradient>
+                  </defs>
+                </svg>
+                <div class="sparkline-stats">
+                  <span class="sp-stat">Avg: <strong>{{ memTrendAvg }}%</strong></span>
+                  <span class="sp-stat">Peak: <strong>{{ memTrendPeak }}%</strong></span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <!-- ── Section 6: Network Overview ── -->
       <div class="card mb-2">
         <div
           class="card-header collapsible-header"
@@ -252,17 +531,12 @@
           </div>
 
           <div v-else class="network-overview-body">
-            <!-- Per host -->
             <div
               v-for="hostGroup in networkData"
               :key="hostGroup.hostId"
               class="network-host-group"
             >
-              <div class="network-host-title">
-                {{ hostGroup.hostName }}
-              </div>
-
-              <!-- Per node -->
+              <div class="network-host-title">{{ hostGroup.hostName }}</div>
               <div
                 v-for="nodeGroup in hostGroup.nodes"
                 :key="nodeGroup.node"
@@ -271,17 +545,11 @@
                 <div class="network-node-title text-sm">
                   Node: <strong>{{ nodeGroup.node }}</strong>
                 </div>
-
                 <div v-if="nodeGroup.ifaces.length === 0" class="text-muted text-sm pl-2">
                   No interfaces found.
                 </div>
-
                 <template v-else>
-                  <!-- Physical / uplink bridges -->
-                  <div
-                    v-if="nodeGroup.physicalBridges.length > 0"
-                    class="network-iface-group"
-                  >
+                  <div v-if="nodeGroup.physicalBridges.length > 0" class="network-iface-group">
                     <div class="network-iface-group-label text-xs text-muted">Physical Bridges</div>
                     <table class="table network-table">
                       <thead>
@@ -308,12 +576,7 @@
                       </tbody>
                     </table>
                   </div>
-
-                  <!-- VLAN bridges -->
-                  <div
-                    v-if="nodeGroup.vlanBridges.length > 0"
-                    class="network-iface-group"
-                  >
+                  <div v-if="nodeGroup.vlanBridges.length > 0" class="network-iface-group">
                     <div class="network-iface-group-label text-xs text-muted">VLAN Bridges</div>
                     <table class="table network-table">
                       <thead>
@@ -347,14 +610,14 @@
         </template>
       </div>
 
-      <!-- ── Section 5: Storage Overview ── -->
+      <!-- ── Section 7: Storage Analysis ── -->
       <div class="card mb-2">
         <div
           class="card-header collapsible-header"
           @click="storageExpanded = !storageExpanded"
           style="cursor: pointer;"
         >
-          <h3>Storage Overview</h3>
+          <h3>Storage Analysis</h3>
           <div class="collapsible-header-right">
             <span v-if="storageLoading" class="text-muted text-sm">Loading…</span>
             <span class="collapse-chevron" :class="{ 'chevron-open': storageExpanded }">&#9660;</span>
@@ -375,7 +638,6 @@
               class="storage-host-group"
             >
               <div class="storage-host-title">{{ hostGroup.hostName }}</div>
-
               <div
                 v-for="nodeGroup in hostGroup.nodes"
                 :key="nodeGroup.node"
@@ -401,11 +663,19 @@
                         <th style="min-width: 140px;">Usage</th>
                         <th>Shared</th>
                         <th>Content</th>
+                        <th>Health</th>
                       </tr>
                     </thead>
                     <tbody>
-                      <tr v-for="pool in nodeGroup.pools" :key="pool.storage">
-                        <td class="storage-name">{{ pool.storage }}</td>
+                      <tr
+                        v-for="pool in nodeGroup.pools"
+                        :key="pool.storage"
+                        :class="storageUsagePct(pool.used, pool.total) > 85 ? 'row-danger' : ''"
+                      >
+                        <td class="storage-name">
+                          <span class="storage-type-icon">&#128190;</span>
+                          {{ pool.storage }}
+                        </td>
                         <td class="text-sm text-muted">{{ pool.type || '—' }}</td>
                         <td class="text-sm font-mono">{{ pool.total ? formatBytes(pool.total) : '—' }}</td>
                         <td class="text-sm font-mono">{{ pool.used != null ? formatBytes(pool.used) : '—' }}</td>
@@ -429,11 +699,18 @@
                         <td>
                           <div class="content-pills">
                             <span
-                              v-for="ct in (pool.content || '').split(',')"
+                              v-for="ct in parseContentTypes(pool.content)"
                               :key="ct"
-                              class="content-pill"
-                            >{{ ct.trim() }}</span>
+                              :class="['content-pill', contentPillClass(ct)]"
+                            >{{ ct }}</span>
                           </div>
+                        </td>
+                        <td>
+                          <span
+                            :class="['badge', storageUsagePct(pool.used, pool.total) > 85 ? 'badge-danger' : storageUsagePct(pool.used, pool.total) > 70 ? 'badge-warning' : 'badge-success']"
+                          >
+                            {{ storageUsagePct(pool.used, pool.total) > 85 ? 'Critical' : storageUsagePct(pool.used, pool.total) > 70 ? 'Warning' : 'OK' }}
+                          </span>
                         </td>
                       </tr>
                     </tbody>
@@ -445,7 +722,7 @@
         </template>
       </div>
 
-      <!-- ── Section 6: All Resources table ── -->
+      <!-- ── Section 8: All Resources table ── -->
       <div class="card">
         <div class="card-header">
           <h3>All Resources</h3>
@@ -463,18 +740,23 @@
               <option value="">All Status</option>
               <option value="running">Running</option>
               <option value="stopped">Stopped</option>
+              <option value="paused">Paused</option>
             </select>
             <input
               v-model="searchQuery"
               class="form-control search-input"
-              placeholder="Search name or VMID..."
+              placeholder="Search name, VMID, node..."
             />
+            <label class="group-toggle-label">
+              <input type="checkbox" v-model="groupByNode" />
+              Group by Node
+            </label>
           </div>
         </div>
 
         <div v-if="loading && allResources.length === 0" class="loading-spinner"></div>
 
-        <div v-else-if="filteredResources.length === 0" class="text-center text-muted p-3">
+        <div v-else-if="filteredResources.length === 0 && groupedResources.length === 0" class="text-center text-muted p-3">
           No resources match the current filters.
         </div>
 
@@ -495,29 +777,27 @@
                 </th>
               </tr>
             </thead>
-            <tbody>
+            <tbody v-if="!groupByNode">
               <tr
                 v-for="r in filteredResources"
                 :key="`${r._hostId}-${r.id}`"
                 class="resource-row-link"
                 @click="navigateToResource(r)"
               >
-                <!-- Type with icon -->
                 <td>
-                  <span class="type-icon">{{ r.type === 'lxc' ? '📦' : '🖥️' }}</span>
-                  <span :class="['badge', r.type === 'lxc' ? 'badge-warning' : 'badge-info']">
-                    {{ r.type === 'lxc' ? 'LXC' : 'VM' }}
+                  <span class="type-icon">{{ typeIcon(r.type) }}</span>
+                  <span :class="['badge', typeBadgeClass(r.type)]">
+                    {{ typeLabel(r.type) }}
                   </span>
                 </td>
                 <td>{{ r.name || '—' }}</td>
-                <!-- Tags -->
                 <td>
                   <div class="tags-cell">
                     <template v-if="r.tags && r.tags.trim()">
                       <span
                         v-for="tag in parseTags(r.tags)"
                         :key="tag"
-                        class="tag-pill"
+                        :class="['tag-pill', tagPillClass(tag)]"
                       >{{ tag }}</span>
                     </template>
                     <span v-else class="text-muted">—</span>
@@ -525,16 +805,77 @@
                 </td>
                 <td><strong>{{ r.vmid || '—' }}</strong></td>
                 <td>
-                  <span :class="['badge', r.status === 'running' ? 'badge-success' : 'badge-danger']">
+                  <span :class="['badge', statusBadgeClass(r.status)]">
                     {{ r.status || '—' }}
                   </span>
                 </td>
                 <td>{{ r.cpu != null ? (r.cpu * 100).toFixed(1) + '%' : '—' }}</td>
                 <td>{{ r.mem != null ? formatBytes(r.mem) : '—' }}</td>
-                <td>{{ r.uptime != null ? formatUptime(r.uptime) : '—' }}</td>
+                <td>
+                  <span v-if="r.status === 'running' && r.uptime" class="uptime-badge">
+                    {{ formatUptime(r.uptime) }}
+                  </span>
+                  <span v-else class="text-muted">—</span>
+                </td>
                 <td>{{ r.node || '—' }}</td>
                 <td>{{ r._hostName || '—' }}</td>
               </tr>
+            </tbody>
+            <tbody v-else>
+              <template v-for="group in groupedResources" :key="group.groupKey">
+                <!-- Node group header row -->
+                <tr class="node-group-header">
+                  <td colspan="10" class="node-group-cell">
+                    <span class="node-group-icon">&#127760;</span>
+                    <strong>{{ group.node }}</strong>
+                    <span class="text-muted text-sm"> — {{ group.hostName }}</span>
+                    <span class="node-group-count">{{ group.items.length }} guests</span>
+                  </td>
+                </tr>
+                <!-- VM rows indented -->
+                <tr
+                  v-for="r in group.items"
+                  :key="`${r._hostId}-${r.id}`"
+                  class="resource-row-link resource-row-indented"
+                  @click="navigateToResource(r)"
+                >
+                  <td>
+                    <span class="type-icon">{{ typeIcon(r.type) }}</span>
+                    <span :class="['badge', typeBadgeClass(r.type)]">
+                      {{ typeLabel(r.type) }}
+                    </span>
+                  </td>
+                  <td>{{ r.name || '—' }}</td>
+                  <td>
+                    <div class="tags-cell">
+                      <template v-if="r.tags && r.tags.trim()">
+                        <span
+                          v-for="tag in parseTags(r.tags)"
+                          :key="tag"
+                          :class="['tag-pill', tagPillClass(tag)]"
+                        >{{ tag }}</span>
+                      </template>
+                      <span v-else class="text-muted">—</span>
+                    </div>
+                  </td>
+                  <td><strong>{{ r.vmid || '—' }}</strong></td>
+                  <td>
+                    <span :class="['badge', statusBadgeClass(r.status)]">
+                      {{ r.status || '—' }}
+                    </span>
+                  </td>
+                  <td>{{ r.cpu != null ? (r.cpu * 100).toFixed(1) + '%' : '—' }}</td>
+                  <td>{{ r.mem != null ? formatBytes(r.mem) : '—' }}</td>
+                  <td>
+                    <span v-if="r.status === 'running' && r.uptime" class="uptime-badge">
+                      {{ formatUptime(r.uptime) }}
+                    </span>
+                    <span v-else class="text-muted">—</span>
+                  </td>
+                  <td>{{ r.node || '—' }}</td>
+                  <td>{{ r._hostName || '—' }}</td>
+                </tr>
+              </template>
             </tbody>
           </table>
         </div>
@@ -544,7 +885,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useToast } from 'vue-toastification'
 import api from '@/services/api'
@@ -555,9 +896,12 @@ const toast = useToast()
 
 // ── State ──────────────────────────────────────────────────────────────────
 const hosts = ref([])
-const allResources = ref([])  // flat list: each item has _hostId, _hostName injected
+const allResources = ref([])
 const loading = ref(false)
 const loadError = ref(false)
+
+// Datacenter summaries per host
+const datacenterSummaries = ref({})  // hostId -> summary object
 
 // Top VMs state
 const topVms = ref([])
@@ -567,20 +911,37 @@ let topVmsInterval = null
 let topVmsTickInterval = null
 
 // Network overview state
-const networkData = ref([])   // [{ hostId, hostName, nodes: [{ node, ifaces, physicalBridges, vlanBridges }] }]
+const networkData = ref([])
 const networkLoading = ref(false)
 const networkExpanded = ref(false)
 
 // Storage overview state
-const storageData = ref([])   // [{ hostId, hostName, nodes: [{ node, pools }] }]
+const storageData = ref([])
 const storageLoading = ref(false)
 const storageExpanded = ref(false)
+
+// Trends state
+const trendsExpanded = ref(false)
+const trendsLoading = ref(false)
+const trendData = ref([])  // [{time, cpu, mem}]
+const selectedTimeframe = ref('hour')
+const timeframes = [
+  { value: 'hour', label: '1h' },
+  { value: 'day', label: '24h' },
+  { value: 'week', label: '7d' },
+]
+const sparklineW = 400
+const sparklineH = 60
+
+// Node distribution hover
+const hoveredNode = ref(null)
 
 // Filters
 const filterHost = ref('')
 const filterType = ref('')
 const filterStatus = ref('')
 const searchQuery = ref('')
+const groupByNode = ref(false)
 
 // Sort
 const sortKey = ref('name')
@@ -603,15 +964,19 @@ const columns = [
 const summary = computed(() => {
   const vmTypes = allResources.value.filter(r => r.type === 'qemu' || r.type === 'lxc')
 
-  let vmsTotal = 0, vmsRunning = 0
+  let vmsTotal = 0, vmsRunning = 0, vmsPaused = 0
   let lxcTotal = 0, lxcRunning = 0
   let memUsed = 0, memTotal = 0
   let cpuCores = 0
+  let totalCpuUsedFrac = 0
+  let totalMemUsedFrac = 0
+  let nodeCount = 0
 
   for (const r of vmTypes) {
     if (r.type === 'qemu') {
       vmsTotal++
       if (r.status === 'running') vmsRunning++
+      else if (r.status === 'paused') vmsPaused++
     } else {
       lxcTotal++
       if (r.status === 'running') lxcRunning++
@@ -619,22 +984,171 @@ const summary = computed(() => {
     memUsed += r.mem || 0
     memTotal += r.maxmem || 0
     cpuCores += r.maxcpu || 0
+    if (r.status === 'running' && r.cpu != null) {
+      totalCpuUsedFrac += r.cpu
+    }
   }
 
   const nodeItems = allResources.value.filter(r => r.type === 'node')
-  const totalNodes = nodeItems.length
+  nodeCount = nodeItems.length
+
+  // Aggregate node-level CPU/mem for avg
+  let nodeCpuSum = 0, nodeMemSum = 0, nodeCount2 = 0
+  for (const r of nodeItems) {
+    if (r.cpu != null) { nodeCpuSum += r.cpu; nodeCount2++ }
+    if (r.mem != null && r.maxmem) nodeMemSum += (r.mem / r.maxmem)
+  }
+
+  const avgCpuRatio = nodeCount2 > 0 ? nodeCpuSum / nodeCount2 : (cpuCores > 0 ? totalCpuUsedFrac / cpuCores : 0)
+  const avgMemRatio = nodeCount2 > 0 ? nodeMemSum / nodeCount2 : (memTotal > 0 ? memUsed / memTotal : 0)
+
+  // Storage aggregation
+  let storageTotal = 0, storageUsed = 0
+  for (const h of Object.values(datacenterSummaries.value)) {
+    if (h.storages) {
+      for (const s of h.storages) {
+        storageTotal += s.total || 0
+        storageUsed += s.used || 0
+      }
+    }
+  }
 
   return {
     totalHosts: hosts.value.length,
-    totalNodes,
+    totalNodes: nodeCount,
     vmsTotal,
     vmsRunning,
+    vmsPaused,
     lxcTotal,
     lxcRunning,
+    totalGuests: vmsTotal + lxcTotal,
     memUsed,
     memTotal,
     totalCpuCores: cpuCores,
+    avgCpuRatio,
+    avgMemRatio,
+    avgCpuPct: Math.round(avgCpuRatio * 100),
+    avgMemPct: Math.round(avgMemRatio * 100),
+    storageTotal,
+    storageUsed,
   }
+})
+
+const storageUsedPct = computed(() => {
+  if (!summary.value.storageTotal) return 0
+  return Math.round((summary.value.storageUsed / summary.value.storageTotal) * 100)
+})
+
+const clusterEfficiency = computed(() => {
+  return Math.round((summary.value.avgCpuPct + summary.value.avgMemPct) / 2)
+})
+
+const efficiencyRingClass = computed(() => {
+  const s = clusterEfficiency.value
+  if (s >= 80) return 'ring-fill--danger'
+  if (s >= 60) return 'ring-fill--warning'
+  if (s >= 30) return 'ring-fill--ok'
+  return 'ring-fill--low'
+})
+
+const efficiencyRingStyle = computed(() => {
+  const circumference = 2 * Math.PI * 40
+  const pct = clusterEfficiency.value / 100
+  return {
+    strokeDasharray: `${(pct * circumference).toFixed(1)} ${circumference.toFixed(1)}`,
+    strokeDashoffset: '0',
+  }
+})
+
+// Donut chart styles
+const cpuDonutStyle = computed(() => {
+  const r = 50
+  const circ = 2 * Math.PI * r
+  const pct = summary.value.avgCpuPct / 100
+  return {
+    strokeDasharray: `${(pct * circ).toFixed(1)} ${circ.toFixed(1)}`,
+    strokeWidth: '12',
+    stroke: '#6366f1',
+    fill: 'none',
+  }
+})
+
+const memDonutStyle = computed(() => {
+  const r = 36
+  const circ = 2 * Math.PI * r
+  const pct = summary.value.avgMemPct / 100
+  return {
+    strokeDasharray: `${(pct * circ).toFixed(1)} ${circ.toFixed(1)}`,
+    strokeWidth: '12',
+    stroke: '#10b981',
+    fill: 'none',
+  }
+})
+
+// VM pie chart
+const vmRunningSlice = computed(() => {
+  const total = summary.value.totalGuests
+  if (!total) return { strokeDasharray: '0 189', strokeWidth: '28', stroke: '#10b981', fill: 'none' }
+  const r = 30
+  const circ = 2 * Math.PI * r
+  const running = summary.value.vmsRunning + summary.value.lxcRunning
+  const pct = running / total
+  return {
+    strokeDasharray: `${(pct * circ).toFixed(1)} ${circ.toFixed(1)}`,
+    strokeWidth: '28',
+    stroke: '#10b981',
+    fill: 'none',
+  }
+})
+
+const vmPausedSlice = computed(() => {
+  const total = summary.value.totalGuests
+  if (!total) return { strokeDasharray: '0 189', strokeWidth: '28', stroke: '#f59e0b', fill: 'none', strokeDashoffset: '0' }
+  const r = 30
+  const circ = 2 * Math.PI * r
+  const running = summary.value.vmsRunning + summary.value.lxcRunning
+  const paused = summary.value.vmsPaused
+  const runningPct = running / total
+  const pausedPct = paused / total
+  const runningLen = runningPct * circ
+  return {
+    strokeDasharray: `${(pausedPct * circ).toFixed(1)} ${circ.toFixed(1)}`,
+    strokeWidth: '28',
+    stroke: '#f59e0b',
+    fill: 'none',
+    strokeDashoffset: `-${runningLen.toFixed(1)}`,
+  }
+})
+
+// ── Node distribution map ──────────────────────────────────────────────────
+const nodeDistribution = computed(() => {
+  const map = {}
+  for (const r of allResources.value) {
+    if ((r.type === 'qemu' || r.type === 'lxc') && r.node) {
+      const key = `${r._hostId}-${r.node}`
+      if (!map[key]) {
+        map[key] = {
+          hostId: r._hostId,
+          hostName: r._hostName || '',
+          node: r.node,
+          vms: 0,
+          lxcs: 0,
+        }
+      }
+      if (r.type === 'qemu') map[key].vms++
+      else map[key].lxcs++
+    }
+  }
+
+  const items = Object.values(map)
+  const totalGuests = items.reduce((s, n) => s + n.vms + n.lxcs, 0)
+
+  return items.map(nd => {
+    const guests = nd.vms + nd.lxcs
+    const sharePct = totalGuests > 0 ? Math.round((guests / totalGuests) * 100) : 0
+    const imbalanced = items.length > 1 && totalGuests > 0 && sharePct > 80
+    return { ...nd, guestSharePct: sharePct, imbalanced }
+  }).sort((a, b) => (b.vms + b.lxcs) - (a.vms + a.lxcs))
 })
 
 // ── Per-host panels ────────────────────────────────────────────────────────
@@ -680,15 +1194,8 @@ const hostPanels = computed(() => {
       name: host.name || host.hostname || `Host ${host.id}`,
       address: host.address || host.host || '',
       online: host.status === 'online' || host.connected === true || resources.length > 0,
-      vmsTotal,
-      vmsRunning,
-      lxcTotal,
-      lxcRunning,
-      nodeCount,
-      memUsed,
-      memTotal,
-      cpuRatio,
-      memRatio,
+      vmsTotal, vmsRunning, lxcTotal, lxcRunning, nodeCount,
+      memUsed, memTotal, cpuRatio, memRatio,
       cpuPct: Math.round(cpuRatio * 100),
       memPct: Math.round(memRatio * 100),
     }
@@ -697,6 +1204,8 @@ const hostPanels = computed(() => {
 
 // ── Filtered + sorted resource table ──────────────────────────────────────
 const filteredResources = computed(() => {
+  if (groupByNode.value) return []
+
   let list = allResources.value.filter(r => r.type === 'qemu' || r.type === 'lxc')
 
   if (filterHost.value) {
@@ -712,11 +1221,11 @@ const filteredResources = computed(() => {
     const q = searchQuery.value.trim().toLowerCase()
     list = list.filter(r =>
       (r.name || '').toLowerCase().includes(q) ||
-      String(r.vmid || '').includes(q)
+      String(r.vmid || '').includes(q) ||
+      (r.node || '').toLowerCase().includes(q)
     )
   }
 
-  // Sort
   const key = sortKey.value
   list = [...list].sort((a, b) => {
     let av = a[key] ?? ''
@@ -729,6 +1238,84 @@ const filteredResources = computed(() => {
   })
 
   return list
+})
+
+const groupedResources = computed(() => {
+  if (!groupByNode.value) return []
+
+  let list = allResources.value.filter(r => r.type === 'qemu' || r.type === 'lxc')
+
+  if (filterHost.value) list = list.filter(r => String(r._hostId) === String(filterHost.value))
+  if (filterType.value) list = list.filter(r => r.type === filterType.value)
+  if (filterStatus.value) list = list.filter(r => r.status === filterStatus.value)
+  if (searchQuery.value.trim()) {
+    const q = searchQuery.value.trim().toLowerCase()
+    list = list.filter(r =>
+      (r.name || '').toLowerCase().includes(q) ||
+      String(r.vmid || '').includes(q) ||
+      (r.node || '').toLowerCase().includes(q)
+    )
+  }
+
+  const groups = {}
+  for (const r of list) {
+    const key = `${r._hostId}-${r.node}`
+    if (!groups[key]) {
+      groups[key] = {
+        groupKey: key,
+        node: r.node || '(unknown)',
+        hostName: r._hostName || '',
+        items: [],
+      }
+    }
+    groups[key].items.push(r)
+  }
+
+  return Object.values(groups).sort((a, b) => a.node.localeCompare(b.node))
+})
+
+// ── Trend sparkline computations ───────────────────────────────────────────
+function buildSparklinePoints(data, field) {
+  if (!data.length) return ''
+  const vals = data.map(d => parseFloat(d[field] || 0))
+  const maxVal = Math.max(...vals, 1)
+  const step = sparklineW / Math.max(vals.length - 1, 1)
+  return vals.map((v, i) => {
+    const x = i * step
+    const y = sparklineH - (v / maxVal) * (sparklineH - 4) - 2
+    return `${x.toFixed(1)},${y.toFixed(1)}`
+  }).join(' ')
+}
+
+function buildSparklineArea(data, field) {
+  if (!data.length) return ''
+  const pts = buildSparklinePoints(data, field)
+  const lastX = ((data.length - 1) * sparklineW / Math.max(data.length - 1, 1)).toFixed(1)
+  return `${pts} ${lastX},${sparklineH} 0,${sparklineH}`
+}
+
+const cpuSparklinePoints = computed(() => buildSparklinePoints(trendData.value, 'cpu'))
+const cpuSparklineArea = computed(() => buildSparklineArea(trendData.value, 'cpu'))
+const memSparklinePoints = computed(() => buildSparklinePoints(trendData.value, 'mem'))
+const memSparklineArea = computed(() => buildSparklineArea(trendData.value, 'mem'))
+
+const cpuTrendAvg = computed(() => {
+  if (!trendData.value.length) return 0
+  const sum = trendData.value.reduce((s, d) => s + parseFloat(d.cpu || 0), 0)
+  return (sum / trendData.value.length).toFixed(1)
+})
+const cpuTrendPeak = computed(() => {
+  if (!trendData.value.length) return 0
+  return Math.max(...trendData.value.map(d => parseFloat(d.cpu || 0))).toFixed(1)
+})
+const memTrendAvg = computed(() => {
+  if (!trendData.value.length) return 0
+  const sum = trendData.value.reduce((s, d) => s + parseFloat(d.mem || 0), 0)
+  return (sum / trendData.value.length).toFixed(1)
+})
+const memTrendPeak = computed(() => {
+  if (!trendData.value.length) return 0
+  return Math.max(...trendData.value.map(d => parseFloat(d.mem || 0))).toFixed(1)
 })
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -763,8 +1350,15 @@ function navigateToResource(r) {
 
 function parseTags(tagsStr) {
   if (!tagsStr || !tagsStr.trim()) return []
-  // Proxmox tags are semicolon-separated
   return tagsStr.split(/[;,]/).map(t => t.trim()).filter(Boolean)
+}
+
+function tagPillClass(tag) {
+  // Consistent color based on tag content hash
+  const colors = ['tag-blue', 'tag-green', 'tag-purple', 'tag-orange', 'tag-teal', 'tag-pink']
+  let hash = 0
+  for (let i = 0; i < tag.length; i++) hash = (hash * 31 + tag.charCodeAt(i)) & 0xffffff
+  return colors[Math.abs(hash) % colors.length]
 }
 
 function formatUptime(seconds) {
@@ -772,9 +1366,52 @@ function formatUptime(seconds) {
   const d = Math.floor(seconds / 86400)
   const h = Math.floor((seconds % 86400) / 3600)
   const m = Math.floor((seconds % 3600) / 60)
-  if (d > 0) return `${d}d ${h}h ${m}m`
+  if (d > 0) return `${d}d ${h}h`
   if (h > 0) return `${h}h ${m}m`
   return `${m}m`
+}
+
+function typeIcon(type) {
+  if (type === 'lxc') return '📦'
+  if (type === 'node') return '🖧'
+  if (type === 'storage') return '💾'
+  return '🖥️'
+}
+
+function typeLabel(type) {
+  if (type === 'lxc') return 'LXC'
+  if (type === 'node') return 'Node'
+  if (type === 'storage') return 'Storage'
+  return 'VM'
+}
+
+function typeBadgeClass(type) {
+  if (type === 'lxc') return 'badge-warning'
+  if (type === 'node') return 'badge-secondary'
+  return 'badge-info'
+}
+
+function statusBadgeClass(status) {
+  if (status === 'running') return 'badge-success'
+  if (status === 'paused') return 'badge-warning'
+  return 'badge-danger'
+}
+
+function parseContentTypes(content) {
+  if (!content || !content.trim()) return []
+  return content.split(',').map(c => c.trim()).filter(Boolean)
+}
+
+function contentPillClass(ct) {
+  const map = {
+    'images': 'cp-images',
+    'rootdir': 'cp-rootdir',
+    'backup': 'cp-backup',
+    'iso': 'cp-iso',
+    'vztmpl': 'cp-vztmpl',
+    'snippets': 'cp-snippets',
+  }
+  return map[ct.toLowerCase()] || ''
 }
 
 // ── Network helpers ────────────────────────────────────────────────────────
@@ -786,7 +1423,6 @@ function ifaceAddress(iface) {
 }
 
 function ifaceSlaves(iface) {
-  // bridge_ports for bridges, slaves for bonds
   const s = iface.bridge_ports || iface.slaves || iface.ovs_ports || ''
   return s || '—'
 }
@@ -798,7 +1434,6 @@ function ifaceUp(iface) {
 }
 
 function isVlanBridge(iface) {
-  // VLAN-aware bridges or interfaces with a VLAN id or named vlanXXX / vmbrXXX.XXX
   if (iface.bridge_vlan_aware) return true
   if (iface.vlan_id != null) return true
   if (/\.\d+$/.test(iface.iface || '')) return true
@@ -819,13 +1454,17 @@ function storageBarClass(used, total) {
   return 'fill--ok'
 }
 
+function setTimeframe(tf) {
+  selectedTimeframe.value = tf
+  fetchTrendData()
+}
+
 // ── Data loading ───────────────────────────────────────────────────────────
 async function fetchAll() {
   loading.value = true
   loadError.value = false
 
   try {
-    // 1. Fetch host list
     const hostsRes = await api.proxmox.listHosts()
     const hostList = hostsRes.data || []
     hosts.value = hostList
@@ -835,7 +1474,6 @@ async function fetchAll() {
       return
     }
 
-    // 2. Fetch cluster resources for each host in parallel
     const results = await Promise.allSettled(
       hostList.map(host =>
         api.pveNode.clusterResources(host.id).then(res => ({
@@ -854,10 +1492,12 @@ async function fetchAll() {
           flat.push({ ...r, _hostId: hostId, _hostName: hostName })
         }
       }
-      // silently skip failed hosts — they show as offline in the panel
     }
 
     allResources.value = flat
+
+    // Also fetch datacenter summaries for each host (for storage totals)
+    fetchDatacenterSummaries(hostList)
   } catch (err) {
     console.error('Failed to load datacenter data:', err)
     loadError.value = true
@@ -867,10 +1507,93 @@ async function fetchAll() {
   }
 }
 
+async function fetchDatacenterSummaries(hostList) {
+  const list = hostList || hosts.value
+  const results = await Promise.allSettled(
+    list.map(host =>
+      api.proxmox.getDatacenterSummary(host.id).then(res => ({ hostId: host.id, data: res.data }))
+    )
+  )
+
+  const map = {}
+  for (const r of results) {
+    if (r.status === 'fulfilled') {
+      map[r.value.hostId] = r.value.data
+    }
+  }
+  datacenterSummaries.value = map
+}
+
 async function refresh() {
   await fetchAll()
   if (networkExpanded.value) await fetchNetworkData()
   if (storageExpanded.value) await fetchStorageData()
+  if (trendsExpanded.value) await fetchTrendData()
+}
+
+// ── Trend data loading ─────────────────────────────────────────────────────
+async function fetchTrendData() {
+  trendsLoading.value = true
+  try {
+    const hostList = hosts.value
+    if (!hostList.length) return
+
+    // Fetch RRD data from first available node across all hosts
+    const allPoints = []
+
+    for (const host of hostList) {
+      const nodeItems = allResources.value
+        .filter(r => r._hostId === host.id && r.type === 'node')
+        .slice(0, 3)  // max 3 nodes per host for perf
+
+      for (const nodeItem of nodeItems) {
+        try {
+          const res = await api.pveNode.nodeRrdData(host.id, nodeItem.node, {
+            timeframe: selectedTimeframe.value,
+            cf: 'AVERAGE',
+          })
+          const data = res.data || []
+          for (const pt of data) {
+            if (pt.time) {
+              allPoints.push({
+                time: pt.time,
+                cpu: parseFloat((pt.cpu || 0) * 100).toFixed(1),
+                mem: pt.memtotal > 0 ? parseFloat((pt.memused / pt.memtotal) * 100).toFixed(1) : 0,
+              })
+            }
+          }
+        } catch {
+          // ignore failed nodes
+        }
+      }
+    }
+
+    // Group by time bucket (avg across nodes)
+    if (allPoints.length === 0) {
+      trendData.value = []
+      return
+    }
+
+    const buckets = {}
+    for (const pt of allPoints) {
+      if (!buckets[pt.time]) buckets[pt.time] = { cpu: [], mem: [] }
+      buckets[pt.time].cpu.push(parseFloat(pt.cpu))
+      buckets[pt.time].mem.push(parseFloat(pt.mem))
+    }
+
+    trendData.value = Object.entries(buckets)
+      .sort(([a], [b]) => Number(a) - Number(b))
+      .map(([time, vals]) => ({
+        time: Number(time),
+        cpu: (vals.cpu.reduce((s, v) => s + v, 0) / vals.cpu.length).toFixed(1),
+        mem: (vals.mem.reduce((s, v) => s + v, 0) / vals.mem.length).toFixed(1),
+      }))
+
+  } catch (err) {
+    console.error('Failed to load trend data:', err)
+  } finally {
+    trendsLoading.value = false
+  }
 }
 
 // ── Network data loading ───────────────────────────────────────────────────
@@ -881,7 +1604,6 @@ async function fetchNetworkData() {
 
     const hostResults = await Promise.allSettled(
       hostList.map(async host => {
-        // Collect node names from allResources
         const nodeNames = [
           ...new Set(
             allResources.value
@@ -910,9 +1632,7 @@ async function fetchNetworkData() {
         return {
           hostId: host.id,
           hostName: host.name || host.hostname || `Host ${host.id}`,
-          nodes: nodeGroups
-            .filter(r => r.status === 'fulfilled')
-            .map(r => r.value),
+          nodes: nodeGroups.filter(r => r.status === 'fulfilled').map(r => r.value),
         }
       })
     )
@@ -960,9 +1680,7 @@ async function fetchStorageData() {
         return {
           hostId: host.id,
           hostName: host.name || host.hostname || `Host ${host.id}`,
-          nodes: nodeGroups
-            .filter(r => r.status === 'fulfilled')
-            .map(r => r.value),
+          nodes: nodeGroups.filter(r => r.status === 'fulfilled').map(r => r.value),
         }
       })
     )
@@ -1004,7 +1722,6 @@ async function fetchTopVms() {
   topVmsLoading.value = true
   topVmsCountdown.value = 30
   try {
-    // Use already-loaded hosts if available, otherwise fetch
     const hostList = hosts.value.length > 0 ? hosts.value : (await api.proxmox.listHosts()).data || []
 
     const results = await Promise.allSettled(
@@ -1029,7 +1746,6 @@ async function fetchTopVms() {
       }
     }
 
-    // Sort by CPU usage descending, take top 10
     vms.sort((a, b) => (b.cpu || 0) - (a.cpu || 0))
     topVms.value = vms.slice(0, 10)
   } catch (err) {
@@ -1040,8 +1756,6 @@ async function fetchTopVms() {
 }
 
 // ── Watchers for lazy-load of collapsible sections ─────────────────────────
-import { watch } from 'vue'
-
 watch(networkExpanded, (val) => {
   if (val && networkData.value.length === 0) fetchNetworkData()
 })
@@ -1050,11 +1764,14 @@ watch(storageExpanded, (val) => {
   if (val && storageData.value.length === 0) fetchStorageData()
 })
 
+watch(trendsExpanded, (val) => {
+  if (val && trendData.value.length === 0) fetchTrendData()
+})
+
 onMounted(() => {
   fetchAll()
   fetchTopVms()
 
-  // Auto-refresh Top VMs every 30 seconds
   topVmsInterval = setInterval(() => {
     if (document.visibilityState !== 'hidden') fetchTopVms()
     topVmsCountdown.value = 30
@@ -1094,72 +1811,300 @@ onUnmounted(() => {
   color: var(--text-primary);
 }
 
-/* ── Summary stat row ────────────────────────────────────────────────────── */
-.stat-row {
-  display: flex;
-  flex-wrap: wrap;
+/* ── Resource Overview Grid ──────────────────────────────────────────────── */
+.resource-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   gap: 1rem;
 }
 
-.stat-card {
-  flex: 1 1 120px;
-  min-width: 100px;
-  background: var(--bg-card, #1e1e2e);
-  border: 1px solid var(--border-color);
-  border-radius: 0.5rem;
+/* ── Efficiency card ─────────────────────────────────────────────────────── */
+.efficiency-card .card-header { border-bottom: 1px solid var(--border-color); }
+
+.efficiency-body {
   padding: 1rem 1.25rem;
-  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  align-items: center;
 }
 
-.stat-card--split {
+.efficiency-score-ring {
+  width: 120px;
+  height: 120px;
+}
+
+.efficiency-svg {
+  width: 100%;
+  height: 100%;
+}
+
+.ring-bg {
+  fill: none;
+  stroke: var(--border-color);
+  stroke-width: 10;
+}
+
+.ring-fill {
+  fill: none;
+  stroke-width: 10;
+  transition: stroke-dasharray 0.6s ease;
+}
+
+.ring-fill--ok      { stroke: #10b981; }
+.ring-fill--warning { stroke: #f59e0b; }
+.ring-fill--danger  { stroke: #ef4444; }
+.ring-fill--low     { stroke: var(--text-muted, #888); }
+
+.ring-value {
+  font-size: 20px;
+  font-weight: 700;
+  fill: var(--text-primary);
+  font-family: inherit;
+}
+
+.ring-label {
+  font-size: 9px;
+  fill: var(--text-muted, #888);
+  font-family: inherit;
+}
+
+.efficiency-breakdown {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.eff-row {
   display: flex;
   align-items: center;
-  justify-content: center;
   gap: 0.5rem;
-  text-align: center;
 }
 
-.stat-divider {
-  font-size: 1.5rem;
-  color: var(--text-muted, #888);
-  line-height: 1;
-  align-self: flex-start;
-  margin-top: 0.25rem;
-}
-
-.stat-value {
-  font-size: 2rem;
-  font-weight: 700;
-  color: var(--text-primary);
-  line-height: 1;
-  margin-bottom: 0.25rem;
-}
-
-.stat-value--green {
-  color: #10b981;
-}
-
-.stat-value-sm {
-  font-size: 1.1rem;
-  font-weight: 700;
-  color: var(--text-primary);
-  line-height: 1.3;
-  margin-bottom: 0.25rem;
-}
-
-.stat-value-sep {
-  color: var(--text-muted, #888);
-  margin: 0 0.15rem;
-}
-
-.stat-label {
+.eff-label {
   font-size: 0.75rem;
   color: var(--text-muted, #888);
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
+  min-width: 52px;
 }
 
-/* ── Section title ───────────────────────────────────────────────────────── */
+.eff-bar-wrap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.eff-bar {
+  flex: 1;
+  height: 6px;
+  background: var(--border-color);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.eff-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.4s ease;
+}
+
+.eff-pct {
+  font-size: 0.72rem;
+  font-family: monospace;
+  color: var(--text-primary);
+  min-width: 2.5rem;
+  text-align: right;
+}
+
+/* ── Donut card ──────────────────────────────────────────────────────────── */
+.donut-card .card-header { border-bottom: 1px solid var(--border-color); }
+
+.donut-body {
+  padding: 1rem 1.25rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.donut-chart-wrap {
+  flex-shrink: 0;
+  width: 120px;
+  height: 120px;
+}
+
+.donut-svg {
+  width: 100%;
+  height: 100%;
+}
+
+.donut-bg {
+  fill: none;
+  stroke: var(--border-color);
+  stroke-width: 12;
+}
+
+.donut-used {
+  fill: none;
+  transition: stroke-dasharray 0.6s ease;
+}
+
+.donut-center-label {
+  font-size: 9px;
+  font-weight: 600;
+  fill: var(--text-primary);
+  font-family: inherit;
+}
+
+.donut-center-sub {
+  font-size: 8px;
+  fill: var(--text-muted, #888);
+  font-family: inherit;
+}
+
+.donut-legend {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+}
+
+.legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.legend-dot--cpu { background: #6366f1; }
+.legend-dot--mem { background: #10b981; }
+
+.legend-text { color: var(--text-primary); }
+
+.legend-sep {
+  border-top: 1px solid var(--border-color);
+  margin: 0.25rem 0;
+}
+
+/* ── VM Distribution mini pie ───────────────────────────────────────────── */
+.vm-dist-card .card-header { border-bottom: 1px solid var(--border-color); }
+
+.vm-dist-body {
+  padding: 1rem 1.25rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.vm-pie-svg {
+  width: 80px;
+  height: 80px;
+  flex-shrink: 0;
+}
+
+.pie-slice {
+  fill: none;
+  stroke-width: 28;
+  transition: stroke-dasharray 0.6s ease;
+}
+
+.pie-slice--running { stroke: #10b981; }
+.pie-slice--paused  { stroke: #f59e0b; }
+
+.pie-center { fill: var(--bg-card, #1e1e2e); }
+
+.pie-center-val {
+  font-size: 13px;
+  font-weight: 700;
+  fill: var(--text-primary);
+  font-family: inherit;
+}
+
+.pie-center-sub {
+  font-size: 8px;
+  fill: var(--text-muted, #888);
+  font-family: inherit;
+}
+
+.vm-dist-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.vd-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+}
+
+.vd-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.vd-dot--running { background: #10b981; }
+.vd-dot--stopped { background: #6b7280; }
+.vd-dot--paused  { background: #f59e0b; }
+
+.vd-label { color: var(--text-muted, #888); min-width: 52px; }
+.vd-val   { font-weight: 600; color: var(--text-primary); margin-left: auto; }
+
+.vd-sep {
+  border-top: 1px solid var(--border-color);
+  margin: 0.2rem 0;
+}
+
+/* ── Stat summary card ───────────────────────────────────────────────────── */
+.stat-summary-card .card-header { border-bottom: 1px solid var(--border-color); }
+
+.stat-summary-body {
+  padding: 0.75rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.ss-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.ss-icon {
+  font-size: 1.2rem;
+  width: 28px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.ss-value {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1;
+}
+
+.ss-label {
+  font-size: 0.7rem;
+  color: var(--text-muted, #888);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.stat-green { color: #10b981; }
+
+/* ── Node Distribution Map ───────────────────────────────────────────────── */
 .section-title {
   font-size: 0.8rem;
   font-weight: 600;
@@ -1167,6 +2112,144 @@ onUnmounted(() => {
   letter-spacing: 0.06em;
   color: var(--text-muted, #888);
   margin-bottom: 0.5rem;
+}
+
+.node-distribution-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 0.75rem;
+}
+
+.node-dist-card {
+  position: relative;
+  background: var(--bg-card, #1e1e2e);
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+  padding: 0.875rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  cursor: default;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.node-dist-card:hover {
+  border-color: var(--accent, #6366f1);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent, #6366f1) 15%, transparent);
+}
+
+.node-dist-card--warn {
+  border-color: #f59e0b;
+}
+
+.imbalance-badge {
+  position: absolute;
+  top: 0.4rem;
+  right: 0.5rem;
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: #f59e0b;
+  background: color-mix(in srgb, #f59e0b 12%, transparent);
+  border: 1px solid color-mix(in srgb, #f59e0b 35%, transparent);
+  border-radius: 4px;
+  padding: 0.1rem 0.35rem;
+}
+
+.nd-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.nd-name {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-family: monospace;
+}
+
+.nd-host-label {
+  font-size: 0.7rem;
+  color: var(--text-muted, #888);
+}
+
+.nd-counts {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.nd-count-pill {
+  font-size: 0.7rem;
+  font-weight: 500;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.nd-count-pill--vm  { background: color-mix(in srgb, #6366f1 15%, transparent); color: #6366f1; }
+.nd-count-pill--lxc { background: color-mix(in srgb, #10b981 15%, transparent); color: #10b981; }
+
+.nd-bar-wrap {
+  height: 4px;
+  background: var(--border-color);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.nd-bar {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.4s ease;
+}
+
+.nd-bar--ok   { background: #6366f1; }
+.nd-bar--warn { background: #f59e0b; }
+
+.nd-share-label { font-size: 0.68rem; }
+
+/* Node tooltip */
+.nd-tooltip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg-secondary, #2a2a3e);
+  border: 1px solid var(--border-color);
+  border-radius: 0.4rem;
+  padding: 0.6rem 0.85rem;
+  min-width: 180px;
+  z-index: 100;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+  pointer-events: none;
+}
+
+.ndt-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 0.4rem;
+  padding-bottom: 0.3rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.ndt-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  color: var(--text-muted, #888);
+  margin-bottom: 0.15rem;
+}
+
+.ndt-row strong { color: var(--text-primary); }
+
+.ndt-warn {
+  margin-top: 0.3rem;
+  font-size: 0.72rem;
+  color: #f59e0b;
+  font-weight: 500;
 }
 
 /* ── Host grid ───────────────────────────────────────────────────────────── */
@@ -1199,9 +2282,7 @@ onUnmounted(() => {
   color: var(--text-primary);
 }
 
-.host-addr {
-  margin-top: 0.1rem;
-}
+.host-addr { margin-top: 0.1rem; }
 
 .host-card-body {
   padding: 0.875rem 1.25rem;
@@ -1218,7 +2299,7 @@ onUnmounted(() => {
   justify-content: flex-end;
 }
 
-/* ── Resource bars (shared with ClusterOverview style) ───────────────────── */
+/* ── Resource bars ───────────────────────────────────────────────────────── */
 .resource-row {
   display: flex;
   align-items: center;
@@ -1275,6 +2356,87 @@ onUnmounted(() => {
 
 .text-green { color: #10b981; }
 
+/* ── Resource trends section ─────────────────────────────────────────────── */
+.trend-time-selector {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.trend-tf-btn {
+  padding: 0.2rem 0.5rem;
+  font-size: 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted, #888);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.trend-tf-btn:hover,
+.trend-tf-btn.active {
+  background: var(--accent, #6366f1);
+  border-color: var(--accent, #6366f1);
+  color: #fff;
+}
+
+.trends-body {
+  padding: 0.75rem 1.25rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.trend-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.trend-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted, #888);
+}
+
+.sparkline-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.sparkline-svg {
+  width: 100%;
+  height: 60px;
+  background: var(--bg-secondary, #2a2a3e);
+  border-radius: 6px;
+  overflow: visible;
+}
+
+.sparkline-line {
+  stroke-width: 2;
+  fill: none;
+}
+
+.sparkline-line--cpu { stroke: #6366f1; }
+.sparkline-line--mem { stroke: #10b981; }
+
+.sparkline-area { opacity: 0.6; }
+
+.sparkline-stats {
+  display: flex;
+  gap: 1rem;
+}
+
+.sp-stat {
+  font-size: 0.75rem;
+  color: var(--text-muted, #888);
+}
+
+.sp-stat strong { color: var(--text-primary); }
+
 /* ── Resource table ──────────────────────────────────────────────────────── */
 .table-filters {
   flex-wrap: wrap;
@@ -1292,19 +2454,25 @@ onUnmounted(() => {
   font-size: 0.875rem;
 }
 
+.group-toggle-label {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
 .sortable-th {
   cursor: pointer;
   user-select: none;
   white-space: nowrap;
 }
 
-.sortable-th:hover {
-  color: var(--text-primary);
-}
+.sortable-th:hover { color: var(--text-primary); }
 
-.sort-active {
-  color: var(--accent, #6366f1);
-}
+.sort-active { color: var(--accent, #6366f1); }
 
 .sort-icon {
   margin-left: 0.3rem;
@@ -1317,8 +2485,38 @@ onUnmounted(() => {
   transition: background 0.1s;
 }
 
-.resource-row-link:hover {
-  background: var(--bg-secondary);
+.resource-row-link:hover { background: var(--bg-secondary); }
+
+.resource-row-indented td:first-child {
+  padding-left: 2rem;
+}
+
+/* Node group header row */
+.node-group-header td {
+  background: var(--bg-secondary, #2a2a3e);
+  padding: 0.5rem 0.875rem;
+}
+
+.node-group-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.node-group-icon {
+  font-size: 0.9rem;
+}
+
+.node-group-count {
+  margin-left: auto;
+  font-size: 0.72rem;
+  color: var(--text-muted, #888);
+  font-weight: 400;
+}
+
+/* Row danger highlight */
+.row-danger td {
+  background: color-mix(in srgb, #ef4444 6%, transparent);
 }
 
 /* ── Type icon ───────────────────────────────────────────────────────────── */
@@ -1340,9 +2538,27 @@ onUnmounted(() => {
   font-size: 0.68rem;
   font-weight: 500;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--accent, #6366f1) 18%, transparent);
-  color: var(--accent, #6366f1);
-  border: 1px solid color-mix(in srgb, var(--accent, #6366f1) 35%, transparent);
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+
+.tag-blue   { background: color-mix(in srgb,#6366f1 18%,transparent); color:#6366f1; border-color: color-mix(in srgb,#6366f1 35%,transparent); }
+.tag-green  { background: color-mix(in srgb,#10b981 18%,transparent); color:#10b981; border-color: color-mix(in srgb,#10b981 35%,transparent); }
+.tag-purple { background: color-mix(in srgb,#a855f7 18%,transparent); color:#a855f7; border-color: color-mix(in srgb,#a855f7 35%,transparent); }
+.tag-orange { background: color-mix(in srgb,#f97316 18%,transparent); color:#f97316; border-color: color-mix(in srgb,#f97316 35%,transparent); }
+.tag-teal   { background: color-mix(in srgb,#06b6d4 18%,transparent); color:#06b6d4; border-color: color-mix(in srgb,#06b6d4 35%,transparent); }
+.tag-pink   { background: color-mix(in srgb,#ec4899 18%,transparent); color:#ec4899; border-color: color-mix(in srgb,#ec4899 35%,transparent); }
+
+/* ── Uptime badge ────────────────────────────────────────────────────────── */
+.uptime-badge {
+  display: inline-block;
+  padding: 0.1rem 0.4rem;
+  font-size: 0.72rem;
+  font-family: monospace;
+  background: color-mix(in srgb, #10b981 12%, transparent);
+  color: #10b981;
+  border: 1px solid color-mix(in srgb, #10b981 28%, transparent);
+  border-radius: 4px;
   white-space: nowrap;
 }
 
@@ -1404,9 +2620,7 @@ onUnmounted(() => {
   transform: rotate(-90deg);
 }
 
-.collapse-chevron.chevron-open {
-  transform: rotate(0deg);
-}
+.collapse-chevron.chevron-open { transform: rotate(0deg); }
 
 /* ── Network overview ────────────────────────────────────────────────────── */
 .network-overview-body {
@@ -1442,9 +2656,7 @@ onUnmounted(() => {
   margin-bottom: 0.25rem;
 }
 
-.network-iface-group {
-  margin-top: 0.25rem;
-}
+.network-iface-group { margin-top: 0.25rem; }
 
 .network-iface-group-label {
   margin-bottom: 0.3rem;
@@ -1452,9 +2664,7 @@ onUnmounted(() => {
   letter-spacing: 0.05em;
 }
 
-.network-table {
-  font-size: 0.85rem;
-}
+.network-table { font-size: 0.85rem; }
 
 .iface-name {
   font-weight: 600;
@@ -1462,9 +2672,7 @@ onUnmounted(() => {
   color: var(--text-primary);
 }
 
-.font-mono {
-  font-family: monospace;
-}
+.font-mono { font-family: monospace; }
 
 /* ── Storage overview ────────────────────────────────────────────────────── */
 .storage-overview-body {
@@ -1500,15 +2708,18 @@ onUnmounted(() => {
   margin-bottom: 0.25rem;
 }
 
-.storage-table {
-  font-size: 0.85rem;
-}
+.storage-table { font-size: 0.85rem; }
 
 .storage-name {
   font-weight: 600;
   font-family: monospace;
   color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
 }
+
+.storage-type-icon { font-size: 0.85rem; }
 
 .storage-bar-wrap {
   display: flex;
@@ -1556,29 +2767,33 @@ onUnmounted(() => {
   white-space: nowrap;
 }
 
+.cp-images  { background: color-mix(in srgb,#6366f1 14%,transparent); color:#6366f1; }
+.cp-backup  { background: color-mix(in srgb,#10b981 14%,transparent); color:#10b981; }
+.cp-iso     { background: color-mix(in srgb,#f97316 14%,transparent); color:#f97316; }
+.cp-rootdir { background: color-mix(in srgb,#a855f7 14%,transparent); color:#a855f7; }
+.cp-vztmpl  { background: color-mix(in srgb,#06b6d4 14%,transparent); color:#06b6d4; }
+.cp-snippets{ background: color-mix(in srgb,#ec4899 14%,transparent); color:#ec4899; }
+
 /* ── Utilities ───────────────────────────────────────────────────────────── */
 .mb-1  { margin-bottom: 0.5rem; }
 .mb-2  { margin-bottom: 1rem; }
 .p-3   { padding: 1.5rem; }
 .pl-2  { padding-left: 0.5rem; }
-.text-xs { font-size: 0.75rem; }
-.text-sm { font-size: 0.875rem; }
-.text-muted  { color: var(--text-muted, #888); }
-.text-center { text-align: center; }
-.flex        { display: flex; }
-.gap-1       { gap: 0.5rem; }
+.text-xs  { font-size: 0.75rem; }
+.text-sm  { font-size: 0.875rem; }
+.text-muted   { color: var(--text-muted, #888); }
+.text-center  { text-align: center; }
+.flex         { display: flex; }
+.gap-1        { gap: 0.5rem; }
 .align-center { align-items: center; }
-.flex-wrap   { flex-wrap: wrap; }
+.flex-wrap    { flex-wrap: wrap; }
 
-/* ── Card sub-elements (mirrors global card styles) ──────────────────────── */
-.card-body {
-  padding: 1.25rem 1.5rem;
-}
+.card-body { padding: 1.25rem 1.5rem; }
 
 /* ── Responsive ──────────────────────────────────────────────────────────── */
 @media (max-width: 900px) {
-  .stat-row {
-    grid-template-columns: repeat(3, 1fr);
+  .resource-overview-grid {
+    grid-template-columns: 1fr 1fr;
   }
 
   .host-grid {
@@ -1592,8 +2807,8 @@ onUnmounted(() => {
 }
 
 @media (max-width: 600px) {
-  .stat-card {
-    flex: 1 1 40%;
+  .resource-overview-grid {
+    grid-template-columns: 1fr;
   }
 
   .table-filters {
@@ -1605,6 +2820,10 @@ onUnmounted(() => {
   .search-input {
     width: 100%;
     max-width: none;
+  }
+
+  .node-distribution-grid {
+    grid-template-columns: 1fr 1fr;
   }
 }
 </style>

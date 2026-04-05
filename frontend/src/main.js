@@ -7,6 +7,15 @@ import App from './App.vue'
 import router from './router'
 import './assets/style.css'
 import { ToastPlugin } from './plugins/toast.js'
+import { loadMessages } from './i18n/index.js'
+import en from './i18n/en.js'
+import de from './i18n/de.js'
+import fr from './i18n/fr.js'
+
+// ── i18n: load all message catalogues ──────────────────────────────────────
+loadMessages('en', en)
+loadMessages('de', de)
+loadMessages('fr', fr)
 
 // ── Theme initialisation (before mounting to prevent flash) ─────────────────
 const applyTheme = (theme) => {

@@ -193,6 +193,7 @@ export default {
     deleteNode: (nodeId) => api.delete(`/proxmox/nodes/${nodeId}`),
     updateNodeIdrac: (nodeId, data) => api.patch(`/proxmox/nodes/${nodeId}/idrac`, data),
     getFederationSummary: () => api.get('/proxmox/federation/summary'),
+    getDatacenterSummary: (hostId) => api.get(`/proxmox/${hostId}/datacenter/summary`),
   },
 
   // Virtual Machines
@@ -329,6 +330,7 @@ export default {
     clearCache: () => api.post('/system/cache/clear'),
     dbVacuum: () => api.post('/system/db-vacuum'),
     restartBackend: () => api.post('/system/restart'),
+    validateSettings: (data) => api.post('/system/settings/validate', data),
   },
 
   // Developer Tools

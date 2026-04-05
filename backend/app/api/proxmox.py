@@ -823,3 +823,182 @@ async def update_node_idrac(
     db.commit()
     db.refresh(node)
     return node
+
+
+@router.get("/{host_id}/datacenter/summary")
+async def get_datacenter_summary(
+    host_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Aggregate datacenter summary for a single Proxmox host.
+    Returns VMs, nodes, storage, compute totals and recent tasks.
+    Cached for 30 seconds.
+    """
+    cache_key = f"datacenter:summary:{host_id}"
+    cached = pve_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    host = db.query(ProxmoxHost).filter(ProxmoxHost.id == host_id).first()
+    if not host:
+        raise HTTPException(status_code=404, detail="Host not found")
+
+    try:
+        from app.services.proxmox import ProxmoxService
+        svc = ProxmoxService(host)
+        pve = svc.proxmox
+
+        # Pull all cluster resources in one call
+        resources = pve.cluster.resources.get()
+
+        vms_running = 0
+        vms_stopped = 0
+        vms_paused = 0
+        lxc_running = 0
+        lxc_stopped = 0
+        nodes_online = 0
+        nodes_offline = 0
+        total_cpu_cores = 0
+        total_ram = 0
+        cpu_usages = []
+        mem_usages = []
+        storages = []
+        node_vm_map = {}  # node_name -> {vms, lxcs}
+
+        for r in resources:
+            rtype = r.get("type", "")
+            node_name = r.get("node", "")
+
+            if rtype == "qemu":
+                status = r.get("status", "stopped")
+                if status == "running":
+                    vms_running += 1
+                elif status == "paused":
+                    vms_paused += 1
+                else:
+                    vms_stopped += 1
+                # node->vm mapping
+                if node_name not in node_vm_map:
+                    node_vm_map[node_name] = {"vms": 0, "lxcs": 0, "name": node_name}
+                node_vm_map[node_name]["vms"] += 1
+
+            elif rtype == "lxc":
+                status = r.get("status", "stopped")
+                if status == "running":
+                    lxc_running += 1
+                else:
+                    lxc_stopped += 1
+                if node_name not in node_vm_map:
+                    node_vm_map[node_name] = {"vms": 0, "lxcs": 0, "name": node_name}
+                node_vm_map[node_name]["lxcs"] += 1
+
+            elif rtype == "node":
+                status = r.get("status", "unknown")
+                if status == "online":
+                    nodes_online += 1
+                else:
+                    nodes_offline += 1
+                total_cpu_cores += r.get("maxcpu", 0) or 0
+                total_ram += r.get("maxmem", 0) or 0
+                cpu_val = r.get("cpu")
+                if cpu_val is not None:
+                    cpu_usages.append(float(cpu_val))
+                mem_val = r.get("mem")
+                max_mem = r.get("maxmem")
+                if mem_val and max_mem:
+                    mem_usages.append(float(mem_val) / float(max_mem))
+
+            elif rtype == "storage":
+                storages.append({
+                    "storage": r.get("storage", ""),
+                    "node": node_name,
+                    "type": r.get("plugintype", ""),
+                    "total": r.get("maxdisk", 0) or 0,
+                    "used": r.get("disk", 0) or 0,
+                    "shared": bool(r.get("shared", 0)),
+                    "content": r.get("content", ""),
+                })
+
+        avg_cpu_pct = round((sum(cpu_usages) / len(cpu_usages)) * 100, 1) if cpu_usages else 0.0
+        avg_mem_pct = round((sum(mem_usages) / len(mem_usages)) * 100, 1) if mem_usages else 0.0
+
+        # Cluster efficiency score: average of (1 - avg_cpu_slack) and (1 - avg_mem_slack)
+        # Score 0-100: higher means resources are being used efficiently
+        efficiency_score = round((avg_cpu_pct + avg_mem_pct) / 2, 1)
+
+        # Recent tasks — fetch from all known nodes
+        node_names = list(node_vm_map.keys())
+        recent_tasks = []
+        for node_name in node_names[:5]:  # limit to 5 nodes max
+            try:
+                tasks = pve.nodes(node_name).tasks.get(limit=3)
+                for t in tasks:
+                    recent_tasks.append({
+                        "node": node_name,
+                        "upid": t.get("upid", ""),
+                        "type": t.get("type", ""),
+                        "user": t.get("user", ""),
+                        "status": t.get("status", ""),
+                        "starttime": t.get("starttime"),
+                        "endtime": t.get("endtime"),
+                        "id": t.get("id", ""),
+                    })
+            except Exception:
+                pass
+
+        # Sort by starttime descending, keep top 5
+        recent_tasks.sort(key=lambda x: x.get("starttime") or 0, reverse=True)
+        recent_tasks = recent_tasks[:5]
+
+        # Node VM distribution
+        node_distribution = list(node_vm_map.values())
+        total_guests = sum(n["vms"] + n["lxcs"] for n in node_distribution)
+        # Flag imbalanced nodes (>80% of cluster's guests)
+        for nd in node_distribution:
+            nd["guest_count"] = nd["vms"] + nd["lxcs"]
+            nd["imbalanced"] = (
+                len(node_distribution) > 1 and
+                total_guests > 0 and
+                (nd["guest_count"] / total_guests) > 0.8
+            )
+
+        response = {
+            "host_id": host_id,
+            "host_name": host.name,
+            # VM / LXC counts
+            "vms_total": vms_running + vms_stopped + vms_paused,
+            "vms_running": vms_running,
+            "vms_stopped": vms_stopped,
+            "vms_paused": vms_paused,
+            "lxc_total": lxc_running + lxc_stopped,
+            "lxc_running": lxc_running,
+            "lxc_stopped": lxc_stopped,
+            # Nodes
+            "nodes_online": nodes_online,
+            "nodes_offline": nodes_offline,
+            "nodes_total": nodes_online + nodes_offline,
+            # Compute
+            "total_cpu_cores": total_cpu_cores,
+            "total_ram_bytes": total_ram,
+            "avg_cpu_pct": avg_cpu_pct,
+            "avg_mem_pct": avg_mem_pct,
+            "efficiency_score": efficiency_score,
+            # Storage
+            "storages": storages,
+            "storage_total_bytes": sum(s["total"] for s in storages),
+            "storage_used_bytes": sum(s["used"] for s in storages),
+            # Node distribution
+            "node_distribution": node_distribution,
+            # Recent activity
+            "recent_tasks": recent_tasks,
+            "fetched_at": datetime.utcnow().isoformat() + "Z",
+        }
+
+        pve_cache.set(cache_key, response, ttl=30)
+        return response
+
+    except Exception as e:
+        logger.error(f"Failed to get datacenter summary for host {host_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch datacenter summary: {str(e)}")

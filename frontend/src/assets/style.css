@@ -195,6 +195,27 @@ p:last-child { margin-bottom: 0; }
   box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
 }
 
+/* Placeholder text: minimum readable opacity */
+.form-control::placeholder {
+  color: rgba(0, 0, 0, 0.45);
+  opacity: 1;
+}
+
+[data-theme="dark"] .form-control::placeholder {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+/* Disabled input text: readable even when dimmed */
+.form-control:disabled {
+  color: rgba(0, 0, 0, 0.5);
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+[data-theme="dark"] .form-control:disabled {
+  color: rgba(255, 255, 255, 0.5);
+}
+
 select.form-control {
   background-color: var(--surface);
   cursor: pointer;
@@ -215,8 +236,8 @@ select.form-control {
   background-color: var(--background);
   padding: 0.5rem 0.875rem;
   text-align: left;
-  font-weight: 600;
-  color: var(--text-secondary);
+  font-weight: 700;
+  color: var(--text-primary);
   font-size: 0.7rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -298,14 +319,22 @@ select.form-control {
   color: #fca5a5;
 }
 
+/* Amber/warning badges always get dark text for contrast */
 .badge-warning {
   background-color: rgba(245, 158, 11, 0.15);
-  color: #92400e;
+  color: #78350f;
 }
 
 [data-theme="dark"] .badge-warning {
   background-color: rgba(245, 158, 11, 0.2);
-  color: #fcd34d;
+  color: #fbbf24;
+}
+
+/* Force dark text on any amber/yellow badge regardless of how it was created */
+.badge-warning, .badge-amber,
+[class*="badge"][style*="background: #f59e0b"],
+[class*="badge"][style*="background: #eab308"] {
+  color: #1a2332 !important;
 }
 
 .badge-info {
@@ -316,6 +345,16 @@ select.form-control {
 [data-theme="dark"] .badge-info {
   background-color: rgba(59, 130, 246, 0.2);
   color: #93c5fd;
+}
+
+.badge-secondary {
+  background-color: rgba(55, 65, 81, 0.12);
+  color: #374151;
+}
+
+[data-theme="dark"] .badge-secondary {
+  background-color: rgba(75, 85, 99, 0.3);
+  color: #d1d5db;
 }
 
 .badge-outline {

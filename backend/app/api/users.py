@@ -98,6 +98,15 @@ async def create_user(
     if existing_email:
         raise HTTPException(status_code=400, detail="Email already exists")
 
+    # Enforce password policy from system settings
+    try:
+        from app.api.auth import _validate_password_policy
+        policy_error = _validate_password_policy(db, user_data.password)
+        if policy_error:
+            raise HTTPException(status_code=400, detail=policy_error)
+    except ImportError:
+        pass
+
     # Create new user
     hashed_password = get_password_hash(user_data.password)
     new_user = User(

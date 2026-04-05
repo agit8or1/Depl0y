@@ -410,7 +410,7 @@ export default {
   background: none;
   border: none;
   cursor: pointer;
-  color: rgba(255, 255, 255, 0.55);
+  color: rgba(255, 255, 255, 0.75);
   font-size: 1.1rem;
   line-height: 1;
   border-radius: 4px;
@@ -435,7 +435,7 @@ export default {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: rgba(59, 130, 246, 0.8);
+  color: rgba(59, 130, 246, 0.95);
   margin-bottom: 0.5rem;
 }
 
@@ -478,7 +478,7 @@ export default {
   padding: 0.75rem 1.5rem;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
   font-size: 0.75rem;
-  color: rgba(255, 255, 255, 0.4);
+  color: rgba(255, 255, 255, 0.65);
   text-align: center;
   flex-shrink: 0;
 }
@@ -489,7 +489,7 @@ export default {
   border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 4px;
   padding: 1px 5px;
-  color: rgba(255, 255, 255, 0.55);
+  color: rgba(255, 255, 255, 0.75);
   font-family: inherit;
 }
 

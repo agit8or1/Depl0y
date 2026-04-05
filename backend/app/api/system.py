@@ -5,19 +5,43 @@ from app.core.database import get_db
 from app.models.database import SystemSettings
 from app.api.auth import get_current_user, require_admin
 from app.models import User
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 import logging
 import smtplib
 import ssl
 import os
 import time
 import sqlite3
+import ipaddress
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# ── Settings cache (5-minute TTL) ────────────────────────────────────────────
+_settings_cache: Dict[str, str] = {}
+_settings_last_fetch: float = 0
+
+
+def get_cached_setting(db: Session, key: str, default: Optional[str] = None) -> Optional[str]:
+    """Get a system setting with 5-minute in-process cache."""
+    global _settings_cache, _settings_last_fetch
+    if time.time() - _settings_last_fetch > 300:
+        try:
+            rows = db.query(SystemSettings).all()
+            _settings_cache = {r.key: r.value for r in rows}
+            _settings_last_fetch = time.time()
+        except Exception:
+            pass
+    return _settings_cache.get(key, default)
+
+
+def invalidate_settings_cache():
+    """Force cache refresh on next call (call after settings are updated)."""
+    global _settings_last_fetch
+    _settings_last_fetch = 0
 
 
 @router.get("/info")
@@ -218,16 +242,53 @@ def db_integrity_check(
 
 @router.get("/health")
 def system_health(db: Session = Depends(get_db)) -> Dict[str, Any]:
-    """Basic health check with db connectivity test"""
+    """Enhanced health check: db, SMTP config, Proxmox hosts, encryption, disk space."""
+    from app.core.config import settings as app_settings
+
+    checks: Dict[str, Any] = {}
+
+    # 1. Database connectivity
     db_ok = False
     try:
         db.execute(__import__('sqlalchemy').text("SELECT 1"))
         db_ok = True
     except Exception:
         pass
+    checks["db"] = "ok" if db_ok else "fail"
+
+    # 2. SMTP configured
+    smtp_host = _get_setting(db, "smtp_host")
+    checks["smtp"] = "configured" if smtp_host else "not_configured"
+
+    # 3. Proxmox hosts
+    host_count = 0
+    try:
+        from app.models.database import ProxmoxHost
+        host_count = db.query(ProxmoxHost).count()
+    except Exception:
+        pass
+    checks["hosts"] = host_count
+
+    # 4. Encryption key
+    enc_key = getattr(app_settings, "ENCRYPTION_KEY", None)
+    checks["encryption"] = "ok" if enc_key else "missing"
+
+    # 5. Disk space for DB file
+    disk_free_gb = None
+    try:
+        db_path = app_settings.DATABASE_URL.replace("sqlite:///", "")
+        db_dir = os.path.dirname(db_path) or "/"
+        stat = os.statvfs(db_dir)
+        disk_free_gb = round(stat.f_frsize * stat.f_bavail / (1024 ** 3), 2)
+    except Exception:
+        pass
+    checks["disk_free_gb"] = disk_free_gb
+
+    overall = "healthy" if db_ok else "degraded"
+
     return {
-        "status": "healthy" if db_ok else "degraded",
-        "db": "ok" if db_ok else "error",
+        "status": overall,
+        "checks": checks,
     }
 
 
@@ -287,11 +348,73 @@ def update_settings(
                 row = SystemSettings(key=key, value=value)
                 db.add(row)
         db.commit()
+        invalidate_settings_cache()
         return {"success": True, "updated": list(updates.keys())}
     except Exception as e:
         db.rollback()
         logger.error(f"Failed to update settings: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to update settings: {e}")
+
+
+@router.post("/settings/validate")
+def validate_settings(
+    data: Dict[str, str],
+    current_user: User = Depends(require_admin),
+) -> Dict[str, Any]:
+    """
+    Validate a partial settings dict without saving.
+    Returns {valid: true} or {valid: false, errors: {key: "message"}}.
+    """
+    errors: Dict[str, str] = {}
+
+    for key, value in data.items():
+        if key == "smtp_port":
+            try:
+                port = int(value)
+                if not (1 <= port <= 65535):
+                    errors[key] = "Port must be between 1 and 65535"
+            except (ValueError, TypeError):
+                errors[key] = "Port must be a valid integer"
+
+        elif key == "ip_allowlist":
+            if value.strip():
+                entries = [e.strip() for e in value.split(",") if e.strip()]
+                bad = []
+                for entry in entries:
+                    try:
+                        ipaddress.ip_network(entry, strict=False)
+                    except ValueError:
+                        bad.append(entry)
+                if bad:
+                    errors[key] = f"Invalid CIDR notation: {', '.join(bad)}"
+
+        elif key == "session_timeout":
+            try:
+                minutes = int(value)
+                if not (5 <= minutes <= 10080):
+                    errors[key] = "Session timeout must be between 5 and 10080 minutes (7 days)"
+            except (ValueError, TypeError):
+                errors[key] = "Session timeout must be a valid integer"
+
+        elif key == "session_timeout_minutes":
+            try:
+                minutes = int(value)
+                if not (5 <= minutes <= 10080):
+                    errors[key] = "Session timeout must be between 5 and 10080 minutes (7 days)"
+            except (ValueError, TypeError):
+                errors[key] = "Session timeout must be a valid integer"
+
+        elif key == "max_login_attempts":
+            try:
+                attempts = int(value)
+                if not (1 <= attempts <= 100):
+                    errors[key] = "Max login attempts must be between 1 and 100"
+            except (ValueError, TypeError):
+                errors[key] = "Max login attempts must be a valid integer"
+
+    if errors:
+        return {"valid": False, "errors": errors}
+    return {"valid": True}
 
 
 @router.get("/cache/stats")

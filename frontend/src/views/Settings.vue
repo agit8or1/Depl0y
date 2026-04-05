@@ -602,6 +602,41 @@
       </div>
     </div>
 
+    <!-- Email Notifications Section (Admin Only) -->
+    <div class="card" v-if="user && user.role === 'admin'">
+      <div class="card-header">
+        <h3>Email Notifications</h3>
+      </div>
+      <div class="card-body">
+        <div class="info-box">
+          <p><strong>SMTP Configuration</strong> — set the following keys via the database or environment to enable email notifications:</p>
+          <ul class="feature-list text-sm">
+            <li><code>smtp_host</code> — SMTP server hostname</li>
+            <li><code>smtp_port</code> — Port (default 587)</li>
+            <li><code>smtp_username</code> — SMTP login username</li>
+            <li><code>smtp_password</code> — SMTP login password</li>
+            <li><code>smtp_from</code> — Sender address</li>
+            <li><code>smtp_to</code> — Recipient address for notifications</li>
+            <li><code>smtp_tls</code> — true/false (default true, STARTTLS on port 587, SSL on 465)</li>
+          </ul>
+        </div>
+
+        <div class="action-buttons" style="margin-top: 1rem;">
+          <button
+            @click="sendTestEmail"
+            class="btn btn-primary"
+            :disabled="testingEmail"
+          >
+            {{ testingEmail ? 'Sending...' : 'Send Test Email' }}
+          </button>
+        </div>
+
+        <div v-if="testEmailResult" :class="['info-box', testEmailError ? 'alert-danger' : 'alert-success']" style="margin-top:1rem;">
+          {{ testEmailResult }}
+        </div>
+      </div>
+    </div>
+
     <!-- Webhook Notifications Section (Admin Only) -->
     <div class="card" v-if="user && user.role === 'admin'">
       <div class="card-header">
@@ -1101,6 +1136,28 @@ export default {
     const haSetupSuccess = ref(null)
     const haError = ref(null)
     const showHAManagement = ref(false)
+
+    // Email Notifications
+    const testingEmail = ref(false)
+    const testEmailResult = ref(null)
+    const testEmailError = ref(false)
+
+    const sendTestEmail = async () => {
+      testingEmail.value = true
+      testEmailResult.value = null
+      testEmailError.value = false
+      try {
+        const res = await api.system.testEmail()
+        testEmailResult.value = res.data.message || 'Test email sent successfully'
+        toast.success('Test email sent!')
+      } catch (error) {
+        testEmailError.value = true
+        testEmailResult.value = error.response?.data?.detail || 'Failed to send test email'
+        toast.error(testEmailResult.value)
+      } finally {
+        testingEmail.value = false
+      }
+    }
 
     // Webhook Notifications
     const webhooks = ref([])
@@ -1778,6 +1835,11 @@ export default {
       saveDefaultHost,
       saveConsoleSetting,
       saveRefreshInterval,
+      // Email
+      testingEmail,
+      testEmailResult,
+      testEmailError,
+      sendTestEmail,
       // Webhooks
       webhooks,
       webhooksLoading,

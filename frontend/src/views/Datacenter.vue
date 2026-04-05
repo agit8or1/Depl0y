@@ -230,7 +230,222 @@
         </div>
       </div>
 
-      <!-- ── Section 4: Resource distribution table ── -->
+      <!-- ── Section 4: Network Overview ── -->
+      <div class="card mb-2">
+        <div
+          class="card-header collapsible-header"
+          @click="networkExpanded = !networkExpanded"
+          style="cursor: pointer;"
+        >
+          <h3>Network Overview</h3>
+          <div class="collapsible-header-right">
+            <span v-if="networkLoading" class="text-muted text-sm">Loading…</span>
+            <span class="collapse-chevron" :class="{ 'chevron-open': networkExpanded }">&#9660;</span>
+          </div>
+        </div>
+
+        <template v-if="networkExpanded">
+          <div v-if="networkLoading && networkData.length === 0" class="loading-spinner"></div>
+
+          <div v-else-if="networkData.length === 0" class="text-center text-muted p-3">
+            No network data available.
+          </div>
+
+          <div v-else class="network-overview-body">
+            <!-- Per host -->
+            <div
+              v-for="hostGroup in networkData"
+              :key="hostGroup.hostId"
+              class="network-host-group"
+            >
+              <div class="network-host-title">
+                {{ hostGroup.hostName }}
+              </div>
+
+              <!-- Per node -->
+              <div
+                v-for="nodeGroup in hostGroup.nodes"
+                :key="nodeGroup.node"
+                class="network-node-group"
+              >
+                <div class="network-node-title text-sm">
+                  Node: <strong>{{ nodeGroup.node }}</strong>
+                </div>
+
+                <div v-if="nodeGroup.ifaces.length === 0" class="text-muted text-sm pl-2">
+                  No interfaces found.
+                </div>
+
+                <template v-else>
+                  <!-- Physical / uplink bridges -->
+                  <div
+                    v-if="nodeGroup.physicalBridges.length > 0"
+                    class="network-iface-group"
+                  >
+                    <div class="network-iface-group-label text-xs text-muted">Physical Bridges</div>
+                    <table class="table network-table">
+                      <thead>
+                        <tr>
+                          <th>Name</th>
+                          <th>Type</th>
+                          <th>Address / CIDR</th>
+                          <th>Ports / Slaves</th>
+                          <th>Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr v-for="iface in nodeGroup.physicalBridges" :key="iface.iface">
+                          <td class="iface-name">{{ iface.iface }}</td>
+                          <td class="text-sm text-muted">{{ iface.type || '—' }}</td>
+                          <td class="font-mono text-sm">{{ ifaceAddress(iface) }}</td>
+                          <td class="text-sm text-muted">{{ ifaceSlaves(iface) }}</td>
+                          <td>
+                            <span :class="['badge', ifaceUp(iface) ? 'badge-success' : 'badge-danger']">
+                              {{ ifaceUp(iface) ? 'UP' : 'DOWN' }}
+                            </span>
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <!-- VLAN bridges -->
+                  <div
+                    v-if="nodeGroup.vlanBridges.length > 0"
+                    class="network-iface-group"
+                  >
+                    <div class="network-iface-group-label text-xs text-muted">VLAN Bridges</div>
+                    <table class="table network-table">
+                      <thead>
+                        <tr>
+                          <th>Name</th>
+                          <th>Type</th>
+                          <th>Address / CIDR</th>
+                          <th>Ports / Slaves</th>
+                          <th>Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr v-for="iface in nodeGroup.vlanBridges" :key="iface.iface">
+                          <td class="iface-name">{{ iface.iface }}</td>
+                          <td class="text-sm text-muted">{{ iface.type || '—' }}</td>
+                          <td class="font-mono text-sm">{{ ifaceAddress(iface) }}</td>
+                          <td class="text-sm text-muted">{{ ifaceSlaves(iface) }}</td>
+                          <td>
+                            <span :class="['badge', ifaceUp(iface) ? 'badge-success' : 'badge-danger']">
+                              {{ ifaceUp(iface) ? 'UP' : 'DOWN' }}
+                            </span>
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </template>
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <!-- ── Section 5: Storage Overview ── -->
+      <div class="card mb-2">
+        <div
+          class="card-header collapsible-header"
+          @click="storageExpanded = !storageExpanded"
+          style="cursor: pointer;"
+        >
+          <h3>Storage Overview</h3>
+          <div class="collapsible-header-right">
+            <span v-if="storageLoading" class="text-muted text-sm">Loading…</span>
+            <span class="collapse-chevron" :class="{ 'chevron-open': storageExpanded }">&#9660;</span>
+          </div>
+        </div>
+
+        <template v-if="storageExpanded">
+          <div v-if="storageLoading && storageData.length === 0" class="loading-spinner"></div>
+
+          <div v-else-if="storageData.length === 0" class="text-center text-muted p-3">
+            No storage data available.
+          </div>
+
+          <div v-else class="storage-overview-body">
+            <div
+              v-for="hostGroup in storageData"
+              :key="hostGroup.hostId"
+              class="storage-host-group"
+            >
+              <div class="storage-host-title">{{ hostGroup.hostName }}</div>
+
+              <div
+                v-for="nodeGroup in hostGroup.nodes"
+                :key="nodeGroup.node"
+                class="storage-node-group"
+              >
+                <div class="storage-node-title text-sm">
+                  Node: <strong>{{ nodeGroup.node }}</strong>
+                </div>
+
+                <div v-if="nodeGroup.pools.length === 0" class="text-muted text-sm pl-2">
+                  No storage pools found.
+                </div>
+
+                <div v-else class="table-container">
+                  <table class="table storage-table">
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Type</th>
+                        <th>Total</th>
+                        <th>Used</th>
+                        <th>Available</th>
+                        <th style="min-width: 140px;">Usage</th>
+                        <th>Shared</th>
+                        <th>Content</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="pool in nodeGroup.pools" :key="pool.storage">
+                        <td class="storage-name">{{ pool.storage }}</td>
+                        <td class="text-sm text-muted">{{ pool.type || '—' }}</td>
+                        <td class="text-sm font-mono">{{ pool.total ? formatBytes(pool.total) : '—' }}</td>
+                        <td class="text-sm font-mono">{{ pool.used != null ? formatBytes(pool.used) : '—' }}</td>
+                        <td class="text-sm font-mono">{{ pool.avail != null ? formatBytes(pool.avail) : '—' }}</td>
+                        <td>
+                          <div class="storage-bar-wrap">
+                            <div class="storage-bar">
+                              <div
+                                class="storage-bar-fill"
+                                :class="storageBarClass(pool.used, pool.total)"
+                                :style="{ width: storageUsagePct(pool.used, pool.total) + '%' }"
+                              ></div>
+                            </div>
+                            <span class="storage-bar-label">{{ storageUsagePct(pool.used, pool.total) }}%</span>
+                          </div>
+                        </td>
+                        <td>
+                          <span v-if="pool.shared" class="badge badge-info">Yes</span>
+                          <span v-else class="text-muted text-sm">No</span>
+                        </td>
+                        <td>
+                          <div class="content-pills">
+                            <span
+                              v-for="ct in (pool.content || '').split(',')"
+                              :key="ct"
+                              class="content-pill"
+                            >{{ ct.trim() }}</span>
+                          </div>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <!-- ── Section 6: All Resources table ── -->
       <div class="card">
         <div class="card-header">
           <h3>All Resources</h3>
@@ -287,13 +502,28 @@
                 class="resource-row-link"
                 @click="navigateToResource(r)"
               >
-                <td>{{ r.name || '—' }}</td>
-                <td><strong>{{ r.vmid || '—' }}</strong></td>
+                <!-- Type with icon -->
                 <td>
+                  <span class="type-icon">{{ r.type === 'lxc' ? '📦' : '🖥️' }}</span>
                   <span :class="['badge', r.type === 'lxc' ? 'badge-warning' : 'badge-info']">
                     {{ r.type === 'lxc' ? 'LXC' : 'VM' }}
                   </span>
                 </td>
+                <td>{{ r.name || '—' }}</td>
+                <!-- Tags -->
+                <td>
+                  <div class="tags-cell">
+                    <template v-if="r.tags && r.tags.trim()">
+                      <span
+                        v-for="tag in parseTags(r.tags)"
+                        :key="tag"
+                        class="tag-pill"
+                      >{{ tag }}</span>
+                    </template>
+                    <span v-else class="text-muted">—</span>
+                  </div>
+                </td>
+                <td><strong>{{ r.vmid || '—' }}</strong></td>
                 <td>
                   <span :class="['badge', r.status === 'running' ? 'badge-success' : 'badge-danger']">
                     {{ r.status || '—' }}
@@ -301,6 +531,7 @@
                 </td>
                 <td>{{ r.cpu != null ? (r.cpu * 100).toFixed(1) + '%' : '—' }}</td>
                 <td>{{ r.mem != null ? formatBytes(r.mem) : '—' }}</td>
+                <td>{{ r.uptime != null ? formatUptime(r.uptime) : '—' }}</td>
                 <td>{{ r.node || '—' }}</td>
                 <td>{{ r._hostName || '—' }}</td>
               </tr>
@@ -335,6 +566,16 @@ const topVmsCountdown = ref(30)
 let topVmsInterval = null
 let topVmsTickInterval = null
 
+// Network overview state
+const networkData = ref([])   // [{ hostId, hostName, nodes: [{ node, ifaces, physicalBridges, vlanBridges }] }]
+const networkLoading = ref(false)
+const networkExpanded = ref(false)
+
+// Storage overview state
+const storageData = ref([])   // [{ hostId, hostName, nodes: [{ node, pools }] }]
+const storageLoading = ref(false)
+const storageExpanded = ref(false)
+
 // Filters
 const filterHost = ref('')
 const filterType = ref('')
@@ -346,13 +587,15 @@ const sortKey = ref('name')
 const sortDesc = ref(false)
 
 const columns = [
-  { key: 'name',     label: 'Name' },
-  { key: 'vmid',     label: 'VMID' },
-  { key: 'type',     label: 'Type' },
-  { key: 'status',   label: 'Status' },
-  { key: 'cpu',      label: 'CPU %' },
-  { key: 'mem',      label: 'Memory' },
-  { key: 'node',     label: 'Node' },
+  { key: 'type',      label: 'Type' },
+  { key: 'name',      label: 'Name' },
+  { key: 'tags',      label: 'Tags' },
+  { key: 'vmid',      label: 'VMID' },
+  { key: 'status',    label: 'Status' },
+  { key: 'cpu',       label: 'CPU %' },
+  { key: 'mem',       label: 'Memory' },
+  { key: 'uptime',    label: 'Uptime' },
+  { key: 'node',      label: 'Node' },
   { key: '_hostName', label: 'Host' },
 ]
 
@@ -512,10 +755,68 @@ function setSort(key) {
 function navigateToResource(r) {
   if (!r.vmid || !r.node || !r._hostId) return
   if (r.type === 'lxc') {
-    router.push(`/proxmox/${r._hostId}/nodes/${r.node}/containers/${r.vmid}`)
+    router.push(`/proxmox/${r._hostId}/nodes/${r.node}/lxc/${r.vmid}`)
   } else {
     router.push(`/proxmox/${r._hostId}/nodes/${r.node}/vms/${r.vmid}`)
   }
+}
+
+function parseTags(tagsStr) {
+  if (!tagsStr || !tagsStr.trim()) return []
+  // Proxmox tags are semicolon-separated
+  return tagsStr.split(/[;,]/).map(t => t.trim()).filter(Boolean)
+}
+
+function formatUptime(seconds) {
+  if (!seconds || seconds <= 0) return '—'
+  const d = Math.floor(seconds / 86400)
+  const h = Math.floor((seconds % 86400) / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  if (d > 0) return `${d}d ${h}h ${m}m`
+  if (h > 0) return `${h}h ${m}m`
+  return `${m}m`
+}
+
+// ── Network helpers ────────────────────────────────────────────────────────
+function ifaceAddress(iface) {
+  if (iface.cidr) return iface.cidr
+  if (iface.address && iface.netmask) return `${iface.address}/${iface.netmask}`
+  if (iface.address) return iface.address
+  return '—'
+}
+
+function ifaceSlaves(iface) {
+  // bridge_ports for bridges, slaves for bonds
+  const s = iface.bridge_ports || iface.slaves || iface.ovs_ports || ''
+  return s || '—'
+}
+
+function ifaceUp(iface) {
+  if (iface.active != null) return iface.active === 1 || iface.active === true
+  if (iface.autostart != null) return iface.autostart === 1 || iface.autostart === true
+  return false
+}
+
+function isVlanBridge(iface) {
+  // VLAN-aware bridges or interfaces with a VLAN id or named vlanXXX / vmbrXXX.XXX
+  if (iface.bridge_vlan_aware) return true
+  if (iface.vlan_id != null) return true
+  if (/\.\d+$/.test(iface.iface || '')) return true
+  if (/^vlan\d+$/i.test(iface.iface || '')) return true
+  return false
+}
+
+// ── Storage helpers ────────────────────────────────────────────────────────
+function storageUsagePct(used, total) {
+  if (!total || total === 0) return 0
+  return Math.min(100, Math.round((used / total) * 100))
+}
+
+function storageBarClass(used, total) {
+  const pct = storageUsagePct(used, total)
+  if (pct > 85) return 'fill--danger'
+  if (pct >= 70) return 'fill--warning'
+  return 'fill--ok'
 }
 
 // ── Data loading ───────────────────────────────────────────────────────────
@@ -568,6 +869,113 @@ async function fetchAll() {
 
 async function refresh() {
   await fetchAll()
+  if (networkExpanded.value) await fetchNetworkData()
+  if (storageExpanded.value) await fetchStorageData()
+}
+
+// ── Network data loading ───────────────────────────────────────────────────
+async function fetchNetworkData() {
+  networkLoading.value = true
+  try {
+    const hostList = hosts.value.length > 0 ? hosts.value : (await api.proxmox.listHosts()).data || []
+
+    const hostResults = await Promise.allSettled(
+      hostList.map(async host => {
+        // Collect node names from allResources
+        const nodeNames = [
+          ...new Set(
+            allResources.value
+              .filter(r => r._hostId === host.id && r.type === 'node')
+              .map(r => r.node)
+              .filter(Boolean)
+          )
+        ]
+
+        const nodeGroups = await Promise.allSettled(
+          nodeNames.map(async nodeName => {
+            try {
+              const res = await api.pveNode.listNetwork(host.id, nodeName)
+              const ifaces = (res.data || []).filter(
+                i => i.type === 'bridge' || i.type === 'OVSBridge' || i.type === 'bond' || i.type === 'eth' || i.type === 'vlan'
+              )
+              const physicalBridges = ifaces.filter(i => !isVlanBridge(i))
+              const vlanBridges = ifaces.filter(i => isVlanBridge(i))
+              return { node: nodeName, ifaces, physicalBridges, vlanBridges }
+            } catch {
+              return { node: nodeName, ifaces: [], physicalBridges: [], vlanBridges: [] }
+            }
+          })
+        )
+
+        return {
+          hostId: host.id,
+          hostName: host.name || host.hostname || `Host ${host.id}`,
+          nodes: nodeGroups
+            .filter(r => r.status === 'fulfilled')
+            .map(r => r.value),
+        }
+      })
+    )
+
+    networkData.value = hostResults
+      .filter(r => r.status === 'fulfilled')
+      .map(r => r.value)
+      .filter(h => h.nodes.length > 0)
+  } catch (err) {
+    console.error('Failed to load network data:', err)
+  } finally {
+    networkLoading.value = false
+  }
+}
+
+// ── Storage data loading ───────────────────────────────────────────────────
+async function fetchStorageData() {
+  storageLoading.value = true
+  try {
+    const hostList = hosts.value.length > 0 ? hosts.value : (await api.proxmox.listHosts()).data || []
+
+    const hostResults = await Promise.allSettled(
+      hostList.map(async host => {
+        const nodeNames = [
+          ...new Set(
+            allResources.value
+              .filter(r => r._hostId === host.id && r.type === 'node')
+              .map(r => r.node)
+              .filter(Boolean)
+          )
+        ]
+
+        const nodeGroups = await Promise.allSettled(
+          nodeNames.map(async nodeName => {
+            try {
+              const res = await api.pveNode.listStorage(host.id, nodeName)
+              const pools = res.data || []
+              return { node: nodeName, pools }
+            } catch {
+              return { node: nodeName, pools: [] }
+            }
+          })
+        )
+
+        return {
+          hostId: host.id,
+          hostName: host.name || host.hostname || `Host ${host.id}`,
+          nodes: nodeGroups
+            .filter(r => r.status === 'fulfilled')
+            .map(r => r.value),
+        }
+      })
+    )
+
+    storageData.value = hostResults
+      .filter(r => r.status === 'fulfilled')
+      .map(r => r.value)
+      .filter(h => h.nodes.length > 0)
+  } catch (err) {
+    console.error('Failed to load storage data:', err)
+  } finally {
+    storageLoading.value = false
+  }
 }
 
 // ── Top VMs helpers ─────────────────────────────────────────────────────────
@@ -630,6 +1038,17 @@ async function fetchTopVms() {
     topVmsLoading.value = false
   }
 }
+
+// ── Watchers for lazy-load of collapsible sections ─────────────────────────
+import { watch } from 'vue'
+
+watch(networkExpanded, (val) => {
+  if (val && networkData.value.length === 0) fetchNetworkData()
+})
+
+watch(storageExpanded, (val) => {
+  if (val && storageData.value.length === 0) fetchStorageData()
+})
 
 onMounted(() => {
   fetchAll()
@@ -902,6 +1321,31 @@ onUnmounted(() => {
   background: var(--bg-secondary);
 }
 
+/* ── Type icon ───────────────────────────────────────────────────────────── */
+.type-icon {
+  margin-right: 0.3rem;
+  font-size: 0.9rem;
+}
+
+/* ── Tag pills ───────────────────────────────────────────────────────────── */
+.tags-cell {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem;
+}
+
+.tag-pill {
+  display: inline-block;
+  padding: 0.1rem 0.45rem;
+  font-size: 0.68rem;
+  font-weight: 500;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent, #6366f1) 18%, transparent);
+  color: var(--accent, #6366f1);
+  border: 1px solid color-mix(in srgb, var(--accent, #6366f1) 35%, transparent);
+  white-space: nowrap;
+}
+
 /* ── Top VMs table ───────────────────────────────────────────────────────── */
 .top-vms-refresh-label {
   font-size: 0.75rem;
@@ -939,10 +1383,184 @@ onUnmounted(() => {
   text-align: right;
 }
 
+/* ── Collapsible card header ─────────────────────────────────────────────── */
+.collapsible-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.collapsible-header-right {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.collapse-chevron {
+  font-size: 0.75rem;
+  color: var(--text-muted, #888);
+  transition: transform 0.2s ease;
+  display: inline-block;
+  transform: rotate(-90deg);
+}
+
+.collapse-chevron.chevron-open {
+  transform: rotate(0deg);
+}
+
+/* ── Network overview ────────────────────────────────────────────────────── */
+.network-overview-body {
+  padding: 0.75rem 1.25rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.network-host-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.network-host-title {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  padding-bottom: 0.25rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.network-node-group {
+  padding-left: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.network-node-title {
+  color: var(--text-muted, #888);
+  margin-bottom: 0.25rem;
+}
+
+.network-iface-group {
+  margin-top: 0.25rem;
+}
+
+.network-iface-group-label {
+  margin-bottom: 0.3rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.network-table {
+  font-size: 0.85rem;
+}
+
+.iface-name {
+  font-weight: 600;
+  font-family: monospace;
+  color: var(--text-primary);
+}
+
+.font-mono {
+  font-family: monospace;
+}
+
+/* ── Storage overview ────────────────────────────────────────────────────── */
+.storage-overview-body {
+  padding: 0.75rem 1.25rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.storage-host-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.storage-host-title {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  padding-bottom: 0.25rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.storage-node-group {
+  padding-left: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.storage-node-title {
+  color: var(--text-muted, #888);
+  margin-bottom: 0.25rem;
+}
+
+.storage-table {
+  font-size: 0.85rem;
+}
+
+.storage-name {
+  font-weight: 600;
+  font-family: monospace;
+  color: var(--text-primary);
+}
+
+.storage-bar-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 120px;
+}
+
+.storage-bar {
+  flex: 1;
+  height: 7px;
+  background: var(--border-color);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.storage-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.35s ease;
+}
+
+.storage-bar-label {
+  font-size: 0.72rem;
+  font-family: monospace;
+  color: var(--text-primary);
+  white-space: nowrap;
+  min-width: 2.75rem;
+  text-align: right;
+}
+
+.content-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem;
+}
+
+.content-pill {
+  display: inline-block;
+  padding: 0.1rem 0.4rem;
+  font-size: 0.68rem;
+  border-radius: 4px;
+  background: var(--bg-secondary, #2a2a3e);
+  color: var(--text-muted, #888);
+  white-space: nowrap;
+}
+
 /* ── Utilities ───────────────────────────────────────────────────────────── */
 .mb-1  { margin-bottom: 0.5rem; }
 .mb-2  { margin-bottom: 1rem; }
 .p-3   { padding: 1.5rem; }
+.pl-2  { padding-left: 0.5rem; }
 .text-xs { font-size: 0.75rem; }
 .text-sm { font-size: 0.875rem; }
 .text-muted  { color: var(--text-muted, #888); }

@@ -3,11 +3,13 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, EmailStr
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 import qrcode
 import io
 import base64
+import secrets
+import string
 
 from app.core.database import get_db
 from app.core.security import (
@@ -21,6 +23,7 @@ from app.core.security import (
     verify_totp_code,
 )
 from app.models import User, UserRole
+from app.models.database import ApiKey
 
 router = APIRouter()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/v1/auth/login")
@@ -400,3 +403,115 @@ async def disable_totp(
     db.commit()
 
     return {"message": "2FA disabled successfully"}
+
+
+# ── API Key Management ────────────────────────────────────────────────────────
+
+class ApiKeyResponse(BaseModel):
+    id: int
+    name: str
+    key_prefix: str
+    last_used: Optional[datetime]
+    expires_at: Optional[datetime]
+    created_at: datetime
+    is_active: bool
+
+    class Config:
+        from_attributes = True
+
+
+class ApiKeyListResponse(BaseModel):
+    api_keys: List[ApiKeyResponse]
+
+
+class ApiKeyCreateRequest(BaseModel):
+    name: str
+    expires_at: Optional[datetime] = None
+
+
+class ApiKeyCreateResponse(BaseModel):
+    id: int
+    name: str
+    key_prefix: str
+    key: str  # Full key returned ONCE only
+    created_at: datetime
+    expires_at: Optional[datetime]
+
+
+def _generate_api_key() -> str:
+    """Generate a secure random 32-character API key with prefix dk_."""
+    alphabet = string.ascii_letters + string.digits
+    random_part = ''.join(secrets.choice(alphabet) for _ in range(32))
+    return f"dk_{random_part}"
+
+
+@router.get("/api-keys", response_model=ApiKeyListResponse)
+async def list_api_keys(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """List current user's API keys"""
+    keys = (
+        db.query(ApiKey)
+        .filter(ApiKey.user_id == current_user.id, ApiKey.is_active == True)
+        .order_by(ApiKey.created_at.desc())
+        .all()
+    )
+    return {"api_keys": keys}
+
+
+@router.post("/api-keys", response_model=ApiKeyCreateResponse)
+async def create_api_key(
+    data: ApiKeyCreateRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Create a new API key. The full key is returned only once."""
+    if not data.name or not data.name.strip():
+        raise HTTPException(status_code=400, detail="API key name is required")
+
+    raw_key = _generate_api_key()
+    key_hash = get_password_hash(raw_key)
+    key_prefix = raw_key[:8]
+
+    api_key = ApiKey(
+        user_id=current_user.id,
+        name=data.name.strip(),
+        key_hash=key_hash,
+        key_prefix=key_prefix,
+        expires_at=data.expires_at,
+        is_active=True,
+    )
+    db.add(api_key)
+    db.commit()
+    db.refresh(api_key)
+
+    return {
+        "id": api_key.id,
+        "name": api_key.name,
+        "key_prefix": api_key.key_prefix,
+        "key": raw_key,
+        "created_at": api_key.created_at,
+        "expires_at": api_key.expires_at,
+    }
+
+
+@router.delete("/api-keys/{key_id}")
+async def revoke_api_key(
+    key_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Revoke (deactivate) an API key"""
+    api_key = (
+        db.query(ApiKey)
+        .filter(ApiKey.id == key_id, ApiKey.user_id == current_user.id)
+        .first()
+    )
+    if not api_key:
+        raise HTTPException(status_code=404, detail="API key not found")
+
+    api_key.is_active = False
+    db.commit()
+
+    return {"message": "API key revoked"}

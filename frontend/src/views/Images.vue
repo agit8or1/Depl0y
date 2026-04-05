@@ -1,5 +1,115 @@
 <template>
   <div class="images-page">
+
+    <!-- ===== Quick Download Card ===== -->
+    <div class="card quick-download-card">
+      <div class="card-header">
+        <h3>Quick Download to Proxmox Storage</h3>
+        <span class="text-sm text-muted">Download a cloud image or ISO directly to a Proxmox node without going through this server</span>
+      </div>
+      <div class="quick-download-body">
+        <div class="quick-download-presets">
+          <button @click="openQuickDownload('Ubuntu 24.04 LTS')" class="quick-preset-btn">
+            <span class="preset-icon">🟠</span>
+            <span class="preset-label">Ubuntu 24.04 LTS</span>
+          </button>
+          <button @click="openQuickDownload('Debian 12')" class="quick-preset-btn">
+            <span class="preset-icon">🔴</span>
+            <span class="preset-label">Debian 12</span>
+          </button>
+          <button @click="openQuickDownload('AlmaLinux 9')" class="quick-preset-btn">
+            <span class="preset-icon">🔵</span>
+            <span class="preset-label">AlmaLinux 9</span>
+          </button>
+          <button @click="openQuickDownload('Rocky Linux 9')" class="quick-preset-btn">
+            <span class="preset-icon">🟢</span>
+            <span class="preset-label">Rocky Linux 9</span>
+          </button>
+          <button @click="openQuickDownload('')" class="quick-preset-btn quick-preset-custom">
+            <span class="preset-icon">⬇️</span>
+            <span class="preset-label">Custom URL</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Quick Download Modal -->
+    <div v-if="showQuickDownloadModal" class="modal" @click="showQuickDownloadModal = false">
+      <div class="modal-content" @click.stop>
+        <div class="modal-header">
+          <h3>Quick Download to Proxmox</h3>
+          <button @click="showQuickDownloadModal = false" class="btn-close">×</button>
+        </div>
+        <div class="modal-body">
+          <p class="text-muted text-sm mb-2">Downloads the file directly to a Proxmox node using the Proxmox download-url API. The file never touches this server.</p>
+          <div class="form-group">
+            <label class="form-label">Filename *</label>
+            <input v-model="quickDownloadForm.filename" class="form-control" placeholder="e.g. noble-server-cloudimg-amd64.img" required />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Download URL *</label>
+            <input v-model="quickDownloadForm.url" type="url" class="form-control" placeholder="https://cloud-images.ubuntu.com/..." required />
+            <p class="text-xs text-muted mt-1">Paste the direct download URL for the image or ISO.</p>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Content Type *</label>
+            <select v-model="quickDownloadForm.content" class="form-control">
+              <option value="iso">ISO (iso)</option>
+              <option value="vztmpl">Container Template (vztmpl)</option>
+              <option value="import">Import (import)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Checksum Algorithm</label>
+            <select v-model="quickDownloadForm.checksum_algorithm" class="form-control">
+              <option value="">None</option>
+              <option value="sha256">SHA-256</option>
+              <option value="sha512">SHA-512</option>
+              <option value="md5">MD5</option>
+            </select>
+          </div>
+          <div v-if="quickDownloadForm.checksum_algorithm" class="form-group">
+            <label class="form-label">Checksum Value</label>
+            <input v-model="quickDownloadForm.checksum" class="form-control" placeholder="Optional checksum for verification" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Target Host *</label>
+            <select v-model="quickDownloadForm.hostId" class="form-control" @change="onQuickHostChange">
+              <option value="">Select host...</option>
+              <option v-for="host in pxHosts" :key="host.id" :value="host.id">{{ host.name }}</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Target Node *</label>
+            <select v-model="quickDownloadForm.node" class="form-control" @change="onQuickNodeChange" :disabled="!quickDownloadForm.hostId || quickDownloadNodesLoading">
+              <option value="">{{ quickDownloadNodesLoading ? 'Loading...' : 'Select node...' }}</option>
+              <option v-for="n in quickDownloadNodes" :key="n.node" :value="n.node">{{ n.node }}</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Target Storage *</label>
+            <select v-model="quickDownloadForm.storage" class="form-control" :disabled="!quickDownloadForm.node || quickDownloadStoragesLoading">
+              <option value="">{{ quickDownloadStoragesLoading ? 'Loading...' : 'Select storage...' }}</option>
+              <option v-for="s in quickDownloadStorages" :key="s.storage" :value="s.storage">{{ s.storage }} ({{ s.type }})</option>
+            </select>
+          </div>
+          <div v-if="quickDownloadRunning" class="alert alert-info mt-2">
+            <p>Download task submitted to Proxmox. Monitor progress in the Proxmox task log.</p>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button @click="showQuickDownloadModal = false" class="btn btn-outline">Cancel</button>
+          <button
+            @click="submitQuickDownload"
+            class="btn btn-primary"
+            :disabled="!quickDownloadForm.url || !quickDownloadForm.filename || !quickDownloadForm.hostId || !quickDownloadForm.node || !quickDownloadForm.storage || quickDownloadRunning"
+          >
+            {{ quickDownloadRunning ? 'Submitting...' : 'Download to Node' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- Tab Navigation -->
     <div class="images-tab-nav">
       <button
@@ -420,6 +530,7 @@
                 <th>Architecture</th>
                 <th>Size</th>
                 <th>Download Status</th>
+                <th>Template Status</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -437,11 +548,19 @@
                     <div class="progress-bar-container">
                       <div class="progress-bar-fill" :style="{ width: image.download_progress + '%' }"></div>
                     </div>
-                    <span class="text-xs text-muted">{{ image.download_progress }}%</span>
+                    <div class="download-progress-row">
+                      <span class="text-xs text-muted">{{ image.download_progress }}%</span>
+                      <button @click="cancelDownload(image.id)" class="btn btn-danger btn-xs ml-1">Cancel</button>
+                    </div>
                   </div>
                   <span v-else-if="image.is_downloaded" class="badge badge-success">Downloaded</span>
                   <span v-else-if="image.download_status === 'error'" class="badge badge-danger">Error</span>
                   <span v-else class="badge badge-secondary">Not Downloaded</span>
+                </td>
+                <td>
+                  <span v-if="image.template_vmid" class="badge badge-success">Template {{ image.template_vmid }}</span>
+                  <span v-else-if="image.is_downloaded" class="badge badge-warning">Not templated</span>
+                  <span v-else class="badge badge-secondary">—</span>
                 </td>
                 <td>
                   <div class="flex gap-1">
@@ -453,11 +572,12 @@
                       Download
                     </button>
                     <button
-                      v-if="image.download_status === 'downloading'"
-                      class="btn btn-secondary btn-sm"
-                      disabled
+                      v-if="image.is_downloaded && !image.template_vmid"
+                      @click="deleteLocalCopy(image.id)"
+                      class="btn btn-outline btn-sm"
+                      title="Delete local copy to free disk space"
                     >
-                      Downloading...
+                      Del Local
                     </button>
                     <button @click="editImage(image)" class="btn btn-outline btn-sm">Edit</button>
                     <button @click="deleteImage(image.id)" class="btn btn-danger btn-sm">Delete</button>
@@ -784,7 +904,9 @@
                 <th>Filename</th>
                 <th>Type</th>
                 <th>Size</th>
+                <th>Checksum</th>
                 <th>Full Path (volid)</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -796,10 +918,124 @@
                   </span>
                 </td>
                 <td>{{ item.size ? formatBytes(item.size) : '—' }}</td>
+                <td class="text-xs text-muted px-checksum">
+                  <span v-if="item.csum" :title="item.csum">{{ item.csum.substring(0, 12) }}...</span>
+                  <span v-else class="text-muted">—</span>
+                </td>
                 <td class="text-xs text-muted px-volid">{{ item.volid }}</td>
+                <td>
+                  <div class="flex gap-1">
+                    <button @click="openCopyToNode(item)" class="btn btn-outline btn-sm">Copy to Node</button>
+                  </div>
+                </td>
               </tr>
             </tbody>
           </table>
+        </div>
+
+        <!-- Download URL section (below the upload section) -->
+        <div v-if="pxSelectedStorage" class="px-upload-section">
+          <div class="px-upload-header" @click="pxShowDownloadUrl = !pxShowDownloadUrl">
+            <span class="px-upload-title">Download URL to Storage</span>
+            <span class="px-upload-toggle">{{ pxShowDownloadUrl ? '▲' : '▼' }}</span>
+          </div>
+          <div v-if="pxShowDownloadUrl" class="px-upload-body">
+            <div class="form-group">
+              <label class="form-label">Filename *</label>
+              <input v-model="pxDownloadUrlForm.filename" class="form-control" placeholder="e.g. noble-server-cloudimg-amd64.img" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">URL *</label>
+              <input v-model="pxDownloadUrlForm.url" type="url" class="form-control" placeholder="https://..." />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Content Type</label>
+              <select v-model="pxDownloadUrlForm.content" class="form-control">
+                <option value="iso">ISO (iso)</option>
+                <option value="vztmpl">Container Template (vztmpl)</option>
+                <option value="import">Import (import)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Checksum Algorithm</label>
+              <select v-model="pxDownloadUrlForm.checksum_algorithm" class="form-control">
+                <option value="">None</option>
+                <option value="sha256">SHA-256</option>
+                <option value="sha512">SHA-512</option>
+                <option value="md5">MD5</option>
+              </select>
+            </div>
+            <div v-if="pxDownloadUrlForm.checksum_algorithm" class="form-group">
+              <label class="form-label">Checksum Value</label>
+              <input v-model="pxDownloadUrlForm.checksum" class="form-control" placeholder="Optional" />
+            </div>
+            <div class="px-upload-row" style="justify-content: flex-end">
+              <button
+                class="btn btn-primary"
+                :disabled="!pxDownloadUrlForm.url || !pxDownloadUrlForm.filename || pxDownloadingUrl"
+                @click="submitDownloadUrlToStorage"
+              >
+                {{ pxDownloadingUrl ? 'Submitting...' : 'Download to Storage' }}
+              </button>
+            </div>
+            <div v-if="pxDownloadUrlTaskId" class="alert alert-info mt-1">
+              <p>Task submitted to Proxmox (UPID: {{ pxDownloadUrlTaskId }}). Monitor in the Proxmox task log.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Copy to Node Modal -->
+      <div v-if="showCopyToNodeModal" class="modal" @click="showCopyToNodeModal = false">
+        <div class="modal-content" @click.stop>
+          <div class="modal-header">
+            <h3>Copy to Another Node</h3>
+            <button @click="showCopyToNodeModal = false" class="btn-close">×</button>
+          </div>
+          <div class="modal-body">
+            <p class="text-muted text-sm mb-2">
+              Copy <strong class="text-white">{{ copyToNodeItem ? pxBasename(copyToNodeItem.volid) : '' }}</strong> to another node's storage using Proxmox download-url.
+            </p>
+            <div class="form-group">
+              <label class="form-label">Target Host *</label>
+              <select v-model="copyToNodeForm.hostId" class="form-control" @change="onCopyHostChange">
+                <option value="">Select host...</option>
+                <option v-for="host in pxHosts" :key="host.id" :value="host.id">{{ host.name }}</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Target Node *</label>
+              <select v-model="copyToNodeForm.node" class="form-control" @change="onCopyNodeChange" :disabled="!copyToNodeForm.hostId || copyToNodeNodesLoading">
+                <option value="">{{ copyToNodeNodesLoading ? 'Loading...' : 'Select node...' }}</option>
+                <option v-for="n in copyToNodeNodes" :key="n.node" :value="n.node">{{ n.node }}</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Target Storage *</label>
+              <select v-model="copyToNodeForm.storage" class="form-control" :disabled="!copyToNodeForm.node || copyToNodeStoragesLoading">
+                <option value="">{{ copyToNodeStoragesLoading ? 'Loading...' : 'Select storage...' }}</option>
+                <option v-for="s in copyToNodeStorages" :key="s.storage" :value="s.storage">{{ s.storage }} ({{ s.type }})</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Download URL *</label>
+              <input v-model="copyToNodeForm.url" type="url" class="form-control" placeholder="https://... (source URL for the file)" />
+              <p class="text-xs text-muted mt-1">Proxmox will download from this URL directly. Provide the original source URL for the file.</p>
+            </div>
+            <div v-if="copyToNodeRunning" class="alert alert-info mt-1">
+              <p>Task submitted to Proxmox. Monitor progress in the Proxmox task log.</p>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button @click="showCopyToNodeModal = false" class="btn btn-outline">Cancel</button>
+            <button
+              @click="submitCopyToNode"
+              class="btn btn-primary"
+              :disabled="!copyToNodeForm.hostId || !copyToNodeForm.node || !copyToNodeForm.storage || !copyToNodeForm.url || copyToNodeRunning"
+            >
+              {{ copyToNodeRunning ? 'Submitting...' : 'Copy to Node' }}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -1335,6 +1571,31 @@ export default {
     const pxUploading = ref(false)
     const pxUploadProgress = ref(0)
 
+    // Download URL to storage state
+    const pxShowDownloadUrl = ref(false)
+    const pxDownloadingUrl = ref(false)
+    const pxDownloadUrlTaskId = ref(null)
+    const pxDownloadUrlForm = ref({ url: '', filename: '', content: 'iso', checksum_algorithm: '', checksum: '' })
+
+    // Copy to Node state
+    const showCopyToNodeModal = ref(false)
+    const copyToNodeItem = ref(null)
+    const copyToNodeNodesLoading = ref(false)
+    const copyToNodeStoragesLoading = ref(false)
+    const copyToNodeNodes = ref([])
+    const copyToNodeStorages = ref([])
+    const copyToNodeRunning = ref(false)
+    const copyToNodeForm = ref({ hostId: '', node: '', storage: '', url: '' })
+
+    // Quick Download state
+    const showQuickDownloadModal = ref(false)
+    const quickDownloadNodesLoading = ref(false)
+    const quickDownloadStoragesLoading = ref(false)
+    const quickDownloadNodes = ref([])
+    const quickDownloadStorages = ref([])
+    const quickDownloadRunning = ref(false)
+    const quickDownloadForm = ref({ hostId: '', node: '', storage: '', url: '', filename: '', content: 'iso', checksum_algorithm: '', checksum: '' })
+
     const pxStorageSupportsIso = computed(() => {
       if (!pxSelectedStorage.value) return false
       const stor = pxStorages.value.find(s => s.storage === pxSelectedStorage.value)
@@ -1490,6 +1751,175 @@ export default {
       }
     }
 
+    const submitDownloadUrlToStorage = async () => {
+      if (!pxDownloadUrlForm.value.url || !pxDownloadUrlForm.value.filename) return
+      pxDownloadingUrl.value = true
+      pxDownloadUrlTaskId.value = null
+      try {
+        const payload = { url: pxDownloadUrlForm.value.url, filename: pxDownloadUrlForm.value.filename, content: pxDownloadUrlForm.value.content }
+        if (pxDownloadUrlForm.value.checksum_algorithm) {
+          payload['checksum-algorithm'] = pxDownloadUrlForm.value.checksum_algorithm
+          if (pxDownloadUrlForm.value.checksum) payload.checksum = pxDownloadUrlForm.value.checksum
+        }
+        const res = await api.pveNode.downloadUrlToStorage(pxSelectedHostId.value, pxSelectedNode.value, pxSelectedStorage.value, payload)
+        pxDownloadUrlTaskId.value = res.data?.upid || 'submitted'
+        toast.success('Download task submitted to Proxmox')
+        pxDownloadUrlForm.value = { url: '', filename: '', content: 'iso', checksum_algorithm: '', checksum: '' }
+      } catch (e) {
+        console.error('Failed to submit download-url task:', e)
+        toast.error('Failed to submit download: ' + (e?.response?.data?.detail || e.message || 'Unknown error'))
+      } finally {
+        pxDownloadingUrl.value = false
+      }
+    }
+
+    const openCopyToNode = async (item) => {
+      copyToNodeItem.value = item
+      copyToNodeForm.value = { hostId: '', node: '', storage: '', url: '' }
+      copyToNodeNodes.value = []
+      copyToNodeStorages.value = []
+      showCopyToNodeModal.value = true
+      // Pre-populate hosts if not yet loaded
+      if (pxHosts.value.length === 0) await initProxmoxStorage()
+    }
+
+    const onCopyHostChange = async () => {
+      copyToNodeForm.value.node = ''
+      copyToNodeForm.value.storage = ''
+      copyToNodeNodes.value = []
+      copyToNodeStorages.value = []
+      if (!copyToNodeForm.value.hostId) return
+      copyToNodeNodesLoading.value = true
+      try {
+        const res = await api.proxmox.listNodes(copyToNodeForm.value.hostId)
+        copyToNodeNodes.value = res.data
+      } catch (e) {
+        toast.error('Failed to load nodes')
+      } finally {
+        copyToNodeNodesLoading.value = false
+      }
+    }
+
+    const onCopyNodeChange = async () => {
+      copyToNodeForm.value.storage = ''
+      copyToNodeStorages.value = []
+      if (!copyToNodeForm.value.node) return
+      copyToNodeStoragesLoading.value = true
+      try {
+        const res = await api.pveNode.listStorage(copyToNodeForm.value.hostId, copyToNodeForm.value.node)
+        copyToNodeStorages.value = (res.data || []).filter(s => (s.content || '').includes('iso') || (s.content || '').includes('images'))
+      } catch (e) {
+        toast.error('Failed to load storages')
+      } finally {
+        copyToNodeStoragesLoading.value = false
+      }
+    }
+
+    const submitCopyToNode = async () => {
+      if (!copyToNodeForm.value.url || !copyToNodeItem.value) return
+      copyToNodeRunning.value = true
+      try {
+        const filename = pxBasename(copyToNodeItem.value.volid)
+        const payload = { url: copyToNodeForm.value.url, filename, content: copyToNodeItem.value.content || 'iso' }
+        await api.pveNode.downloadUrlToStorage(copyToNodeForm.value.hostId, copyToNodeForm.value.node, copyToNodeForm.value.storage, payload)
+        toast.success('Copy task submitted to Proxmox successfully')
+        showCopyToNodeModal.value = false
+      } catch (e) {
+        console.error('Failed to copy to node:', e)
+        toast.error('Failed to submit copy: ' + (e?.response?.data?.detail || e.message || 'Unknown error'))
+      } finally {
+        copyToNodeRunning.value = false
+      }
+    }
+
+    // Quick Download functions
+    const openQuickDownload = async (presetName) => {
+      quickDownloadForm.value = { hostId: '', node: '', storage: '', url: '', filename: '', content: 'iso', checksum_algorithm: '', checksum: '' }
+      if (presetName) quickDownloadForm.value._label = presetName
+      quickDownloadNodes.value = []
+      quickDownloadStorages.value = []
+      showQuickDownloadModal.value = true
+      if (pxHosts.value.length === 0) await initProxmoxStorage()
+    }
+
+    const onQuickHostChange = async () => {
+      quickDownloadForm.value.node = ''
+      quickDownloadForm.value.storage = ''
+      quickDownloadNodes.value = []
+      quickDownloadStorages.value = []
+      if (!quickDownloadForm.value.hostId) return
+      quickDownloadNodesLoading.value = true
+      try {
+        const res = await api.proxmox.listNodes(quickDownloadForm.value.hostId)
+        quickDownloadNodes.value = res.data
+      } catch (e) {
+        toast.error('Failed to load nodes')
+      } finally {
+        quickDownloadNodesLoading.value = false
+      }
+    }
+
+    const onQuickNodeChange = async () => {
+      quickDownloadForm.value.storage = ''
+      quickDownloadStorages.value = []
+      if (!quickDownloadForm.value.node) return
+      quickDownloadStoragesLoading.value = true
+      try {
+        const res = await api.pveNode.listStorage(quickDownloadForm.value.hostId, quickDownloadForm.value.node)
+        quickDownloadStorages.value = (res.data || []).filter(s => (s.content || '').includes('iso') || (s.content || '').includes('images'))
+      } catch (e) {
+        toast.error('Failed to load storages')
+      } finally {
+        quickDownloadStoragesLoading.value = false
+      }
+    }
+
+    const submitQuickDownload = async () => {
+      if (!quickDownloadForm.value.url || !quickDownloadForm.value.filename) return
+      quickDownloadRunning.value = true
+      try {
+        const payload = { url: quickDownloadForm.value.url, filename: quickDownloadForm.value.filename, content: quickDownloadForm.value.content }
+        if (quickDownloadForm.value.checksum_algorithm) {
+          payload['checksum-algorithm'] = quickDownloadForm.value.checksum_algorithm
+          if (quickDownloadForm.value.checksum) payload.checksum = quickDownloadForm.value.checksum
+        }
+        await api.pveNode.downloadUrlToStorage(quickDownloadForm.value.hostId, quickDownloadForm.value.node, quickDownloadForm.value.storage, payload)
+        toast.success('Download task submitted to Proxmox node')
+        showQuickDownloadModal.value = false
+      } catch (e) {
+        console.error('Failed to submit quick download:', e)
+        toast.error('Failed to submit: ' + (e?.response?.data?.detail || e.message || 'Unknown error'))
+      } finally {
+        quickDownloadRunning.value = false
+      }
+    }
+
+    // Cloud image: cancel download
+    const cancelDownload = async (imageId) => {
+      if (!confirm('Cancel this download?')) return
+      try {
+        await api.cloudImages.delete(imageId)
+        toast.info('Download cancelled')
+        await fetchImages()
+      } catch (e) {
+        console.error('Failed to cancel download:', e)
+        toast.error('Failed to cancel download')
+      }
+    }
+
+    // Cloud image: delete local copy after templating to free disk
+    const deleteLocalCopy = async (imageId) => {
+      if (!confirm('Delete the local copy of this image? The VM template on Proxmox will not be affected.')) return
+      try {
+        await api.cloudImages.delete(imageId)
+        toast.success('Local copy deleted')
+        await fetchImages()
+      } catch (e) {
+        console.error('Failed to delete local copy:', e)
+        toast.error('Failed to delete local copy')
+      }
+    }
+
     // ===== Shared Helpers =====
     const formatBytes = (bytes) => {
       if (!bytes) return '0 B'
@@ -1538,6 +1968,7 @@ export default {
       editImage, deleteImage, closeCloudModal, setupTemplates, openSetupModal,
       checkAllTemplates, getTemplateCount, fetchLatestImages,
       toggleImageSelection, isImageSelected,
+      cancelDownload, deleteLocalCopy,
       // Proxmox Storage
       pxHosts, pxNodes, pxStorages, pxContent, pxFilteredContent,
       pxSelectedHostId, pxSelectedNode, pxSelectedStorage,
@@ -1546,6 +1977,14 @@ export default {
       initProxmoxStorage, onPxHostChange, onPxNodeChange, onPxStorageChange, refreshProxmoxStorage,
       pxShowUpload, pxUploadFile, pxUploading, pxUploadProgress, pxStorageSupportsIso,
       onPxFileSelected, uploadToProxmoxStorage,
+      pxShowDownloadUrl, pxDownloadingUrl, pxDownloadUrlTaskId, pxDownloadUrlForm, submitDownloadUrlToStorage,
+      showCopyToNodeModal, copyToNodeItem, copyToNodeNodesLoading, copyToNodeStoragesLoading,
+      copyToNodeNodes, copyToNodeStorages, copyToNodeRunning, copyToNodeForm,
+      openCopyToNode, onCopyHostChange, onCopyNodeChange, submitCopyToNode,
+      // Quick Download
+      showQuickDownloadModal, quickDownloadNodesLoading, quickDownloadStoragesLoading,
+      quickDownloadNodes, quickDownloadStorages, quickDownloadRunning, quickDownloadForm,
+      openQuickDownload, onQuickHostChange, onQuickNodeChange, submitQuickDownload,
       // Shared
       formatBytes, formatOSType
     }
@@ -2288,4 +2727,83 @@ export default {
   text-align: right;
   font-family: monospace;
 }
+
+.px-checksum {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: monospace;
+}
+
+/* Quick Download card */
+.quick-download-card {
+  margin-bottom: 1.5rem;
+}
+
+.quick-download-body {
+  padding: 1.25rem 1.5rem;
+}
+
+.quick-download-presets {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.quick-preset-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.75rem 1.25rem;
+  background: var(--background);
+  border: 2px solid var(--border-color);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  min-width: 110px;
+  color: var(--text-primary);
+  font-family: inherit;
+}
+
+.quick-preset-btn:hover {
+  border-color: var(--primary);
+  background: rgba(59, 130, 246, 0.07);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
+}
+
+.quick-preset-custom {
+  border-style: dashed;
+}
+
+.preset-icon {
+  font-size: 1.75rem;
+  line-height: 1;
+}
+
+.preset-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  text-align: center;
+}
+
+/* Download progress row (for cancel button) */
+.download-progress-row {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-top: 0.2rem;
+}
+
+.btn-xs {
+  padding: 0.15rem 0.4rem;
+  font-size: 0.75rem;
+}
+
+.ml-1 { margin-left: 0.25rem; }
+.mt-1 { margin-top: 0.25rem; }
+.mt-2 { margin-top: 0.5rem; }
 </style>

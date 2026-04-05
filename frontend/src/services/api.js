@@ -106,7 +106,10 @@ export default {
     verifyTOTP: (code) => api.post('/auth/totp/verify', { code }),
     disableTOTP: (code) => api.post('/auth/totp/disable', { code }),
     changePassword: (data) => api.patch('/auth/me/password', data),
-    updateMe: (data) => api.patch('/auth/me', data)
+    updateMe: (data) => api.patch('/auth/me', data),
+    listApiKeys: () => api.get('/auth/api-keys'),
+    createApiKey: (data) => api.post('/auth/api-keys', data),
+    deleteApiKey: (id) => api.delete('/auth/api-keys/' + id),
   },
 
   // Users
@@ -256,7 +259,8 @@ export default {
 
   // System
   system: {
-    getInfo: () => api.get('/system/info')
+    getInfo: () => api.get('/system/info'),
+    testEmail: () => api.post('/system/test-email'),
   },
 
   // LLM Deployment
@@ -435,6 +439,7 @@ export default {
     createSnapshot: (h, node, vmid, data) => api.post(`/pve-vm/${h}/${node}/${vmid}/snapshots`, data),
     deleteSnapshot: (h, node, vmid, snap) => api.delete(`/pve-vm/${h}/${node}/${vmid}/snapshots/${snap}`),
     rollbackSnapshot: (h, node, vmid, snap) => api.post(`/pve-vm/${h}/${node}/${vmid}/snapshots/${snap}/rollback`),
+    getSnapshotConfig: (h, node, vmid, snapname) => api.get(`/pve-vm/${h}/${node}/${vmid}/config`, { params: { snapname } }),
     clone: (h, node, vmid, data) => api.post(`/pve-vm/${h}/${node}/${vmid}/clone`, data),
     migrate: (h, node, vmid, data) => api.post(`/pve-vm/${h}/${node}/${vmid}/migrate`, data),
     convertToTemplate: (h, node, vmid) => api.post(`/pve-vm/${h}/${node}/${vmid}/template`),
@@ -574,6 +579,8 @@ export default {
       timeout: 0,
       onUploadProgress: onProgress,
     }),
+    // Download URL directly to Proxmox storage (Proxmox download-url API)
+    downloadUrlToStorage: (h, node, storage, data) => api.post(`/pve-node/${h}/nodes/${node}/storage/${storage}/download-url`, data),
     // Disk Health / SMART
     listDisks: (h, node) => api.get(`/pve-node/${h}/nodes/${node}/disks/list`),
     getSmartData: (h, node, disk) => api.get(`/pve-node/${h}/nodes/${node}/disks/${encodeURIComponent(disk)}/smart`),

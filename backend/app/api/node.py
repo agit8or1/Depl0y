@@ -1,5 +1,5 @@
 """Node-level Proxmox management: status, RRD charts, tasks, storage content, network"""
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Body
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional, List, Any, Dict
@@ -992,6 +992,22 @@ async def upload_to_storage(host_id: int, node: str, storage: str,
             filename=file.filename,
             file=(file.filename, content, file.content_type or "application/octet-stream"),
         )
+        return {"upid": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Storage download-url ──────────────────────────────────────────────────────
+
+@router.post("/{host_id}/nodes/{node}/storage/{storage}/download-url")
+def download_url_to_storage(host_id: int, node: str, storage: str,
+                             data: dict = Body(default={}),
+                             db: Session = Depends(get_db),
+                             current_user=Depends(require_operator)):
+    """Instruct Proxmox to download a URL directly to node storage."""
+    host = _get_host(host_id, db)
+    try:
+        result = _pve(host).nodes(node).storage(storage)("download-url").post(**data)
         return {"upid": result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

@@ -56,3 +56,22 @@ def init_db():
                 conn.commit()
             except Exception:
                 pass  # Column already exists
+
+        # Create api_keys table if it doesn't exist yet (for older deployments)
+        try:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS api_keys (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL REFERENCES users(id),
+                    name VARCHAR(100) NOT NULL,
+                    key_hash VARCHAR(255) NOT NULL UNIQUE,
+                    key_prefix VARCHAR(8) NOT NULL,
+                    last_used DATETIME,
+                    expires_at DATETIME,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    is_active BOOLEAN NOT NULL DEFAULT 1
+                )
+            """))
+            conn.commit()
+        except Exception:
+            pass

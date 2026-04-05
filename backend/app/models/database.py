@@ -438,6 +438,22 @@ class PBSServer(Base):
     idrac_use_ssh = Column(Boolean, default=False, nullable=True)
 
 
+class ApiKey(Base):
+    """API keys for programmatic access"""
+    __tablename__ = "api_keys"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    name = Column(String(100), nullable=False)
+    key_hash = Column(String(255), nullable=False, unique=True)  # bcrypt hash of the key
+    key_prefix = Column(String(8), nullable=False)  # first 8 chars for display
+    last_used = Column(DateTime, nullable=True)
+    expires_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+    user = relationship("User", backref="api_keys")
+
+
 class LLMDeployment(Base):
     """LLM deployment record - tracks VMs deployed as LLM inference servers"""
     __tablename__ = "llm_deployments"

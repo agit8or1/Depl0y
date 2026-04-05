@@ -38,6 +38,7 @@
           <button @click="openMigrateModal" class="btn btn-outline btn-sm">Migrate</button>
           <button @click="doConvertToTemplate" class="btn btn-outline btn-sm" :disabled="actioning">To Template</button>
           <button @click="showDeleteConfirm = true" class="btn btn-danger btn-sm" :disabled="actioning">Delete</button>
+          <button @click="openQuickSnapshotModal" class="btn btn-outline btn-sm" :disabled="actioning" title="Quick Snapshot">📸</button>
         </div>
       </div>
 
@@ -539,45 +540,64 @@
         <div class="card">
           <div class="card-header">
             <h3>Snapshots</h3>
-            <button @click="showSnapshotModal = true" class="btn btn-primary btn-sm">+ Create Snapshot</button>
+            <div class="flex gap-1">
+              <button v-if="selectedSnaps.size === 2" @click="openCompareModal" class="btn btn-outline btn-sm">Compare Selected</button>
+              <button @click="showSnapshotModal = true" class="btn btn-primary btn-sm">+ Create Snapshot</button>
+            </div>
           </div>
           <div v-if="loadingSnapshots" class="loading-spinner"></div>
           <div v-else class="table-container">
             <table class="table">
               <thead>
                 <tr>
+                  <th style="width:2rem"></th>
                   <th>Name</th>
                   <th>Description</th>
                   <th>Date</th>
-                  <th>Parent</th>
                   <th>VM State</th>
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                <tr v-if="snapshots.length === 0">
+                <tr v-if="snapshotTree.length === 0">
                   <td colspan="6" class="text-muted text-center">No snapshots</td>
                 </tr>
-                <tr v-for="snap in snapshots" :key="snap.name">
-                  <td>
-                    <span v-if="snap._depth" class="text-muted">{{ '  └ '.repeat(snap._depth) }}</span>
-                    <strong>{{ snap.name }}</strong>
-                  </td>
-                  <td class="text-sm text-muted">{{ snap.description || '—' }}</td>
-                  <td class="text-sm">{{ snap.snaptime ? new Date(snap.snaptime * 1000).toLocaleString() : '—' }}</td>
-                  <td class="text-sm">{{ snap.parent || '—' }}</td>
-                  <td>
-                    <span v-if="snap.vmstate" class="badge badge-info">Saved</span>
-                    <span v-else class="text-muted text-sm">—</span>
-                  </td>
-                  <td>
-                    <div v-if="snap.name !== 'current'" class="flex gap-1">
-                      <button @click="rollbackSnapshot(snap.name)" class="btn btn-outline btn-sm" :disabled="actioning">Rollback</button>
-                      <button @click="deleteSnapshot(snap.name)" class="btn btn-danger btn-sm" :disabled="actioning">Delete</button>
-                    </div>
-                    <span v-else class="text-muted text-sm">current</span>
-                  </td>
-                </tr>
+                <template v-for="snap in snapshotTree" :key="snap.name">
+                  <tr :class="snap.name === 'current' ? 'snap-current-row' : ''">
+                    <td>
+                      <input v-if="snap.name !== 'current'" type="checkbox"
+                        :checked="selectedSnaps.has(snap.name)"
+                        @change="toggleSnapSelect(snap.name)"
+                        :disabled="selectedSnaps.size >= 2 && !selectedSnaps.has(snap.name)" />
+                    </td>
+                    <td>
+                      <span class="snap-tree-indent" :style="{ paddingLeft: snap._depth * 1.2 + 'rem' }">
+                        <span v-if="snap._depth > 0" class="snap-tree-line">{{ snap._isLast ? '└ ' : '├ ' }}</span>
+                      </span>
+                      <span v-if="snap.name === 'current'" class="badge badge-success" style="font-size:0.7rem;">You are here</span>
+                      <strong v-else>{{ snap.name }}</strong>
+                      <span v-if="snap.vmstate" class="ml-1" title="RAM state saved">💾</span>
+                    </td>
+                    <td class="text-sm text-muted">{{ snap.description || '—' }}</td>
+                    <td class="text-sm">{{ snap.snaptime ? new Date(snap.snaptime * 1000).toLocaleString() : '—' }}</td>
+                    <td>
+                      <span v-if="snap.vmstate" class="badge badge-info">Saved</span>
+                      <span v-else class="text-muted text-sm">—</span>
+                    </td>
+                    <td>
+                      <div v-if="snap.name !== 'current'" class="flex gap-1">
+                        <button v-if="snap._hasChildren"
+                          @click="toggleSnapCollapse(snap.name)"
+                          class="btn btn-outline btn-xs"
+                          :title="collapsedSnaps.has(snap.name) ? 'Expand children' : 'Collapse children'">
+                          {{ collapsedSnaps.has(snap.name) ? '▶' : '▼' }}
+                        </button>
+                        <button @click="rollbackSnapshot(snap.name)" class="btn btn-outline btn-sm" :disabled="actioning">Rollback</button>
+                        <button @click="deleteSnapshot(snap.name)" class="btn btn-danger btn-sm" :disabled="actioning">Delete</button>
+                      </div>
+                    </td>
+                  </tr>
+                </template>
               </tbody>
             </table>
           </div>
@@ -1003,6 +1023,94 @@
       </div>
     </div>
 
+    <!-- Quick Snapshot Modal -->
+    <div v-if="showQuickSnapshotModal" class="modal" @click.self="showQuickSnapshotModal = false">
+      <div class="modal-content modal-sm" @click.stop>
+        <div class="modal-header">
+          <h3>Quick Snapshot</h3>
+          <button @click="showQuickSnapshotModal = false" class="btn-close">×</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label">Snapshot Name <span class="text-danger">*</span></label>
+            <input v-model="quickSnapForm.snapname" class="form-control" placeholder="snap-YYYYMMDD-HHmm" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Description</label>
+            <input v-model="quickSnapForm.description" class="form-control" placeholder="Optional description" />
+          </div>
+          <div class="flex gap-1 mt-2">
+            <button @click="doQuickSnapshot" class="btn btn-primary"
+              :disabled="actioning || !quickSnapForm.snapname">
+              {{ actioning ? 'Creating...' : 'Create Snapshot' }}
+            </button>
+            <button @click="showQuickSnapshotModal = false" class="btn btn-outline">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Snapshot Compare Modal -->
+    <div v-if="showCompareModal" class="modal" @click.self="showCompareModal = false">
+      <div class="modal-content modal-lg" @click.stop>
+        <div class="modal-header">
+          <h3>Compare Snapshots</h3>
+          <button @click="showCompareModal = false" class="btn-close">×</button>
+        </div>
+        <div class="modal-body">
+          <div v-if="loadingCompare" class="loading-spinner"></div>
+          <div v-else>
+            <div class="compare-grid">
+              <div class="compare-col">
+                <h4 class="compare-col-title">{{ compareSnaps[0] }}</h4>
+                <div class="compare-body">
+                  <div v-for="(val, key) in compareLeft" :key="key"
+                    :class="['compare-row', compareRowClass(key, 'left')]">
+                    <span class="compare-key">{{ key }}</span>
+                    <span class="compare-val">{{ val }}</span>
+                  </div>
+                  <div v-for="key in compareOnlyRight" :key="'missing-' + key"
+                    class="compare-row compare-row--missing">
+                    <span class="compare-key">{{ key }}</span>
+                    <span class="compare-val text-muted">— (not present)</span>
+                  </div>
+                </div>
+              </div>
+              <div class="compare-col">
+                <h4 class="compare-col-title">{{ compareSnaps[1] }}</h4>
+                <div class="compare-body">
+                  <div v-for="(val, key) in compareRight" :key="key"
+                    :class="['compare-row', compareRowClass(key, 'right')]">
+                    <span class="compare-key">{{ key }}</span>
+                    <span class="compare-val">{{ val }}</span>
+                  </div>
+                  <div v-for="key in compareOnlyLeft" :key="'missing-' + key"
+                    class="compare-row compare-row--missing">
+                    <span class="compare-key">{{ key }}</span>
+                    <span class="compare-val text-muted">— (not present)</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div v-if="compareIdentical" class="text-center text-muted mt-2">
+              Configurations are identical.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Quick Snapshot Task Progress -->
+    <TaskProgressModal
+      :visible="showQuickSnapProgress"
+      :upid="quickSnapUpid"
+      :host-id="hostId"
+      :node="node"
+      @close="showQuickSnapProgress = false; loadSnapshots()"
+      @success="onQuickSnapSuccess"
+      @error="onQuickSnapError"
+    />
+
     <!-- Create Snapshot Modal -->
     <div v-if="showSnapshotModal" class="modal" @click.self="showSnapshotModal = false">
       <div class="modal-content modal-sm" @click.stop>
@@ -1159,6 +1267,8 @@ const activeTab = ref('overview')
 // Tab data
 const snapshots = ref([])
 const loadingSnapshots = ref(false)
+const selectedSnaps = ref(new Set())
+const collapsedSnaps = ref(new Set())
 const firewallRules = ref([])
 const firewallOptions = ref(null)
 const loadingFirewall = ref(false)
@@ -1181,6 +1291,9 @@ const showAddDiskModal = ref(false)
 const showResizeModal = ref(false)
 const showAddNicModal = ref(false)
 const showSnapshotModal = ref(false)
+const showQuickSnapshotModal = ref(false)
+const showCompareModal = ref(false)
+const showQuickSnapProgress = ref(false)
 const showFirewallModal = ref(false)
 const showEditNicModal = ref(false)
 
@@ -1301,6 +1414,12 @@ const migrateUpid = ref('')
 const addDiskForm = ref({ storage: '', size: 32, bus: 'scsi', format: 'qcow2' })
 const addNicForm = ref({ bridge: 'vmbr0', model: 'virtio', tag: null })
 const snapshotForm = ref({ snapname: '', description: '', vmstate: false })
+const quickSnapForm = ref({ snapname: '', description: '' })
+const quickSnapUpid = ref('')
+const compareSnaps = ref([])
+const compareLeft = ref({})
+const compareRight = ref({})
+const loadingCompare = ref(false)
 const firewallForm = ref({ type: 'in', action: 'ACCEPT', proto: '', source: '', dest: '', dport: '', comment: '', enable: 1 })
 
 const tabs = [
@@ -1326,6 +1445,71 @@ const statusBadgeClass = computed(() => {
 })
 
 const cpuPct = computed(() => cpuPercent(vmStatus.value))
+
+// ── Snapshot Tree ──────────────────────────────────────────────────────────────
+
+const snapshotTree = computed(() => {
+  if (!snapshots.value.length) return []
+  const byName = {}
+  snapshots.value.forEach(s => { byName[s.name] = { ...s, _children: [] } })
+  const roots = []
+  snapshots.value.forEach(s => {
+    const parent = s.parent
+    if (!parent || parent === 'current' || !byName[parent]) {
+      if (s.name !== 'current') roots.push(byName[s.name])
+    } else {
+      byName[parent]._children.push(byName[s.name])
+    }
+  })
+  // Put "current" node first always
+  const currentNode = byName['current']
+
+  const flatten = (nodes, depth, parentCollapsed) => {
+    const result = []
+    nodes.forEach((node, idx) => {
+      if (parentCollapsed) return
+      const isLast = idx === nodes.length - 1
+      const hasChildren = node._children.length > 0
+      const isCollapsed = collapsedSnaps.value.has(node.name)
+      result.push({ ...node, _depth: depth, _isLast: isLast, _hasChildren: hasChildren })
+      if (hasChildren && !isCollapsed) {
+        result.push(...flatten(node._children, depth + 1, false))
+      }
+    })
+    return result
+  }
+
+  const treeRows = currentNode ? [{ ...currentNode, _depth: 0, _isLast: true, _hasChildren: false }] : []
+  treeRows.push(...flatten(roots, 0, false))
+  return treeRows
+})
+
+// ── Compare Computed ───────────────────────────────────────────────────────────
+
+const compareOnlyLeft = computed(() => {
+  return Object.keys(compareLeft.value).filter(k => !(k in compareRight.value))
+})
+
+const compareOnlyRight = computed(() => {
+  return Object.keys(compareRight.value).filter(k => !(k in compareLeft.value))
+})
+
+const compareIdentical = computed(() => {
+  const allKeys = new Set([...Object.keys(compareLeft.value), ...Object.keys(compareRight.value)])
+  for (const k of allKeys) {
+    if (String(compareLeft.value[k] ?? '') !== String(compareRight.value[k] ?? '')) return false
+  }
+  return true
+})
+
+const compareRowClass = (key, side) => {
+  const lVal = String(compareLeft.value[key] ?? '')
+  const rVal = String(compareRight.value[key] ?? '')
+  const onlyInSide = side === 'left' ? !(key in compareRight.value) : !(key in compareLeft.value)
+  if (onlyInSide) return 'compare-row--only'
+  if (lVal !== rVal) return 'compare-row--diff'
+  return ''
+}
 
 const parsedDisks = computed(() => {
   if (!config.value) return []
@@ -1435,15 +1619,8 @@ const loadSnapshots = async () => {
   loadingSnapshots.value = true
   try {
     const res = await api.pveVm.listSnapshots(hostId.value, node.value, vmid.value)
-    const raw = res.data || []
-    const byName = {}
-    raw.forEach(s => { byName[s.name] = { ...s, _depth: 0 } })
-    raw.forEach(s => {
-      if (s.parent && byName[s.parent]) {
-        byName[s.name]._depth = (byName[s.parent]._depth || 0) + 1
-      }
-    })
-    snapshots.value = Object.values(byName)
+    snapshots.value = res.data || []
+    selectedSnaps.value = new Set()
   } catch (e) {
     console.warn('Snapshots failed', e)
   } finally {
@@ -1916,6 +2093,96 @@ const deleteSnapshot = async (snapName) => {
   } finally {
     actioning.value = false
   }
+}
+
+const toggleSnapSelect = (snapName) => {
+  const s = new Set(selectedSnaps.value)
+  if (s.has(snapName)) {
+    s.delete(snapName)
+  } else if (s.size < 2) {
+    s.add(snapName)
+  }
+  selectedSnaps.value = s
+}
+
+const toggleSnapCollapse = (snapName) => {
+  const s = new Set(collapsedSnaps.value)
+  if (s.has(snapName)) {
+    s.delete(snapName)
+  } else {
+    s.add(snapName)
+  }
+  collapsedSnaps.value = s
+}
+
+const openCompareModal = async () => {
+  const [snapA, snapB] = [...selectedSnaps.value]
+  compareSnaps.value = [snapA, snapB]
+  loadingCompare.value = true
+  showCompareModal.value = true
+  try {
+    const [resA, resB] = await Promise.all([
+      api.pveVm.getSnapshotConfig(hostId.value, node.value, vmid.value, snapA),
+      api.pveVm.getSnapshotConfig(hostId.value, node.value, vmid.value, snapB),
+    ])
+    compareLeft.value = resA.data || {}
+    compareRight.value = resB.data || {}
+  } catch (e) {
+    console.error(e)
+    toast.error('Failed to load snapshot configs')
+    showCompareModal.value = false
+  } finally {
+    loadingCompare.value = false
+  }
+}
+
+// Quick Snapshot
+const openQuickSnapshotModal = () => {
+  const now = new Date()
+  const pad = (n) => String(n).padStart(2, '0')
+  const name = `snap-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`
+  quickSnapForm.value = { snapname: name, description: '' }
+  showQuickSnapshotModal.value = true
+}
+
+const doQuickSnapshot = async () => {
+  if (!quickSnapForm.value.snapname) {
+    toast.error('Snapshot name is required')
+    return
+  }
+  actioning.value = true
+  try {
+    const res = await api.pveVm.createSnapshot(hostId.value, node.value, vmid.value, {
+      snapname: quickSnapForm.value.snapname,
+      description: quickSnapForm.value.description,
+      vmstate: false,
+    })
+    showQuickSnapshotModal.value = false
+    const upid = res.data
+    if (upid && typeof upid === 'string' && upid.startsWith('UPID:')) {
+      quickSnapUpid.value = upid
+      showQuickSnapProgress.value = true
+    } else {
+      toast.success('Snapshot creation started')
+      await loadSnapshots()
+    }
+  } catch (e) {
+    console.error(e)
+    toast.error('Failed to create snapshot')
+  } finally {
+    actioning.value = false
+  }
+}
+
+const onQuickSnapSuccess = async () => {
+  showQuickSnapProgress.value = false
+  toast.success('Snapshot created')
+  await loadSnapshots()
+}
+
+const onQuickSnapError = () => {
+  showQuickSnapProgress.value = false
+  toast.error('Snapshot creation failed')
 }
 
 // ── Firewall Actions ───────────────────────────────────────────────────────────
@@ -2661,5 +2928,84 @@ onUnmounted(() => {
 
 .btn-xs:hover:not(:disabled) {
   opacity: 0.85;
+}
+
+/* ── Snapshot Tree ── */
+.snap-tree-indent {
+  display: inline-flex;
+  align-items: center;
+}
+
+.snap-tree-line {
+  font-family: monospace;
+  color: var(--text-secondary);
+  margin-right: 0.2rem;
+  user-select: none;
+}
+
+.snap-current-row td {
+  background: rgba(16, 185, 129, 0.06);
+}
+
+/* ── Snapshot Compare Modal ── */
+.modal-content.modal-lg {
+  max-width: 860px;
+  width: 95vw;
+}
+
+.compare-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.compare-col-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 0.25rem;
+}
+
+.compare-body {
+  font-size: 0.8rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.compare-row {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.2rem 0.35rem;
+  border-radius: 3px;
+}
+
+.compare-row--diff {
+  background: rgba(245, 158, 11, 0.12);
+}
+
+.compare-row--only {
+  background: rgba(59, 130, 246, 0.1);
+}
+
+.compare-row--missing {
+  background: rgba(239, 68, 68, 0.07);
+}
+
+.compare-key {
+  font-weight: 600;
+  color: var(--text-secondary);
+  min-width: 8rem;
+  flex-shrink: 0;
+  word-break: break-all;
+}
+
+.compare-val {
+  color: var(--text-primary);
+  word-break: break-all;
 }
 </style>

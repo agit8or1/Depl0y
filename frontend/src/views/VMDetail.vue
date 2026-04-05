@@ -37,7 +37,10 @@
             :disabled="actioning">Resume</button>
           <span class="action-sep">|</span>
           <button @click="openCloneModal" class="btn btn-outline btn-sm">Clone</button>
-          <button @click="openMigrateModal" class="btn btn-outline btn-sm">Migrate</button>
+          <router-link
+            :to="`/migrate/${hostId}/${node}/${vmid}?type=qemu`"
+            class="btn btn-outline btn-sm"
+          >Migrate</router-link>
           <button @click="doConvertToTemplate" class="btn btn-outline btn-sm" :disabled="actioning">To Template</button>
           <button @click="showDeleteConfirm = true" class="btn btn-danger btn-sm" :disabled="actioning">Delete</button>
           <button @click="openQuickSnapshotModal" class="btn btn-outline btn-sm" :disabled="actioning" title="Quick Snapshot">📸</button>

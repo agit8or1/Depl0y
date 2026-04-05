@@ -55,7 +55,7 @@
         v-if="fillArea && areaPath"
         :d="areaPath"
         :fill="`url(#${gradId})`"
-        clip-path="url(#${clipId})"
+        :clip-path="`url(#${clipId})`"
       />
 
       <!-- Curve line -->

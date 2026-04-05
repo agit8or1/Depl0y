@@ -150,14 +150,25 @@
         </div>
 
         <div v-else class="table-container">
+          <!-- Bulk actions bar -->
+          <div v-if="isoSelectedIds.size > 0" class="bulk-action-bar">
+            <span>{{ isoSelectedIds.size }} selected</span>
+            <button class="btn btn-danger btn-sm" @click="bulkDeleteISOs" :disabled="isoBulkDeleting">
+              {{ isoBulkDeleting ? 'Deleting...' : 'Delete Selected' }}
+            </button>
+            <button class="btn btn-outline btn-sm" @click="isoSelectedIds = new Set()">Clear Selection</button>
+          </div>
           <table class="table">
             <thead>
               <tr>
+                <th style="width:36px">
+                  <input type="checkbox" @change="toggleAllISOSelect" :checked="isoAllSelected" :indeterminate.prop="isoSomeSelected" />
+                </th>
                 <th>Name</th>
                 <th>OS Type</th>
                 <th>Version</th>
-                <th>Architecture</th>
                 <th>Size</th>
+                <th>Used By</th>
                 <th>Checksum</th>
                 <th>Status</th>
                 <th>Actions</th>
@@ -165,13 +176,22 @@
             </thead>
             <tbody>
               <tr v-for="iso in isos" :key="iso.id">
+                <td>
+                  <input type="checkbox" :checked="isoSelectedIds.has(iso.id)" @change="toggleISOSelect(iso.id)" />
+                </td>
                 <td>{{ iso.name }}</td>
                 <td>
                   <span class="badge badge-info">{{ formatOSType(iso.os_type) }}</span>
                 </td>
                 <td>{{ iso.version || 'N/A' }}</td>
-                <td>{{ iso.architecture }}</td>
                 <td>{{ formatBytes(iso.file_size) }}</td>
+                <td>
+                  <span v-if="iso.used_by_vms && iso.used_by_vms.length" class="iso-used-by">
+                    <span v-for="vmid in iso.used_by_vms.slice(0, 3)" :key="vmid" class="iso-vmid-chip">{{ vmid }}</span>
+                    <span v-if="iso.used_by_vms.length > 3" class="text-muted text-xs">+{{ iso.used_by_vms.length - 3 }}</span>
+                  </span>
+                  <span v-else class="text-muted text-xs">—</span>
+                </td>
                 <td class="text-xs text-muted">
                   <span v-if="iso.checksum === 'downloading...'" class="text-blue-500">
                     ⏳ Downloading...
@@ -1056,6 +1076,55 @@ export default {
     // ===== ISO Images State =====
     const isos = ref([])
     const isoLoading = ref(false)
+    const isoSelectedIds = ref(new Set())
+    const isoBulkDeleting = ref(false)
+
+    const isoAllSelected = computed(() =>
+      isos.value.length > 0 && isos.value.every(iso => isoSelectedIds.value.has(iso.id))
+    )
+    const isoSomeSelected = computed(() =>
+      isoSelectedIds.value.size > 0 && !isoAllSelected.value
+    )
+
+    function toggleISOSelect(id) {
+      const s = new Set(isoSelectedIds.value)
+      if (s.has(id)) s.delete(id)
+      else s.add(id)
+      isoSelectedIds.value = s
+    }
+
+    function toggleAllISOSelect() {
+      if (isoAllSelected.value) {
+        isoSelectedIds.value = new Set()
+      } else {
+        isoSelectedIds.value = new Set(isos.value.map(i => i.id))
+      }
+    }
+
+    async function bulkDeleteISOs() {
+      const count = isoSelectedIds.value.size
+      if (!count) return
+      if (!confirm(`Delete ${count} selected ISO${count !== 1 ? 's' : ''}? This cannot be undone.`)) return
+      isoBulkDeleting.value = true
+      const ids = [...isoSelectedIds.value]
+      let failed = 0
+      for (const id of ids) {
+        try {
+          await api.isos.delete(id)
+        } catch (e) {
+          failed++
+        }
+      }
+      isoSelectedIds.value = new Set()
+      isoBulkDeleting.value = false
+      await loadISOs()
+      if (failed) {
+        toast.error(`${ids.length - failed} deleted, ${failed} failed.`)
+      } else {
+        toast.success(`${ids.length} ISO${ids.length !== 1 ? 's' : ''} deleted.`)
+      }
+    }
+
     const uploading = ref(false)
     const isoDownloading = ref(false)
     const uploadProgress = ref(0)
@@ -1955,6 +2024,8 @@ export default {
       activeTab,
       // ISO
       isos, isoLoading, uploading, isoDownloading, uploadProgress, uploadedBytes, totalBytes, uploadSpeed,
+      isoSelectedIds, isoBulkDeleting, isoAllSelected, isoSomeSelected,
+      toggleISOSelect, toggleAllISOSelect, bulkDeleteISOs,
       showISOAddModal, isoSelectionMode, selectedISONames, selectedFile,
       uploadForm, downloadForm, predefinedISOs, sortedPredefinedISOs,
       onFileSelected, uploadISO, downloadFromUrl, saveSelectedISOs,
@@ -2806,4 +2877,35 @@ export default {
 .ml-1 { margin-left: 0.25rem; }
 .mt-1 { margin-top: 0.25rem; }
 .mt-2 { margin-top: 0.5rem; }
+
+/* ── Bulk action bar ───────────────────────────────────────────────────── */
+.bulk-action-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.55rem 1rem;
+  background: rgba(59, 130, 246, 0.07);
+  border-bottom: 1px solid var(--border-color, #2d3748);
+  font-size: 0.875rem;
+  color: var(--text-primary, #f1f5f9);
+}
+
+/* ── ISO "Used By" chips ───────────────────────────────────────────────── */
+.iso-used-by {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+}
+
+.iso-vmid-chip {
+  background: rgba(59, 130, 246, 0.1);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.25);
+  border-radius: 4px;
+  padding: 0.05rem 0.35rem;
+  font-size: 0.7rem;
+  font-family: monospace;
+  font-weight: 600;
+}
 </style>

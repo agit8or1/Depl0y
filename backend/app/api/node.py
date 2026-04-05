@@ -318,6 +318,17 @@ def add_ha_resource(host_id: int, resource: dict, db: Session = Depends(get_db),
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.put("/{host_id}/cluster/ha/resources/{sid}")
+def update_ha_resource(host_id: int, sid: str, data: dict = {}, db: Session = Depends(get_db),
+                       current_user=Depends(require_admin)):
+    host = _get_host(host_id, db)
+    try:
+        _pve(host).cluster.ha.resources(sid).put(**data)
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.delete("/{host_id}/cluster/ha/resources/{sid}")
 def remove_ha_resource(host_id: int, sid: str, db: Session = Depends(get_db),
                        current_user=Depends(require_admin)):
@@ -344,6 +355,17 @@ def create_ha_group(host_id: int, data: dict = {}, db: Session = Depends(get_db)
     host = _get_host(host_id, db)
     try:
         _pve(host).cluster.ha.groups.post(**data)
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/{host_id}/cluster/ha/groups/{groupid}")
+def update_ha_group(host_id: int, groupid: str, data: dict = {}, db: Session = Depends(get_db),
+                    current_user=Depends(require_admin)):
+    host = _get_host(host_id, db)
+    try:
+        _pve(host).cluster.ha.groups(groupid).put(**data)
         return {"success": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -1151,6 +1173,34 @@ def clone_ct(host_id: int, node: str, vmid: int, data: dict,
             user_id=getattr(current_user, "id", None),
             vmid=vmid,
             task_type="vzclone",
+        )
+        return {"upid": upid}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{host_id}/nodes/{node}/lxc/{vmid}/migrate")
+def migrate_ct(host_id: int, node: str, vmid: int, data: dict,
+               db: Session = Depends(get_db), current_user=Depends(require_operator)):
+    """Migrate an LXC container to another node."""
+    host = _get_host(host_id, db)
+    target = data.get("target")
+    if not target:
+        raise HTTPException(status_code=400, detail="target node is required")
+    params: dict = {"target": target}
+    if "bwlimit" in data and data["bwlimit"]:
+        params["bwlimit"] = data["bwlimit"]
+    if "targetstorage" in data and data["targetstorage"]:
+        params["targetstorage"] = data["targetstorage"]
+    try:
+        upid = _pve(host).nodes(node).lxc(vmid).migrate.post(**params)
+        pve_cache.clear_prefix(f"pve:{host_id}:")
+        task_tracker.register(
+            upid, host_id, node,
+            f"Migrate LXC {vmid} → {target}",
+            user_id=getattr(current_user, "id", None),
+            vmid=vmid,
+            task_type="vzmigrate",
         )
         return {"upid": upid}
     except Exception as e:

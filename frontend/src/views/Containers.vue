@@ -8,6 +8,23 @@
       </div>
       <div class="header-actions">
         <span class="refresh-countdown" v-if="!loading">Auto-refresh in {{ countdown }}s</span>
+        <!-- View Toggle -->
+        <div class="view-toggle">
+          <button
+            @click="viewMode = 'table'"
+            :class="['view-btn', viewMode === 'table' ? 'view-btn--active' : '']"
+            title="Table view"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="1"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="9" x2="9" y2="21"/></svg>
+          </button>
+          <button
+            @click="viewMode = 'grid'"
+            :class="['view-btn', viewMode === 'grid' ? 'view-btn--active' : '']"
+            title="Grid view"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+          </button>
+        </div>
         <router-link to="/create-lxc" class="btn btn-primary btn-sm">+ Create LXC</router-link>
         <button @click="loadAll(true)" class="btn btn-outline btn-sm" :disabled="loading">
           {{ loading ? 'Refreshing…' : 'Refresh' }}
@@ -80,9 +97,10 @@
     <div v-if="selectedIds.size > 0" class="bulk-bar card mb-2">
       <span class="bulk-count">{{ selectedIds.size }} selected</span>
       <div class="flex gap-1">
-        <button @click="bulkAction('start')" class="btn btn-success btn-sm" :disabled="bulkActioning">Start</button>
-        <button @click="bulkAction('stop')" class="btn btn-outline btn-sm" :disabled="bulkActioning">Stop</button>
-        <button @click="bulkAction('reboot')" class="btn btn-outline btn-sm" :disabled="bulkActioning">Reboot</button>
+        <button @click="bulkAction('start')" class="btn btn-success btn-sm" :disabled="bulkActioning">Start All</button>
+        <button @click="bulkAction('stop')" class="btn btn-outline btn-sm" :disabled="bulkActioning">Stop All</button>
+        <button @click="bulkAction('reboot')" class="btn btn-outline btn-sm" :disabled="bulkActioning">Reboot All</button>
+        <button @click="bulkSnapshot()" class="btn btn-outline btn-sm" :disabled="bulkActioning">Snapshot All</button>
         <button @click="selectedIds.clear()" class="btn btn-outline btn-sm">Clear</button>
       </div>
     </div>
@@ -109,8 +127,70 @@
       <p class="empty-subtitle">Try adjusting the search query, status or node filters.</p>
     </div>
 
+    <!-- Grid View -->
+    <div v-if="!loading && sortedContainers.length > 0 && viewMode === 'grid'" class="ct-grid">
+      <div
+        v-for="ct in sortedContainers"
+        :key="`${ct._hostId}-${ct._node}-${ct.vmid}`"
+        class="ct-card"
+        :class="{ 'ct-card--running': ct.status === 'running', 'ct-card--selected': selectedIds.has(ctKey(ct)) }"
+      >
+        <div class="ct-card__header">
+          <input type="checkbox" :checked="selectedIds.has(ctKey(ct))" @change="toggleSelect(ct)" class="ct-card__check" />
+          <span class="ct-card__os">{{ detectOs(ct.name || '').icon }}</span>
+          <span class="ct-card__name" @click="openDetail(ct)" :title="ct.name || `CT ${ct.vmid}`">
+            {{ ct.name || `CT ${ct.vmid}` }}
+          </span>
+          <span :class="statusBadgeClass(ct.status)" class="ct-card__badge">{{ ct.status }}</span>
+        </div>
+        <div class="ct-card__meta">
+          <span class="ct-card__vmid">CT{{ ct.vmid }}</span>
+          <span class="ct-card__node">{{ ct._node }}</span>
+          <span class="ct-card__host">{{ ct._hostName }}</span>
+        </div>
+        <div class="ct-card__stats">
+          <div class="ct-card__stat-row" v-if="ct.cpus">
+            <span class="ct-card__stat-label">Cores</span>
+            <span class="ct-card__stat-val">{{ ct.cpus }}</span>
+          </div>
+          <div class="ct-card__stat-row" v-if="ct.maxmem">
+            <span class="ct-card__stat-label">RAM</span>
+            <span class="ct-card__stat-val">{{ formatBytes(ct.maxmem) }}</span>
+          </div>
+          <div class="ct-card__stat-row" v-if="ct.maxdisk">
+            <span class="ct-card__stat-label">Disk</span>
+            <span class="ct-card__stat-val">{{ formatBytes(ct.maxdisk) }}</span>
+          </div>
+          <div class="ct-card__stat-row" v-if="ct._ip">
+            <span class="ct-card__stat-label">IPv4</span>
+            <span class="ct-card__stat-val ct-card__ip">{{ ct._ip }}</span>
+          </div>
+          <div class="ct-card__stat-row" v-if="ct.status === 'running' && ct.cpu != null">
+            <span class="ct-card__stat-label">CPU</span>
+            <span class="ct-card__stat-val">{{ (ct.cpu * 100).toFixed(1) }}%</span>
+          </div>
+          <div class="ct-card__stat-row" v-if="ct.status === 'running' && ct.uptime">
+            <span class="ct-card__stat-label">Uptime</span>
+            <span class="ct-card__stat-val">{{ formatUptime(ct.uptime) }}</span>
+          </div>
+        </div>
+        <div v-if="ct.tags" class="ct-card__tags">
+          <TagBadge v-for="tag in parseTags(ct.tags)" :key="tag" :tag="tag" small />
+        </div>
+        <div class="ct-card__actions">
+          <button v-if="ct.status !== 'running'" @click="ctAction(ct, 'start')" class="btn btn-success btn-xs" :disabled="ct._actioning">Start</button>
+          <button v-if="ct.status === 'running'" @click="ctAction(ct, 'stop')" class="btn btn-danger btn-xs" :disabled="ct._actioning">Stop</button>
+          <button v-if="ct.status === 'running'" @click="ctAction(ct, 'reboot')" class="btn btn-outline btn-xs" :disabled="ct._actioning">Restart</button>
+          <button @click="openDetail(ct)" class="btn btn-outline btn-xs">Details</button>
+          <button @click="openConsole(ct)" class="btn btn-outline btn-xs">Console</button>
+          <button @click="openShell(ct)" class="btn btn-outline btn-xs">Shell</button>
+          <button @click="openSnapshotModal(ct)" class="btn btn-outline btn-xs">Snapshot</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Table -->
-    <div v-else class="card">
+    <div v-else-if="!loading && sortedContainers.length > 0 && viewMode === 'table'" class="card">
       <div class="table-container">
         <table class="table">
           <thead>
@@ -132,14 +212,23 @@
                 Node <span class="sort-icon">{{ sortIcon('_node') }}</span>
               </th>
               <th class="text-sm">Host</th>
+              <th @click="toggleSort('cpus')" class="sortable-col">
+                Cores <span class="sort-icon">{{ sortIcon('cpus') }}</span>
+              </th>
               <th @click="toggleSort('cpu')" class="sortable-col">
                 CPU% <span class="sort-icon">{{ sortIcon('cpu') }}</span>
               </th>
+              <th @click="toggleSort('maxmem')" class="sortable-col">
+                RAM <span class="sort-icon">{{ sortIcon('maxmem') }}</span>
+              </th>
               <th @click="toggleSort('mem')" class="sortable-col">
-                Memory <span class="sort-icon">{{ sortIcon('mem') }}</span>
+                Mem Used <span class="sort-icon">{{ sortIcon('mem') }}</span>
+              </th>
+              <th @click="toggleSort('maxdisk')" class="sortable-col">
+                Disk <span class="sort-icon">{{ sortIcon('maxdisk') }}</span>
               </th>
               <th class="text-sm">Tags</th>
-              <th class="text-sm">IP Address</th>
+              <th class="text-sm">IPv4</th>
               <th @click="toggleSort('uptime')" class="sortable-col">
                 Uptime <span class="sort-icon">{{ sortIcon('uptime') }}</span>
               </th>
@@ -148,7 +237,7 @@
           </thead>
           <tbody>
             <tr v-if="sortedContainers.length === 0">
-              <td colspan="13" class="text-muted text-center empty-row">
+              <td colspan="16" class="text-muted text-center empty-row">
                 <template v-if="containers.length === 0">
                   No containers found. Make sure your Proxmox hosts are configured and reachable.
                 </template>
@@ -201,6 +290,12 @@
               <!-- Host -->
               <td class="text-sm">{{ ct._hostName }}</td>
 
+              <!-- Cores -->
+              <td class="text-sm text-center">
+                <span v-if="ct.cpus">{{ ct.cpus }}</span>
+                <span v-else class="text-muted">—</span>
+              </td>
+
               <!-- CPU% with inline bar -->
               <td class="stat-cell">
                 <template v-if="ct.status === 'running' && ct.cpu != null">
@@ -218,9 +313,15 @@
                 <span v-else class="text-muted">—</span>
               </td>
 
-              <!-- Memory with inline bar -->
+              <!-- RAM limit -->
+              <td class="text-sm">
+                <span v-if="ct.maxmem">{{ formatBytes(ct.maxmem) }}</span>
+                <span v-else class="text-muted">—</span>
+              </td>
+
+              <!-- Memory used with inline bar -->
               <td class="stat-cell">
-                <template v-if="ct.maxmem">
+                <template v-if="ct.maxmem && ct.status === 'running'">
                   <div class="stat-bar-wrap">
                     <div class="stat-bar">
                       <div
@@ -230,10 +331,16 @@
                       ></div>
                     </div>
                     <span class="stat-bar-label">
-                      {{ formatBytes(ct.mem) }} / {{ formatBytes(ct.maxmem) }}
+                      {{ formatBytes(ct.mem) }}
                     </span>
                   </div>
                 </template>
+                <span v-else class="text-muted">—</span>
+              </td>
+
+              <!-- Disk size -->
+              <td class="text-sm">
+                <span v-if="ct.maxdisk">{{ formatBytes(ct.maxdisk) }}</span>
                 <span v-else class="text-muted">—</span>
               </td>
 
@@ -283,6 +390,16 @@
                     <span v-else>Stop</span>
                   </button>
                   <button
+                    v-if="ct.status === 'running'"
+                    @click="ctAction(ct, 'reboot')"
+                    class="btn btn-outline btn-xs"
+                    :disabled="ct._actioning"
+                    title="Restart"
+                  >
+                    <span v-if="ct._actioning && ct._pendingAction === 'reboot'">…</span>
+                    <span v-else>Restart</span>
+                  </button>
+                  <button
                     @click="openDetail(ct)"
                     class="btn btn-outline btn-xs"
                     title="Details"
@@ -290,18 +407,66 @@
                     Details
                   </button>
                   <button
+                    @click="openConsole(ct)"
+                    class="btn btn-outline btn-xs"
+                    title="Open Console (noVNC)"
+                  >
+                    Console
+                  </button>
+                  <button
                     @click="openShell(ct)"
                     class="btn btn-outline btn-xs btn-terminal"
-                    title="Open Terminal"
+                    title="Open Shell Terminal"
                   >
                     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:2px;"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
-                    Terminal
+                    Shell
+                  </button>
+                  <button
+                    @click="openSnapshotModal(ct)"
+                    class="btn btn-outline btn-xs"
+                    title="Create Snapshot"
+                  >
+                    Snapshot
+                  </button>
+                  <button
+                    @click="deleteSingleContainer(ct)"
+                    class="btn btn-danger btn-xs"
+                    :disabled="ct._actioning || ct.status === 'running'"
+                    title="Delete container (must be stopped)"
+                  >
+                    Delete
                   </button>
                 </div>
               </td>
             </tr>
           </tbody>
         </table>
+      </div>
+    </div>
+
+    <!-- Quick Snapshot Modal -->
+    <div v-if="showSnapshotModal" class="modal" @click.self="showSnapshotModal = false">
+      <div class="modal-content" style="max-width:440px;">
+        <div class="modal-header">
+          <h3>Create Snapshot — CT{{ snapshotTarget?.vmid }}</h3>
+          <button @click="showSnapshotModal = false" class="btn-close">×</button>
+        </div>
+        <form @submit.prevent="submitSnapshot" class="modal-body">
+          <div class="form-group">
+            <label class="form-label">Snapshot Name</label>
+            <input v-model="snapshotForm.snapname" class="form-control" placeholder="snap1" required />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Description (optional)</label>
+            <input v-model="snapshotForm.description" class="form-control" placeholder="Optional description" />
+          </div>
+          <div class="flex gap-1 mt-2">
+            <button type="submit" class="btn btn-primary" :disabled="savingSnapshot">
+              {{ savingSnapshot ? 'Creating…' : 'Create' }}
+            </button>
+            <button type="button" @click="showSnapshotModal = false" class="btn btn-outline">Cancel</button>
+          </div>
+        </form>
       </div>
     </div>
   </div>
@@ -330,6 +495,13 @@ export default {
     const hosts = ref([])
     const loading = ref(true)
     const bulkActioning = ref(false)
+    const viewMode = ref('table')
+
+    // Snapshot modal state
+    const showSnapshotModal = ref(false)
+    const snapshotTarget = ref(null)
+    const snapshotForm = ref({ snapname: '', description: '' })
+    const savingSnapshot = ref(false)
 
     // Persist filter state
     const CT_FILTER_KEY = 'depl0y_ct_filter'
@@ -577,6 +749,71 @@ export default {
       })
     }
 
+    const openConsole = (ct) => {
+      router.push({
+        path: `/console/${ct._node}/${ct.vmid}`,
+        query: { type: 'lxc', hostId: ct._hostId },
+      })
+    }
+
+    const openSnapshotModal = (ct) => {
+      snapshotTarget.value = ct
+      snapshotForm.value = { snapname: '', description: '' }
+      showSnapshotModal.value = true
+    }
+
+    const submitSnapshot = async () => {
+      if (!snapshotTarget.value || !snapshotForm.value.snapname) return
+      savingSnapshot.value = true
+      try {
+        await api.pveNode.createContainerSnapshot(
+          snapshotTarget.value._hostId,
+          snapshotTarget.value._node,
+          snapshotTarget.value.vmid,
+          { snapname: snapshotForm.value.snapname, description: snapshotForm.value.description }
+        )
+        toast.success(`Snapshot "${snapshotForm.value.snapname}" created for CT${snapshotTarget.value.vmid}`)
+        showSnapshotModal.value = false
+      } catch (e) {
+        toast.error('Failed to create snapshot')
+      } finally {
+        savingSnapshot.value = false
+      }
+    }
+
+    const bulkSnapshot = async () => {
+      const targets = sortedContainers.value.filter(ct => selectedIds.has(ctKey(ct)))
+      if (!targets.length) return
+      const snapname = prompt('Snapshot name for all selected containers:')
+      if (!snapname) return
+      if (!confirm(`Create snapshot "${snapname}" for ${targets.length} container(s)?`)) return
+      bulkActioning.value = true
+      const results = await Promise.allSettled(
+        targets.map(ct =>
+          api.pveNode.createContainerSnapshot(ct._hostId, ct._node, ct.vmid, { snapname })
+        )
+      )
+      const failed = results.filter(r => r.status === 'rejected').length
+      if (failed) toast.error(`${failed} snapshot(s) failed`)
+      else toast.success(`Snapshot "${snapname}" created for ${targets.length} container(s)`)
+      bulkActioning.value = false
+      selectedIds.clear()
+    }
+
+    const deleteSingleContainer = async (ct) => {
+      if (!confirm(`Permanently delete CT ${ct.vmid} (${ct.name || ''})? This cannot be undone.`)) return
+      ct._actioning = true
+      try {
+        await api.pveNode.deleteContainer(ct._hostId, ct._node, ct.vmid)
+        toast.success(`CT ${ct.vmid} deleted`)
+        setTimeout(() => loadAll(), 2000)
+      } catch (e) {
+        toast.error(`Failed to delete CT ${ct.vmid}`)
+      } finally {
+        ct._actioning = false
+      }
+    }
+
     // ── Auto-refresh ─────────────────────────────────────────────────────────
 
     const startTimers = () => {
@@ -619,6 +856,7 @@ export default {
       containers,
       hosts,
       loading,
+      viewMode,
       searchQuery,
       statusFilter,
       hostFilter,
@@ -635,6 +873,10 @@ export default {
       bulkActioning,
       sortKey,
       sortDir,
+      showSnapshotModal,
+      snapshotTarget,
+      snapshotForm,
+      savingSnapshot,
       formatBytes,
       formatUptime,
       statusBadgeClass,
@@ -644,6 +886,11 @@ export default {
       ctAction,
       openShell,
       openDetail,
+      openConsole,
+      openSnapshotModal,
+      submitSnapshot,
+      bulkSnapshot,
+      deleteSingleContainer,
       ctKey,
       toggleSelect,
       toggleSelectAll,
@@ -934,4 +1181,155 @@ export default {
 /* ── OS column ─────────────────────────────────────────────────────────── */
 .os-col { width: 36px; text-align: center; }
 .os-icon-badge { font-size: 1.1rem; cursor: default; }
+
+/* ── View toggle ─────────────────────────────────────────────────────────── */
+.view-toggle {
+  display: flex;
+  border: 1px solid var(--border-color);
+  border-radius: 0.375rem;
+  overflow: hidden;
+}
+.view-btn {
+  padding: 0.3rem 0.6rem;
+  background: var(--bg-primary);
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  transition: background 0.15s, color 0.15s;
+}
+.view-btn:hover { background: var(--bg-secondary); color: var(--text-primary); }
+.view-btn--active { background: var(--primary-color); color: #fff; }
+.view-btn + .view-btn { border-left: 1px solid var(--border-color); }
+
+/* ── Grid view ────────────────────────────────────────────────────────────── */
+.ct-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.ct-card {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  transition: box-shadow 0.15s, border-color 0.15s;
+}
+.ct-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+.ct-card--running { border-left: 3px solid #22c55e; }
+.ct-card--selected { background: rgba(59,130,246,0.06); border-color: var(--primary-color); }
+
+.ct-card__header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+.ct-card__check { flex-shrink: 0; }
+.ct-card__os { font-size: 1.1rem; flex-shrink: 0; }
+.ct-card__name {
+  flex: 1;
+  font-weight: 600;
+  font-size: 0.9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  color: var(--primary-color);
+}
+.ct-card__name:hover { text-decoration: underline; }
+.ct-card__badge { flex-shrink: 0; }
+
+.ct-card__meta {
+  display: flex;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+.ct-card__vmid { font-family: monospace; }
+
+.ct-card__stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.25rem 0.75rem;
+}
+.ct-card__stat-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8rem;
+}
+.ct-card__stat-label { color: var(--text-muted); }
+.ct-card__stat-val { font-weight: 500; }
+.ct-card__ip { font-family: monospace; font-size: 0.75rem; }
+
+.ct-card__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.ct-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-top: 0.25rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border-color);
+}
+
+/* ── Modal ────────────────────────────────────────────────────────────────── */
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+.modal-content {
+  background: var(--bg-primary);
+  border-radius: 0.5rem;
+  min-width: 320px;
+  max-width: 90vw;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+}
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem 0.75rem;
+  border-bottom: 1px solid var(--border-color);
+}
+.modal-header h3 { margin: 0; font-size: 1rem; font-weight: 600; }
+.modal-body { padding: 1.25rem; }
+.btn-close {
+  background: none;
+  border: none;
+  font-size: 1.4rem;
+  cursor: pointer;
+  color: var(--text-muted);
+  padding: 0 0.25rem;
+  line-height: 1;
+}
+.btn-close:hover { color: var(--text-primary); }
+.form-group { margin-bottom: 1rem; }
+.form-label { display: block; font-size: 0.875rem; font-weight: 500; margin-bottom: 0.35rem; }
+.form-control {
+  width: 100%;
+  padding: 0.45rem 0.7rem;
+  border: 1px solid var(--border-color);
+  border-radius: 0.375rem;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 0.875rem;
+}
+.mt-2 { margin-top: 0.75rem; }
 </style>

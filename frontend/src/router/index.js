@@ -95,6 +95,12 @@ const router = createRouter({
       meta: { requiresAuth: true }
     },
     {
+      path: '/migrate/:hostId/:node/:vmid',
+      name: 'MigrationWizard',
+      component: () => import('@/views/MigrationWizard.vue'),
+      meta: { requiresAuth: true, requiresOperator: true }
+    },
+    {
       path: '/proxmox/:hostId/nodes/:node/containers/:vmid',
       name: 'ContainerDetail',
       component: () => import('@/views/ContainerDetail.vue'),
@@ -197,6 +203,12 @@ const router = createRouter({
     {
       path: '/cloud-images',
       redirect: '/images'
+    },
+    {
+      path: '/cluster',
+      name: 'ClusterStatus',
+      component: () => import('@/views/ClusterStatus.vue'),
+      meta: { requiresAuth: true }
     },
     {
       path: '/ha-management',
@@ -363,6 +375,12 @@ const router = createRouter({
     {
       path: '/node-monitor',
       name: 'NodeMonitor',
+      component: () => import('@/views/NodeMonitor.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/monitor/:hostId/:node',
+      name: 'NodeMonitorDirect',
       component: () => import('@/views/NodeMonitor.vue'),
       meta: { requiresAuth: true }
     },

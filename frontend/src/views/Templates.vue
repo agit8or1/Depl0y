@@ -2,87 +2,294 @@
   <div class="templates-page">
     <div class="page-header">
       <div class="header-left">
-        <h2 class="page-title">VM Templates</h2>
+        <h2 class="page-title">Template Library</h2>
         <p class="page-subtitle">
-          Clone and manage templates across all Proxmox hosts
-          <span v-if="!loading && activeTab === 'library'" class="count-badge">
-            {{ COMMUNITY_TEMPLATES.length }} community templates
-          </span>
-          <span v-else-if="!loading && filteredTemplates.length > 0" class="count-badge">
-            {{ filteredTemplates.length }} template{{ filteredTemplates.length !== 1 ? 's' : '' }}
-            across {{ uniqueHostCount }} host{{ uniqueHostCount !== 1 ? 's' : '' }}
-          </span>
+          Manage cloud images, LXC templates, and ISO files across all Proxmox hosts
+          <span v-if="!loading && countBadgeText" class="count-badge">{{ countBadgeText }}</span>
         </p>
       </div>
       <div class="header-right">
-        <template v-if="activeTab === 'local'">
-          <input
-            v-model="search"
-            class="form-control search-input"
-            placeholder="Search by name or VMID..."
-          />
-          <select v-model="selectedHostId" class="form-control host-select">
+        <!-- Cloud Images tab controls -->
+        <template v-if="activeTab === 'cloud'">
+          <input v-model="cloudSearch" class="form-control search-input" placeholder="Search cloud images..." />
+          <select v-model="cloudHostFilter" class="form-control host-select">
             <option value="">All Hosts</option>
-            <option v-for="host in hosts" :key="host.id" :value="host.id">
-              {{ host.name || host.host }}
-            </option>
+            <option v-for="h in hosts" :key="h.id" :value="h.id">{{ h.name || h.host }}</option>
           </select>
-          <select v-model="sortBy" class="form-control sort-select">
-            <option value="name">Sort: Name</option>
-            <option value="vmid">Sort: VMID</option>
-            <option value="size">Sort: Size</option>
-            <option value="node">Sort: Node</option>
-          </select>
-          <button @click="loadTemplates" class="btn btn-outline" :disabled="loading">
+          <button @click="loadCloudImages" class="btn btn-outline" :disabled="loading">
             {{ loading ? 'Loading...' : 'Refresh' }}
           </button>
+          <button @click="openDownloadModal" class="btn btn-primary">+ Download Image</button>
         </template>
-        <template v-else>
-          <input
-            v-model="librarySearch"
-            class="form-control search-input"
-            placeholder="Search library..."
-          />
+        <!-- pveam Library tab controls -->
+        <template v-else-if="activeTab === 'pveam'">
+          <input v-model="pveamSearch" class="form-control search-input" placeholder="Search templates..." />
+          <select v-model="pveamSection" class="form-control host-select" @change="loadPveamTemplates">
+            <option value="">All Sections</option>
+            <option value="system">System</option>
+            <option value="turnkeylinux">TurnKey Linux</option>
+          </select>
+          <select v-model="pveamHostId" class="form-control host-select" @change="onPveamHostChange">
+            <option value="">Select Host...</option>
+            <option v-for="h in hosts" :key="h.id" :value="h.id">{{ h.name || h.host }}</option>
+          </select>
+          <button @click="loadPveamTemplates" class="btn btn-outline" :disabled="pveamLoading || !pveamHostId">
+            {{ pveamLoading ? 'Loading...' : 'Refresh' }}
+          </button>
+        </template>
+        <!-- ISO Images tab controls -->
+        <template v-else-if="activeTab === 'iso'">
+          <input v-model="isoSearch" class="form-control search-input" placeholder="Search ISOs..." />
+          <select v-model="isoHostFilter" class="form-control host-select">
+            <option value="">All Hosts</option>
+            <option v-for="h in hosts" :key="h.id" :value="h.id">{{ h.name || h.host }}</option>
+          </select>
+          <button @click="loadIsoImages" class="btn btn-outline" :disabled="isoLoading">
+            {{ isoLoading ? 'Loading...' : 'Refresh' }}
+          </button>
+          <button @click="openIsoUploadModal" class="btn btn-primary">+ Add ISO</button>
+        </template>
+        <!-- My Templates tab controls -->
+        <template v-else-if="activeTab === 'local'">
+          <input v-model="localSearch" class="form-control search-input" placeholder="Search by name or VMID..." />
+          <select v-model="localHostFilter" class="form-control host-select">
+            <option value="">All Hosts</option>
+            <option v-for="h in hosts" :key="h.id" :value="h.id">{{ h.name || h.host }}</option>
+          </select>
+          <button @click="loadLocalTemplates" class="btn btn-outline" :disabled="loading">
+            {{ loading ? 'Loading...' : 'Refresh' }}
+          </button>
         </template>
       </div>
     </div>
 
-    <!-- Tabs -->
+    <!-- Tab Bar -->
     <div class="tab-bar">
-      <button
-        :class="['tab-btn', { active: activeTab === 'local' }]"
-        @click="activeTab = 'local'"
-      >My Templates</button>
-      <button
-        :class="['tab-btn', { active: activeTab === 'library' }]"
-        @click="activeTab = 'library'"
-      >Template Library</button>
+      <button :class="['tab-btn', { active: activeTab === 'cloud' }]" @click="switchTab('cloud')">
+        Cloud Images
+      </button>
+      <button :class="['tab-btn', { active: activeTab === 'pveam' }]" @click="switchTab('pveam')">
+        pveam Library
+      </button>
+      <button :class="['tab-btn', { active: activeTab === 'iso' }]" @click="switchTab('iso')">
+        ISO Images
+      </button>
+      <button :class="['tab-btn', { active: activeTab === 'local' }]" @click="switchTab('local')">
+        VM Templates
+      </button>
     </div>
 
-    <div v-if="error" class="alert alert-danger">{{ error }}</div>
+    <div v-if="error" class="alert alert-danger mb-3">{{ error }}</div>
 
-    <!-- ── Local Templates Tab ────────────────────────────────────────────── -->
-    <template v-if="activeTab === 'local'">
+    <!-- ══════════════════════════════════════════════════════════════════════ -->
+    <!-- Cloud Images Tab                                                      -->
+    <!-- ══════════════════════════════════════════════════════════════════════ -->
+    <template v-if="activeTab === 'cloud'">
       <div class="card">
         <div class="card-body p-0">
           <div v-if="loading" class="loading-state">
             <div class="loading-spinner"></div>
-            <span>Loading templates...</span>
+            <span>Loading cloud images...</span>
           </div>
-          <div v-else-if="filteredTemplates.length === 0 && !search" class="empty-state-full">
+          <div v-else-if="filteredCloudImages.length === 0" class="empty-state-full">
             <div class="empty-icon-wrap">
-              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg>
             </div>
-            <h4 class="empty-title">No templates found</h4>
-            <p class="empty-subtitle">Convert a VM to a template on your Proxmox host, or browse the Template Library tab to discover community templates.</p>
-            <button @click="loadTemplates" class="btn btn-outline">Refresh</button>
+            <h4 class="empty-title">No cloud images found</h4>
+            <p class="empty-subtitle">Download cloud images (qcow2/img) to Proxmox storage using the "Download Image" button, or search Proxmox storage content for existing images.</p>
+            <button @click="openDownloadModal" class="btn btn-primary">Download Image</button>
           </div>
-          <div v-else-if="filteredTemplates.length === 0" class="empty-state-full">
+          <div v-else class="table-container">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>OS</th>
+                  <th>Name</th>
+                  <th>Node</th>
+                  <th>Storage</th>
+                  <th>Size</th>
+                  <th>Type</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="img in filteredCloudImages" :key="`${img.hostId}-${img.volid}`">
+                  <td>
+                    <span class="os-pill" :style="{ background: getOsColor(img.name) + '22', color: getOsColor(img.name), borderColor: getOsColor(img.name) + '55' }">
+                      {{ detectOsInfo(img.name).icon }} {{ detectOsInfo(img.name).name }}
+                    </span>
+                  </td>
+                  <td class="name-cell">
+                    <span class="name-text" :title="img.name">{{ img.name }}</span>
+                  </td>
+                  <td class="mono">{{ img.node }}</td>
+                  <td class="mono">{{ img.storage }}</td>
+                  <td>{{ formatBytes(img.size) }}</td>
+                  <td>
+                    <span class="type-badge">{{ img.content || img.format || 'image' }}</span>
+                  </td>
+                  <td class="actions-cell">
+                    <button class="btn btn-danger btn-sm" @click="confirmDeleteVolume(img)">Delete</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <!-- ══════════════════════════════════════════════════════════════════════ -->
+    <!-- pveam Library Tab                                                     -->
+    <!-- ══════════════════════════════════════════════════════════════════════ -->
+    <template v-else-if="activeTab === 'pveam'">
+      <div class="card">
+        <div class="card-body p-0">
+          <div v-if="!pveamHostId" class="empty-state-full">
             <div class="empty-icon-wrap">
-              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </div>
+            <h4 class="empty-title">Select a Proxmox host</h4>
+            <p class="empty-subtitle">Choose a host from the dropdown above to browse downloadable LXC templates from the Proxmox mirror network.</p>
+          </div>
+          <div v-else-if="pveamLoading" class="loading-state">
+            <div class="loading-spinner"></div>
+            <span>Loading pveam catalog...</span>
+          </div>
+          <div v-else-if="filteredPveamTemplates.length === 0" class="empty-state-full">
+            <div class="empty-icon-wrap">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
             </div>
             <h4 class="empty-title">No templates match your search</h4>
-            <p class="empty-subtitle">Try a different search term or clear the filter.</p>
+            <p class="empty-subtitle">Try clearing your search or selecting a different section.</p>
+          </div>
+          <div v-else class="table-container">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>OS</th>
+                  <th>Template Name</th>
+                  <th>Version</th>
+                  <th>Section</th>
+                  <th>Size</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="tpl in filteredPveamTemplates" :key="tpl.package">
+                  <td>
+                    <span class="os-pill" :style="{ background: getOsColor(tpl.package) + '22', color: getOsColor(tpl.package), borderColor: getOsColor(tpl.package) + '55' }">
+                      {{ detectOsInfo(tpl.package).icon }} {{ detectOsInfo(tpl.package).name }}
+                    </span>
+                  </td>
+                  <td class="name-cell">
+                    <span class="name-text" :title="tpl.package">{{ tpl.package }}</span>
+                    <span v-if="tpl.description" class="name-sub">{{ truncate(tpl.description, 60) }}</span>
+                  </td>
+                  <td class="mono dim">{{ tpl.version || '—' }}</td>
+                  <td>
+                    <span class="section-badge" :class="tpl.section === 'turnkeylinux' ? 'section-tkl' : 'section-sys'">
+                      {{ tpl.section === 'turnkeylinux' ? 'TurnKey' : tpl.section || 'system' }}
+                    </span>
+                  </td>
+                  <td>{{ formatTemplateSize(tpl.size) }}</td>
+                  <td class="actions-cell">
+                    <button class="btn btn-primary btn-sm" @click="openPveamDownload(tpl)">Download</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <!-- ══════════════════════════════════════════════════════════════════════ -->
+    <!-- ISO Images Tab                                                        -->
+    <!-- ══════════════════════════════════════════════════════════════════════ -->
+    <template v-else-if="activeTab === 'iso'">
+      <div class="card">
+        <div class="card-body p-0">
+          <div v-if="isoLoading" class="loading-state">
+            <div class="loading-spinner"></div>
+            <span>Loading ISO images...</span>
+          </div>
+          <div v-else-if="filteredIsoImages.length === 0" class="empty-state-full">
+            <div class="empty-icon-wrap">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>
+            </div>
+            <h4 class="empty-title">No ISO images found</h4>
+            <p class="empty-subtitle">Add ISOs by uploading from your computer or providing a download URL. Proxmox will download directly to node storage.</p>
+            <button @click="openIsoUploadModal" class="btn btn-primary">Add ISO</button>
+          </div>
+          <div v-else class="table-container">
+            <!-- Bulk actions bar -->
+            <div v-if="isoSelected.size > 0" class="bulk-bar">
+              <span>{{ isoSelected.size }} selected</span>
+              <button class="btn btn-danger btn-sm" @click="bulkDeleteIsos" :disabled="isoDeleting">
+                {{ isoDeleting ? 'Deleting...' : 'Delete Selected' }}
+              </button>
+              <button class="btn btn-outline btn-sm" @click="isoSelected.clear(); isoSelected = new Set()">Clear</button>
+            </div>
+            <table class="table">
+              <thead>
+                <tr>
+                  <th class="col-check">
+                    <input type="checkbox" @change="toggleAllIsos" :checked="isoAllChecked" />
+                  </th>
+                  <th>Name</th>
+                  <th>Node</th>
+                  <th>Storage</th>
+                  <th>Size</th>
+                  <th>Used By</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="iso in filteredIsoImages" :key="`${iso.hostId}-${iso.volid}`">
+                  <td class="col-check">
+                    <input type="checkbox" :checked="isoSelected.has(iso.volid)" @change="toggleIsoSelect(iso)" />
+                  </td>
+                  <td class="name-cell">
+                    <span class="name-text" :title="iso.name">{{ iso.name }}</span>
+                  </td>
+                  <td class="mono">{{ iso.node }}</td>
+                  <td class="mono">{{ iso.storage }}</td>
+                  <td>{{ formatBytes(iso.size) }}</td>
+                  <td>
+                    <span v-if="iso.usedBy && iso.usedBy.length" class="used-by-list">
+                      <span v-for="vmid in iso.usedBy.slice(0, 3)" :key="vmid" class="vmid-chip">{{ vmid }}</span>
+                      <span v-if="iso.usedBy.length > 3" class="dim">+{{ iso.usedBy.length - 3 }}</span>
+                    </span>
+                    <span v-else class="dim">—</span>
+                  </td>
+                  <td class="actions-cell">
+                    <button class="btn btn-danger btn-sm" @click="confirmDeleteVolume(iso)">Delete</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <!-- ══════════════════════════════════════════════════════════════════════ -->
+    <!-- VM Templates (local) Tab                                              -->
+    <!-- ══════════════════════════════════════════════════════════════════════ -->
+    <template v-else-if="activeTab === 'local'">
+      <div class="card">
+        <div class="card-body p-0">
+          <div v-if="loading" class="loading-state">
+            <div class="loading-spinner"></div>
+            <span>Loading VM templates...</span>
+          </div>
+          <div v-else-if="filteredLocalTemplates.length === 0" class="empty-state-full">
+            <div class="empty-icon-wrap">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+            </div>
+            <h4 class="empty-title">No VM templates found</h4>
+            <p class="empty-subtitle">Convert a QEMU VM to a template in Proxmox, then it will appear here for cloning.</p>
           </div>
           <div v-else class="table-container">
             <table class="table">
@@ -96,44 +303,36 @@
                   <th>Memory</th>
                   <th>CPUs</th>
                   <th>Disk</th>
-                  <th>Notes</th>
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="tpl in filteredTemplates" :key="`${tpl.hostId}-${tpl.vmid}`">
+                <tr v-for="tpl in filteredLocalTemplates" :key="`${tpl.hostId}-${tpl.vmid}`">
                   <td class="vmid-cell">{{ tpl.vmid }}</td>
                   <td class="name-cell">
                     <span class="name-text">{{ tpl.name || `VM ${tpl.vmid}` }}</span>
                   </td>
                   <td>
-                    <span class="os-badge" :class="`os-${detectOS(tpl.name)}`">
-                      {{ detectOSLabel(tpl.name) }}
+                    <span class="os-pill" :style="{ background: getOsColor(tpl.name) + '22', color: getOsColor(tpl.name), borderColor: getOsColor(tpl.name) + '55' }">
+                      {{ detectOsInfo(tpl.name).icon }} {{ detectOsInfo(tpl.name).name }}
                     </span>
                   </td>
                   <td class="mono">{{ tpl.node }}</td>
                   <td class="mono">{{ tpl.hostName }}</td>
                   <td>
-                    <span v-if="tpl.maxmem" class="meta-val">{{ formatMB(tpl.maxmem) }} MB</span>
+                    <span v-if="tpl.maxmem" class="dim">{{ Math.round(tpl.maxmem / 1024 / 1024) }} MB</span>
                     <span v-else class="dim">—</span>
                   </td>
                   <td>
-                    <span v-if="tpl.maxcpu" class="meta-val">{{ tpl.maxcpu }} vCPU</span>
+                    <span v-if="tpl.maxcpu" class="dim">{{ tpl.maxcpu }} vCPU</span>
                     <span v-else class="dim">—</span>
                   </td>
                   <td>
-                    <span v-if="tpl.maxdisk" class="meta-val">{{ formatGB(tpl.maxdisk) }}</span>
-                    <span v-else class="dim">—</span>
-                  </td>
-                  <td class="notes-cell">
-                    <span v-if="tpl.description" class="notes-text" :title="tpl.description">
-                      {{ truncate(tpl.description, 40) }}
-                    </span>
+                    <span v-if="tpl.maxdisk" class="dim">{{ formatBytes(tpl.maxdisk) }}</span>
                     <span v-else class="dim">—</span>
                   </td>
                   <td class="actions-cell">
                     <button class="btn btn-primary btn-sm" @click="openCloneModal(tpl)">Clone</button>
-                    <button class="btn btn-outline btn-sm" @click="openMetaModal(tpl)">Edit Info</button>
                     <router-link
                       :to="`/proxmox/${tpl.hostId}/nodes/${tpl.node}/vms/${tpl.vmid}`"
                       class="btn btn-outline btn-sm"
@@ -147,49 +346,277 @@
       </div>
     </template>
 
-    <!-- ── Template Library Tab ───────────────────────────────────────────── -->
-    <template v-else>
-      <div class="library-grid">
-        <div
-          v-for="tpl in filteredLibrary"
-          :key="tpl.id"
-          class="library-card"
-        >
-          <div class="library-card-header">
-            <span class="os-badge" :class="`os-${tpl.osKey}`">{{ tpl.osLabel }}</span>
-            <div class="library-badges">
-              <span v-if="tpl.cloudinit" class="badge-ci">cloud-init</span>
-              <span v-if="tpl.lts" class="badge-lts">LTS</span>
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <!-- Download Cloud Image Modal                                          -->
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <div v-if="showDownloadModal" class="modal" @click.self="showDownloadModal = false">
+      <div class="modal-content" @click.stop>
+        <div class="modal-header">
+          <h3>Download Cloud Image to Proxmox</h3>
+          <button @click="showDownloadModal = false" class="btn-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p class="hint-text mb-3">Proxmox will download the image directly to node storage — it never passes through this server.</p>
+
+          <div class="form-group">
+            <label class="form-label">Proxmox Host <span class="req">*</span></label>
+            <select v-model="dlForm.hostId" class="form-control" @change="onDlHostChange">
+              <option value="">Select host...</option>
+              <option v-for="h in hosts" :key="h.id" :value="h.id">{{ h.name || h.host }}</option>
+            </select>
+          </div>
+
+          <div class="form-group" v-if="dlForm.hostId">
+            <label class="form-label">Node <span class="req">*</span></label>
+            <select v-model="dlForm.node" class="form-control" @change="onDlNodeChange">
+              <option value="">Select node...</option>
+              <option v-for="n in dlNodes" :key="n.node" :value="n.node">{{ n.node }}</option>
+            </select>
+          </div>
+
+          <div class="form-group" v-if="dlForm.node">
+            <label class="form-label">Storage <span class="req">*</span></label>
+            <select v-model="dlForm.storage" class="form-control">
+              <option value="">Select storage...</option>
+              <option v-for="s in dlStorages" :key="s.storage" :value="s.storage">
+                {{ s.storage }} ({{ s.type }})<template v-if="s.avail"> — {{ formatBytes(s.avail) }} free</template>
+              </option>
+            </select>
+          </div>
+
+          <!-- Preset picks -->
+          <div class="form-group">
+            <label class="form-label">Quick Presets</label>
+            <div class="presets-grid">
+              <button
+                v-for="preset in CLOUD_IMAGE_PRESETS"
+                :key="preset.id"
+                class="preset-btn"
+                :class="{ active: dlForm.url === preset.url }"
+                @click="applyPreset(preset)"
+              >
+                <span class="preset-os-icon">{{ detectOsInfo(preset.name).icon }}</span>
+                <span class="preset-name">{{ preset.name }}</span>
+              </button>
             </div>
           </div>
-          <h3 class="library-card-title">{{ tpl.name }}</h3>
-          <p class="library-card-desc">{{ tpl.description }}</p>
-          <div class="library-card-meta">
-            <span>Min disk: {{ tpl.minDisk }} GB</span>
-            <span>Min RAM: {{ tpl.minRam }} MB</span>
+
+          <div class="form-group">
+            <label class="form-label">Image URL <span class="req">*</span></label>
+            <input v-model="dlForm.url" class="form-control mono-input" placeholder="https://cloud-images.ubuntu.com/..." />
           </div>
-          <div class="library-card-url">
-            <span class="url-label">Image URL</span>
-            <span class="url-text" :title="tpl.downloadUrl">{{ truncate(tpl.downloadUrl, 60) }}</span>
+
+          <div class="form-group">
+            <label class="form-label">Filename <span class="req">*</span></label>
+            <input v-model="dlForm.filename" class="form-control" placeholder="noble-server-cloudimg-amd64.img" />
           </div>
-          <div class="library-card-actions">
+
+          <div class="form-group">
+            <label class="form-label">Content Type</label>
+            <select v-model="dlForm.content" class="form-control">
+              <option value="import">Raw Import (cloud images)</option>
+              <option value="iso">ISO</option>
+              <option value="vztmpl">Container Template</option>
+            </select>
+          </div>
+
+          <div v-if="dlError" class="alert alert-danger mt-2">{{ dlError }}</div>
+          <div v-if="dlSuccess" class="alert alert-success mt-2">{{ dlSuccess }}</div>
+
+          <div class="flex gap-1 mt-3">
             <button
-              class="btn btn-primary btn-sm"
-              @click="openLibraryDownloadModal(tpl)"
-            >Download &amp; Create Template</button>
-            <a :href="tpl.downloadUrl" target="_blank" class="btn btn-outline btn-sm">
-              Direct Link
-            </a>
+              @click="submitDownload"
+              class="btn btn-primary"
+              :disabled="dlBusy || !dlForm.hostId || !dlForm.node || !dlForm.storage || !dlForm.url || !dlForm.filename"
+            >
+              {{ dlBusy ? 'Submitting...' : 'Start Download' }}
+            </button>
+            <button @click="showDownloadModal = false" class="btn btn-outline">Cancel</button>
           </div>
         </div>
       </div>
-      <div v-if="filteredLibrary.length === 0" class="empty-state">
-        <span class="empty-icon">&#128214;</span>
-        <p>No templates match your search.</p>
-      </div>
-    </template>
+    </div>
 
-    <!-- ── Clone Modal ────────────────────────────────────────────────────── -->
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <!-- pveam Download Modal                                                -->
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <div v-if="showPveamModal" class="modal" @click.self="showPveamModal = false">
+      <div class="modal-content" @click.stop>
+        <div class="modal-header">
+          <h3>Download LXC Template</h3>
+          <button @click="showPveamModal = false" class="btn-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p class="hint-text mb-2">
+            Downloading <strong>{{ pveamTarget?.package }}</strong>
+          </p>
+
+          <div class="form-group">
+            <label class="form-label">Node <span class="req">*</span></label>
+            <select v-model="pveamDlForm.node" class="form-control" @change="onPveamDlNodeChange">
+              <option value="">Select node...</option>
+              <option v-for="n in pveamNodes" :key="n.node" :value="n.node">{{ n.node }}</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Target Storage <span class="req">*</span></label>
+            <select v-model="pveamDlForm.storage" class="form-control" :disabled="pveamDlStoragesLoading">
+              <option value="">{{ pveamDlStoragesLoading ? 'Loading...' : 'Select storage...' }}</option>
+              <option v-for="s in pveamDlStorages" :key="s.storage" :value="s.storage">
+                {{ s.storage }} ({{ s.type }})<template v-if="s.avail"> — {{ formatBytes(s.avail) }} free</template>
+              </option>
+            </select>
+          </div>
+
+          <div v-if="pveamDlError" class="alert alert-danger mt-2">{{ pveamDlError }}</div>
+          <div v-if="pveamDlSuccess" class="alert alert-success mt-2">{{ pveamDlSuccess }}</div>
+
+          <div class="flex gap-1 mt-3">
+            <button
+              @click="submitPveamDownload"
+              class="btn btn-primary"
+              :disabled="pveamDlBusy || !pveamDlForm.node || !pveamDlForm.storage"
+            >
+              {{ pveamDlBusy ? 'Downloading...' : 'Download Template' }}
+            </button>
+            <button @click="showPveamModal = false" class="btn btn-outline">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <!-- ISO Upload/URL Modal                                                -->
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <div v-if="showIsoModal" class="modal" @click.self="showIsoModal = false">
+      <div class="modal-content" @click.stop>
+        <div class="modal-header">
+          <h3>Add ISO Image</h3>
+          <button @click="showIsoModal = false" class="btn-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <!-- Mode selector -->
+          <div class="iso-mode-tabs mb-3">
+            <button :class="['iso-mode-btn', { active: isoMode === 'url' }]" @click="isoMode = 'url'">URL Download</button>
+            <button :class="['iso-mode-btn', { active: isoMode === 'info' }]" @click="isoMode = 'info'">Upload Info</button>
+          </div>
+
+          <template v-if="isoMode === 'url'">
+            <p class="hint-text mb-3">Proxmox downloads the ISO directly from the URL to node storage — no file upload needed.</p>
+
+            <div class="form-group">
+              <label class="form-label">Proxmox Host <span class="req">*</span></label>
+              <select v-model="isoForm.hostId" class="form-control" @change="onIsoHostChange">
+                <option value="">Select host...</option>
+                <option v-for="h in hosts" :key="h.id" :value="h.id">{{ h.name || h.host }}</option>
+              </select>
+            </div>
+
+            <div class="form-group" v-if="isoForm.hostId">
+              <label class="form-label">Node <span class="req">*</span></label>
+              <select v-model="isoForm.node" class="form-control" @change="onIsoNodeChange">
+                <option value="">Select node...</option>
+                <option v-for="n in isoNodes" :key="n.node" :value="n.node">{{ n.node }}</option>
+              </select>
+            </div>
+
+            <div class="form-group" v-if="isoForm.node">
+              <label class="form-label">Storage <span class="req">*</span></label>
+              <select v-model="isoForm.storage" class="form-control">
+                <option value="">Select storage...</option>
+                <option v-for="s in isoStorages" :key="s.storage" :value="s.storage">
+                  {{ s.storage }} ({{ s.type }})<template v-if="s.avail"> — {{ formatBytes(s.avail) }} free</template>
+                </option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">ISO URL <span class="req">*</span></label>
+              <input v-model="isoForm.url" class="form-control mono-input" placeholder="https://example.com/image.iso" @input="autoFillIsoFilename" />
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Filename <span class="req">*</span></label>
+              <input v-model="isoForm.filename" class="form-control" placeholder="image.iso" />
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Checksum Algorithm</label>
+              <select v-model="isoForm.checksumAlgo" class="form-control">
+                <option value="">None</option>
+                <option value="sha256">SHA-256</option>
+                <option value="sha512">SHA-512</option>
+                <option value="md5">MD5</option>
+              </select>
+            </div>
+
+            <div class="form-group" v-if="isoForm.checksumAlgo">
+              <label class="form-label">Checksum Value</label>
+              <input v-model="isoForm.checksum" class="form-control mono-input" placeholder="Paste checksum here..." />
+            </div>
+          </template>
+
+          <template v-else>
+            <div class="info-note">
+              <strong>Direct upload via Proxmox web UI:</strong>
+              <ol class="upload-steps">
+                <li>Open your Proxmox web interface</li>
+                <li>Navigate to Datacenter &rarr; Node &rarr; Storage</li>
+                <li>Click the storage that supports ISOs (e.g. <code>local</code>)</li>
+                <li>Go to the <strong>ISO Images</strong> tab</li>
+                <li>Click <strong>Upload</strong> and select your ISO file</li>
+              </ol>
+              <p class="mt-2">Once uploaded, click <strong>Refresh</strong> on this page to see it listed.</p>
+            </div>
+          </template>
+
+          <div v-if="isoError" class="alert alert-danger mt-2">{{ isoError }}</div>
+          <div v-if="isoSuccess" class="alert alert-success mt-2">{{ isoSuccess }}</div>
+
+          <div v-if="isoMode === 'url'" class="flex gap-1 mt-3">
+            <button
+              @click="submitIsoDownload"
+              class="btn btn-primary"
+              :disabled="isoBusy || !isoForm.hostId || !isoForm.node || !isoForm.storage || !isoForm.url || !isoForm.filename"
+            >
+              {{ isoBusy ? 'Submitting...' : 'Download ISO' }}
+            </button>
+            <button @click="showIsoModal = false" class="btn btn-outline">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <!-- Delete Confirmation Modal                                           -->
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <div v-if="showDeleteModal" class="modal" @click.self="showDeleteModal = false">
+      <div class="modal-content modal-sm" @click.stop>
+        <div class="modal-header">
+          <h3>Confirm Delete</h3>
+          <button @click="showDeleteModal = false" class="btn-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p>Are you sure you want to delete <strong>{{ deleteTarget?.name }}</strong>?</p>
+          <p class="hint-text mt-1">This will permanently remove the volume from Proxmox storage. This action cannot be undone.</p>
+          <div v-if="deleteTarget?.usedBy?.length" class="alert alert-danger mt-2">
+            Warning: This image is referenced by VM(s): {{ deleteTarget.usedBy.join(', ') }}
+          </div>
+          <div v-if="deleteError" class="alert alert-danger mt-2">{{ deleteError }}</div>
+          <div class="flex gap-1 mt-3">
+            <button @click="executeDelete" class="btn btn-danger" :disabled="deleting">
+              {{ deleting ? 'Deleting...' : 'Delete' }}
+            </button>
+            <button @click="showDeleteModal = false" class="btn btn-outline">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <!-- Clone Modal (VM Templates tab)                                      -->
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
     <div v-if="showCloneModal" class="modal" @click.self="closeCloneModal">
       <div class="modal-content" @click.stop>
         <div class="modal-header">
@@ -197,24 +624,18 @@
           <button @click="closeCloneModal" class="btn-close">&times;</button>
         </div>
         <div class="modal-body">
-          <p class="text-sm text-muted mb-3">
+          <p class="hint-text mb-3">
             Cloning <strong>{{ cloneTarget?.name || `VM ${cloneTarget?.vmid}` }}</strong>
-            (VMID {{ cloneTarget?.vmid }}) from node <strong>{{ cloneTarget?.node }}</strong>
+            (VMID {{ cloneTarget?.vmid }}) from <strong>{{ cloneTarget?.node }}</strong>
           </p>
 
-          <!-- Disk usage estimate -->
-          <div v-if="cloneTarget?.maxdisk" class="info-note mb-3">
-            Estimated disk usage: <strong>{{ formatGB(cloneTarget.maxdisk) }}</strong>
-            {{ cloneForm.full ? '(full clone — independent copy)' : '(linked clone — minimal extra space)' }}
-          </div>
-
           <div class="form-group">
-            <label class="form-label">New VM ID <span class="text-danger">*</span></label>
+            <label class="form-label">New VM ID <span class="req">*</span></label>
             <input v-model.number="cloneForm.newid" type="number" class="form-control" placeholder="e.g. 200" />
           </div>
 
           <div class="form-group">
-            <label class="form-label">New Name <span class="text-danger">*</span></label>
+            <label class="form-label">New Name <span class="req">*</span></label>
             <input v-model="cloneForm.name" class="form-control" placeholder="new-vm-name" />
           </div>
 
@@ -232,64 +653,28 @@
                 <input v-model="cloneForm.full" type="radio" :value="false" />
                 <span>
                   <strong>Linked Clone</strong>
-                  <span class="radio-hint">Shares base disk with template — faster, less space</span>
+                  <span class="radio-hint">Shares base disk — faster, uses less space</span>
                 </span>
               </label>
             </div>
-            <div v-if="!cloneForm.full" class="info-note mt-2">
-              Linked clones cannot be moved to different storage pools.
-            </div>
-          </div>
-
-          <!-- Target host (cross-host) -->
-          <div class="form-group">
-            <label class="form-label">Target Host</label>
-            <select v-model="cloneForm.targetHostId" class="form-control" @change="onTargetHostChange">
-              <option :value="cloneTarget?.hostId">Same host ({{ cloneTarget?.hostName }})</option>
-              <option v-for="h in otherHosts" :key="h.id" :value="h.id">
-                {{ h.name || h.host }} (cross-host via migration)
-              </option>
-            </select>
           </div>
 
           <div class="form-group">
             <label class="form-label">Target Node</label>
-            <select v-model="cloneForm.target" class="form-control" @change="onTargetNodeChange">
+            <select v-model="cloneForm.target" class="form-control" @change="onCloneNodeChange">
               <option value="">Same as template ({{ cloneTarget?.node }})</option>
-              <option v-for="n in cloneNodes" :key="n.node" :value="n.node">
-                {{ n.node }}
-              </option>
+              <option v-for="n in cloneNodes" :key="n.node" :value="n.node">{{ n.node }}</option>
             </select>
           </div>
 
           <div v-if="cloneForm.full" class="form-group">
             <label class="form-label">Target Storage</label>
-            <select v-model="cloneForm.storage" class="form-control" :disabled="loadingStorages">
+            <select v-model="cloneForm.storage" class="form-control" :disabled="cloneStoragesLoading">
               <option value="">Default storage</option>
               <option v-for="s in cloneStorages" :key="s.storage" :value="s.storage">
-                {{ s.storage }}
-                <template v-if="s.avail"> ({{ formatGB(s.avail) }} free)</template>
+                {{ s.storage }}<template v-if="s.avail"> ({{ formatBytes(s.avail) }} free)</template>
               </option>
             </select>
-            <div v-if="loadingStorages" class="hint-text mt-1">Loading storages...</div>
-          </div>
-
-          <!-- MAC address -->
-          <div class="form-group">
-            <label class="form-label">
-              <input v-model="cloneForm.generateMac" type="checkbox" />
-              Generate new MAC address for network interfaces
-            </label>
-            <p class="hint-text">Proxmox generates a new MAC when cloning by default.</p>
-          </div>
-
-          <!-- Cloud-init seed -->
-          <div v-if="cloneTarget && templateHasCloudInit(cloneTarget)" class="form-group">
-            <label class="form-label">
-              <input v-model="cloneForm.cloudInitSeed" type="checkbox" />
-              Configure Cloud-Init after clone
-            </label>
-            <p class="hint-text">Opens the Cloud-Init Configurator once cloning completes.</p>
           </div>
 
           <div class="form-group checkbox-group">
@@ -302,11 +687,7 @@
           <div v-if="cloneError" class="alert alert-danger mt-2">{{ cloneError }}</div>
 
           <div class="flex gap-1 mt-3">
-            <button
-              @click="submitClone"
-              class="btn btn-primary"
-              :disabled="cloning || !cloneForm.newid || !cloneForm.name"
-            >
+            <button @click="submitClone" class="btn btn-primary" :disabled="cloning || !cloneForm.newid || !cloneForm.name">
               {{ cloning ? 'Cloning...' : 'Clone VM' }}
             </button>
             <button @click="closeCloneModal" class="btn btn-outline">Cancel</button>
@@ -315,540 +696,457 @@
       </div>
     </div>
 
-    <!-- ── Metadata Edit Modal ────────────────────────────────────────────── -->
-    <div v-if="showMetaModal" class="modal" @click.self="closeMetaModal">
-      <div class="modal-content" @click.stop>
-        <div class="modal-header">
-          <h3>Edit Template Info</h3>
-          <button @click="closeMetaModal" class="btn-close">&times;</button>
-        </div>
-        <div class="modal-body">
-          <p class="text-sm text-muted mb-3">
-            Editing metadata for <strong>{{ metaTarget?.name || `VM ${metaTarget?.vmid}` }}</strong>
-          </p>
-
-          <div class="form-group">
-            <label class="form-label">Name</label>
-            <input v-model="metaForm.name" class="form-control" />
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">Description / Notes</label>
-            <textarea v-model="metaForm.description" class="form-control" rows="4" placeholder="Template notes..."></textarea>
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">Tags</label>
-            <input v-model="metaForm.tags" class="form-control" placeholder="production;ubuntu;lts" />
-            <p class="hint-text">Semicolon-separated tags.</p>
-          </div>
-
-          <div v-if="metaError" class="alert alert-danger mt-2">{{ metaError }}</div>
-          <div v-if="metaSuccess" class="alert alert-success mt-2">{{ metaSuccess }}</div>
-
-          <div class="flex gap-1 mt-3">
-            <button @click="saveMeta" class="btn btn-primary" :disabled="savingMeta">
-              {{ savingMeta ? 'Saving...' : 'Save' }}
-            </button>
-            <button @click="closeMetaModal" class="btn btn-outline">Cancel</button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- ── Library Download Modal ─────────────────────────────────────────── -->
-    <div v-if="showLibraryModal" class="modal" @click.self="showLibraryModal = false">
-      <div class="modal-content" @click.stop>
-        <div class="modal-header">
-          <h3>Download &amp; Create Template</h3>
-          <button @click="showLibraryModal = false" class="btn-close">&times;</button>
-        </div>
-        <div class="modal-body">
-          <p class="text-sm text-muted mb-3">
-            Downloading <strong>{{ libraryTarget?.name }}</strong> cloud image directly to Proxmox storage.
-          </p>
-
-          <div class="form-group">
-            <label class="form-label">Proxmox Host <span class="text-danger">*</span></label>
-            <select v-model="libForm.hostId" class="form-control" @change="onLibHostChange">
-              <option value="">Select host...</option>
-              <option v-for="h in hosts" :key="h.id" :value="h.id">{{ h.name || h.host }}</option>
-            </select>
-          </div>
-
-          <div class="form-group" v-if="libForm.hostId">
-            <label class="form-label">Node <span class="text-danger">*</span></label>
-            <select v-model="libForm.node" class="form-control" @change="onLibNodeChange">
-              <option value="">Select node...</option>
-              <option v-for="n in libNodes" :key="n.node" :value="n.node">{{ n.node }}</option>
-            </select>
-          </div>
-
-          <div class="form-group" v-if="libForm.node">
-            <label class="form-label">Storage <span class="text-danger">*</span></label>
-            <select v-model="libForm.storage" class="form-control">
-              <option value="">Select storage...</option>
-              <option v-for="s in libStorages" :key="s.storage" :value="s.storage">
-                {{ s.storage }} ({{ s.type }})
-                <template v-if="s.avail"> — {{ formatGB(s.avail) }} free</template>
-              </option>
-            </select>
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">Download URL</label>
-            <input v-model="libForm.url" class="form-control mono-input" />
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">Filename</label>
-            <input v-model="libForm.filename" class="form-control" />
-          </div>
-
-          <div class="info-note mb-2">
-            The image will be downloaded by Proxmox directly to the selected storage.
-            After download, go to the node storage browser to import it as a VM disk and convert to a template.
-          </div>
-
-          <div v-if="libError" class="alert alert-danger mt-2">{{ libError }}</div>
-          <div v-if="libSuccess" class="alert alert-success mt-2">{{ libSuccess }}</div>
-
-          <div class="flex gap-1 mt-3">
-            <button
-              @click="submitLibraryDownload"
-              class="btn btn-primary"
-              :disabled="libDownloading || !libForm.hostId || !libForm.node || !libForm.storage"
-            >
-              {{ libDownloading ? 'Downloading...' : 'Start Download' }}
-            </button>
-            <button @click="showLibraryModal = false" class="btn btn-outline">Cancel</button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Success Toast -->
+    <!-- Toast -->
     <transition name="toast-fade">
-      <div v-if="successToast.show" class="toast-success">
-        <span>{{ successToast.message }}</span>
-        <router-link
-          v-if="successToast.vmLink"
-          :to="successToast.vmLink"
-          class="toast-link"
-          @click="successToast.show = false"
-        >Go to VM &rarr;</router-link>
-        <button class="toast-close" @click="successToast.show = false">&times;</button>
+      <div v-if="toastMsg.show" class="toast-msg" :class="toastMsg.type === 'error' ? 'toast-error' : 'toast-success'">
+        <span>{{ toastMsg.message }}</span>
+        <button class="toast-close" @click="toastMsg.show = false">&times;</button>
       </div>
     </transition>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/services/api'
-import toast from '@/plugins/toast.js'
+import { detectOs, formatTemplateSize } from '@/utils/osIcons'
 
 const router = useRouter()
 
-// ── State ────────────────────────────────────────────────────────────────────
-const hosts = ref([])
-const templates = ref([])
-const loading = ref(false)
-const error = ref('')
-const search = ref('')
-const librarySearch = ref('')
-const selectedHostId = ref('')
-const sortBy = ref('name')
-const activeTab = ref('local')
+// ── Active tab ────────────────────────────────────────────────────────────────
+const activeTab = ref('cloud')
 
-// Clone modal state
+// ── Global state ──────────────────────────────────────────────────────────────
+const hosts = ref([])
+const error = ref('')
+const loading = ref(false)
+
+// ── Toast ─────────────────────────────────────────────────────────────────────
+const toastMsg = ref({ show: false, message: '', type: 'success' })
+function showToast(msg, type = 'success') {
+  toastMsg.value = { show: true, message: msg, type }
+  setTimeout(() => { toastMsg.value.show = false }, 6000)
+}
+
+// ── Cloud Images ──────────────────────────────────────────────────────────────
+const cloudImages = ref([])
+const cloudSearch = ref('')
+const cloudHostFilter = ref('')
+
+const filteredCloudImages = computed(() => {
+  let list = cloudImages.value
+  if (cloudHostFilter.value) list = list.filter(i => String(i.hostId) === String(cloudHostFilter.value))
+  const q = cloudSearch.value.trim().toLowerCase()
+  if (q) list = list.filter(i => (i.name || '').toLowerCase().includes(q) || (i.storage || '').toLowerCase().includes(q))
+  return list
+})
+
+// ── pveam Library ─────────────────────────────────────────────────────────────
+const pveamTemplates = ref([])
+const pveamSearch = ref('')
+const pveamSection = ref('')
+const pveamHostId = ref('')
+const pveamNode = ref('')
+const pveamNodes = ref([])
+const pveamLoading = ref(false)
+
+const filteredPveamTemplates = computed(() => {
+  let list = pveamTemplates.value
+  const q = pveamSearch.value.trim().toLowerCase()
+  if (q) list = list.filter(t => (t.package || '').toLowerCase().includes(q) || (t.description || '').toLowerCase().includes(q))
+  return list
+})
+
+// ── ISO Images ────────────────────────────────────────────────────────────────
+const isoImages = ref([])
+const isoSearch = ref('')
+const isoHostFilter = ref('')
+const isoLoading = ref(false)
+const isoSelected = ref(new Set())
+const isoDeleting = ref(false)
+
+const filteredIsoImages = computed(() => {
+  let list = isoImages.value
+  if (isoHostFilter.value) list = list.filter(i => String(i.hostId) === String(isoHostFilter.value))
+  const q = isoSearch.value.trim().toLowerCase()
+  if (q) list = list.filter(i => (i.name || '').toLowerCase().includes(q))
+  return list
+})
+
+const isoAllChecked = computed(() =>
+  filteredIsoImages.value.length > 0 && filteredIsoImages.value.every(i => isoSelected.value.has(i.volid))
+)
+
+// ── Local VM Templates ────────────────────────────────────────────────────────
+const localTemplates = ref([])
+const localSearch = ref('')
+const localHostFilter = ref('')
+
+const filteredLocalTemplates = computed(() => {
+  let list = localTemplates.value
+  if (localHostFilter.value) list = list.filter(t => String(t.hostId) === String(localHostFilter.value))
+  const q = localSearch.value.trim().toLowerCase()
+  if (q) list = list.filter(t => (t.name || '').toLowerCase().includes(q) || String(t.vmid).includes(q))
+  return [...list].sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+})
+
+// ── Count badge ───────────────────────────────────────────────────────────────
+const countBadgeText = computed(() => {
+  if (activeTab.value === 'cloud') {
+    const n = filteredCloudImages.value.length
+    return n ? `${n} image${n !== 1 ? 's' : ''}` : ''
+  }
+  if (activeTab.value === 'pveam') {
+    const n = filteredPveamTemplates.value.length
+    return n ? `${n} available` : ''
+  }
+  if (activeTab.value === 'iso') {
+    const n = filteredIsoImages.value.length
+    return n ? `${n} ISO${n !== 1 ? 's' : ''}` : ''
+  }
+  if (activeTab.value === 'local') {
+    const n = filteredLocalTemplates.value.length
+    return n ? `${n} template${n !== 1 ? 's' : ''}` : ''
+  }
+  return ''
+})
+
+// ── Cloud Image Presets ───────────────────────────────────────────────────────
+const CLOUD_IMAGE_PRESETS = [
+  { id: 'ubuntu-2404', name: 'Ubuntu 24.04 LTS', url: 'https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img', filename: 'noble-server-cloudimg-amd64.img' },
+  { id: 'ubuntu-2204', name: 'Ubuntu 22.04 LTS', url: 'https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img', filename: 'jammy-server-cloudimg-amd64.img' },
+  { id: 'debian-12',   name: 'Debian 12',         url: 'https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-generic-amd64.qcow2', filename: 'debian-12-generic-amd64.qcow2' },
+  { id: 'rocky-9',     name: 'Rocky Linux 9',     url: 'https://download.rockylinux.org/pub/rocky/9/images/x86_64/Rocky-9-GenericCloud.latest.x86_64.qcow2', filename: 'Rocky-9-GenericCloud.latest.x86_64.qcow2' },
+  { id: 'alma-9',      name: 'AlmaLinux 9',       url: 'https://repo.almalinux.org/almalinux/9/cloud/x86_64/images/AlmaLinux-9-GenericCloud-latest.x86_64.qcow2', filename: 'AlmaLinux-9-GenericCloud-latest.x86_64.qcow2' },
+  { id: 'centos-9',    name: 'CentOS Stream 9',   url: 'https://cloud.centos.org/centos/9-stream/x86_64/images/CentOS-Stream-GenericCloud-9-latest.x86_64.qcow2', filename: 'CentOS-Stream-GenericCloud-9-latest.x86_64.qcow2' },
+  { id: 'alpine-319',  name: 'Alpine 3.19',       url: 'https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/cloud/nocloud_alpine-3.19.0-x86_64-bios-cloudinit-r0.qcow2', filename: 'alpine-3.19-cloudimg.qcow2' },
+]
+
+// ── Download Cloud Image Modal ────────────────────────────────────────────────
+const showDownloadModal = ref(false)
+const dlForm = ref({ hostId: '', node: '', storage: '', url: '', filename: '', content: 'import' })
+const dlNodes = ref([])
+const dlStorages = ref([])
+const dlBusy = ref(false)
+const dlError = ref('')
+const dlSuccess = ref('')
+
+function openDownloadModal() {
+  dlForm.value = { hostId: hosts.value[0]?.id || '', node: '', storage: '', url: '', filename: '', content: 'import' }
+  dlNodes.value = []
+  dlStorages.value = []
+  dlError.value = ''
+  dlSuccess.value = ''
+  showDownloadModal.value = true
+  if (dlForm.value.hostId) onDlHostChange()
+}
+
+async function onDlHostChange() {
+  dlForm.value.node = ''
+  dlForm.value.storage = ''
+  dlNodes.value = []
+  dlStorages.value = []
+  if (!dlForm.value.hostId) return
+  try {
+    const res = await api.proxmox.listNodes(dlForm.value.hostId)
+    dlNodes.value = res.data || []
+    if (dlNodes.value.length === 1) {
+      dlForm.value.node = dlNodes.value[0].node
+      await onDlNodeChange()
+    }
+  } catch (e) { console.warn(e) }
+}
+
+async function onDlNodeChange() {
+  dlForm.value.storage = ''
+  dlStorages.value = []
+  const { hostId, node } = dlForm.value
+  if (!hostId || !node) return
+  try {
+    const res = await api.pveNode.listStorage(hostId, node)
+    dlStorages.value = res.data || []
+    const img = dlStorages.value.find(s => s.content && s.content.includes('images'))
+    if (img) dlForm.value.storage = img.storage
+  } catch (e) { console.warn(e) }
+}
+
+function applyPreset(preset) {
+  dlForm.value.url = preset.url
+  dlForm.value.filename = preset.filename
+}
+
+async function submitDownload() {
+  dlBusy.value = true
+  dlError.value = ''
+  dlSuccess.value = ''
+  try {
+    const { hostId, node, storage, url, filename, content } = dlForm.value
+    await api.pveNode.downloadUrlToStorage(hostId, node, storage, { url, filename, content })
+    dlSuccess.value = 'Download task submitted to Proxmox. Monitor progress in the node task log.'
+    showToast('Download task started — check Proxmox task log for progress.')
+    setTimeout(() => loadCloudImages(), 3000)
+  } catch (e) {
+    dlError.value = e?.response?.data?.detail || 'Failed to start download.'
+  } finally {
+    dlBusy.value = false
+  }
+}
+
+// ── pveam Download Modal ──────────────────────────────────────────────────────
+const showPveamModal = ref(false)
+const pveamTarget = ref(null)
+const pveamDlForm = ref({ node: '', storage: '' })
+const pveamDlStorages = ref([])
+const pveamDlStoragesLoading = ref(false)
+const pveamDlBusy = ref(false)
+const pveamDlError = ref('')
+const pveamDlSuccess = ref('')
+
+async function openPveamDownload(tpl) {
+  pveamTarget.value = tpl
+  pveamDlForm.value = { node: pveamNodes.value[0]?.node || '', storage: '' }
+  pveamDlStorages.value = []
+  pveamDlError.value = ''
+  pveamDlSuccess.value = ''
+  showPveamModal.value = true
+  if (pveamDlForm.value.node) await onPveamDlNodeChange()
+}
+
+async function onPveamDlNodeChange() {
+  pveamDlForm.value.storage = ''
+  pveamDlStorages.value = []
+  pveamDlStoragesLoading.value = true
+  try {
+    const res = await api.pveNode.listStorage(pveamHostId.value, pveamDlForm.value.node)
+    // filter storages that can hold vztmpl
+    pveamDlStorages.value = (res.data || []).filter(s => s.content && s.content.includes('vztmpl'))
+    if (pveamDlStorages.value.length === 0) pveamDlStorages.value = res.data || []
+    const first = pveamDlStorages.value[0]
+    if (first) pveamDlForm.value.storage = first.storage
+  } catch (e) { console.warn(e) } finally {
+    pveamDlStoragesLoading.value = false
+  }
+}
+
+async function submitPveamDownload() {
+  pveamDlBusy.value = true
+  pveamDlError.value = ''
+  pveamDlSuccess.value = ''
+  try {
+    const { node, storage } = pveamDlForm.value
+    await api.pveNode.downloadTemplate(pveamHostId.value, node, {
+      storage,
+      template: pveamTarget.value.package,
+    })
+    pveamDlSuccess.value = `Download of ${pveamTarget.value.package} started. Check node task log for progress.`
+    showToast(`Downloading ${pveamTarget.value.package}...`)
+  } catch (e) {
+    pveamDlError.value = e?.response?.data?.detail || 'Download failed.'
+  } finally {
+    pveamDlBusy.value = false
+  }
+}
+
+// ── ISO Upload Modal ──────────────────────────────────────────────────────────
+const showIsoModal = ref(false)
+const isoMode = ref('url')
+const isoForm = ref({ hostId: '', node: '', storage: '', url: '', filename: '', checksumAlgo: '', checksum: '' })
+const isoNodes = ref([])
+const isoStorages = ref([])
+const isoBusy = ref(false)
+const isoError = ref('')
+const isoSuccess = ref('')
+
+function openIsoUploadModal() {
+  isoMode.value = 'url'
+  isoForm.value = { hostId: hosts.value[0]?.id || '', node: '', storage: '', url: '', filename: '', checksumAlgo: '', checksum: '' }
+  isoNodes.value = []
+  isoStorages.value = []
+  isoError.value = ''
+  isoSuccess.value = ''
+  showIsoModal.value = true
+  if (isoForm.value.hostId) onIsoHostChange()
+}
+
+async function onIsoHostChange() {
+  isoForm.value.node = ''
+  isoForm.value.storage = ''
+  isoNodes.value = []
+  isoStorages.value = []
+  if (!isoForm.value.hostId) return
+  try {
+    const res = await api.proxmox.listNodes(isoForm.value.hostId)
+    isoNodes.value = res.data || []
+    if (isoNodes.value.length === 1) {
+      isoForm.value.node = isoNodes.value[0].node
+      await onIsoNodeChange()
+    }
+  } catch (e) { console.warn(e) }
+}
+
+async function onIsoNodeChange() {
+  isoForm.value.storage = ''
+  isoStorages.value = []
+  const { hostId, node } = isoForm.value
+  if (!hostId || !node) return
+  try {
+    const res = await api.pveNode.listStorage(hostId, node)
+    isoStorages.value = (res.data || []).filter(s => s.content && s.content.includes('iso'))
+    if (isoStorages.value.length === 0) isoStorages.value = res.data || []
+    if (isoStorages.value.length > 0) isoForm.value.storage = isoStorages.value[0].storage
+  } catch (e) { console.warn(e) }
+}
+
+function autoFillIsoFilename() {
+  const url = isoForm.value.url
+  if (url && !isoForm.value.filename) {
+    try {
+      const parts = new URL(url).pathname.split('/')
+      isoForm.value.filename = parts[parts.length - 1] || ''
+    } catch (e) {
+      // invalid url, ignore
+    }
+  }
+}
+
+async function submitIsoDownload() {
+  isoBusy.value = true
+  isoError.value = ''
+  isoSuccess.value = ''
+  try {
+    const { hostId, node, storage, url, filename, checksumAlgo, checksum } = isoForm.value
+    const payload = { url, filename, content: 'iso' }
+    if (checksumAlgo) { payload.checksum_algorithm = checksumAlgo; payload.checksum = checksum }
+    await api.pveNode.downloadUrlToStorage(hostId, node, storage, payload)
+    isoSuccess.value = 'ISO download task submitted. Proxmox will download directly to storage.'
+    showToast('ISO download started — monitor in Proxmox task log.')
+    setTimeout(() => loadIsoImages(), 3000)
+  } catch (e) {
+    isoError.value = e?.response?.data?.detail || 'Failed to submit download.'
+  } finally {
+    isoBusy.value = false
+  }
+}
+
+// ── Delete Volume Modal ───────────────────────────────────────────────────────
+const showDeleteModal = ref(false)
+const deleteTarget = ref(null)
+const deleteError = ref('')
+const deleting = ref(false)
+
+function confirmDeleteVolume(item) {
+  deleteTarget.value = item
+  deleteError.value = ''
+  showDeleteModal.value = true
+}
+
+async function executeDelete() {
+  deleting.value = true
+  deleteError.value = ''
+  try {
+    const item = deleteTarget.value
+    await api.pveNode.deleteVolume(item.hostId, item.node, item.storage, item.volid)
+    showDeleteModal.value = false
+    showToast(`Deleted ${item.name}`)
+    // Refresh the relevant list
+    if (activeTab.value === 'cloud') await loadCloudImages()
+    else if (activeTab.value === 'iso') await loadIsoImages()
+  } catch (e) {
+    deleteError.value = e?.response?.data?.detail || 'Delete failed.'
+  } finally {
+    deleting.value = false
+  }
+}
+
+// ── Bulk ISO delete ───────────────────────────────────────────────────────────
+function toggleIsoSelect(iso) {
+  const s = new Set(isoSelected.value)
+  if (s.has(iso.volid)) s.delete(iso.volid)
+  else s.add(iso.volid)
+  isoSelected.value = s
+}
+
+function toggleAllIsos() {
+  if (isoAllChecked.value) {
+    isoSelected.value = new Set()
+  } else {
+    isoSelected.value = new Set(filteredIsoImages.value.map(i => i.volid))
+  }
+}
+
+async function bulkDeleteIsos() {
+  if (!confirm(`Delete ${isoSelected.value.size} selected ISO(s)? This cannot be undone.`)) return
+  isoDeleting.value = true
+  const toDelete = isoImages.value.filter(i => isoSelected.value.has(i.volid))
+  let failed = 0
+  for (const item of toDelete) {
+    try {
+      await api.pveNode.deleteVolume(item.hostId, item.node, item.storage, item.volid)
+    } catch (e) {
+      failed++
+    }
+  }
+  isoSelected.value = new Set()
+  isoDeleting.value = false
+  await loadIsoImages()
+  if (failed) showToast(`${toDelete.length - failed} deleted, ${failed} failed.`, 'error')
+  else showToast(`${toDelete.length} ISO(s) deleted.`)
+}
+
+// ── Clone Modal ───────────────────────────────────────────────────────────────
 const showCloneModal = ref(false)
 const cloneTarget = ref(null)
 const cloneNodes = ref([])
 const cloneStorages = ref([])
-const loadingStorages = ref(false)
-const cloneForm = ref({
-  newid: null,
-  name: '',
-  target: '',
-  targetHostId: null,
-  storage: '',
-  full: true,
-  startAfterClone: false,
-  generateMac: true,
-  cloudInitSeed: false,
-})
+const cloneStoragesLoading = ref(false)
+const cloneForm = ref({ newid: null, name: '', target: '', storage: '', full: true, startAfterClone: false })
 const cloning = ref(false)
 const cloneError = ref('')
-const otherHosts = computed(() => hosts.value.filter(h => h.id !== cloneTarget.value?.hostId))
 
-// Metadata modal
-const showMetaModal = ref(false)
-const metaTarget = ref(null)
-const metaForm = ref({ name: '', description: '', tags: '' })
-const savingMeta = ref(false)
-const metaError = ref('')
-const metaSuccess = ref('')
-
-// Library download modal
-const showLibraryModal = ref(false)
-const libraryTarget = ref(null)
-const libForm = ref({ hostId: '', node: '', storage: '', url: '', filename: '' })
-const libNodes = ref([])
-const libStorages = ref([])
-const libDownloading = ref(false)
-const libError = ref('')
-const libSuccess = ref('')
-
-// Success toast
-const successToast = ref({ show: false, message: '', vmLink: '' })
-
-// ── Community Template Library ────────────────────────────────────────────────
-const COMMUNITY_TEMPLATES = [
-  {
-    id: 'ubuntu-2204',
-    name: 'Ubuntu 22.04 LTS (Jammy)',
-    osKey: 'ubuntu',
-    osLabel: 'Ubuntu',
-    description: 'Ubuntu 22.04 LTS cloud image. Long-term support until April 2027. Ideal for production servers.',
-    downloadUrl: 'https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img',
-    minDisk: 10,
-    minRam: 512,
-    cloudinit: true,
-    lts: true,
-  },
-  {
-    id: 'ubuntu-2404',
-    name: 'Ubuntu 24.04 LTS (Noble)',
-    osKey: 'ubuntu',
-    osLabel: 'Ubuntu',
-    description: 'Ubuntu 24.04 LTS cloud image. Latest LTS release with support until April 2029.',
-    downloadUrl: 'https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img',
-    minDisk: 10,
-    minRam: 512,
-    cloudinit: true,
-    lts: true,
-  },
-  {
-    id: 'debian-12',
-    name: 'Debian 12 (Bookworm)',
-    osKey: 'debian',
-    osLabel: 'Debian',
-    description: 'Debian 12 stable cloud image. Rock-solid, conservative package selections. Excellent for servers.',
-    downloadUrl: 'https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-generic-amd64.qcow2',
-    minDisk: 8,
-    minRam: 512,
-    cloudinit: true,
-    lts: false,
-  },
-  {
-    id: 'centos-stream-9',
-    name: 'CentOS Stream 9',
-    osKey: 'centos',
-    osLabel: 'CentOS',
-    description: 'CentOS Stream 9 cloud image. Rolling-release midstream between RHEL and Fedora.',
-    downloadUrl: 'https://cloud.centos.org/centos/9-stream/x86_64/images/CentOS-Stream-GenericCloud-9-latest.x86_64.qcow2',
-    minDisk: 10,
-    minRam: 1024,
-    cloudinit: true,
-    lts: false,
-  },
-  {
-    id: 'rocky-9',
-    name: 'Rocky Linux 9',
-    osKey: 'rocky',
-    osLabel: 'Rocky',
-    description: 'Rocky Linux 9 cloud image. Enterprise-grade, RHEL-compatible, community-maintained.',
-    downloadUrl: 'https://download.rockylinux.org/pub/rocky/9/images/x86_64/Rocky-9-GenericCloud.latest.x86_64.qcow2',
-    minDisk: 10,
-    minRam: 1024,
-    cloudinit: true,
-    lts: false,
-  },
-  {
-    id: 'alma-9',
-    name: 'AlmaLinux 9',
-    osKey: 'alma',
-    osLabel: 'AlmaLinux',
-    description: 'AlmaLinux 9 cloud image. 1:1 binary compatible with RHEL 9. Community-owned forever.',
-    downloadUrl: 'https://repo.almalinux.org/almalinux/9/cloud/x86_64/images/AlmaLinux-9-GenericCloud-latest.x86_64.qcow2',
-    minDisk: 10,
-    minRam: 1024,
-    cloudinit: true,
-    lts: false,
-  },
-  {
-    id: 'fedora-39',
-    name: 'Fedora 39',
-    osKey: 'fedora',
-    osLabel: 'Fedora',
-    description: 'Fedora 39 cloud image. Latest Fedora release with cutting-edge packages and technologies.',
-    downloadUrl: 'https://download.fedoraproject.org/pub/fedora/linux/releases/39/Cloud/x86_64/images/Fedora-Cloud-Base-39-1.5.x86_64.qcow2',
-    minDisk: 10,
-    minRam: 1024,
-    cloudinit: true,
-    lts: false,
-  },
-  {
-    id: 'opensuse-leap-155',
-    name: 'openSUSE Leap 15.5',
-    osKey: 'suse',
-    osLabel: 'openSUSE',
-    description: 'openSUSE Leap 15.5 cloud image. Enterprise-class stability with community-driven development.',
-    downloadUrl: 'https://download.opensuse.org/distribution/leap/15.5/appliances/openSUSE-Leap-15.5-Minimal-VM.x86_64-Cloud.qcow2',
-    minDisk: 10,
-    minRam: 1024,
-    cloudinit: true,
-    lts: false,
-  },
-  {
-    id: 'alpine-318',
-    name: 'Alpine Linux 3.18',
-    osKey: 'alpine',
-    osLabel: 'Alpine',
-    description: 'Alpine Linux 3.18 cloud image. Extremely small (~5 MB), security-oriented, musl libc.',
-    downloadUrl: 'https://dl-cdn.alpinelinux.org/alpine/v3.18/releases/cloud/nocloud_alpine-3.18.0-x86_64-bios-cloudinit-r0.qcow2',
-    minDisk: 1,
-    minRam: 128,
-    cloudinit: true,
-    lts: false,
-  },
-  {
-    id: 'windows-server-2022',
-    name: 'Windows Server 2022',
-    osKey: 'windows',
-    osLabel: 'Windows',
-    description: 'Windows Server 2022 evaluation ISO. Requires manual setup — cloud-init not supported natively.',
-    downloadUrl: 'https://go.microsoft.com/fwlink/p/?LinkID=2195280&clcid=0x409&culture=en-us&country=US',
-    minDisk: 40,
-    minRam: 2048,
-    cloudinit: false,
-    lts: true,
-  },
-  {
-    id: 'debian-11',
-    name: 'Debian 11 (Bullseye)',
-    osKey: 'debian',
-    osLabel: 'Debian',
-    description: 'Debian 11 oldstable cloud image. Still receives security updates. Good for compatibility.',
-    downloadUrl: 'https://cloud.debian.org/images/cloud/bullseye/latest/debian-11-generic-amd64.qcow2',
-    minDisk: 8,
-    minRam: 512,
-    cloudinit: true,
-    lts: false,
-  },
-]
-
-// ── Computed ─────────────────────────────────────────────────────────────────
-const filteredTemplates = computed(() => {
-  let list = templates.value
-  if (selectedHostId.value) {
-    list = list.filter(t => String(t.hostId) === String(selectedHostId.value))
-  }
-  if (search.value.trim()) {
-    const q = search.value.trim().toLowerCase()
-    list = list.filter(t =>
-      (t.name || '').toLowerCase().includes(q) ||
-      String(t.vmid).includes(q)
-    )
-  }
-  list = [...list].sort((a, b) => {
-    if (sortBy.value === 'vmid') return a.vmid - b.vmid
-    if (sortBy.value === 'size') return (b.maxdisk || 0) - (a.maxdisk || 0)
-    if (sortBy.value === 'node') return a.node.localeCompare(b.node)
-    const an = (a.name || `vm${a.vmid}`).toLowerCase()
-    const bn = (b.name || `vm${b.vmid}`).toLowerCase()
-    return an.localeCompare(bn)
-  })
-  return list
-})
-
-const uniqueHostCount = computed(() => {
-  const ids = new Set(filteredTemplates.value.map(t => t.hostId))
-  return ids.size
-})
-
-const filteredLibrary = computed(() => {
-  const q = librarySearch.value.trim().toLowerCase()
-  if (!q) return COMMUNITY_TEMPLATES
-  return COMMUNITY_TEMPLATES.filter(t =>
-    t.name.toLowerCase().includes(q) ||
-    t.description.toLowerCase().includes(q) ||
-    t.osLabel.toLowerCase().includes(q)
-  )
-})
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-function formatMB(bytes) {
-  return Math.round(bytes / 1024 / 1024)
-}
-
-function formatGB(bytes) {
-  if (!bytes) return '0 GB'
-  const gb = bytes / 1024 / 1024 / 1024
-  return gb >= 1 ? `${gb.toFixed(0)} GB` : `${(bytes / 1024 / 1024).toFixed(0)} MB`
-}
-
-function truncate(str, len) {
-  if (!str) return ''
-  return str.length > len ? str.slice(0, len) + '…' : str
-}
-
-const OS_PATTERNS = [
-  { key: 'ubuntu',  label: 'Ubuntu',  patterns: ['ubuntu'] },
-  { key: 'debian',  label: 'Debian',  patterns: ['debian'] },
-  { key: 'centos',  label: 'CentOS',  patterns: ['centos'] },
-  { key: 'rhel',    label: 'RHEL',    patterns: ['rhel', 'redhat', 'red-hat'] },
-  { key: 'rocky',   label: 'Rocky',   patterns: ['rocky'] },
-  { key: 'alma',    label: 'AlmaLinux', patterns: ['alma'] },
-  { key: 'fedora',  label: 'Fedora',  patterns: ['fedora'] },
-  { key: 'suse',    label: 'SUSE',    patterns: ['suse', 'opensuse'] },
-  { key: 'alpine',  label: 'Alpine',  patterns: ['alpine'] },
-  { key: 'arch',    label: 'Arch',    patterns: ['arch'] },
-  { key: 'windows', label: 'Windows', patterns: ['win', 'windows', 'server-20', 'w2k'] },
-  { key: 'freebsd', label: 'FreeBSD', patterns: ['freebsd', 'bsd'] },
-]
-
-function detectOS(name) {
-  if (!name) return 'unknown'
-  const lower = (name || '').toLowerCase()
-  for (const os of OS_PATTERNS) {
-    if (os.patterns.some(p => lower.includes(p))) return os.key
-  }
-  return 'unknown'
-}
-
-function detectOSLabel(name) {
-  if (!name) return 'Unknown'
-  const lower = (name || '').toLowerCase()
-  for (const os of OS_PATTERNS) {
-    if (os.patterns.some(p => lower.includes(p))) return os.label
-  }
-  return 'Linux'
-}
-
-function templateHasCloudInit(tpl) {
-  // Heuristic: check OS name for known cloud-init distros
-  const ci = ['ubuntu', 'debian', 'centos', 'rocky', 'alma', 'fedora', 'suse', 'alpine']
-  const key = detectOS(tpl.name)
-  return ci.includes(key)
-}
-
-// ── Data Loading ──────────────────────────────────────────────────────────────
-async function loadHosts() {
-  try {
-    const res = await api.proxmox.listHosts()
-    hosts.value = res.data || []
-  } catch (err) {
-    error.value = 'Failed to load Proxmox hosts.'
-    toast.error('Failed to load Proxmox hosts')
-  }
-}
-
-async function loadTemplates() {
-  if (hosts.value.length === 0) return
-  loading.value = true
-  error.value = ''
-  templates.value = []
-
-  const results = []
-  await Promise.allSettled(
-    hosts.value.map(async (host) => {
-      try {
-        const res = await api.pveNode.clusterResources(host.id, 'vm')
-        const items = (res.data || [])
-          .filter(vm => vm.template === 1)
-          .map(vm => ({
-            ...vm,
-            hostId: host.id,
-            hostName: host.name || host.host
-          }))
-        results.push(...items)
-      } catch (err) {
-        console.warn(`Failed to load resources for host ${host.id}:`, err)
-      }
-    })
-  )
-
-  templates.value = results
-  loading.value = false
-}
-
-// ── Clone Modal ───────────────────────────────────────────────────────────────
 async function openCloneModal(tpl) {
   cloneTarget.value = tpl
   cloneError.value = ''
-  cloneNodes.value = []
-  cloneStorages.value = []
   cloneForm.value = {
     newid: null,
     name: `${tpl.name || `vm${tpl.vmid}`}-clone`,
     target: '',
-    targetHostId: tpl.hostId,
     storage: '',
     full: true,
     startAfterClone: false,
-    generateMac: true,
-    cloudInitSeed: false,
   }
+  cloneNodes.value = []
+  cloneStorages.value = []
   showCloneModal.value = true
 
   try {
     const res = await api.pveNode.nextId(tpl.hostId)
-    const next = res.data?.nextid ?? res.data
+    const next = res.data?.vmid
     if (next) cloneForm.value.newid = Number(next)
-  } catch (err) {
-    console.warn('Could not fetch next VM ID:', err)
-  }
+  } catch (e) { console.warn(e) }
 
   try {
     const res = await api.proxmox.listNodes(tpl.hostId)
     cloneNodes.value = (res.data || []).filter(n => n.node !== tpl.node)
-  } catch (err) {
-    console.warn('Could not fetch nodes:', err)
-  }
+  } catch (e) { console.warn(e) }
 
-  await loadStoragesForNode(tpl.hostId, tpl.node)
+  await loadCloneStorages(tpl.hostId, tpl.node)
 }
 
-async function loadStoragesForNode(hostId, node) {
-  loadingStorages.value = true
-  cloneStorages.value = []
+async function loadCloneStorages(hostId, node) {
+  cloneStoragesLoading.value = true
   try {
     const res = await api.pveNode.listStorage(hostId, node)
-    cloneStorages.value = (res.data || []).filter(s =>
-      s.content && s.content.split(',').includes('images')
-    )
-  } catch (err) {
-    console.warn('Could not fetch storages:', err)
-  } finally {
-    loadingStorages.value = false
+    cloneStorages.value = (res.data || []).filter(s => s.content && s.content.includes('images'))
+  } catch (e) { console.warn(e) } finally {
+    cloneStoragesLoading.value = false
   }
 }
 
-async function onTargetHostChange() {
-  const hostId = cloneForm.value.targetHostId
-  cloneNodes.value = []
-  cloneStorages.value = []
-  cloneForm.value.target = ''
+async function onCloneNodeChange() {
   cloneForm.value.storage = ''
-  if (!hostId) return
-  try {
-    const res = await api.proxmox.listNodes(hostId)
-    cloneNodes.value = res.data || []
-  } catch (err) {
-    console.warn('Could not fetch nodes for selected host:', err)
-  }
-}
-
-async function onTargetNodeChange() {
-  const hostId = cloneForm.value.targetHostId || cloneTarget.value?.hostId
   const node = cloneForm.value.target || cloneTarget.value?.node
-  cloneForm.value.storage = ''
-  if (hostId && node) {
-    await loadStoragesForNode(hostId, node)
-  }
+  if (node) await loadCloneStorages(cloneTarget.value.hostId, node)
 }
 
 function closeCloneModal() {
@@ -857,194 +1155,243 @@ function closeCloneModal() {
   cloneError.value = ''
 }
 
-function showSuccessToast(msg, vmLink) {
-  successToast.value = { show: true, message: msg, vmLink: vmLink || '' }
-  setTimeout(() => { successToast.value.show = false }, 8000)
-}
-
 async function submitClone() {
   if (!cloneForm.value.newid || !cloneForm.value.name) return
   cloning.value = true
   cloneError.value = ''
-
-  const { newid, name, target, full, storage } = cloneForm.value
-  const payload = {
-    newid,
-    name,
-    full: full ? 1 : 0,
-    ...(target ? { target } : {}),
-    ...(full && storage ? { storage } : {})
-  }
-
-  const resolvedNode = target || cloneTarget.value.node
-  const resolvedHostId = cloneForm.value.targetHostId || cloneTarget.value.hostId
-
   try {
-    await api.pveVm.clone(
-      cloneTarget.value.hostId,
-      cloneTarget.value.node,
-      cloneTarget.value.vmid,
-      payload
-    )
-
+    const { newid, name, target, full, storage } = cloneForm.value
+    const payload = { newid, name, full: full ? 1 : 0, ...(target ? { target } : {}), ...(full && storage ? { storage } : {}) }
+    await api.pveVm.clone(cloneTarget.value.hostId, cloneTarget.value.node, cloneTarget.value.vmid, payload)
     if (cloneForm.value.startAfterClone) {
-      try {
-        await api.pveVm.start(resolvedHostId, resolvedNode, newid)
-      } catch (startErr) {
-        console.warn('Could not start VM after clone:', startErr)
-      }
+      try { await api.pveVm.start(cloneTarget.value.hostId, target || cloneTarget.value.node, newid) } catch (e) { console.warn(e) }
     }
-
-    const savedHostId = cloneTarget.value.hostId
-    const wantCi = cloneForm.value.cloudInitSeed
-
     closeCloneModal()
-    showSuccessToast(
-      `VM ${newid} cloned successfully.`,
-      `/proxmox/${savedHostId}/nodes/${resolvedNode}/vms/${newid}`
-    )
-    await loadTemplates()
-
-    // Navigate to cloud-init editor if requested
-    if (wantCi) {
-      await router.push(`/cloud-init?hostId=${savedHostId}&node=${resolvedNode}&vmid=${newid}`)
-    }
-  } catch (err) {
-    cloneError.value =
-      err?.response?.data?.detail ||
-      err?.response?.data?.message ||
-      'Clone operation failed.'
+    showToast(`VM ${newid} cloned successfully.`)
+  } catch (e) {
+    cloneError.value = e?.response?.data?.detail || 'Clone failed.'
   } finally {
     cloning.value = false
   }
 }
 
-// ── Metadata Modal ────────────────────────────────────────────────────────────
-function openMetaModal(tpl) {
-  metaTarget.value = tpl
-  metaForm.value = {
-    name: tpl.name || '',
-    description: tpl.description || '',
-    tags: tpl.tags || '',
-  }
-  metaError.value = ''
-  metaSuccess.value = ''
-  showMetaModal.value = true
+// ── OS helpers ────────────────────────────────────────────────────────────────
+function detectOsInfo(name) {
+  return detectOs(name)
 }
 
-function closeMetaModal() {
-  showMetaModal.value = false
-  metaTarget.value = null
+function getOsColor(name) {
+  return detectOs(name).color
 }
 
-async function saveMeta() {
-  savingMeta.value = true
-  metaError.value = ''
-  metaSuccess.value = ''
+// ── Format helpers ────────────────────────────────────────────────────────────
+function formatBytes(bytes) {
+  if (!bytes && bytes !== 0) return '—'
+  const n = Number(bytes)
+  if (n >= 1024 * 1024 * 1024) return (n / (1024 * 1024 * 1024)).toFixed(1) + ' GB'
+  if (n >= 1024 * 1024) return (n / (1024 * 1024)).toFixed(0) + ' MB'
+  if (n >= 1024) return (n / 1024).toFixed(0) + ' KB'
+  return n + ' B'
+}
+
+function truncate(str, len) {
+  if (!str) return ''
+  return str.length > len ? str.slice(0, len) + '…' : str
+}
+
+// ── Data Loading ──────────────────────────────────────────────────────────────
+async function loadHosts() {
   try {
-    const payload = {}
-    if (metaForm.value.name) payload.name = metaForm.value.name
-    if (metaForm.value.description !== undefined) payload.description = metaForm.value.description
-    if (metaForm.value.tags !== undefined) payload.tags = metaForm.value.tags
-    await api.pveVm.updateConfig(
-      metaTarget.value.hostId,
-      metaTarget.value.node,
-      metaTarget.value.vmid,
-      payload
-    )
-    metaSuccess.value = 'Template info updated.'
-    // Refresh local list
-    await loadTemplates()
-  } catch (err) {
-    metaError.value = err?.response?.data?.detail || 'Failed to save metadata.'
-  } finally {
-    savingMeta.value = false
+    const res = await api.proxmox.listHosts()
+    hosts.value = (res.data || []).filter(h => h.is_active !== false)
+  } catch (e) {
+    error.value = 'Failed to load Proxmox hosts.'
   }
 }
 
-// ── Library Download Modal ────────────────────────────────────────────────────
-function openLibraryDownloadModal(tpl) {
-  libraryTarget.value = tpl
-  libError.value = ''
-  libSuccess.value = ''
-  libForm.value = {
-    hostId: hosts.value[0]?.id || '',
-    node: '',
-    storage: '',
-    url: tpl.downloadUrl,
-    filename: tpl.downloadUrl.split('/').pop() || `${tpl.id}.qcow2`,
-  }
-  libNodes.value = []
-  libStorages.value = []
-  showLibraryModal.value = true
-  if (libForm.value.hostId) {
-    onLibHostChange()
-  }
-}
-
-async function onLibHostChange() {
-  libNodes.value = []
-  libStorages.value = []
-  libForm.value.node = ''
-  libForm.value.storage = ''
-  if (!libForm.value.hostId) return
-  try {
-    const res = await api.proxmox.listNodes(libForm.value.hostId)
-    libNodes.value = res.data || []
-    if (libNodes.value.length === 1) {
-      libForm.value.node = libNodes.value[0].node
-      onLibNodeChange()
-    }
-  } catch (err) {
-    console.warn('Could not fetch nodes:', err)
-  }
-}
-
-async function onLibNodeChange() {
-  libStorages.value = []
-  libForm.value.storage = ''
-  const { hostId, node } = libForm.value
-  if (!hostId || !node) return
-  try {
-    const res = await api.pveNode.listStorage(hostId, node)
-    // Show all storages (images or vztmpl — user can pick)
-    libStorages.value = res.data || []
-    // Auto-select first images-capable storage
-    const img = libStorages.value.find(s => s.content && s.content.includes('images'))
-    if (img) libForm.value.storage = img.storage
-  } catch (err) {
-    console.warn('Could not fetch storages:', err)
-  }
-}
-
-async function submitLibraryDownload() {
-  libDownloading.value = true
-  libError.value = ''
-  libSuccess.value = ''
-  try {
-    const { hostId, node, storage, url, filename } = libForm.value
-    await api.pveNode.downloadUrlToStorage(hostId, node, storage, {
-      url,
-      filename,
-      content: 'import',
+async function loadCloudImages() {
+  loading.value = true
+  cloudImages.value = []
+  const results = []
+  await Promise.allSettled(
+    hosts.value.map(async (host) => {
+      try {
+        // Get all nodes for this host
+        const nodesRes = await api.proxmox.listNodes(host.id)
+        const nodeList = nodesRes.data || []
+        await Promise.allSettled(
+          nodeList.map(async (nodeObj) => {
+            const node = nodeObj.node
+            try {
+              // Get storage list for this node
+              const storRes = await api.pveNode.listStorage(host.id, node)
+              const storages = storRes.data || []
+              await Promise.allSettled(
+                storages.map(async (stor) => {
+                  // Only look in storages that can hold images
+                  if (!stor.content || !stor.content.includes('images')) return
+                  try {
+                    const cRes = await api.pveNode.browseStorage(host.id, node, stor.storage, { content: 'images' })
+                    const items = cRes.data || []
+                    for (const item of items) {
+                      // Cloud images: qcow2, raw, vmdk, img
+                      const fname = (item.volid || '').split('/').pop()
+                      if (fname.match(/\.(qcow2|img|raw|vmdk)$/i)) {
+                        results.push({
+                          ...item,
+                          name: fname,
+                          storage: stor.storage,
+                          node,
+                          hostId: host.id,
+                          hostName: host.name || host.host,
+                        })
+                      }
+                    }
+                  } catch (e) { /* storage may not respond */ }
+                })
+              )
+            } catch (e) { /* node storage unavailable */ }
+          })
+        )
+      } catch (e) { console.warn(`Host ${host.id} error:`, e) }
     })
-    libSuccess.value = `Download started. Check the node task log in Proxmox to monitor progress. Once complete, import the image as a VM disk and convert it to a template.`
-  } catch (err) {
-    libError.value = err?.response?.data?.detail || 'Download request failed.'
+  )
+  cloudImages.value = results
+  loading.value = false
+}
+
+async function loadIsoImages() {
+  isoLoading.value = true
+  isoImages.value = []
+  const results = []
+  await Promise.allSettled(
+    hosts.value.map(async (host) => {
+      try {
+        const nodesRes = await api.proxmox.listNodes(host.id)
+        const nodeList = nodesRes.data || []
+        // Also fetch all VMs to build a usage map
+        let vmList = []
+        try {
+          const vmRes = await api.pveNode.clusterResources(host.id, 'vm')
+          vmList = vmRes.data || []
+        } catch (e) { /* ignore */ }
+
+        await Promise.allSettled(
+          nodeList.map(async (nodeObj) => {
+            const node = nodeObj.node
+            try {
+              const storRes = await api.pveNode.listStorage(host.id, node)
+              const storages = storRes.data || []
+              await Promise.allSettled(
+                storages.map(async (stor) => {
+                  if (!stor.content || !stor.content.includes('iso')) return
+                  try {
+                    const cRes = await api.pveNode.browseStorage(host.id, node, stor.storage, { content: 'iso' })
+                    const items = cRes.data || []
+                    for (const item of items) {
+                      const fname = (item.volid || '').split('/').pop()
+                      // Find VMs that reference this ISO
+                      const usedBy = vmList
+                        .filter(vm => vm.node === node)
+                        .filter(vm => {
+                          // We can't easily check config without extra API calls, so leave empty for now
+                          return false
+                        })
+                        .map(vm => vm.vmid)
+                      results.push({
+                        ...item,
+                        name: fname,
+                        storage: stor.storage,
+                        node,
+                        hostId: host.id,
+                        hostName: host.name || host.host,
+                        usedBy,
+                      })
+                    }
+                  } catch (e) { /* storage unavailable */ }
+                })
+              )
+            } catch (e) { /* node unavailable */ }
+          })
+        )
+      } catch (e) { console.warn(`Host ${host.id} error:`, e) }
+    })
+  )
+  isoImages.value = results
+  isoLoading.value = false
+}
+
+async function loadLocalTemplates() {
+  loading.value = true
+  localTemplates.value = []
+  const results = []
+  await Promise.allSettled(
+    hosts.value.map(async (host) => {
+      try {
+        const res = await api.pveNode.clusterResources(host.id, 'vm')
+        const items = (res.data || [])
+          .filter(vm => vm.template === 1)
+          .map(vm => ({ ...vm, hostId: host.id, hostName: host.name || host.host }))
+        results.push(...items)
+      } catch (e) { console.warn(e) }
+    })
+  )
+  localTemplates.value = results
+  loading.value = false
+}
+
+async function loadPveamTemplates() {
+  if (!pveamHostId.value) return
+  pveamLoading.value = true
+  pveamTemplates.value = []
+  try {
+    // Use first node
+    if (!pveamNodes.value.length) {
+      const res = await api.proxmox.listNodes(pveamHostId.value)
+      pveamNodes.value = res.data || []
+    }
+    const node = pveamNodes.value[0]?.node
+    if (!node) return
+    pveamNode.value = node
+    const params = pveamSection.value ? { section: pveamSection.value } : {}
+    const res = await api.pveNode.listAvailableTemplates(pveamHostId.value, node, pveamSection.value || undefined)
+    pveamTemplates.value = res.data || []
+  } catch (e) {
+    error.value = e?.response?.data?.detail || 'Failed to load pveam templates.'
   } finally {
-    libDownloading.value = false
+    pveamLoading.value = false
   }
+}
+
+async function onPveamHostChange() {
+  pveamNodes.value = []
+  pveamTemplates.value = []
+  if (!pveamHostId.value) return
+  try {
+    const res = await api.proxmox.listNodes(pveamHostId.value)
+    pveamNodes.value = res.data || []
+  } catch (e) { console.warn(e) }
+  await loadPveamTemplates()
+}
+
+// ── Tab switch ────────────────────────────────────────────────────────────────
+async function switchTab(tab) {
+  activeTab.value = tab
+  error.value = ''
+  if (tab === 'cloud' && cloudImages.value.length === 0) await loadCloudImages()
+  if (tab === 'iso' && isoImages.value.length === 0) await loadIsoImages()
+  if (tab === 'local' && localTemplates.value.length === 0) await loadLocalTemplates()
 }
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
 onMounted(async () => {
   await loadHosts()
-  await loadTemplates()
+  await loadCloudImages()
 })
 </script>
 
 <style scoped>
-/* ── Layout ─────────────────────────────────────────────────────────────── */
+/* ── Layout ──────────────────────────────────────────────────────────────── */
 .templates-page {
   padding: 1.5rem;
   max-width: 1400px;
@@ -1059,12 +1406,7 @@ onMounted(async () => {
   margin-bottom: 1rem;
 }
 
-.page-title {
-  font-size: 1.5rem;
-  font-weight: 700;
-  color: var(--text-primary);
-  margin: 0;
-}
+.page-title { font-size: 1.5rem; font-weight: 700; color: var(--text-primary); margin: 0; }
 
 .page-subtitle {
   font-size: 0.875rem;
@@ -1095,9 +1437,8 @@ onMounted(async () => {
 
 .search-input { width: 220px; }
 .host-select  { width: 180px; }
-.sort-select  { width: 150px; }
 
-/* ── Tabs ───────────────────────────────────────────────────────────────── */
+/* ── Tabs ────────────────────────────────────────────────────────────────── */
 .tab-bar {
   display: flex;
   gap: 0;
@@ -1117,31 +1458,21 @@ onMounted(async () => {
   cursor: pointer;
   transition: color 0.15s, border-color 0.15s;
 }
+.tab-btn:hover { color: var(--text-primary); }
+.tab-btn.active { color: var(--primary-color); border-bottom-color: var(--primary-color); font-weight: 600; }
 
-.tab-btn:hover {
-  color: var(--text-primary);
-}
-
-.tab-btn.active {
-  color: var(--primary-color);
-  border-bottom-color: var(--primary-color);
-  font-weight: 600;
-}
-
-/* ── Card ───────────────────────────────────────────────────────────────── */
+/* ── Card ────────────────────────────────────────────────────────────────── */
 .card {
   background: var(--surface);
   border: 1px solid var(--border-color);
   border-radius: 8px;
   overflow: hidden;
 }
-
 .card-body { padding: 1.5rem; }
 .p-0 { padding: 0; }
 
-/* ── States ─────────────────────────────────────────────────────────────── */
-.loading-state,
-.empty-state {
+/* ── States ──────────────────────────────────────────────────────────────── */
+.loading-state {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1159,12 +1490,33 @@ onMounted(async () => {
   border-radius: 50%;
   animation: spin 0.7s linear infinite;
 }
-
 @keyframes spin { to { transform: rotate(360deg); } }
 
-.empty-icon { font-size: 2.5rem; }
+.empty-state-full {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 3.5rem 1.5rem;
+  text-align: center;
+}
 
-/* ── Table ──────────────────────────────────────────────────────────────── */
+.empty-icon-wrap {
+  width: 80px; height: 80px;
+  border-radius: 50%;
+  background: var(--background);
+  border: 2px dashed var(--border-color);
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.empty-title { font-size: 1rem; font-weight: 600; color: var(--text-primary); margin: 0; }
+.empty-subtitle { font-size: 0.875rem; color: var(--text-secondary); margin: 0; max-width: 440px; }
+
+/* ── Table ───────────────────────────────────────────────────────────────── */
 .table-container { overflow-x: auto; }
 
 .table {
@@ -1178,165 +1530,161 @@ onMounted(async () => {
   color: var(--text-secondary);
   font-weight: 600;
   text-transform: uppercase;
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   letter-spacing: 0.05em;
-  padding: 0.75rem 1rem;
+  padding: 0.65rem 1rem;
   text-align: left;
   border-bottom: 1px solid var(--border-color);
   white-space: nowrap;
 }
 
 .table td {
-  padding: 0.75rem 1rem;
+  padding: 0.7rem 1rem;
   border-bottom: 1px solid var(--border-color);
   color: var(--text-primary);
   vertical-align: middle;
 }
 
 .table tbody tr:last-child td { border-bottom: none; }
-.table tbody tr:hover { background: rgba(255, 255, 255, 0.03); }
+.table tbody tr:hover { background: rgba(255, 255, 255, 0.025); }
 
+.col-check { width: 40px; }
 .vmid-cell { font-family: monospace; font-weight: 600; color: var(--primary-color) !important; }
-.name-cell { font-weight: 500; }
-.name-text { display: block; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mono { font-family: monospace; font-size: 0.8rem; }
-.meta-val { font-size: 0.8rem; }
-.dim { color: var(--text-secondary); font-size: 0.8rem; }
-.notes-cell { max-width: 200px; }
-.notes-text { font-size: 0.8rem; color: var(--text-secondary); cursor: help; }
-.actions-cell { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
 
-/* ── OS Badges ──────────────────────────────────────────────────────────── */
-.os-badge {
-  display: inline-block;
-  padding: 0.15rem 0.55rem;
-  border-radius: 4px;
-  font-size: 0.7rem;
-  font-weight: 600;
-  letter-spacing: 0.03em;
-  background: rgba(100, 116, 139, 0.15);
-  color: #94a3b8;
-  border: 1px solid rgba(100, 116, 139, 0.25);
+.name-cell { max-width: 260px; }
+.name-text {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.name-sub {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.os-ubuntu  { background: rgba(233, 84, 32, 0.12);   color: #f97316; border-color: rgba(249, 115, 22, 0.3); }
-.os-debian  { background: rgba(167, 0, 51, 0.12);    color: #f472b6; border-color: rgba(244, 114, 182, 0.3); }
-.os-centos  { background: rgba(156, 39, 176, 0.12);  color: #c084fc; border-color: rgba(192, 132, 252, 0.3); }
-.os-rhel    { background: rgba(220, 38, 38, 0.12);   color: #f87171; border-color: rgba(248, 113, 113, 0.3); }
-.os-rocky   { background: rgba(20, 184, 166, 0.12);  color: #2dd4bf; border-color: rgba(45, 212, 191, 0.3); }
-.os-alma    { background: rgba(59, 130, 246, 0.12);  color: #60a5fa; border-color: rgba(96, 165, 250, 0.3); }
-.os-fedora  { background: rgba(37, 99, 235, 0.12);   color: #818cf8; border-color: rgba(129, 140, 248, 0.3); }
-.os-suse    { background: rgba(132, 204, 22, 0.12);  color: #a3e635; border-color: rgba(163, 230, 53, 0.3); }
-.os-alpine  { background: rgba(14, 165, 233, 0.12);  color: #38bdf8; border-color: rgba(56, 189, 248, 0.3); }
-.os-arch    { background: rgba(14, 165, 233, 0.12);  color: #38bdf8; border-color: rgba(56, 189, 248, 0.3); }
-.os-windows { background: rgba(0, 120, 212, 0.12);   color: #7dd3fc; border-color: rgba(125, 211, 252, 0.3); }
-.os-freebsd { background: rgba(220, 38, 38, 0.10);   color: #fca5a5; border-color: rgba(252, 165, 165, 0.3); }
+.mono { font-family: monospace; font-size: 0.8rem; }
+.dim  { color: var(--text-secondary); font-size: 0.8rem; }
 
-/* ── Library Grid ───────────────────────────────────────────────────────── */
-.library-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 1.25rem;
+.actions-cell { display: flex; gap: 0.4rem; align-items: center; flex-wrap: nowrap; }
+
+/* ── OS Pill ─────────────────────────────────────────────────────────────── */
+.os-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.15rem 0.55rem;
+  border-radius: 20px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  border: 1px solid transparent;
+  white-space: nowrap;
 }
 
-.library-card {
-  background: var(--surface);
-  border: 1px solid var(--border-color);
-  border-radius: 10px;
-  padding: 1.25rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.65rem;
-  transition: border-color 0.15s, box-shadow 0.15s;
+/* ── Badges ──────────────────────────────────────────────────────────────── */
+.type-badge {
+  background: rgba(100, 116, 139, 0.15);
+  color: #94a3b8;
+  border: 1px solid rgba(100, 116, 139, 0.25);
+  border-radius: 4px;
+  padding: 0.1rem 0.45rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  font-family: monospace;
 }
 
-.library-card:hover {
-  border-color: var(--primary-color);
-  box-shadow: 0 4px 16px rgba(59, 130, 246, 0.1);
+.section-badge {
+  display: inline-block;
+  padding: 0.1rem 0.45rem;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  border: 1px solid transparent;
+}
+.section-sys { background: rgba(59, 130, 246, 0.12); color: #60a5fa; border-color: rgba(59, 130, 246, 0.3); }
+.section-tkl { background: rgba(16, 185, 129, 0.12); color: #34d399; border-color: rgba(16, 185, 129, 0.3); }
+
+/* ── Used-by chips ───────────────────────────────────────────────────────── */
+.used-by-list { display: flex; gap: 0.25rem; align-items: center; flex-wrap: wrap; }
+.vmid-chip {
+  background: rgba(59, 130, 246, 0.1);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.25);
+  border-radius: 4px;
+  padding: 0.05rem 0.35rem;
+  font-size: 0.7rem;
+  font-family: monospace;
+  font-weight: 600;
 }
 
-.library-card-header {
+/* ── Bulk bar ────────────────────────────────────────────────────────────── */
+.bulk-bar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-}
-
-.library-badges {
-  display: flex;
-  gap: 0.35rem;
-}
-
-.badge-ci {
-  background: rgba(16, 185, 129, 0.12);
-  color: #34d399;
-  border: 1px solid rgba(16, 185, 129, 0.3);
-  border-radius: 4px;
-  padding: 0.1rem 0.45rem;
-  font-size: 0.67rem;
-  font-weight: 600;
-}
-
-.badge-lts {
-  background: rgba(234, 179, 8, 0.12);
-  color: #fbbf24;
-  border: 1px solid rgba(234, 179, 8, 0.3);
-  border-radius: 4px;
-  padding: 0.1rem 0.45rem;
-  font-size: 0.67rem;
-  font-weight: 600;
-}
-
-.library-card-title {
-  font-size: 1rem;
-  font-weight: 700;
+  gap: 0.75rem;
+  padding: 0.6rem 1rem;
+  background: rgba(59, 130, 246, 0.07);
+  border-bottom: 1px solid var(--border-color);
+  font-size: 0.875rem;
   color: var(--text-primary);
-  margin: 0;
 }
 
-.library-card-desc {
-  font-size: 0.82rem;
-  color: var(--text-secondary);
-  line-height: 1.5;
-  margin: 0;
-  flex: 1;
-}
-
-.library-card-meta {
+/* ── Presets grid ────────────────────────────────────────────────────────── */
+.presets-grid {
   display: flex;
-  gap: 1rem;
-  font-size: 0.78rem;
-  color: var(--text-secondary);
-}
-
-.library-card-url {
-  font-size: 0.75rem;
-}
-
-.url-label {
-  display: block;
-  color: var(--text-secondary);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  font-size: 0.7rem;
-  margin-bottom: 0.2rem;
-}
-
-.url-text {
-  font-family: monospace;
-  color: #60a5fa;
-  word-break: break-all;
-}
-
-.library-card-actions {
-  display: flex;
-  gap: 0.5rem;
   flex-wrap: wrap;
-  margin-top: 0.25rem;
+  gap: 0.4rem;
 }
 
-/* ── Buttons ────────────────────────────────────────────────────────────── */
+.preset-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.65rem;
+  background: var(--background);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  transition: all 0.15s;
+}
+.preset-btn:hover { border-color: var(--primary-color); color: var(--text-primary); }
+.preset-btn.active { border-color: var(--primary-color); background: rgba(59, 130, 246, 0.1); color: var(--primary-color); }
+
+.preset-os-icon { font-size: 1rem; }
+.preset-name { white-space: nowrap; }
+
+/* ── ISO mode tabs ───────────────────────────────────────────────────────── */
+.iso-mode-tabs { display: flex; gap: 0; border: 1px solid var(--border-color); border-radius: 6px; overflow: hidden; }
+.iso-mode-btn {
+  flex: 1;
+  padding: 0.4rem 0.75rem;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.iso-mode-btn.active { background: var(--primary-color); color: white; }
+
+/* ── Upload steps ────────────────────────────────────────────────────────── */
+.upload-steps {
+  margin: 0.5rem 0 0 1.25rem;
+  padding: 0;
+  font-size: 0.82rem;
+  color: var(--text-primary);
+  line-height: 1.8;
+}
+code { background: rgba(255,255,255,0.08); padding: 0.1em 0.35em; border-radius: 3px; font-size: 0.9em; }
+
+/* ── Buttons ─────────────────────────────────────────────────────────────── */
 .btn {
   display: inline-flex;
   align-items: center;
@@ -1352,17 +1700,19 @@ onMounted(async () => {
   white-space: nowrap;
   color: var(--text-primary);
 }
-
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn-sm { padding: 0.3rem 0.65rem; font-size: 0.8rem; }
 
 .btn-primary { background: var(--primary-color); color: white; border-color: var(--primary-color); }
-.btn-primary:hover:not(:disabled) { background: #2563eb; border-color: #2563eb; }
+.btn-primary:hover:not(:disabled) { background: #2563eb; }
 
 .btn-outline { background: transparent; border-color: var(--border-color); }
-.btn-outline:hover:not(:disabled) { background: rgba(255, 255, 255, 0.07); }
+.btn-outline:hover:not(:disabled) { background: rgba(255,255,255,0.07); }
 
-/* ── Form Controls ──────────────────────────────────────────────────────── */
+.btn-danger { background: rgba(239, 68, 68, 0.1); color: #f87171; border-color: rgba(239, 68, 68, 0.3); }
+.btn-danger:hover:not(:disabled) { background: rgba(239, 68, 68, 0.2); }
+
+/* ── Form ────────────────────────────────────────────────────────────────── */
 .form-control {
   padding: 0.5rem 0.75rem;
   background: var(--background);
@@ -1373,13 +1723,7 @@ onMounted(async () => {
   min-height: 36px;
   width: 100%;
 }
-
-.form-control:focus {
-  outline: none;
-  border-color: var(--primary-color);
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
-}
-
+.form-control:focus { outline: none; border-color: var(--primary-color); box-shadow: 0 0 0 2px rgba(59,130,246,0.2); }
 .form-control:disabled { opacity: 0.5; cursor: not-allowed; }
 .mono-input { font-family: monospace; font-size: 0.8rem; }
 
@@ -1387,16 +1731,17 @@ onMounted(async () => {
 
 .form-label {
   display: block;
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   font-weight: 600;
   color: var(--text-secondary);
-  margin-bottom: 0.4rem;
+  margin-bottom: 0.35rem;
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 
-.checkbox-group { margin-bottom: 0.75rem; }
+.req { color: #f87171; }
 
+.checkbox-group { margin-bottom: 0.75rem; }
 .checkbox-label {
   display: flex;
   align-items: center;
@@ -1405,21 +1750,10 @@ onMounted(async () => {
   color: var(--text-primary);
   cursor: pointer;
 }
+.checkbox-label input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--primary-color); cursor: pointer; }
 
-.checkbox-label input[type="checkbox"] {
-  width: 16px;
-  height: 16px;
-  accent-color: var(--primary-color);
-  cursor: pointer;
-}
-
-/* ── Radio group ────────────────────────────────────────────────────────── */
-.radio-group {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
+/* ── Radio ───────────────────────────────────────────────────────────────── */
+.radio-group { display: flex; flex-direction: column; gap: 0.5rem; }
 .radio-label {
   display: flex;
   align-items: flex-start;
@@ -1430,69 +1764,34 @@ onMounted(async () => {
   cursor: pointer;
   font-size: 0.875rem;
   color: var(--text-primary);
-  transition: border-color 0.15s, background 0.15s;
+  transition: border-color 0.15s;
 }
+.radio-label:hover { border-color: var(--primary-color); }
+.radio-label input[type="radio"] { margin-top: 2px; accent-color: var(--primary-color); }
+.radio-label > span { display: flex; flex-direction: column; gap: 0.15rem; }
+.radio-hint { font-size: 0.775rem; color: var(--text-secondary); font-weight: 400; }
 
-.radio-label:hover {
-  background: rgba(255, 255, 255, 0.04);
-  border-color: var(--primary-color);
-}
-
-.radio-label input[type="radio"] {
-  margin-top: 2px;
-  accent-color: var(--primary-color);
-  flex-shrink: 0;
-}
-
-.radio-label > span {
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-}
-
-.radio-hint {
-  font-size: 0.775rem;
-  color: var(--text-secondary);
-  font-weight: 400;
-}
-
-/* ── Info note ──────────────────────────────────────────────────────────── */
-.info-note {
-  background: rgba(234, 179, 8, 0.1);
-  border: 1px solid rgba(234, 179, 8, 0.3);
-  color: #fbbf24;
-  border-radius: 6px;
-  padding: 0.5rem 0.75rem;
-  font-size: 0.8rem;
-}
-
-.hint-text {
-  font-size: 0.775rem;
-  color: var(--text-secondary);
-}
-
-/* ── Modal ──────────────────────────────────────────────────────────────── */
+/* ── Modal ───────────────────────────────────────────────────────────────── */
 .modal {
   position: fixed;
   top: 0; left: 0; right: 0; bottom: 0;
-  background-color: rgba(0, 0, 0, 0.6);
+  background: rgba(0,0,0,0.6);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 1000;
 }
-
 .modal-content {
   background: var(--surface);
   border: 1px solid var(--border-color);
   border-radius: 10px;
   width: 100%;
-  max-width: 520px;
+  max-width: 540px;
   max-height: 90vh;
   overflow-y: auto;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 20px 60px rgba(0,0,0,0.5);
 }
-
+.modal-sm { max-width: 400px; }
 .modal-header {
   padding: 1.25rem 1.5rem;
   border-bottom: 1px solid var(--border-color);
@@ -1504,50 +1803,31 @@ onMounted(async () => {
   background: var(--surface);
   z-index: 1;
 }
-
 .modal-header h3 { margin: 0; font-size: 1.1rem; color: var(--text-primary); }
-
-.btn-close {
-  background: none;
-  border: none;
-  font-size: 1.4rem;
-  cursor: pointer;
-  color: var(--text-secondary);
-  line-height: 1;
-  padding: 0;
-}
-
+.btn-close { background: none; border: none; font-size: 1.4rem; cursor: pointer; color: var(--text-secondary); line-height: 1; padding: 0; }
 .btn-close:hover { color: var(--text-primary); }
-
 .modal-body { padding: 1.5rem; }
 
-/* ── Alert ──────────────────────────────────────────────────────────────── */
-.alert {
-  padding: 0.75rem 1rem;
+/* ── Alerts ──────────────────────────────────────────────────────────────── */
+.alert { padding: 0.75rem 1rem; border-radius: 6px; font-size: 0.875rem; }
+.alert-danger { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); color: #f87171; }
+.alert-success { background: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.3); color: #34d399; }
+
+.info-note {
+  background: rgba(234,179,8,0.08);
+  border: 1px solid rgba(234,179,8,0.25);
+  color: #fbbf24;
   border-radius: 6px;
-  font-size: 0.875rem;
+  padding: 0.75rem 1rem;
+  font-size: 0.825rem;
+  line-height: 1.6;
 }
 
-.alert-danger {
-  background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  color: #f87171;
-}
-
-.alert-success {
-  background: rgba(16, 185, 129, 0.1);
-  border: 1px solid rgba(16, 185, 129, 0.3);
-  color: #34d399;
-}
-
-/* ── Toast ──────────────────────────────────────────────────────────────── */
-.toast-success {
+/* ── Toast ───────────────────────────────────────────────────────────────── */
+.toast-msg {
   position: fixed;
   bottom: 1.5rem;
   right: 1.5rem;
-  background: rgba(16, 185, 129, 0.15);
-  border: 1px solid rgba(16, 185, 129, 0.4);
-  color: #34d399;
   border-radius: 8px;
   padding: 0.75rem 1rem;
   display: flex;
@@ -1555,39 +1835,25 @@ onMounted(async () => {
   gap: 0.75rem;
   font-size: 0.875rem;
   z-index: 2000;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-  max-width: 380px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  max-width: 400px;
 }
-
-.toast-link {
-  color: #6ee7b7;
-  text-decoration: underline;
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-.toast-link:hover { color: #a7f3d0; }
-
-.toast-close {
-  background: none;
-  border: none;
+.toast-success {
+  background: rgba(16,185,129,0.15);
+  border: 1px solid rgba(16,185,129,0.4);
   color: #34d399;
-  font-size: 1.1rem;
-  cursor: pointer;
-  padding: 0;
-  line-height: 1;
-  margin-left: auto;
-  opacity: 0.7;
 }
-
+.toast-error {
+  background: rgba(239,68,68,0.15);
+  border: 1px solid rgba(239,68,68,0.4);
+  color: #f87171;
+}
+.toast-close { background: none; border: none; font-size: 1.1rem; cursor: pointer; color: inherit; padding: 0; line-height: 1; margin-left: auto; opacity: 0.7; }
 .toast-close:hover { opacity: 1; }
+.toast-fade-enter-active, .toast-fade-leave-active { transition: opacity 0.3s ease, transform 0.3s ease; }
+.toast-fade-enter-from, .toast-fade-leave-to { opacity: 0; transform: translateY(0.5rem); }
 
-.toast-fade-enter-active,
-.toast-fade-leave-active { transition: opacity 0.3s ease, transform 0.3s ease; }
-.toast-fade-enter-from,
-.toast-fade-leave-to { opacity: 0; transform: translateY(0.5rem); }
-
-/* ── Utilities ──────────────────────────────────────────────────────────── */
+/* ── Utilities ───────────────────────────────────────────────────────────── */
 .flex { display: flex; }
 .gap-1 { gap: 0.5rem; }
 .mt-1 { margin-top: 0.25rem; }
@@ -1597,42 +1863,4 @@ onMounted(async () => {
 .mb-3 { margin-bottom: 1rem; }
 .text-sm { font-size: 0.875rem; }
 .text-muted { color: var(--text-secondary); }
-.text-danger { color: var(--danger-color, #ef4444); }
-
-/* ── Empty state (full-width, inside card) ── */
-.empty-state-full {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 0.75rem;
-  padding: 3.5rem 1.5rem;
-  text-align: center;
-}
-
-.empty-icon-wrap {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 80px;
-  height: 80px;
-  border-radius: 50%;
-  background: var(--background);
-  border: 2px dashed var(--border-color);
-  color: var(--text-muted);
-}
-
-.empty-title {
-  font-size: 1rem;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin: 0;
-}
-
-.empty-subtitle {
-  font-size: 0.875rem;
-  color: var(--text-secondary);
-  margin: 0;
-  max-width: 440px;
-}
 </style>

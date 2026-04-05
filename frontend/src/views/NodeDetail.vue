@@ -39,11 +39,11 @@
             <span class="mini-stat__value">{{ nodeRamPct }}%</span>
           </div>
           <button
-            @click="router.push(`/node-monitor?hostId=${hostId}&node=${node}`)"
+            @click="router.push(`/monitor/${hostId}/${node}`)"
             class="btn btn-outline btn-sm"
             style="align-self:center"
             title="Open full performance monitor"
-          >Performance Monitor</button>
+          >Monitor</button>
         </div>
       </div>
 

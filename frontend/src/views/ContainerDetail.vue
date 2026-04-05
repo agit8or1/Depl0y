@@ -16,14 +16,19 @@
       <div class="header-actions flex gap-1 flex-wrap">
         <button @click="action('start')" class="btn btn-success btn-sm"
           :disabled="actioning || (currentStats.status || status) === 'running'">Start</button>
+        <button @click="action('shutdown')" class="btn btn-outline btn-sm"
+          :disabled="actioning || (currentStats.status || status) !== 'running'" title="Graceful shutdown">Shutdown</button>
         <button @click="action('stop')" class="btn btn-outline btn-sm"
-          :disabled="actioning || (currentStats.status || status) !== 'running'">Stop</button>
+          :disabled="actioning || (currentStats.status || status) !== 'running'" title="Force stop">Stop</button>
         <button @click="action('reboot')" class="btn btn-outline btn-sm"
           :disabled="actioning || (currentStats.status || status) !== 'running'">Reboot</button>
-        <button @click="action('restart')" class="btn btn-outline btn-sm"
-          :disabled="actioning || (currentStats.status || status) !== 'running'">Restart</button>
         <button @click="openTerminal" class="btn btn-outline btn-sm">Terminal</button>
+        <button @click="openConsoleTab" class="btn btn-outline btn-sm">Console</button>
         <button @click="openCloneModal" class="btn btn-outline btn-sm">Clone</button>
+        <router-link
+          :to="`/migrate/${hostId}/${node}/${vmid}?type=lxc`"
+          class="btn btn-outline btn-sm"
+        >Migrate</router-link>
         <button @click="deleteContainer" class="btn btn-danger btn-sm" :disabled="actioning">Delete</button>
       </div>
     </div>
@@ -91,8 +96,10 @@
               <div class="summary-item"><span class="summary-label">Memory</span><span>{{ config.memory ? config.memory + ' MB' : '—' }}</span></div>
               <div class="summary-item"><span class="summary-label">Swap</span><span>{{ config.swap !== undefined ? config.swap + ' MB' : '—' }}</span></div>
               <div class="summary-item"><span class="summary-label">Start on Boot</span><span>{{ config.onboot ? 'Yes' : 'No' }}</span></div>
+              <div class="summary-item"><span class="summary-label">Unprivileged</span><span>{{ config.unprivileged ? 'Yes' : 'No' }}</span></div>
+              <div class="summary-item"><span class="summary-label">Protection</span><span>{{ config.protection ? 'Yes' : 'No' }}</span></div>
               <div class="summary-item"><span class="summary-label">Root FS</span><span class="text-sm">{{ config.rootfs || '—' }}</span></div>
-              <div class="summary-item"><span class="summary-label">Template</span><span>{{ config.ostemplate || '—' }}</span></div>
+              <div class="summary-item"><span class="summary-label">OS Template</span><span>{{ config.ostemplate || '—' }}</span></div>
               <div v-if="config.tags" class="summary-item" style="grid-column: span 2;">
                 <span class="summary-label">Tags</span>
                 <div class="tags-row">
@@ -100,6 +107,56 @@
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Console Tab -->
+      <div v-if="activeTab === 'console'">
+        <div class="card mb-2">
+          <div class="card-header"><h3>Container Console</h3></div>
+          <div class="card-body" style="text-align:center; padding:2.5rem 1.5rem;">
+            <p class="text-muted mb-2">
+              Open a noVNC browser console session for CT{{ vmid }} on node <strong>{{ node }}</strong>.
+            </p>
+            <div class="flex gap-1" style="justify-content:center; flex-wrap:wrap;">
+              <button @click="openConsoleWindow" class="btn btn-primary">
+                Open Console (noVNC)
+              </button>
+              <button @click="openTerminal" class="btn btn-outline">
+                Open Shell Terminal
+              </button>
+            </div>
+            <p class="text-muted text-sm mt-2">
+              Console URL: <code>/console/{{ node }}/{{ vmid }}?type=lxc&hostId={{ hostId }}</code>
+            </p>
+          </div>
+        </div>
+
+        <!-- IP Addresses from config -->
+        <div class="card" v-if="parsedNets.length > 0">
+          <div class="card-header"><h3>Network Interfaces</h3></div>
+          <div class="table-container">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Interface</th>
+                  <th>Name</th>
+                  <th>Bridge</th>
+                  <th>IP Address</th>
+                  <th>Gateway</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="net in parsedNets" :key="net.key">
+                  <td><code>{{ net.key }}</code></td>
+                  <td>{{ net.name || '—' }}</td>
+                  <td>{{ net.bridge || '—' }}</td>
+                  <td class="text-sm" style="font-family:monospace;">{{ net.ip || '—' }}</td>
+                  <td class="text-sm" style="font-family:monospace;">{{ net.gw || '—' }}</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </div>
       </div>
@@ -228,6 +285,20 @@
                   <input v-if="editMode" type="checkbox" v-model="editConfig.onboot" :true-value="1" :false-value="0" />
                   <input v-else type="checkbox" :checked="!!config.onboot" disabled />
                   Start on Boot
+                </label>
+              </div>
+              <div class="form-group">
+                <label class="form-label">
+                  <input v-if="editMode" type="checkbox" v-model="editConfig.unprivileged" :true-value="1" :false-value="0" />
+                  <input v-else type="checkbox" :checked="!!config.unprivileged" disabled />
+                  Unprivileged Container
+                </label>
+              </div>
+              <div class="form-group">
+                <label class="form-label">
+                  <input v-if="editMode" type="checkbox" v-model="editConfig.protection" :true-value="1" :false-value="0" />
+                  <input v-else type="checkbox" :checked="!!config.protection" disabled />
+                  Protection (prevents deletion)
                 </label>
               </div>
               <div class="form-group" style="grid-column: span 2;">
@@ -1067,6 +1138,7 @@ let pollInterval = null
 
 const tabs = [
   { id: 'overview', label: 'Overview' },
+  { id: 'console', label: 'Console' },
   { id: 'config', label: 'Config' },
   { id: 'limits', label: 'Limits' },
   { id: 'mounts', label: 'Bind Mounts' },
@@ -1458,6 +1530,8 @@ const enterEditMode = () => {
     swap: config.value.swap !== undefined ? config.value.swap : 0,
     startup: config.value.startup || '',
     onboot: config.value.onboot || 0,
+    unprivileged: config.value.unprivileged !== undefined ? config.value.unprivileged : 1,
+    protection: config.value.protection || 0,
     description: config.value.description || '',
     tags: config.value.tags || '',
   }
@@ -1701,6 +1775,15 @@ const onTaskError = (msg) => {
 
 const openTerminal = () => {
   router.push(`/proxmox/${hostId.value}/nodes/${node.value}/terminal?lxc=${vmid.value}`)
+}
+
+const openConsoleTab = () => {
+  activeTab.value = 'console'
+}
+
+const openConsoleWindow = () => {
+  const url = `/console/${node.value}/${vmid.value}?type=lxc&hostId=${hostId.value}`
+  window.open(url, '_blank', 'width=1024,height=768,menubar=no,toolbar=no')
 }
 
 const getStatusBadge = (s) => {

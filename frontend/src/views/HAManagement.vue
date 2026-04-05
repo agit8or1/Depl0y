@@ -155,6 +155,9 @@
         <div class="card-header">
           <h2>HA Resources</h2>
           <div class="header-actions-row">
+            <button @click="openSimulator" class="btn btn-secondary btn-sm" title="HA Failover Simulator">
+              Failover Simulator
+            </button>
             <button @click="showBulkHaModal = true" class="btn btn-secondary btn-sm" title="Enable HA for all stopped VMs">
               Bulk Enable HA
             </button>
@@ -224,13 +227,21 @@
                 <td>{{ resource.max_restart ?? '—' }}</td>
                 <td>{{ resource.max_relocate ?? '—' }}</td>
                 <td>
-                  <button
-                    @click="confirmDeleteResource(resource.sid)"
-                    class="btn btn-danger btn-sm"
-                    :disabled="deletingSid === resource.sid"
-                  >
-                    {{ deletingSid === resource.sid ? 'Removing...' : 'Remove' }}
-                  </button>
+                  <div class="action-row">
+                    <button
+                      @click="openEditResourceModal(resource)"
+                      class="btn btn-secondary btn-sm"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      @click="confirmDeleteResource(resource.sid)"
+                      class="btn btn-danger btn-sm"
+                      :disabled="deletingSid === resource.sid"
+                    >
+                      {{ deletingSid === resource.sid ? 'Removing...' : 'Remove' }}
+                    </button>
+                  </div>
                 </td>
               </tr>
             </tbody>
@@ -293,13 +304,21 @@
                 </td>
                 <td class="text-sm">{{ group.comment || '—' }}</td>
                 <td>
-                  <button
-                    @click="confirmDeleteGroup(group.group)"
-                    class="btn btn-danger btn-sm"
-                    :disabled="deletingGroup === group.group"
-                  >
-                    {{ deletingGroup === group.group ? 'Deleting...' : 'Delete' }}
-                  </button>
+                  <div class="action-row">
+                    <button
+                      @click="openEditGroupModal(group)"
+                      class="btn btn-secondary btn-sm"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      @click="confirmDeleteGroup(group.group)"
+                      class="btn btn-danger btn-sm"
+                      :disabled="deletingGroup === group.group"
+                    >
+                      {{ deletingGroup === group.group ? 'Deleting...' : 'Delete' }}
+                    </button>
+                  </div>
                 </td>
               </tr>
             </tbody>
@@ -607,6 +626,226 @@
 
           <div class="modal-actions">
             <button class="btn btn-outline" @click="showAddFenceModal = false">Close</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─── Edit Resource Modal ──────────────────────────────────────────── -->
+    <div v-if="showEditResourceModal" class="modal" @click.self="showEditResourceModal = false">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>Edit HA Resource</h3>
+          <button @click="showEditResourceModal = false" class="btn-close">&times;</button>
+        </div>
+        <form @submit.prevent="saveEditResource" class="modal-body">
+          <div class="form-group">
+            <label class="form-label">Resource SID</label>
+            <input :value="editResource.sid" class="form-control" disabled />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">HA Group</label>
+            <select v-model="editResource.group" class="form-control">
+              <option value="">— None —</option>
+              <option v-for="g in haGroups" :key="g.group" :value="g.group">{{ g.group }}</option>
+            </select>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Max Restart</label>
+              <select v-model.number="editResource.max_restart" class="form-control">
+                <option :value="0">0</option>
+                <option :value="1">1</option>
+                <option :value="2">2</option>
+                <option :value="3">3</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Max Relocate</label>
+              <select v-model.number="editResource.max_relocate" class="form-control">
+                <option :value="0">0</option>
+                <option :value="1">1</option>
+                <option :value="2">2</option>
+                <option :value="3">3</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">State</label>
+            <select v-model="editResource.state" class="form-control">
+              <option value="started">started</option>
+              <option value="stopped">stopped</option>
+              <option value="disabled">disabled</option>
+              <option value="ignored">ignored</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Comment</label>
+            <input v-model="editResource.comment" class="form-control" placeholder="Optional description" />
+          </div>
+
+          <div class="modal-actions">
+            <button type="submit" class="btn btn-primary" :disabled="savingEditResource">
+              {{ savingEditResource ? 'Saving...' : 'Save Changes' }}
+            </button>
+            <button type="button" @click="showEditResourceModal = false" class="btn btn-outline">Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- ─── Edit Group Modal ───────────────────────────────────────────────── -->
+    <div v-if="showEditGroupModal" class="modal" @click.self="showEditGroupModal = false">
+      <div class="modal-content modal-wide">
+        <div class="modal-header">
+          <h3>Edit HA Group: {{ editGroup.group }}</h3>
+          <button @click="showEditGroupModal = false" class="btn-close">&times;</button>
+        </div>
+        <form @submit.prevent="saveEditGroup" class="modal-body">
+          <div class="form-group">
+            <label class="form-label">Nodes &amp; Priorities <span class="required">*</span></label>
+            <p class="field-hint">Select nodes and assign priorities (higher = preferred for failover).</p>
+
+            <div v-if="clusterNodes.length > 0" class="node-priority-selector">
+              <div
+                v-for="node in clusterNodes"
+                :key="node"
+                :class="['node-priority-row', editGroupNodePriorities[node] !== undefined ? 'node-priority-row-selected' : '']"
+              >
+                <label class="node-priority-check-label">
+                  <input
+                    type="checkbox"
+                    :checked="editGroupNodePriorities[node] !== undefined"
+                    @change="toggleEditGroupNode(node)"
+                    class="checkbox-input"
+                  />
+                  <span class="node-priority-name">{{ node }}</span>
+                </label>
+                <div v-if="editGroupNodePriorities[node] !== undefined" class="node-priority-input-wrap">
+                  <label class="priority-label">Priority</label>
+                  <input
+                    type="number"
+                    :value="editGroupNodePriorities[node]"
+                    @input="setEditGroupNodePriority(node, $event.target.value)"
+                    class="form-control priority-input"
+                    min="0"
+                    max="255"
+                    placeholder="0"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <input
+              v-model="editGroup.nodes"
+              class="form-control mt-sm"
+              placeholder="Or type: node1:1,node2:2"
+            />
+          </div>
+
+          <div class="form-row">
+            <div class="form-group checkbox-group">
+              <label class="checkbox-label">
+                <input type="checkbox" v-model="editGroup.nofailback" class="checkbox-input" />
+                No Failback
+              </label>
+            </div>
+            <div class="form-group checkbox-group">
+              <label class="checkbox-label">
+                <input type="checkbox" v-model="editGroup.restricted" class="checkbox-input" />
+                Restricted
+              </label>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Comment</label>
+            <input v-model="editGroup.comment" class="form-control" placeholder="Optional description" />
+          </div>
+
+          <div class="modal-actions">
+            <button type="submit" class="btn btn-primary" :disabled="savingEditGroup">
+              {{ savingEditGroup ? 'Saving...' : 'Save Changes' }}
+            </button>
+            <button type="button" @click="showEditGroupModal = false" class="btn btn-outline">Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- ─── HA Failover Simulator ─────────────────────────────────────────── -->
+    <div v-if="showSimulator" class="modal" @click.self="showSimulator = false">
+      <div class="modal-content modal-wide">
+        <div class="modal-header">
+          <h3>HA Failover Simulator</h3>
+          <button @click="showSimulator = false" class="btn-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p class="text-sm text-muted">
+            Simulate which node would host each HA-protected VM if the selected node fails.
+            Failover follows group node priorities.
+          </p>
+
+          <div class="form-group">
+            <label class="form-label">Simulate failure of node</label>
+            <select v-model="simulatorFailNode" class="form-control">
+              <option value="">— Select a node to fail —</option>
+              <option v-for="n in clusterNodes" :key="n" :value="n">{{ n }}</option>
+            </select>
+          </div>
+
+          <div v-if="simulatorFailNode" class="simulator-results">
+            <div class="simulator-header">
+              <span class="sim-col-header">Resource</span>
+              <span class="sim-col-header">Current Node</span>
+              <span class="sim-col-header">Failover Target</span>
+              <span class="sim-col-header">Group</span>
+              <span class="sim-col-header">Action</span>
+            </div>
+
+            <div
+              v-for="resource in haResources"
+              :key="resource.sid"
+              class="simulator-row"
+            >
+              <span class="sim-sid">{{ resource.sid }}</span>
+              <span class="sim-node">
+                <span v-if="liveStatus[resource.sid]?.node" :class="['node-chip', liveStatus[resource.sid].node === simulatorFailNode ? 'node-chip-fail' : '']">
+                  {{ liveStatus[resource.sid].node }}
+                </span>
+                <span v-else class="text-muted text-sm">—</span>
+              </span>
+              <span class="sim-target">
+                <template v-if="liveStatus[resource.sid]?.node === simulatorFailNode">
+                  <span v-if="getSimulatedFailoverTarget(resource)" class="node-chip node-chip-target">
+                    {{ getSimulatedFailoverTarget(resource) }}
+                  </span>
+                  <span v-else class="badge badge-warning">No target</span>
+                </template>
+                <span v-else class="text-muted text-sm">Not affected</span>
+              </span>
+              <span class="text-sm text-muted">{{ resource.group || '—' }}</span>
+              <span>
+                <span v-if="liveStatus[resource.sid]?.node === simulatorFailNode" class="badge badge-danger">Failover</span>
+                <span v-else class="badge badge-secondary">Stay</span>
+              </span>
+            </div>
+
+            <div v-if="haResources.length === 0" class="empty-state">
+              <p class="text-muted">No HA resources configured.</p>
+            </div>
+          </div>
+
+          <div v-else class="sim-placeholder">
+            <p class="text-muted text-sm">Select a node above to see the failover simulation.</p>
+          </div>
+
+          <div class="modal-actions">
+            <button @click="showSimulator = false" class="btn btn-outline">Close</button>
           </div>
         </div>
       </div>
@@ -1236,6 +1475,140 @@ const doBulkEnableHa = async () => {
   if (fail === 0) showBulkHaModal.value = false
 }
 
+// ── Edit Resource Modal ───────────────────────────────────────────────────────
+const showEditResourceModal = ref(false)
+const savingEditResource = ref(false)
+const editResource = ref({ sid: '', group: '', max_restart: 1, max_relocate: 1, state: 'started', comment: '' })
+
+const openEditResourceModal = (resource) => {
+  editResource.value = {
+    sid: resource.sid,
+    group: resource.group || '',
+    max_restart: resource.max_restart ?? 1,
+    max_relocate: resource.max_relocate ?? 1,
+    state: resource.state || 'started',
+    comment: resource.comment || '',
+  }
+  showEditResourceModal.value = true
+}
+
+const saveEditResource = async () => {
+  savingEditResource.value = true
+  try {
+    const payload = {}
+    if (editResource.value.group !== undefined) payload.group = editResource.value.group || null
+    if (editResource.value.max_restart !== undefined) payload.max_restart = editResource.value.max_restart
+    if (editResource.value.max_relocate !== undefined) payload.max_relocate = editResource.value.max_relocate
+    if (editResource.value.state) payload.state = editResource.value.state
+    if (editResource.value.comment !== undefined) payload.comment = editResource.value.comment
+    // Remove null/empty optional fields
+    Object.keys(payload).forEach(k => {
+      if (payload[k] === null || payload[k] === '') delete payload[k]
+    })
+    await api.pveNode.updateHaResource(selectedHostId.value, editResource.value.sid, payload)
+    toast.success(`HA resource ${editResource.value.sid} updated`)
+    showEditResourceModal.value = false
+    await loadHaResources()
+  } catch (err) {
+    toast.error(err.response?.data?.detail || 'Failed to update HA resource')
+  } finally {
+    savingEditResource.value = false
+  }
+}
+
+// ── Edit Group Modal ──────────────────────────────────────────────────────────
+const showEditGroupModal = ref(false)
+const savingEditGroup = ref(false)
+const editGroupNodePriorities = ref({})
+const editGroup = ref({ group: '', nodes: '', nofailback: false, restricted: false, comment: '' })
+
+const openEditGroupModal = (group) => {
+  editGroup.value = {
+    group: group.group,
+    nodes: group.nodes || '',
+    nofailback: !!group.nofailback,
+    restricted: !!group.restricted,
+    comment: group.comment || '',
+  }
+  // Parse existing node priorities from the nodes string
+  const parsedNodes = parseGroupNodes(group.nodes || '')
+  const priorities = {}
+  parsedNodes.forEach(n => {
+    priorities[n.name] = n.priority !== undefined ? n.priority : 1
+  })
+  editGroupNodePriorities.value = priorities
+  loadClusterNodes()
+  showEditGroupModal.value = true
+}
+
+const toggleEditGroupNode = (node) => {
+  if (editGroupNodePriorities.value[node] !== undefined) {
+    const updated = { ...editGroupNodePriorities.value }
+    delete updated[node]
+    editGroupNodePriorities.value = updated
+  } else {
+    editGroupNodePriorities.value = { ...editGroupNodePriorities.value, [node]: 1 }
+  }
+  syncEditGroupNodesField()
+}
+
+const setEditGroupNodePriority = (node, val) => {
+  editGroupNodePriorities.value = { ...editGroupNodePriorities.value, [node]: parseInt(val) || 0 }
+  syncEditGroupNodesField()
+}
+
+const syncEditGroupNodesField = () => {
+  const parts = Object.entries(editGroupNodePriorities.value).map(([name, prio]) => `${name}:${prio}`)
+  editGroup.value.nodes = parts.join(',')
+}
+
+const saveEditGroup = async () => {
+  if (!editGroup.value.nodes) { toast.error('At least one node must be specified'); return }
+  savingEditGroup.value = true
+  try {
+    const payload = { nodes: editGroup.value.nodes }
+    if (editGroup.value.nofailback !== undefined) payload.nofailback = editGroup.value.nofailback ? 1 : 0
+    if (editGroup.value.restricted !== undefined) payload.restricted = editGroup.value.restricted ? 1 : 0
+    if (editGroup.value.comment !== undefined) payload.comment = editGroup.value.comment
+    await api.pveNode.updateHaGroup(selectedHostId.value, editGroup.value.group, payload)
+    toast.success(`HA group "${editGroup.value.group}" updated`)
+    showEditGroupModal.value = false
+    await loadHaGroups()
+  } catch (err) {
+    toast.error(err.response?.data?.detail || 'Failed to update HA group')
+  } finally {
+    savingEditGroup.value = false
+  }
+}
+
+// ── HA Simulator ──────────────────────────────────────────────────────────────
+const showSimulator = ref(false)
+const simulatorFailNode = ref('')
+
+const openSimulator = () => {
+  simulatorFailNode.value = ''
+  loadClusterNodes()
+  showSimulator.value = true
+}
+
+const getSimulatedFailoverTarget = (resource) => {
+  // Determine which node would host this resource if simulatorFailNode fails
+  if (resource.group) {
+    const grp = haGroups.value.find(g => g.group === resource.group)
+    if (grp && grp.nodes) {
+      const nodes = parseGroupNodes(grp.nodes)
+      // Sort by priority descending, exclude the failing node
+      const candidates = nodes
+        .filter(n => n.name !== simulatorFailNode.value)
+        .sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0))
+      if (candidates.length > 0) return candidates[0].name
+    }
+  }
+  // No group — any online node except the failing one
+  const onlineNodes = clusterNodes.value.filter(n => n !== simulatorFailNode.value)
+  return onlineNodes.length > 0 ? onlineNodes[0] : null
+}
+
 // ── Active tab ────────────────────────────────────────────────────────────────
 const activeTab = ref('resources')
 
@@ -1672,6 +2045,65 @@ watch(selectedHostId, (val) => { if (val) startPoll(); else stopPoll() })
 .text-muted { color: var(--text-muted, #6b7280); }
 .text-sm { font-size: 0.875rem; }
 
+/* ── HA Simulator ── */
+.simulator-results {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border: 1px solid var(--border-color, #2d3348);
+  border-radius: 0.375rem;
+  overflow: hidden;
+  margin-top: 0.75rem;
+}
+
+.simulator-header {
+  display: grid;
+  grid-template-columns: 1.5fr 1fr 1fr 0.75fr 0.75fr;
+  gap: 0.5rem;
+  padding: 0.5rem 0.875rem;
+  background: var(--bg-secondary, #151824);
+  border-bottom: 1px solid var(--border-color, #2d3348);
+}
+
+.sim-col-header {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted, #6b7280);
+}
+
+.simulator-row {
+  display: grid;
+  grid-template-columns: 1.5fr 1fr 1fr 0.75fr 0.75fr;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.625rem 0.875rem;
+  border-bottom: 1px solid var(--border-color, #2d3348);
+  font-size: 0.875rem;
+  transition: background 0.1s;
+}
+
+.simulator-row:last-child { border-bottom: none; }
+.simulator-row:hover { background: var(--bg-hover, rgba(255,255,255,0.03)); }
+
+.sim-sid { font-weight: 600; font-family: monospace; font-size: 0.82rem; color: var(--text-primary); }
+.sim-node, .sim-target { display: flex; align-items: center; }
+
+.node-chip-fail {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+.sim-placeholder {
+  padding: 2rem;
+  text-align: center;
+  border: 1px dashed var(--border-color, #2d3348);
+  border-radius: 0.375rem;
+  margin-top: 0.75rem;
+}
+
 @media (max-width: 640px) {
   .ha-management { padding: 1rem; }
   .host-selector-row { flex-direction: column; align-items: flex-start; }
@@ -1679,5 +2111,7 @@ watch(selectedHostId, (val) => { if (val) startPoll(); else stopPoll() })
   .page-header { flex-direction: column; gap: 1rem; }
   .form-row { grid-template-columns: 1fr; }
   .status-grid { grid-template-columns: 1fr 1fr; }
+  .simulator-header, .simulator-row { grid-template-columns: 1fr 1fr; }
+  .sim-col-header:nth-child(n+3), .simulator-row > span:nth-child(n+3) { display: none; }
 }
 </style>

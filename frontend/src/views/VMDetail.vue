@@ -53,6 +53,14 @@
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:3px;"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
             Console
           </router-link>
+          <router-link
+            v-if="hasCloudInit"
+            :to="`/cloudinit/${hostId}/${node}/${vmid}`"
+            class="btn btn-outline btn-sm"
+            title="Edit Cloud-Init configuration"
+          >
+            Cloud-Init
+          </router-link>
         </div>
       </div>
 
@@ -659,22 +667,81 @@
 
       <!-- ─── Firewall Tab ─── -->
       <div v-if="activeTab === 'firewall'">
+        <!-- Firewall Options Bar -->
         <div class="card mb-2">
           <div class="card-header">
             <h3>Firewall Options</h3>
+            <div class="fw-options-actions">
+              <button @click="loadFirewall" class="btn btn-outline btn-sm" title="Reload firewall rules">↺ Reload</button>
+              <router-link :to="`/proxmox/${hostId}/firewall?vmid=${vmid}&node=${node}`" class="btn btn-outline btn-sm">
+                Full Firewall Manager
+              </router-link>
+            </div>
           </div>
-          <div class="card-body" v-if="firewallOptions !== null">
-            <label class="form-label checkbox-label">
-              <input type="checkbox" :checked="firewallOptions.enable == 1"
-                @change="toggleFirewall($event.target.checked)" />
-              Firewall Enabled for this VM
-            </label>
+          <div class="card-body fw-options-body" v-if="firewallOptions !== null">
+            <div class="fw-option-item">
+              <span class="fw-option-label">Firewall Enabled</span>
+              <label class="fw-toggle-switch">
+                <input type="checkbox" :checked="firewallOptions.enable == 1 || firewallOptions.enable === true"
+                  @change="toggleFirewall($event.target.checked)" />
+                <span class="fw-toggle-slider"></span>
+              </label>
+              <span class="text-sm ml-1" :class="(firewallOptions.enable == 1 || firewallOptions.enable === true) ? 'text-success' : 'text-muted'">
+                {{ (firewallOptions.enable == 1 || firewallOptions.enable === true) ? 'Enabled' : 'Disabled' }}
+              </span>
+            </div>
+            <div v-if="firewallOptions.policy_in !== undefined" class="fw-option-item">
+              <span class="fw-option-label">Default Inbound Policy</span>
+              <select v-model="firewallOptions.policy_in" class="form-control form-control-sm"
+                @change="saveFirewallOptions">
+                <option value="ACCEPT">ACCEPT</option>
+                <option value="DROP">DROP</option>
+                <option value="REJECT">REJECT</option>
+              </select>
+            </div>
+            <div v-if="firewallOptions.policy_out !== undefined" class="fw-option-item">
+              <span class="fw-option-label">Default Outbound Policy</span>
+              <select v-model="firewallOptions.policy_out" class="form-control form-control-sm"
+                @change="saveFirewallOptions">
+                <option value="ACCEPT">ACCEPT</option>
+                <option value="DROP">DROP</option>
+                <option value="REJECT">REJECT</option>
+              </select>
+            </div>
+          </div>
+          <div v-else-if="loadingFirewall" class="loading-spinner p-3"></div>
+        </div>
+
+        <!-- IPSets reference card -->
+        <div v-if="clusterIpsets.length > 0" class="card mb-2">
+          <div class="card-header">
+            <h4 style="margin:0;font-size:0.9rem;">Available Cluster IP Sets (usable as source/dest)</h4>
+          </div>
+          <div class="card-body" style="padding:0.6rem 1.25rem;">
+            <div class="ipset-chips">
+              <span v-for="is in clusterIpsets" :key="is.name" class="ipset-chip" :title="is.comment">
+                +{{ is.name }}
+              </span>
+            </div>
           </div>
         </div>
+
+        <!-- Rules table -->
         <div class="card">
           <div class="card-header">
-            <h3>Firewall Rules</h3>
-            <button @click="showFirewallModal = true" class="btn btn-primary btn-sm">+ Add Rule</button>
+            <h3>Firewall Rules
+              <span v-if="filteredFirewallRules.length !== firewallRules.length" class="text-sm text-muted ml-1">
+                ({{ filteredFirewallRules.length }} of {{ firewallRules.length }})
+              </span>
+            </h3>
+            <div class="fw-rules-header-actions">
+              <select v-model="fwDirFilter" class="form-control form-control-sm">
+                <option value="all">All Directions</option>
+                <option value="in">Inbound (IN)</option>
+                <option value="out">Outbound (OUT)</option>
+              </select>
+              <button @click="showFirewallModal = true" class="btn btn-primary btn-sm">+ Add Rule</button>
+            </div>
           </div>
           <div v-if="loadingFirewall" class="loading-spinner"></div>
           <div v-else class="table-container">
@@ -682,23 +749,26 @@
               <thead>
                 <tr>
                   <th>Pos</th>
-                  <th>Type</th>
+                  <th>Dir</th>
                   <th>Action</th>
                   <th>Proto</th>
                   <th>Source</th>
                   <th>Dest</th>
-                  <th>DPort</th>
+                  <th>Ports</th>
                   <th>Comment</th>
                   <th>Enabled</th>
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                <tr v-if="firewallRules.length === 0">
-                  <td colspan="10" class="text-muted text-center">No firewall rules</td>
+                <tr v-if="filteredFirewallRules.length === 0">
+                  <td colspan="10" class="text-muted text-center">
+                    {{ firewallRules.length === 0 ? 'No firewall rules configured.' : 'No rules match the current filter.' }}
+                  </td>
                 </tr>
-                <tr v-for="rule in firewallRules" :key="rule.pos">
-                  <td>{{ rule.pos }}</td>
+                <tr v-for="rule in filteredFirewallRules" :key="rule.pos"
+                  :class="{ 'fw-rule-disabled': rule.enable == 0 || rule.enable === false }">
+                  <td><strong>{{ rule.pos }}</strong></td>
                   <td>
                     <span :class="rule.type === 'in' ? 'badge badge-info' : 'badge badge-warning'">
                       {{ (rule.type || 'in').toUpperCase() }}
@@ -710,17 +780,30 @@
                     </span>
                   </td>
                   <td>{{ rule.proto || 'any' }}</td>
-                  <td class="text-sm">{{ rule.source || 'any' }}</td>
-                  <td class="text-sm">{{ rule.dest || 'any' }}</td>
-                  <td class="text-sm">{{ rule.dport || '—' }}</td>
+                  <td class="text-sm">{{ rule.source || '—' }}</td>
+                  <td class="text-sm">{{ rule.dest || '—' }}</td>
+                  <td class="text-sm">
+                    <span v-if="rule.dport || rule.sport">
+                      <span v-if="rule.dport">dst:{{ rule.dport }}</span>
+                      <span v-if="rule.sport"> src:{{ rule.sport }}</span>
+                    </span>
+                    <span v-else>—</span>
+                  </td>
                   <td class="text-sm text-muted">{{ rule.comment || '—' }}</td>
                   <td>
-                    <span :class="rule.enable == 1 ? 'badge badge-success' : 'badge badge-danger'">
-                      {{ rule.enable == 1 ? 'Yes' : 'No' }}
-                    </span>
+                    <label class="fw-toggle-switch fw-toggle-sm">
+                      <input type="checkbox"
+                        :checked="rule.enable == 1 || rule.enable === true"
+                        @change="toggleFirewallRule(rule, $event.target.checked)"
+                        :disabled="actioning" />
+                      <span class="fw-toggle-slider"></span>
+                    </label>
                   </td>
                   <td>
-                    <button @click="deleteFirewallRule(rule.pos)" class="btn btn-danger btn-sm" :disabled="actioning">Delete</button>
+                    <div class="fw-action-btns">
+                      <button @click="openEditFirewallRule(rule)" class="btn btn-outline btn-sm" :disabled="actioning">Edit</button>
+                      <button @click="deleteFirewallRule(rule.pos)" class="btn btn-danger btn-sm" :disabled="actioning">Del</button>
+                    </div>
                   </td>
                 </tr>
               </tbody>
@@ -1917,12 +2000,12 @@
       </div>
     </div>
 
-    <!-- Add Firewall Rule Modal -->
-    <div v-if="showFirewallModal" class="modal" @click.self="showFirewallModal = false">
+    <!-- Add / Edit Firewall Rule Modal -->
+    <div v-if="showFirewallModal" class="modal" @click.self="closeFirewallModal">
       <div class="modal-content" @click.stop>
         <div class="modal-header">
-          <h3>Add Firewall Rule</h3>
-          <button @click="showFirewallModal = false" class="btn-close">×</button>
+          <h3>{{ editingFirewallRule ? 'Edit Firewall Rule' : 'Add Firewall Rule' }}</h3>
+          <button @click="closeFirewallModal" class="btn-close">×</button>
         </div>
         <div class="modal-body">
           <div class="form-row">
@@ -1950,10 +2033,11 @@
                 <option value="tcp">TCP</option>
                 <option value="udp">UDP</option>
                 <option value="icmp">ICMP</option>
+                <option value="tcp_udp">TCP+UDP</option>
               </select>
             </div>
-            <div class="form-group">
-              <label class="form-label">
+            <div class="form-group" style="display:flex;align-items:flex-end;padding-bottom:0.3rem;">
+              <label class="form-label checkbox-label">
                 <input type="checkbox" v-model="firewallForm.enable" :true-value="1" :false-value="0" />
                 Enabled
               </label>
@@ -1961,29 +2045,43 @@
           </div>
           <div class="form-row">
             <div class="form-group">
-              <label class="form-label">Source</label>
-              <input v-model="firewallForm.source" class="form-control" placeholder="any or CIDR" />
+              <label class="form-label">Source IP / CIDR / IPSet</label>
+              <input v-model="firewallForm.source" list="fw-source-list" class="form-control" placeholder="e.g. 10.0.0.0/8 or +ipsetname" />
+              <datalist id="fw-source-list">
+                <option v-for="is in clusterIpsets" :key="is.name" :value="'+'+is.name">+{{ is.name }}</option>
+              </datalist>
             </div>
             <div class="form-group">
-              <label class="form-label">Destination</label>
-              <input v-model="firewallForm.dest" class="form-control" placeholder="any or CIDR" />
+              <label class="form-label">Destination IP / CIDR / IPSet</label>
+              <input v-model="firewallForm.dest" list="fw-dest-list" class="form-control" placeholder="e.g. 192.168.1.0/24 or +ipsetname" />
+              <datalist id="fw-dest-list">
+                <option v-for="is in clusterIpsets" :key="is.name" :value="'+'+is.name">+{{ is.name }}</option>
+              </datalist>
             </div>
           </div>
           <div class="form-row">
             <div class="form-group">
-              <label class="form-label">Dest Port</label>
-              <input v-model="firewallForm.dport" class="form-control" placeholder="80, 443, 8080-8090" />
+              <label class="form-label">Source Port</label>
+              <input v-model="firewallForm.sport" class="form-control" placeholder="e.g. 1024:65535" />
             </div>
             <div class="form-group">
-              <label class="form-label">Comment</label>
-              <input v-model="firewallForm.comment" class="form-control" placeholder="Optional" />
+              <label class="form-label">Destination Port</label>
+              <input v-model="firewallForm.dport" class="form-control" placeholder="80, 443, 8080-8090" />
             </div>
           </div>
+          <div v-if="editingFirewallRule" class="form-group">
+            <label class="form-label">Move to Position</label>
+            <input v-model.number="firewallForm.moveto" type="number" class="form-control" placeholder="Leave blank to keep current position" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Comment</label>
+            <input v-model="firewallForm.comment" class="form-control" placeholder="Optional description" />
+          </div>
           <div class="flex gap-1 mt-2">
-            <button @click="doAddFirewallRule" class="btn btn-primary" :disabled="actioning">
-              {{ actioning ? 'Adding...' : 'Add Rule' }}
+            <button @click="doSaveFirewallRule" class="btn btn-primary" :disabled="actioning">
+              {{ actioning ? (editingFirewallRule ? 'Updating...' : 'Adding...') : (editingFirewallRule ? 'Update Rule' : 'Add Rule') }}
             </button>
-            <button @click="showFirewallModal = false" class="btn btn-outline">Cancel</button>
+            <button @click="closeFirewallModal" class="btn btn-outline">Cancel</button>
           </div>
         </div>
       </div>
@@ -2146,6 +2244,13 @@ const collapsedSnaps = ref(new Set())
 const firewallRules = ref([])
 const firewallOptions = ref(null)
 const loadingFirewall = ref(false)
+const clusterIpsets = ref([])
+const fwDirFilter = ref('all')
+const editingFirewallRule = ref(null)
+const filteredFirewallRules = computed(() => {
+  if (fwDirFilter.value === 'all') return firewallRules.value
+  return firewallRules.value.filter(r => (r.type || 'in') === fwDirFilter.value)
+})
 const storageList = ref([])
 const clusterNodes = ref([])
 const rrdData = ref(null)
@@ -2408,7 +2513,7 @@ const compareSnaps = ref([])
 const compareLeft = ref({})
 const compareRight = ref({})
 const loadingCompare = ref(false)
-const firewallForm = ref({ type: 'in', action: 'ACCEPT', proto: '', source: '', dest: '', dport: '', comment: '', enable: 1 })
+const firewallForm = ref({ type: 'in', action: 'ACCEPT', proto: '', source: '', dest: '', dport: '', sport: '', comment: '', enable: 1, moveto: null })
 
 // ── Hardware tab state ────────────────────────────────────────────────────────
 const showAddUsbModal = ref(false)
@@ -2479,6 +2584,20 @@ const statusBadgeClass = computed(() => {
 })
 
 const cpuPct = computed(() => cpuPercent(vmStatus.value))
+
+// Cloud-init detection: true if any cloud-init related key exists in config
+const hasCloudInit = computed(() => {
+  if (!config.value) return false
+  const cfg = config.value
+  // Check for cloud-init drive (ide2/scsi/sata with media=cloudinit or containing 'cloud-init')
+  const driveKeys = ['ide0','ide1','ide2','ide3','scsi0','scsi1','sata0','sata1']
+  for (const k of driveKeys) {
+    const v = cfg[k]
+    if (v && (String(v).includes('cloudinit') || String(v).includes('cloud-init'))) return true
+  }
+  // Also check if any cloud-init config fields are present
+  return !!(cfg.ciuser || cfg.cipassword || cfg.sshkeys || cfg.ipconfig0 || cfg.nameserver || cfg.searchdomain)
+})
 
 // ── Snapshot Tree ──────────────────────────────────────────────────────────────
 
@@ -2681,12 +2800,14 @@ const loadSnapshots = async () => {
 const loadFirewall = async () => {
   loadingFirewall.value = true
   try {
-    const [rulesRes, optsRes] = await Promise.all([
+    const [rulesRes, optsRes, ipsetRes] = await Promise.all([
       api.pveVm.getFirewallRules(hostId.value, node.value, vmid.value),
-      api.pveVm.getFirewallOptions(hostId.value, node.value, vmid.value).catch(() => ({ data: {} }))
+      api.pveVm.getFirewallOptions(hostId.value, node.value, vmid.value).catch(() => ({ data: {} })),
+      api.pveFirewall.listIpsets(hostId.value).catch(() => ({ data: [] })),
     ])
     firewallRules.value = rulesRes.data || []
     firewallOptions.value = optsRes.data || {}
+    clusterIpsets.value = ipsetRes.data || []
   } catch (e) {
     console.warn('Firewall load failed', e)
   } finally {
@@ -3463,23 +3584,77 @@ const toggleFirewall = async (enabled) => {
   }
 }
 
-const doAddFirewallRule = async () => {
+const saveFirewallOptions = async () => {
+  if (!firewallOptions.value) return
+  try {
+    await api.pveVm.setFirewallOptions(hostId.value, node.value, vmid.value, {
+      enable: firewallOptions.value.enable ? 1 : 0,
+      policy_in: firewallOptions.value.policy_in,
+      policy_out: firewallOptions.value.policy_out,
+    })
+    toast.success('Firewall options saved')
+  } catch (e) {
+    console.error(e)
+    toast.error('Failed to save firewall options')
+  }
+}
+
+const openEditFirewallRule = (rule) => {
+  editingFirewallRule.value = rule
+  firewallForm.value = {
+    type: rule.type || 'in',
+    action: rule.action || 'ACCEPT',
+    proto: rule.proto || '',
+    source: rule.source || '',
+    dest: rule.dest || '',
+    dport: rule.dport || '',
+    sport: rule.sport || '',
+    comment: rule.comment || '',
+    enable: (rule.enable == 1 || rule.enable === true) ? 1 : 0,
+    moveto: null,
+  }
+  showFirewallModal.value = true
+}
+
+const closeFirewallModal = () => {
+  showFirewallModal.value = false
+  editingFirewallRule.value = null
+  firewallForm.value = { type: 'in', action: 'ACCEPT', proto: '', source: '', dest: '', dport: '', sport: '', comment: '', enable: 1, moveto: null }
+}
+
+const toggleFirewallRule = async (rule, enabled) => {
+  const pos = rule.pos ?? 0
+  try {
+    await api.pveVm.updateFirewallRule(hostId.value, node.value, vmid.value, pos, { enable: enabled ? 1 : 0 })
+    rule.enable = enabled ? 1 : 0
+    toast.success(`Rule ${enabled ? 'enabled' : 'disabled'}`)
+  } catch (e) {
+    console.error(e)
+    toast.error('Failed to toggle rule')
+    await loadFirewall()
+  }
+}
+
+const doSaveFirewallRule = async () => {
   actioning.value = true
   try {
     const payload = { ...firewallForm.value }
     Object.keys(payload).forEach(k => {
-      if (payload[k] === '' || payload[k] === null) delete payload[k]
+      if (payload[k] === '' || payload[k] === null || payload[k] === undefined) delete payload[k]
     })
-    // Always keep type and action
-    payload.type = firewallForm.value.type
-    payload.action = firewallForm.value.action
-    await api.pveVm.addFirewallRule(hostId.value, node.value, vmid.value, payload)
-    toast.success('Firewall rule added')
-    showFirewallModal.value = false
-    firewallForm.value = { type: 'in', action: 'ACCEPT', proto: '', source: '', dest: '', dport: '', comment: '', enable: 1 }
+    if (editingFirewallRule.value) {
+      const pos = editingFirewallRule.value.pos ?? 0
+      await api.pveVm.updateFirewallRule(hostId.value, node.value, vmid.value, pos, payload)
+      toast.success('Firewall rule updated')
+    } else {
+      await api.pveVm.addFirewallRule(hostId.value, node.value, vmid.value, payload)
+      toast.success('Firewall rule added')
+    }
+    closeFirewallModal()
     await loadFirewall()
   } catch (e) {
     console.error(e)
+    toast.error('Failed to save firewall rule')
   } finally {
     actioning.value = false
   }
@@ -3877,6 +4052,114 @@ const copySshCommand = () => {
 </script>
 
 <style scoped>
+/* ── Firewall tab enhancements ──────────────────────────────────────────────── */
+.fw-options-body {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+  padding: 0.75rem 1.25rem;
+}
+
+.fw-option-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.fw-option-label {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.fw-options-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.fw-rules-header-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.fw-toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 40px;
+  height: 22px;
+  cursor: pointer;
+}
+
+.fw-toggle-switch.fw-toggle-sm {
+  width: 32px;
+  height: 17px;
+}
+
+.fw-toggle-switch input { opacity: 0; width: 0; height: 0; }
+
+.fw-toggle-slider {
+  position: absolute;
+  inset: 0;
+  background-color: var(--border-color, #d1d5db);
+  border-radius: 22px;
+  transition: background-color 0.2s;
+}
+
+.fw-toggle-slider::before {
+  content: '';
+  position: absolute;
+  height: 16px;
+  width: 16px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  border-radius: 50%;
+  transition: transform 0.2s;
+}
+
+.fw-toggle-switch.fw-toggle-sm .fw-toggle-slider::before {
+  height: 11px;
+  width: 11px;
+  left: 3px;
+  bottom: 3px;
+}
+
+.fw-toggle-switch input:checked + .fw-toggle-slider { background-color: var(--color-primary, #3b82f6); }
+.fw-toggle-switch input:checked + .fw-toggle-slider::before { transform: translateX(18px); }
+.fw-toggle-switch.fw-toggle-sm input:checked + .fw-toggle-slider::before { transform: translateX(15px); }
+
+.fw-rule-disabled { opacity: 0.45; }
+
+.fw-action-btns {
+  display: flex;
+  gap: 0.3rem;
+}
+
+.ipset-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.ipset-chip {
+  display: inline-block;
+  padding: 0.2rem 0.55rem;
+  background: rgba(59, 130, 246, 0.1);
+  color: var(--color-primary, #3b82f6);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: 1rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+  font-family: monospace;
+  cursor: default;
+}
+
+.text-success { color: var(--color-success, #22c55e); }
+
+/* ── End firewall tab ─────────────────────────────────────────────────────── */
 .btn-copy {
   display: inline-flex;
   align-items: center;

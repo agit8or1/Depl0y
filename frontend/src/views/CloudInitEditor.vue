@@ -249,9 +249,10 @@ import api from '@/services/api'
 
 const route = useRoute()
 
-const hostId = computed(() => route.query.hostId)
-const node = computed(() => route.query.node)
-const vmid = computed(() => route.query.vmid)
+// Support both route params (/cloudinit/:hostId/:node/:vmid) and query params (?hostId=...&node=...&vmid=...)
+const hostId = computed(() => route.params.hostId || route.query.hostId)
+const node = computed(() => route.params.node || route.query.node)
+const vmid = computed(() => route.params.vmid || route.query.vmid)
 
 const backLink = computed(() =>
   `/proxmox/${hostId.value}/nodes/${node.value}/vms/${vmid.value}`

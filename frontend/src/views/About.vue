@@ -157,6 +157,162 @@
       </div>
     </div>
 
+    <!-- System Information -->
+    <div class="section-card card">
+      <h3 class="section-title">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+        System Information
+        <button class="refresh-btn" @click="fetchHealthInfo" :disabled="healthLoading">
+          <svg v-if="!healthLoading" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+          <span v-else class="spin-icon">...</span>
+        </button>
+      </h3>
+      <div v-if="healthLoading && !healthInfo" class="sysinfo-loading">Loading...</div>
+      <div v-else-if="healthInfo" class="sysinfo-grid">
+        <div class="sysinfo-item">
+          <span class="sysinfo-label">Database</span>
+          <span :class="['sysinfo-value', healthInfo.checks?.db === 'ok' ? 'val-ok' : 'val-err']">
+            {{ healthInfo.checks?.db === 'ok' ? 'Connected' : 'Error' }}
+          </span>
+        </div>
+        <div class="sysinfo-item">
+          <span class="sysinfo-label">SMTP</span>
+          <span :class="['sysinfo-value', healthInfo.checks?.smtp === 'configured' ? 'val-ok' : 'val-warn']">
+            {{ healthInfo.checks?.smtp === 'configured' ? 'Configured' : 'Not configured' }}
+          </span>
+        </div>
+        <div class="sysinfo-item">
+          <span class="sysinfo-label">Proxmox Hosts</span>
+          <span class="sysinfo-value">{{ healthInfo.checks?.hosts ?? '—' }}</span>
+        </div>
+        <div class="sysinfo-item">
+          <span class="sysinfo-label">Encryption Key</span>
+          <span :class="['sysinfo-value', healthInfo.checks?.encryption === 'ok' ? 'val-ok' : 'val-err']">
+            {{ healthInfo.checks?.encryption === 'ok' ? 'Set' : 'Missing' }}
+          </span>
+        </div>
+        <div class="sysinfo-item">
+          <span class="sysinfo-label">Disk Free</span>
+          <span :class="['sysinfo-value', (healthInfo.checks?.disk_free_gb ?? 0) > 1 ? 'val-ok' : 'val-warn']">
+            {{ healthInfo.checks?.disk_free_gb != null ? healthInfo.checks.disk_free_gb + ' GB' : '—' }}
+          </span>
+        </div>
+        <div class="sysinfo-item">
+          <span class="sysinfo-label">Overall Status</span>
+          <span :class="['sysinfo-value', healthInfo.status === 'healthy' ? 'val-ok' : 'val-warn']">
+            {{ healthInfo.status }}
+          </span>
+        </div>
+      </div>
+      <div v-else class="sysinfo-empty">
+        <button class="btn-load-sysinfo" @click="fetchHealthInfo">Load System Info</button>
+      </div>
+    </div>
+
+    <!-- Check for Updates -->
+    <div class="section-card card">
+      <h3 class="section-title">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+        Updates
+      </h3>
+      <div class="updates-section">
+        <div class="updates-row">
+          <div class="updates-info">
+            <span class="updates-current">Current version: <strong>v{{ version }}</strong></span>
+            <span v-if="updateStatus === 'up-to-date'" class="update-badge update-ok">Up to date</span>
+            <span v-else-if="updateStatus === 'available'" class="update-badge update-avail">Update available!</span>
+            <span v-else-if="updateStatus === 'pre-release'" class="update-badge update-pre">Pre-release</span>
+            <span v-if="latestVersion && updateStatus !== 'loading'" class="updates-latest">Latest release: <strong>v{{ latestVersion }}</strong></span>
+          </div>
+          <button class="check-update-btn" @click="checkForUpdates" :disabled="updateChecking">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+            {{ updateChecking ? 'Checking...' : 'Check for Updates' }}
+          </button>
+        </div>
+        <div v-if="updateReleaseNotes" class="update-notes">
+          <p class="update-notes-label">Release notes:</p>
+          <pre class="update-notes-body">{{ updateReleaseNotes }}</pre>
+        </div>
+        <p v-if="updateError" class="update-error">{{ updateError }}</p>
+      </div>
+    </div>
+
+    <!-- License -->
+    <div class="section-card card">
+      <h3 class="section-title">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        License
+      </h3>
+      <div class="license-section">
+        <div class="license-header">
+          <span class="license-badge">MIT License</span>
+          <span class="license-year">Copyright &copy; 2024–2026 Agit8or</span>
+        </div>
+        <p class="license-summary">
+          Free and open source software. Permission is granted to use, copy, modify, merge, publish,
+          distribute, sublicense, and/or sell copies, subject to the conditions below.
+        </p>
+        <div class="license-expand-wrap">
+          <button class="license-toggle" @click="showLicense = !showLicense">
+            {{ showLicense ? 'Hide full license text' : 'Show full license text' }}
+            <svg
+              :class="['chevron', showLicense ? 'chevron-open' : '']"
+              width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            ><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          <transition name="collapse">
+            <div v-if="showLicense" class="license-text">
+              <pre>MIT License
+
+Copyright (c) 2024-2026 Agit8or
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.</pre>
+            </div>
+          </transition>
+        </div>
+      </div>
+    </div>
+
+    <!-- Contributors -->
+    <div class="section-card card">
+      <h3 class="section-title">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        Contributors
+      </h3>
+      <div class="contributors-section">
+        <div class="contributor-card">
+          <div class="contributor-avatar">A</div>
+          <div class="contributor-info">
+            <a href="https://github.com/agit8or1" target="_blank" rel="noopener noreferrer" class="contributor-name">Agit8or</a>
+            <span class="contributor-role">Core maintainer</span>
+            <a href="https://mspreboot.com" target="_blank" rel="noopener noreferrer" class="contributor-site">mspreboot.com</a>
+          </div>
+        </div>
+        <div class="contributors-cta">
+          <p>Want to contribute? Pull requests are welcome!</p>
+          <a href="https://github.com/agit8or1/Depl0y/fork" target="_blank" rel="noopener noreferrer" class="contribute-btn">
+            Fork on GitHub
+          </a>
+        </div>
+      </div>
+    </div>
+
     <!-- Credits -->
     <div class="section-card card">
       <h3 class="section-title">
@@ -397,6 +553,68 @@ export default {
       { name: 'SQLAlchemy', desc: 'Python ORM', url: 'https://www.sqlalchemy.org' },
     ]
 
+    // Health info
+    const healthInfo = ref(null)
+    const healthLoading = ref(false)
+
+    const fetchHealthInfo = async () => {
+      healthLoading.value = true
+      try {
+        const res = await api.system.health()
+        healthInfo.value = res.data
+      } catch {
+        // silently ignore — may not be admin
+      } finally {
+        healthLoading.value = false
+      }
+    }
+
+    // Update check
+    const updateChecking = ref(false)
+    const updateStatus = ref(null)   // 'up-to-date' | 'available' | 'pre-release' | 'loading'
+    const latestVersion = ref(null)
+    const updateReleaseNotes = ref(null)
+    const updateError = ref(null)
+
+    const _compareVersions = (a, b) => {
+      const parse = v => (v || '').replace(/^v/, '').split('.').map(Number)
+      const av = parse(a)
+      const bv = parse(b)
+      for (let i = 0; i < 3; i++) {
+        if ((av[i] || 0) > (bv[i] || 0)) return 1
+        if ((av[i] || 0) < (bv[i] || 0)) return -1
+      }
+      return 0
+    }
+
+    const checkForUpdates = async () => {
+      updateChecking.value = true
+      updateStatus.value = 'loading'
+      updateError.value = null
+      updateReleaseNotes.value = null
+      try {
+        const res = await fetch('https://api.github.com/repos/agit8or1/Depl0y/releases/latest', {
+          headers: { Accept: 'application/vnd.github+json' }
+        })
+        if (!res.ok) throw new Error(`GitHub API ${res.status}`)
+        const data = await res.json()
+        latestVersion.value = (data.tag_name || '').replace(/^v/, '')
+        updateReleaseNotes.value = data.body ? data.body.slice(0, 600) + (data.body.length > 600 ? '…' : '') : null
+        const cmp = _compareVersions(version.value, latestVersion.value)
+        if (cmp < 0) updateStatus.value = 'available'
+        else if (cmp > 0) updateStatus.value = 'pre-release'
+        else updateStatus.value = 'up-to-date'
+      } catch (e) {
+        updateError.value = 'Could not reach GitHub. Check your network connection.'
+        updateStatus.value = null
+      } finally {
+        updateChecking.value = false
+      }
+    }
+
+    // License toggle
+    const showLicense = ref(false)
+
     onMounted(async () => {
       try {
         const response = await api.system.getInfo()
@@ -404,6 +622,7 @@ export default {
       } catch {
         version.value = '1.8.0'
       }
+      fetchHealthInfo()
     })
 
     return {
@@ -416,6 +635,19 @@ export default {
       techStack,
       changelog,
       coreLibs,
+      // System info
+      healthInfo,
+      healthLoading,
+      fetchHealthInfo,
+      // Updates
+      updateChecking,
+      updateStatus,
+      latestVersion,
+      updateReleaseNotes,
+      updateError,
+      checkForUpdates,
+      // License
+      showLicense,
     }
   }
 }
@@ -991,6 +1223,363 @@ export default {
   border-color: #ec4899;
 }
 
+/* ── System Info section ── */
+.sysinfo-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.75rem;
+}
+
+.sysinfo-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.75rem 1rem;
+  background: var(--background);
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+}
+
+.sysinfo-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+}
+
+.sysinfo-value {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.val-ok { color: #10b981; }
+.val-warn { color: #f59e0b; }
+.val-err { color: #ef4444; }
+
+.sysinfo-loading {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  padding: 0.5rem 0;
+}
+
+.sysinfo-empty {
+  padding: 0.5rem 0;
+}
+
+.btn-load-sysinfo {
+  padding: 0.4rem 1rem;
+  background: var(--primary-color);
+  color: #fff;
+  border: none;
+  border-radius: 0.375rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.btn-load-sysinfo:hover { opacity: 0.85; }
+
+.refresh-btn {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.3rem 0.7rem;
+  background: var(--background);
+  border: 1px solid var(--border-color);
+  border-radius: 0.375rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.refresh-btn:hover { border-color: var(--primary-color); }
+.refresh-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ── Updates section ── */
+.updates-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.updates-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.updates-info {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.updates-current {
+  font-size: 0.9rem;
+  color: var(--text-primary);
+}
+
+.updates-latest {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.update-badge {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 0.2rem 0.55rem;
+  border-radius: 9999px;
+}
+
+.update-ok {
+  background: rgba(16,185,129,0.12);
+  color: #059669;
+}
+[data-theme="dark"] .update-ok { background: rgba(16,185,129,0.2); color: #6ee7b7; }
+
+.update-avail {
+  background: rgba(59,130,246,0.12);
+  color: #2563eb;
+}
+[data-theme="dark"] .update-avail { background: rgba(59,130,246,0.2); color: #93c5fd; }
+
+.update-pre {
+  background: rgba(245,158,11,0.12);
+  color: #d97706;
+}
+[data-theme="dark"] .update-pre { background: rgba(245,158,11,0.2); color: #fcd34d; }
+
+.check-update-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 1rem;
+  background: var(--primary-color);
+  color: #fff;
+  border: none;
+  border-radius: 0.5rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s;
+  white-space: nowrap;
+}
+
+.check-update-btn:hover { opacity: 0.85; }
+.check-update-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.update-notes {
+  background: var(--background);
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+  padding: 0.875rem 1rem;
+}
+
+.update-notes-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin: 0 0 0.5rem;
+}
+
+.update-notes-body {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+  font-family: inherit;
+  line-height: 1.55;
+}
+
+.update-error {
+  font-size: 0.85rem;
+  color: #ef4444;
+  margin: 0;
+}
+
+/* ── License section ── */
+.license-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+}
+
+.license-header {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+}
+
+.license-badge {
+  padding: 0.25rem 0.75rem;
+  background: rgba(59,130,246,0.1);
+  border: 1px solid rgba(59,130,246,0.3);
+  color: var(--primary-color);
+  border-radius: 9999px;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.license-year {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.license-summary {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin: 0;
+}
+
+.license-expand-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.license-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: none;
+  border: 1px solid var(--border-color);
+  border-radius: 0.375rem;
+  padding: 0.35rem 0.875rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+  width: fit-content;
+}
+
+.license-toggle:hover { border-color: var(--primary-color); color: var(--primary-color); }
+
+.license-text {
+  background: var(--background);
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+  padding: 1rem 1.25rem;
+}
+
+.license-text pre {
+  font-size: 0.78rem;
+  font-family: monospace;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+  line-height: 1.6;
+}
+
+/* ── Contributors section ── */
+.contributors-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.contributor-card {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  background: var(--background);
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+}
+
+.contributor-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #1e40af, #2563eb);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.contributor-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.contributor-name {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--primary-color);
+  text-decoration: none;
+}
+
+.contributor-name:hover { text-decoration: underline; }
+
+.contributor-role {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.contributor-site {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  text-decoration: none;
+  font-family: monospace;
+}
+
+.contributor-site:hover { color: var(--primary-color); }
+
+.contributors-cta {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 0.875rem 1rem;
+  background: var(--background);
+  border: 1px dashed var(--border-color);
+  border-radius: 0.5rem;
+}
+
+.contributors-cta p {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  flex: 1;
+}
+
+.contribute-btn {
+  padding: 0.4rem 1rem;
+  background: var(--surface);
+  border: 1px solid var(--border-color);
+  border-radius: 0.375rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  text-decoration: none;
+  transition: border-color 0.15s;
+  white-space: nowrap;
+}
+
+.contribute-btn:hover { border-color: var(--primary-color); color: var(--primary-color); }
+
 /* ── Responsive ── */
 @media (max-width: 768px) {
   .system-info-grid {
@@ -1003,6 +1592,13 @@ export default {
     flex-direction: column;
     align-items: center;
   }
+  .sysinfo-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .updates-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
 }
 
 @media (max-width: 480px) {
@@ -1011,6 +1607,9 @@ export default {
   }
   .about-logo {
     font-size: 3rem;
+  }
+  .sysinfo-grid {
+    grid-template-columns: 1fr 1fr;
   }
 }
 </style>

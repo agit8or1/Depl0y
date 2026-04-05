@@ -18,6 +18,389 @@
     </div>
 
     <!-- ====================================================================== -->
+    <!-- TAB 0: Cloud Image URL (new 3-step wizard)                             -->
+    <!-- ====================================================================== -->
+    <div v-if="activeImportTab === 'cloud'">
+      <!-- Step indicators -->
+      <div class="steps">
+        <div v-for="(step, i) in cloudSteps" :key="i" class="step"
+          :class="{ active: cloudStep === i, completed: cloudStep > i }">
+          <div class="step-circle">
+            <span v-if="cloudStep > i">&#10003;</span>
+            <span v-else>{{ i + 1 }}</span>
+          </div>
+          <span class="step-label">{{ step }}</span>
+        </div>
+      </div>
+
+      <!-- Step 0: Source Selection -->
+      <div v-if="cloudStep === 0" class="card">
+        <h2>Source Selection</h2>
+
+        <div class="source-type-grid">
+          <button
+            v-for="st in cloudSourceTypes"
+            :key="st.id"
+            :class="['source-type-card', cloud.sourceType === st.id ? 'source-type-card--active' : '']"
+            @click="cloud.sourceType = st.id"
+          >
+            <div class="source-type-icon">{{ st.icon }}</div>
+            <div class="source-type-label">{{ st.label }}</div>
+            <div class="source-type-desc">{{ st.desc }}</div>
+          </button>
+        </div>
+
+        <!-- Cloud Image URL -->
+        <div v-if="cloud.sourceType === 'url'" class="mt-3">
+          <div class="form-group">
+            <label>Image URL</label>
+            <input
+              v-model="cloud.url"
+              type="url"
+              class="input"
+              placeholder="https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img"
+              @blur="detectCloudUrlOs"
+              @paste="onCloudUrlPaste"
+            />
+          </div>
+
+          <div class="distro-quickselect">
+            <p class="hint" style="margin-bottom:.5rem;">Quick select:</p>
+            <div class="distro-btn-row">
+              <button
+                v-for="d in popularDistros"
+                :key="d.id"
+                class="distro-btn"
+                @click="selectDistro(d)"
+              >
+                {{ d.label }}
+              </button>
+            </div>
+          </div>
+
+          <div v-if="cloud.detectedOs" class="info-box mt-2" style="margin-bottom:0;">
+            Detected OS: <strong>{{ cloud.detectedOs }}</strong>
+          </div>
+
+          <div class="form-grid mt-3">
+            <div class="form-group">
+              <label>
+                <input v-model="cloud.verifyChecksum" type="checkbox" style="margin-right:.4rem;" />
+                Verify SHA256 Checksum
+              </label>
+            </div>
+            <div class="form-group" v-if="cloud.verifyChecksum">
+              <label>SHA256 Checksum</label>
+              <input v-model="cloud.checksum" type="text" class="input" placeholder="abc123..." />
+            </div>
+          </div>
+        </div>
+
+        <!-- Local File -->
+        <div v-if="cloud.sourceType === 'local'" class="mt-3">
+          <div
+            class="drop-zone"
+            :class="{ 'drag-over': cloudDragging, 'has-file': cloud.localFile }"
+            @dragover.prevent="cloudDragging = true"
+            @dragleave.prevent="cloudDragging = false"
+            @drop.prevent="onCloudFileDrop"
+            @click="$refs.cloudFileInput.click()"
+          >
+            <input ref="cloudFileInput" type="file" accept=".img,.qcow2,.raw,.vmdk,.vhd,.vhdx,.iso" style="display:none" @change="onCloudFileSelected" />
+            <template v-if="!cloud.localFile">
+              <div class="drop-icon">&#128190;</div>
+              <p class="drop-text">Drag &amp; drop a disk image, or click to browse</p>
+              <p class="drop-hint">qcow2 &middot; raw &middot; img &middot; vmdk</p>
+            </template>
+            <template v-else>
+              <div class="drop-icon">&#9989;</div>
+              <p class="drop-text">{{ cloud.localFile.name }}</p>
+              <p class="drop-hint">{{ formatBytes(cloud.localFile.size) }}</p>
+            </template>
+          </div>
+        </div>
+
+        <!-- Existing Template -->
+        <div v-if="cloud.sourceType === 'template'" class="mt-3">
+          <p class="hint">Select an existing VM template to clone and configure with cloud-init.</p>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Proxmox Host</label>
+              <select v-model="cloud.templateHostId" class="input" @change="onCloudTemplateHostChange">
+                <option value="" disabled>Select host...</option>
+                <option v-for="h in proxmoxHosts" :key="h.id" :value="h.id">{{ h.name }}</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Node</label>
+              <select v-model="cloud.templateNode" class="input" :disabled="!cloud.templateHostId" @change="loadCloudTemplates">
+                <option value="" disabled>Select node...</option>
+                <option v-for="n in cloudTemplateNodes" :key="n.node_name" :value="n.node_name">{{ n.node_name }}</option>
+              </select>
+            </div>
+          </div>
+          <div v-if="cloudTemplateLoading" class="text-muted text-sm">Loading templates...</div>
+          <div v-else-if="cloudTemplates.length" class="vm-list" style="margin-bottom:0;">
+            <div v-for="t in cloudTemplates" :key="t.vmid"
+              :class="['vm-row', cloud.templateVmid === t.vmid ? 'selected' : '']"
+              @click="cloud.templateVmid = t.vmid; cloud.templateName = t.name">
+              <div class="vm-row-radio"><input type="radio" :value="t.vmid" v-model="cloud.templateVmid" @click.stop /></div>
+              <div class="vm-row-info">
+                <div class="vm-row-name">{{ t.name }} <span class="power-badge off">VMID {{ t.vmid }}</span></div>
+                <div class="vm-row-meta">{{ t.cores || 1 }} vCPU &middot; {{ t.maxmem ? Math.round(t.maxmem / 1048576) : '?' }} MB RAM</div>
+              </div>
+            </div>
+          </div>
+          <div v-else-if="cloud.templateNode" class="text-muted text-sm">No templates found on this node.</div>
+        </div>
+
+        <!-- OVA/OVF -->
+        <div v-if="cloud.sourceType === 'ova'" class="mt-3">
+          <div class="info-box">
+            <strong>OVA / OVF Import</strong><br/>
+            Use the <strong>OVA / OVF Import</strong> tab for full OVA/OVF file import with hardware specification extraction.
+          </div>
+          <div class="actions mt-2">
+            <button class="btn btn-secondary" @click="switchImportTab('ova')">Go to OVA/OVF Tab</button>
+          </div>
+        </div>
+
+        <div class="actions mt-3">
+          <button
+            class="btn btn-primary"
+            :disabled="!cloudStep0Valid"
+            @click="cloudStep = 1"
+          >Continue</button>
+        </div>
+      </div>
+
+      <!-- Step 1: VM Configuration -->
+      <div v-if="cloudStep === 1" class="card">
+        <h2>VM Configuration</h2>
+
+        <h3 class="section-title">Target</h3>
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Proxmox Host</label>
+            <select v-model="cloud.hostId" class="input" @change="onCloudHostChange">
+              <option value="" disabled>Select host...</option>
+              <option v-for="h in proxmoxHosts" :key="h.id" :value="h.id">{{ h.name }}</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Node</label>
+            <select v-model="cloud.node" class="input" :disabled="!cloud.hostId" @change="onCloudNodeChange">
+              <option value="" disabled>Select node...</option>
+              <option v-for="n in cloudNodes" :key="n.node_name" :value="n.node_name">{{ n.node_name }}</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Storage Pool</label>
+            <select v-model="cloud.storage" class="input" :disabled="!cloud.node">
+              <option value="" disabled>Select storage...</option>
+              <option v-for="s in cloudStorages" :key="s.storage" :value="s.storage">{{ s.storage }} ({{ s.type }})</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>VM ID</label>
+            <div style="display:flex;gap:.5rem;align-items:center;">
+              <input v-model.number="cloud.vmid" type="number" class="input" placeholder="auto" style="flex:1;" />
+              <button class="btn btn-secondary" style="white-space:nowrap;font-size:.8rem;padding:.4rem .75rem;" @click="fetchNextVmId" :disabled="!cloud.hostId">Auto</button>
+            </div>
+            <span class="field-note">Leave blank or click Auto for next available ID</span>
+          </div>
+        </div>
+
+        <h3 class="section-title">Identity</h3>
+        <div class="form-grid">
+          <div class="form-group">
+            <label>VM Name</label>
+            <input v-model="cloud.vmName" type="text" class="input" placeholder="my-vm" />
+          </div>
+          <div class="form-group">
+            <label>OS Type</label>
+            <select v-model="cloud.osType" class="input">
+              <option value="l26">Linux (modern kernel)</option>
+              <option value="l24">Linux 2.4</option>
+              <option value="ubuntu">Ubuntu</option>
+              <option value="debian">Debian</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+        </div>
+
+        <h3 class="section-title">Resources</h3>
+        <div class="form-grid">
+          <div class="form-group">
+            <label>CPU Cores</label>
+            <input v-model.number="cloud.cores" type="number" min="1" max="64" class="input" />
+          </div>
+          <div class="form-group">
+            <label>Memory (MB)</label>
+            <input v-model.number="cloud.memory" type="number" min="256" step="256" class="input" />
+            <span class="field-note">{{ cloud.memory ? (cloud.memory / 1024).toFixed(1) + ' GB' : '' }}</span>
+          </div>
+          <div class="form-group">
+            <label>Disk Size (GB)</label>
+            <input v-model.number="cloud.diskSize" type="number" min="1" class="input" placeholder="Use image size" />
+            <span class="field-note">Leave blank to keep image size, or enter GB to resize</span>
+          </div>
+        </div>
+
+        <h3 class="section-title">Network</h3>
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Bridge</label>
+            <select v-model="cloud.bridge" class="input" :disabled="!cloud.node">
+              <option v-if="!cloudBridges.length" value="vmbr0">vmbr0</option>
+              <option v-for="b in cloudBridges" :key="b" :value="b">{{ b }}</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>VLAN Tag <span class="optional-label">(optional)</span></label>
+            <input v-model.number="cloud.vlan" type="number" class="input" placeholder="e.g. 10" />
+          </div>
+          <div class="form-group">
+            <label>MAC Address</label>
+            <div style="display:flex;gap:.5rem;align-items:center;">
+              <input v-model="cloud.mac" type="text" class="input" placeholder="Random" style="flex:1;" :disabled="cloud.macRandom" />
+              <label class="checkbox-label" style="white-space:nowrap;">
+                <input v-model="cloud.macRandom" type="checkbox" @change="cloud.macRandom && (cloud.mac = '')" />
+                Random
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <h3 class="section-title">
+          Cloud-Init
+          <label class="checkbox-label" style="display:inline-flex;margin-left:1rem;font-weight:400;font-size:.85rem;">
+            <input v-model="cloud.enableCi" type="checkbox" style="margin-right:.4rem;" />
+            Enable
+          </label>
+        </h3>
+
+        <div v-if="cloud.enableCi" class="ci-section">
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Username</label>
+              <input v-model="cloud.ciUser" type="text" class="input" placeholder="ubuntu" />
+            </div>
+            <div class="form-group">
+              <label>Password <span class="optional-label">(optional)</span></label>
+              <input v-model="cloud.ciPassword" type="password" class="input" />
+            </div>
+          </div>
+          <div class="form-group">
+            <label>SSH Public Keys <span class="optional-label">(one per line)</span></label>
+            <textarea v-model="cloud.ciSshKeys" class="input" rows="3" placeholder="ssh-rsa AAAA...&#10;ssh-ed25519 AAAA..."></textarea>
+          </div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>IP Configuration</label>
+              <div class="radio-group-inline-ci">
+                <label class="radio-label-ci">
+                  <input type="radio" v-model="cloud.ciIpMode" value="dhcp" />
+                  DHCP
+                </label>
+                <label class="radio-label-ci">
+                  <input type="radio" v-model="cloud.ciIpMode" value="static" />
+                  Static
+                </label>
+              </div>
+            </div>
+          </div>
+          <div v-if="cloud.ciIpMode === 'static'" class="form-grid">
+            <div class="form-group">
+              <label>IP / CIDR</label>
+              <input v-model="cloud.ciIp" type="text" class="input" placeholder="192.168.1.100/24" />
+            </div>
+            <div class="form-group">
+              <label>Gateway</label>
+              <input v-model="cloud.ciGw" type="text" class="input" placeholder="192.168.1.1" />
+            </div>
+            <div class="form-group">
+              <label>Nameserver <span class="optional-label">(optional)</span></label>
+              <input v-model="cloud.ciNameserver" type="text" class="input" placeholder="8.8.8.8" />
+            </div>
+            <div class="form-group">
+              <label>Search Domain <span class="optional-label">(optional)</span></label>
+              <input v-model="cloud.ciSearchdomain" type="text" class="input" placeholder="example.com" />
+            </div>
+          </div>
+        </div>
+
+        <div class="actions mt-3">
+          <button class="btn btn-secondary" @click="cloudStep = 0">Back</button>
+          <button class="btn btn-primary"
+            :disabled="!cloud.hostId || !cloud.node || !cloud.storage"
+            @click="cloudStep = 2">Continue to Review</button>
+        </div>
+      </div>
+
+      <!-- Step 2: Review & Import -->
+      <div v-if="cloudStep === 2" class="card">
+        <h2>Review &amp; Import</h2>
+
+        <div class="summary-box">
+          <h3>Configuration Summary</h3>
+          <table class="summary-table">
+            <tr><td>Source</td><td>{{ cloudSummarySource }}</td></tr>
+            <tr v-if="cloud.detectedOs"><td>Detected OS</td><td>{{ cloud.detectedOs }}</td></tr>
+            <tr><td>Host</td><td>{{ proxmoxHosts.find(h => h.id === cloud.hostId)?.name || cloud.hostId }}</td></tr>
+            <tr><td>Node</td><td>{{ cloud.node }}</td></tr>
+            <tr><td>Storage</td><td>{{ cloud.storage }}</td></tr>
+            <tr><td>VM ID</td><td>{{ cloud.vmid || 'Auto-assign' }}</td></tr>
+            <tr><td>VM Name</td><td>{{ cloud.vmName || '(not set)' }}</td></tr>
+            <tr><td>CPU</td><td>{{ cloud.cores }} core(s)</td></tr>
+            <tr><td>Memory</td><td>{{ cloud.memory }} MB ({{ (cloud.memory / 1024).toFixed(1) }} GB)</td></tr>
+            <tr v-if="cloud.diskSize"><td>Resize Disk</td><td>{{ cloud.diskSize }} GB</td></tr>
+            <tr><td>Network</td><td>{{ cloud.bridge }}{{ cloud.vlan ? ' VLAN ' + cloud.vlan : '' }}</td></tr>
+            <tr><td>Cloud-Init</td><td>{{ cloud.enableCi ? 'Enabled' : 'Disabled' }}</td></tr>
+            <tr v-if="cloud.enableCi && cloud.ciUser"><td>CI User</td><td>{{ cloud.ciUser }}</td></tr>
+            <tr v-if="cloud.enableCi"><td>IP Config</td><td>{{ cloud.ciIpMode === 'dhcp' ? 'DHCP' : cloud.ciIp + ' gw ' + cloud.ciGw }}</td></tr>
+            <tr v-if="cloud.verifyChecksum && cloud.checksum"><td>SHA256</td><td class="mono-text">{{ cloud.checksum.substring(0, 16) }}...</td></tr>
+          </table>
+        </div>
+
+        <!-- Progress section (shown after import starts) -->
+        <div v-if="cloudImporting || cloudImportDone || cloudImportError" class="progress-section large mt-3">
+          <div v-if="!cloudImportDone && !cloudImportError">
+            <div class="progress-label">
+              <span>{{ cloudImportStatus }}</span>
+              <span>{{ cloudImportProgress }}%</span>
+            </div>
+            <div class="progress-bar">
+              <div class="progress-fill" :style="{ width: cloudImportProgress + '%' }"></div>
+            </div>
+          </div>
+          <div v-if="cloudImportDone" class="success-box">
+            <p>Import complete! <span v-if="cloudImportedVmid">VM ID: <strong>{{ cloudImportedVmid }}</strong></span></p>
+            <div class="actions mt-2">
+              <button class="btn btn-primary" @click="$router.push('/vm-management')">Go to VM Management</button>
+              <button class="btn btn-secondary" @click="resetCloudWizard">Import Another</button>
+            </div>
+          </div>
+          <div v-if="cloudImportError" class="error-box">
+            <p>{{ cloudImportError }}</p>
+            <div class="actions mt-2">
+              <button class="btn btn-secondary" @click="cloudImportError = null; cloudImporting = false">Try Again</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="actions mt-3">
+          <button class="btn btn-secondary" @click="cloudStep = 1" :disabled="cloudImporting">Back</button>
+          <button
+            class="btn btn-primary"
+            :disabled="cloudImporting || cloudImportDone"
+            @click="startCloudImport"
+          >{{ cloudImporting ? 'Importing...' : 'Start Import' }}</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ====================================================================== -->
     <!-- TAB 1: Import from OVA/OVF                                             -->
     <!-- ====================================================================== -->
     <div v-if="activeImportTab === 'ova'">
@@ -821,7 +1204,7 @@
 </template>
 
 <script>
-import { ref, onBeforeUnmount } from 'vue'
+import { ref, computed, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/services/api'
 import { useToast } from 'vue-toastification'
@@ -833,8 +1216,9 @@ export default {
     const toast = useToast()
 
     // ── Tab state ─────────────────────────────────────────────────────────────
-    const activeImportTab = ref('ova')
+    const activeImportTab = ref('cloud')
     const importTabs = [
+      { id: 'cloud', label: 'Cloud Image / URL' },
       { id: 'ova', label: 'OVA / OVF Import' },
       { id: 'disk', label: 'Disk Image (QCOW2/RAW/VMDK)' },
       { id: 'vmware', label: 'VMware Import' },
@@ -842,6 +1226,307 @@ export default {
     ]
 
     const switchImportTab = (id) => { activeImportTab.value = id }
+
+    // ── Cloud Image wizard state ──────────────────────────────────────────────
+    const cloudSteps = ['Source Selection', 'VM Configuration', 'Review & Import']
+    const cloudStep = ref(0)
+    const cloudDragging = ref(false)
+
+    const cloudSourceTypes = [
+      { id: 'url', icon: '🌐', label: 'Cloud Image URL', desc: 'Download a cloud image from a URL (Ubuntu, Debian, Rocky, etc.)' },
+      { id: 'local', icon: '💾', label: 'Local File Upload', desc: 'Upload a disk image file from your computer' },
+      { id: 'template', icon: '📋', label: 'Existing Template', desc: 'Clone and configure an existing Proxmox VM template' },
+      { id: 'ova', icon: '📦', label: 'OVA / OVF Import', desc: 'Import from an OVA or OVF virtual appliance package' },
+    ]
+
+    const popularDistros = [
+      { id: 'ubuntu2404', label: 'Ubuntu 24.04 LTS', os: 'ubuntu',
+        url: 'https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img' },
+      { id: 'ubuntu2204', label: 'Ubuntu 22.04 LTS', os: 'ubuntu',
+        url: 'https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img' },
+      { id: 'debian12', label: 'Debian 12 (Bookworm)', os: 'debian',
+        url: 'https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-genericcloud-amd64.qcow2' },
+      { id: 'rocky9', label: 'Rocky Linux 9', os: 'l26',
+        url: 'https://download.rockylinux.org/pub/rocky/9/images/x86_64/Rocky-9-GenericCloud.latest.x86_64.qcow2' },
+      { id: 'alma9', label: 'AlmaLinux 9', os: 'l26',
+        url: 'https://repo.almalinux.org/almalinux/9/cloud/x86_64/images/AlmaLinux-9-GenericCloud.latest.x86_64.qcow2' },
+      { id: 'fedora40', label: 'Fedora 40', os: 'l26',
+        url: 'https://download.fedoraproject.org/pub/fedora/linux/releases/40/Cloud/x86_64/images/Fedora-Cloud-Base-Generic.x86_64-40-1.14.qcow2' },
+    ]
+
+    const cloud = ref({
+      sourceType: 'url',
+      url: '',
+      localFile: null,
+      templateHostId: '',
+      templateNode: '',
+      templateVmid: null,
+      templateName: '',
+      detectedOs: '',
+      verifyChecksum: false,
+      checksum: '',
+      // Step 1 — VM config
+      hostId: '',
+      node: '',
+      storage: '',
+      vmid: null,
+      vmName: '',
+      osType: 'l26',
+      cores: 2,
+      memory: 2048,
+      diskSize: null,
+      bridge: 'vmbr0',
+      vlan: null,
+      mac: '',
+      macRandom: true,
+      // Cloud-init
+      enableCi: true,
+      ciUser: '',
+      ciPassword: '',
+      ciSshKeys: '',
+      ciIpMode: 'dhcp',
+      ciIp: '',
+      ciGw: '',
+      ciNameserver: '',
+      ciSearchdomain: '',
+    })
+
+    const cloudNodes = ref([])
+    const cloudStorages = ref([])
+    const cloudBridges = ref([])
+    const cloudTemplateNodes = ref([])
+    const cloudTemplates = ref([])
+    const cloudTemplateLoading = ref(false)
+    const cloudImporting = ref(false)
+    const cloudImportProgress = ref(0)
+    const cloudImportStatus = ref('')
+    const cloudImportDone = ref(false)
+    const cloudImportError = ref(null)
+    const cloudImportedVmid = ref(null)
+
+    const cloudStep0Valid = computed(() => {
+      if (cloud.value.sourceType === 'url') return !!cloud.value.url
+      if (cloud.value.sourceType === 'local') return !!cloud.value.localFile
+      if (cloud.value.sourceType === 'template') return !!cloud.value.templateVmid
+      return false
+    })
+
+    const cloudSummarySource = computed(() => {
+      if (cloud.value.sourceType === 'url') return cloud.value.url || '(no URL)'
+      if (cloud.value.sourceType === 'local') return cloud.value.localFile?.name || '(no file)'
+      if (cloud.value.sourceType === 'template') return `Template: ${cloud.value.templateName || cloud.value.templateVmid}`
+      return '—'
+    })
+
+    const detectCloudUrlOs = () => {
+      const url = cloud.value.url.toLowerCase()
+      if (url.includes('ubuntu')) { cloud.value.detectedOs = 'Ubuntu'; cloud.value.osType = 'l26' }
+      else if (url.includes('debian')) { cloud.value.detectedOs = 'Debian'; cloud.value.osType = 'l26' }
+      else if (url.includes('rocky')) { cloud.value.detectedOs = 'Rocky Linux'; cloud.value.osType = 'l26' }
+      else if (url.includes('almalinux') || url.includes('alma')) { cloud.value.detectedOs = 'AlmaLinux'; cloud.value.osType = 'l26' }
+      else if (url.includes('fedora')) { cloud.value.detectedOs = 'Fedora'; cloud.value.osType = 'l26' }
+      else if (url.includes('centos')) { cloud.value.detectedOs = 'CentOS'; cloud.value.osType = 'l26' }
+      else if (url.includes('windows')) { cloud.value.detectedOs = 'Windows'; cloud.value.osType = 'win10' }
+      else { cloud.value.detectedOs = '' }
+    }
+
+    const onCloudUrlPaste = () => { setTimeout(detectCloudUrlOs, 150) }
+
+    const selectDistro = (d) => {
+      cloud.value.url = d.url
+      cloud.value.osType = d.os
+      cloud.value.detectedOs = d.label
+      if (!cloud.value.vmName) cloud.value.vmName = d.id
+    }
+
+    const onCloudFileDrop = (e) => {
+      cloudDragging.value = false
+      const file = e.dataTransfer.files[0]
+      if (file) cloud.value.localFile = file
+    }
+
+    const onCloudFileSelected = (e) => {
+      const file = e.target.files[0]
+      if (file) cloud.value.localFile = file
+    }
+
+    const onCloudTemplateHostChange = async () => {
+      cloud.value.templateNode = ''; cloud.value.templateVmid = null
+      cloudTemplateNodes.value = []; cloudTemplates.value = []
+      if (!cloud.value.templateHostId) return
+      try {
+        const res = await api.proxmox.listNodes(cloud.value.templateHostId)
+        cloudTemplateNodes.value = res.data || []
+      } catch { toast.error('Failed to load nodes') }
+    }
+
+    const loadCloudTemplates = async () => {
+      if (!cloud.value.templateNode) return
+      cloudTemplateLoading.value = true; cloudTemplates.value = []
+      try {
+        const res = await api.pveNode.listVmTemplates(cloud.value.templateHostId, cloud.value.templateNode)
+        cloudTemplates.value = res.data || []
+      } catch {
+        try {
+          const res = await api.pveNode.nodeVms(cloud.value.templateHostId, cloud.value.templateNode)
+          cloudTemplates.value = (res.data || []).filter(v => v.template == 1)
+        } catch { toast.error('Failed to load templates') }
+      } finally { cloudTemplateLoading.value = false }
+    }
+
+    const onCloudHostChange = async () => {
+      cloud.value.node = ''; cloud.value.storage = ''
+      cloudNodes.value = []; cloudStorages.value = []; cloudBridges.value = []
+      if (!cloud.value.hostId) return
+      try {
+        const res = await api.proxmox.listNodes(cloud.value.hostId)
+        cloudNodes.value = res.data || []
+      } catch { toast.error('Failed to load nodes') }
+    }
+
+    const onCloudNodeChange = async () => {
+      cloud.value.storage = ''; cloudStorages.value = []; cloudBridges.value = []
+      if (!cloud.value.node) return
+      try {
+        const [storRes, netRes] = await Promise.all([
+          api.pveNode.listStorage(cloud.value.hostId, cloud.value.node),
+          api.pveNode.listNetwork(cloud.value.hostId, cloud.value.node),
+        ])
+        cloudStorages.value = (storRes.data || []).filter(s =>
+          s.content && (s.content.includes('images') || s.content.includes('rootdir'))
+        )
+        const bridges = (netRes.data || []).filter(n => n.type === 'bridge' || n.iface?.startsWith('vmbr'))
+        cloudBridges.value = bridges.map(n => n.iface)
+        if (bridges.length) cloud.value.bridge = bridges[0].iface
+      } catch { toast.error('Failed to load node resources') }
+    }
+
+    const fetchNextVmId = async () => {
+      if (!cloud.value.hostId) return
+      try {
+        const res = await api.pveNode.nextId(cloud.value.hostId)
+        cloud.value.vmid = res.data
+      } catch { toast.warning('Could not fetch next VM ID') }
+    }
+
+    const startCloudImport = async () => {
+      cloudImporting.value = true; cloudImportError.value = null
+      cloudImportProgress.value = 0; cloudImportStatus.value = 'Starting import...'
+      cloudImportDone.value = false; cloudImportedVmid.value = null
+
+      try {
+        if (cloud.value.sourceType === 'url') {
+          // Use the fromUrl endpoint which handles cloud image download + VM creation
+          const payload = {
+            url: cloud.value.url,
+            proxmox_host_id: cloud.value.hostId,
+            node: cloud.value.node,
+            storage: cloud.value.storage,
+            vm_name: cloud.value.vmName || 'cloud-vm',
+            vmid: cloud.value.vmid || undefined,
+            cores: cloud.value.cores,
+            memory: cloud.value.memory,
+            disk_size: cloud.value.diskSize || undefined,
+            os_type: cloud.value.osType || 'l26',
+            network_bridge: cloud.value.bridge,
+            vlan: cloud.value.vlan || undefined,
+            mac: cloud.value.macRandom ? undefined : cloud.value.mac || undefined,
+            cloudinit: cloud.value.enableCi ? {
+              ciuser: cloud.value.ciUser || undefined,
+              cipassword: cloud.value.ciPassword || undefined,
+              sshkeys: cloud.value.ciSshKeys || undefined,
+              ipconfig0: cloud.value.ciIpMode === 'dhcp' ? 'ip=dhcp' :
+                `ip=${cloud.value.ciIp}${cloud.value.ciGw ? ',gw=' + cloud.value.ciGw : ''}`,
+              nameserver: cloud.value.ciNameserver || undefined,
+              searchdomain: cloud.value.ciSearchdomain || undefined,
+            } : undefined,
+            checksum: cloud.value.verifyChecksum ? cloud.value.checksum || undefined : undefined,
+          }
+          const res = await api.vmImport.fromUrl(payload)
+          const jobId = res.data.job_id
+          cloudImportStatus.value = 'Downloading image on Proxmox node...'
+          cloudImportProgress.value = 10
+          // Poll progress
+          const pollId = setInterval(async () => {
+            try {
+              const prog = await api.vmImport.getProgress(jobId)
+              const d = prog.data
+              cloudImportProgress.value = d.progress || cloudImportProgress.value
+              cloudImportStatus.value = d.status_message || cloudImportStatus.value
+              if (d.status === 'completed') {
+                clearInterval(pollId)
+                cloudImportDone.value = true; cloudImporting.value = false
+                cloudImportedVmid.value = d.vmid
+                toast.success('Cloud image import complete!')
+              } else if (d.status === 'error') {
+                clearInterval(pollId)
+                cloudImportError.value = d.error || d.status_message || 'Import failed'
+                cloudImporting.value = false
+              }
+            } catch { /* keep polling */ }
+          }, 2500)
+        } else if (cloud.value.sourceType === 'template') {
+          // Clone the template
+          const hostId = cloud.value.templateHostId || cloud.value.hostId
+          const srcNode = cloud.value.templateNode
+          const payload = {
+            newid: cloud.value.vmid || undefined,
+            name: cloud.value.vmName || undefined,
+            full: 1,
+            target: cloud.value.node || undefined,
+            storage: cloud.value.storage || undefined,
+          }
+          await api.pveVm.clone(hostId, srcNode, cloud.value.templateVmid, payload)
+          cloudImportProgress.value = 100; cloudImportDone.value = true; cloudImporting.value = false
+          toast.success('Clone task started!')
+        } else if (cloud.value.sourceType === 'local') {
+          // Upload file then trigger import
+          if (!cloud.value.localFile) { cloudImportError.value = 'No file selected'; cloudImporting.value = false; return }
+          const fd = new FormData()
+          fd.append('file', cloud.value.localFile)
+          cloudImportStatus.value = 'Uploading file...'
+          const upRes = await api.vmImport.upload(fd, (evt) => {
+            if (evt.total) cloudImportProgress.value = Math.round((evt.loaded / evt.total) * 50)
+          })
+          const jobId = upRes.data.job_id
+          cloudImportProgress.value = 55
+          cloudImportStatus.value = 'Deploying VM from uploaded image...'
+          await api.vmImport.deploy(jobId, {
+            proxmox_host_id: cloud.value.hostId,
+            node_id: cloud.value.node,
+            storage: cloud.value.storage,
+            vm_name: cloud.value.vmName || 'uploaded-vm',
+            cpu_cores: cloud.value.cores,
+            memory_mb: cloud.value.memory,
+            network_bridge: cloud.value.bridge,
+            os_type: cloud.value.osType || 'l26',
+            target_vmid: cloud.value.vmid || undefined,
+          })
+          cloudImportProgress.value = 100; cloudImportDone.value = true; cloudImporting.value = false
+          toast.success('File import task started!')
+        }
+      } catch (e) {
+        cloudImportError.value = e.response?.data?.detail || e.message
+        cloudImporting.value = false
+      }
+    }
+
+    const resetCloudWizard = () => {
+      cloudStep.value = 0
+      cloudImporting.value = false; cloudImportProgress.value = 0
+      cloudImportStatus.value = ''; cloudImportDone.value = false
+      cloudImportError.value = null; cloudImportedVmid.value = null
+      cloud.value = {
+        sourceType: 'url', url: '', localFile: null,
+        templateHostId: '', templateNode: '', templateVmid: null, templateName: '',
+        detectedOs: '', verifyChecksum: false, checksum: '',
+        hostId: '', node: '', storage: '', vmid: null,
+        vmName: '', osType: 'l26', cores: 2, memory: 2048, diskSize: null,
+        bridge: 'vmbr0', vlan: null, mac: '', macRandom: true,
+        enableCi: true, ciUser: '', ciPassword: '', ciSshKeys: '',
+        ciIpMode: 'dhcp', ciIp: '', ciGw: '', ciNameserver: '', ciSearchdomain: '',
+      }
+    }
 
     // ── OVA/OVF tab state ─────────────────────────────────────────────────────
     const ovaSteps = ['Source', 'Review Specs', 'Select Target', 'Confirm', 'Deploying']
@@ -1419,6 +2104,19 @@ export default {
 
     return {
       activeImportTab, importTabs, switchImportTab,
+      // Cloud image wizard
+      cloudSteps, cloudStep, cloudDragging, cloudSourceTypes, popularDistros,
+      cloud, cloudNodes, cloudStorages, cloudBridges,
+      cloudTemplateNodes, cloudTemplates, cloudTemplateLoading,
+      cloudImporting, cloudImportProgress, cloudImportStatus,
+      cloudImportDone, cloudImportError, cloudImportedVmid,
+      cloudStep0Valid, cloudSummarySource,
+      detectCloudUrlOs, onCloudUrlPaste, selectDistro,
+      onCloudFileDrop, onCloudFileSelected,
+      onCloudTemplateHostChange, loadCloudTemplates,
+      onCloudHostChange, onCloudNodeChange,
+      fetchNextVmId, startCloudImport, resetCloudWizard,
+      // OVA/OVF wizard
       ovaSteps, ovaStep, ovaSource, ovaUrl, urlFormatInfo, ovaNetworkMap, ovaDiskMap,
       selectedFile, isDragging, uploading, uploadProgress, availableBridges,
       steps, currentStep, sourceMode,
@@ -1635,11 +2333,60 @@ export default {
   background: #f9fafb; border-radius: 6px; padding: 0.2rem 0.6rem;
 }
 
+/* ── Cloud Image Wizard Extras ─────────────────────────────────────────────── */
+.source-type-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+.source-type-card {
+  border: 2px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 1rem 1.25rem;
+  background: white;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s;
+}
+.source-type-card:hover { border-color: #93c5fd; background: #f0f9ff; }
+.source-type-card--active { border-color: #3b82f6; background: #eff6ff; }
+.source-type-icon { font-size: 1.5rem; margin-bottom: .35rem; }
+.source-type-label { font-weight: 700; font-size: .9rem; margin-bottom: .2rem; }
+.source-type-desc { font-size: .78rem; color: #6b7280; line-height: 1.4; }
+
+.distro-quickselect { margin-bottom: .5rem; }
+.distro-btn-row { display: flex; flex-wrap: wrap; gap: .5rem; }
+.distro-btn {
+  padding: .35rem .85rem; background: #f3f4f6; border: 1px solid #e5e7eb;
+  border-radius: 999px; font-size: .8rem; font-weight: 500; cursor: pointer;
+  color: #374151; transition: all .15s;
+}
+.distro-btn:hover { background: #eff6ff; border-color: #93c5fd; color: #1d4ed8; }
+
+.ci-section {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  background: #f9fafb;
+  margin-top: .5rem;
+}
+
+.radio-group-inline-ci { display: flex; gap: 1.5rem; margin-top: .35rem; }
+.radio-label-ci {
+  display: flex; align-items: center; gap: .4rem;
+  font-size: .875rem; cursor: pointer;
+}
+
+.mono-text { font-family: monospace; word-break: break-all; }
+.mt-3 { margin-top: 1rem; }
+
 @media (max-width: 640px) {
   .form-grid, .form-grid.three-col { grid-template-columns: 1fr; }
   .span-2 { grid-column: span 1; }
   .steps { overflow-x: auto; padding-bottom: 0.5rem; }
   .step-label { display: none; }
   .method-tabs { overflow-x: auto; }
+  .source-type-grid { grid-template-columns: 1fr; }
 }
 </style>

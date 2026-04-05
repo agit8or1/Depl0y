@@ -1,270 +1,225 @@
 <template>
   <div class="support-page">
+
+    <!-- Page header -->
     <div class="page-header">
-      <div class="breadcrumb">Support</div>
-      <h1>Support &amp; Project Info</h1>
-      <p class="text-muted">Depl0y is free and open source. Here's how you can help keep it going.</p>
+      <h1 class="page-title">Support</h1>
+      <p class="page-subtitle">Resources, diagnostics, and community links for Depl0y v{{ version }}</p>
     </div>
 
-    <!-- Project Info Card -->
-    <div class="card project-info-card">
-      <div class="project-logo">
-        <span class="logo-text">Depl0y</span>
-        <span class="version-badge">v{{ version }}</span>
-      </div>
-      <div class="project-details">
-        <div class="detail-row">
-          <span class="detail-label">License</span>
-          <span class="detail-value">MIT License — free to use, modify, and distribute</span>
+    <!-- Quick Help Cards -->
+    <div class="quick-help-grid">
+      <a
+        v-for="card in quickHelpCards"
+        :key="card.title"
+        :href="card.href"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="quick-card"
+        :style="{ '--card-accent': card.accent }"
+      >
+        <div class="quick-card-icon" v-html="card.icon"></div>
+        <div class="quick-card-body">
+          <div class="quick-card-title">{{ card.title }}</div>
+          <div class="quick-card-desc">{{ card.desc }}</div>
         </div>
-        <div class="detail-row">
-          <span class="detail-label">Repository</span>
-          <a href="https://github.com/agit8or1/Depl0y" target="_blank" rel="noopener noreferrer" class="detail-link">
-            github.com/agit8or1/Depl0y
-          </a>
-        </div>
-        <div class="detail-row">
-          <span class="detail-label">Website</span>
-          <a href="https://mspreboot.com" target="_blank" rel="noopener noreferrer" class="detail-link">
-            mspreboot.com
-          </a>
-        </div>
-        <div class="detail-row">
-          <span class="detail-label">Stack</span>
-          <span class="detail-value">FastAPI · Vue 3 · SQLite · Proxmox VE API</span>
-        </div>
-      </div>
-      <div class="project-actions">
-        <a href="https://github.com/agit8or1/Depl0y" target="_blank" rel="noopener noreferrer" class="btn btn-outline">
-          View on GitHub
-        </a>
-        <a href="https://github.com/agit8or1/Depl0y/releases" target="_blank" rel="noopener noreferrer" class="btn btn-outline">
-          Releases
-        </a>
-      </div>
-    </div>
-
-    <!-- Support Grid -->
-    <div class="support-grid">
-      <a href="https://github.com/sponsors/agit8or1" target="_blank" rel="noopener noreferrer" class="support-card sponsor-card">
-        <div class="card-icon">&#10084;&#65039;</div>
-        <h3>Sponsor the Project</h3>
-        <p>Buy us a coffee via GitHub Sponsors. Every contribution helps fund continued development and new features.</p>
-        <span class="card-link sponsor-link">Become a sponsor &rarr;</span>
-      </a>
-
-      <a href="https://github.com/agit8or1/Depl0y" target="_blank" rel="noopener noreferrer" class="support-card">
-        <div class="card-icon">&#11088;</div>
-        <h3>Star on GitHub</h3>
-        <p>Give Depl0y a star on GitHub — it helps others discover the project and signals that people find it useful.</p>
-        <span class="card-link">Star on GitHub &rarr;</span>
-      </a>
-
-      <a href="https://mspreboot.com" target="_blank" rel="noopener noreferrer" class="support-card">
-        <div class="card-icon">&#127760;</div>
-        <h3>Visit mspreboot.com</h3>
-        <p>Check out the team behind Depl0y. See other projects, tools, and resources we build for sysadmins and homelabbers.</p>
-        <span class="card-link">mspreboot.com &rarr;</span>
+        <svg class="quick-card-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="7" y1="17" x2="17" y2="7"/><polyline points="7 7 17 7 17 17"/></svg>
       </a>
     </div>
 
-    <!-- Community / Bug Reports -->
-    <div class="card contribute-card">
-      <h3>Community &amp; Contributing</h3>
-      <div class="contribute-grid">
-        <div class="contribute-item">
-          <div class="contribute-icon">&#128027;</div>
-          <div>
-            <h4>Report a Bug</h4>
-            <p class="text-sm text-muted">Found an issue? Open a GitHub issue with reproduction steps, logs, and your Proxmox version. Check existing issues first to avoid duplicates.</p>
-            <a href="https://github.com/agit8or1/Depl0y/issues/new?template=bug_report.md" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline">
-              Open Bug Report
-            </a>
-          </div>
+    <!-- Diagnostic Info (admin only) -->
+    <div v-if="isAdmin" class="card diag-card">
+      <div class="card-header-row">
+        <div class="card-header-left">
+          <h3>Diagnostic Information</h3>
+          <span class="admin-pill">Admin only</span>
         </div>
-        <div class="contribute-item">
-          <div class="contribute-icon">&#128161;</div>
-          <div>
-            <h4>Request a Feature</h4>
-            <p class="text-sm text-muted">Have an idea for a new feature or improvement? Start a GitHub Discussion to get community feedback before opening a PR.</p>
-            <a href="https://github.com/agit8or1/Depl0y/discussions/new?category=ideas" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline">
-              Start a Discussion
-            </a>
-          </div>
-        </div>
-        <div class="contribute-item">
-          <div class="contribute-icon">&#128260;</div>
-          <div>
-            <h4>Contribute Code</h4>
-            <p class="text-sm text-muted">Pull requests are welcome. Fork the repo, create a feature branch, write clean code, and open a PR against <code>main</code>. See CONTRIBUTING.md for guidelines.</p>
-            <a href="https://github.com/agit8or1/Depl0y/fork" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline">
-              Fork on GitHub
-            </a>
-          </div>
-        </div>
-        <div class="contribute-item">
-          <div class="contribute-icon">&#128172;</div>
-          <div>
-            <h4>Browse Issues</h4>
-            <p class="text-sm text-muted">Browse open issues to find good first issues, help answer questions, or triage existing reports to help the maintainers.</p>
-            <a href="https://github.com/agit8or1/Depl0y/issues" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-outline">
-              Browse Issues
-            </a>
-          </div>
+        <div class="card-header-actions">
+          <button class="btn-outline-sm" @click="fetchDiagnostics" :disabled="diagLoading">
+            {{ diagLoading ? 'Loading...' : 'Refresh' }}
+          </button>
+          <button class="btn-primary-sm" @click="copyDiagnostics" :disabled="!diagData || copyingDiag">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            {{ copyingDiag ? 'Copied!' : 'Copy Diagnostics' }}
+          </button>
         </div>
       </div>
-    </div>
+      <p class="card-desc">Collect system information formatted for bug reports. Includes version, DB stats, uptime and recent logs.</p>
 
-    <!-- Diagnostics (admin only) -->
-    <div v-if="isAdmin" class="card diagnostics-card">
-      <h3>Diagnostics <span class="admin-badge">Admin Only</span></h3>
-      <p class="text-muted text-sm">Collect system information, check database integrity, and verify service health. Use these tools when troubleshooting issues.</p>
+      <div v-if="diagLoading && !diagData" class="diag-loading">
+        <div class="loading-spinner-sm"></div>
+        Collecting diagnostics...
+      </div>
 
-      <div class="diag-grid">
-        <!-- Health Check -->
-        <div class="diag-panel">
-          <div class="diag-panel-header">
-            <span class="diag-title">Service Health</span>
-            <span v-if="healthStatus" :class="['health-badge', healthStatus.status === 'healthy' ? 'health-ok' : 'health-warn']">
-              {{ healthStatus.status }}
-            </span>
+      <div v-else-if="diagData" class="diag-body">
+        <div class="diag-meta-grid">
+          <div class="diag-meta-item">
+            <span class="diag-meta-label">Version</span>
+            <span class="diag-meta-value">{{ diagData.version }}</span>
           </div>
-          <p class="text-sm text-muted">Checks API and database connectivity.</p>
-          <div v-if="healthStatus" class="health-details">
-            <div class="health-row">
-              <span>API</span>
-              <span class="health-ok-text">OK</span>
+          <div class="diag-meta-item">
+            <span class="diag-meta-label">DB Size</span>
+            <span class="diag-meta-value">{{ formatBytes(diagData.db_size_bytes) }}</span>
+          </div>
+          <div class="diag-meta-item">
+            <span class="diag-meta-label">Users</span>
+            <span class="diag-meta-value">{{ diagData.user_count }}</span>
+          </div>
+          <div class="diag-meta-item">
+            <span class="diag-meta-label">Hosts</span>
+            <span class="diag-meta-value">{{ diagData.host_count }}</span>
+          </div>
+          <div class="diag-meta-item">
+            <span class="diag-meta-label">VMs (managed)</span>
+            <span class="diag-meta-value">{{ diagData.vm_count }}</span>
+          </div>
+          <div class="diag-meta-item">
+            <span class="diag-meta-label">Uptime</span>
+            <span class="diag-meta-value">{{ formatUptime(diagData.uptime_seconds) }}</span>
+          </div>
+        </div>
+
+        <div class="diag-logs-section">
+          <div class="diag-logs-header" @click="showLogs = !showLogs">
+            <span class="diag-logs-title">Recent Logs ({{ diagData.last_100_log_lines?.length || 0 }} lines)</span>
+            <svg :class="['chevron', showLogs ? 'chevron-open' : '']" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+          </div>
+          <transition name="collapse">
+            <div v-if="showLogs && diagData.last_100_log_lines" class="diag-logs-body">
+              <pre class="diag-logs-pre">{{ diagData.last_100_log_lines.join('\n') }}</pre>
             </div>
-            <div class="health-row">
-              <span>Database</span>
-              <span :class="healthStatus.db === 'ok' ? 'health-ok-text' : 'health-err-text'">{{ healthStatus.db }}</span>
+          </transition>
+        </div>
+      </div>
+
+      <div v-else class="diag-empty">
+        <p>Click <strong>Refresh</strong> to load diagnostic information.</p>
+      </div>
+
+      <!-- Health checks summary -->
+      <div v-if="healthData" class="health-summary">
+        <div class="health-summary-title">Service Health</div>
+        <div class="health-checks-row">
+          <div
+            v-for="(val, key) in healthData.checks"
+            :key="key"
+            :class="['health-chip', getHealthClass(key, val)]"
+          >
+            <span class="health-chip-key">{{ key }}</span>
+            <span class="health-chip-val">{{ val }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- FAQ Accordion -->
+    <div class="card faq-card">
+      <h3 class="section-title-bar">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        Frequently Asked Questions
+      </h3>
+      <div class="faq-list">
+        <div
+          v-for="faq in faqs"
+          :key="faq.q"
+          class="faq-item"
+          :class="{ 'faq-open': openFaqs.has(faq.q) }"
+        >
+          <div class="faq-question" @click="toggleFaq(faq.q)">
+            <span>{{ faq.q }}</span>
+            <svg :class="['chevron', openFaqs.has(faq.q) ? 'chevron-open' : '']" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+          </div>
+          <transition name="collapse">
+            <div v-if="openFaqs.has(faq.q)" class="faq-answer" v-html="faq.a"></div>
+          </transition>
+        </div>
+      </div>
+    </div>
+
+    <!-- Community Links -->
+    <div class="card community-card">
+      <h3 class="section-title-bar">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        Community
+      </h3>
+      <div class="community-grid">
+        <a
+          v-for="link in communityLinks"
+          :key="link.label"
+          :href="link.href"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="community-link-card"
+        >
+          <div class="community-link-icon" v-html="link.icon"></div>
+          <div>
+            <div class="community-link-label">{{ link.label }}</div>
+            <div class="community-link-desc">{{ link.desc }}</div>
+          </div>
+        </a>
+      </div>
+    </div>
+
+    <!-- Submit Feedback -->
+    <div class="card feedback-card">
+      <h3 class="section-title-bar">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        Submit Feedback
+      </h3>
+      <p class="feedback-intro">
+        Fill in the form below and we'll open a pre-filled GitHub issue in a new tab.
+        You'll still need to review and submit it on GitHub.
+      </p>
+      <form class="feedback-form" @submit.prevent="submitFeedback">
+        <div class="feedback-row">
+          <div class="form-field">
+            <label class="form-label">Type</label>
+            <div class="feedback-type-btns">
+              <button
+                v-for="t in feedbackTypes"
+                :key="t.value"
+                type="button"
+                :class="['type-btn', feedbackForm.type === t.value ? 'type-btn-active' : '']"
+                @click="feedbackForm.type = t.value"
+              >{{ t.label }}</button>
             </div>
           </div>
-          <button class="btn btn-sm btn-outline mt-1" :disabled="healthLoading" @click="checkHealth">
-            {{ healthLoading ? 'Checking...' : 'Run Health Check' }}
-          </button>
         </div>
-
-        <!-- DB Integrity -->
-        <div class="diag-panel">
-          <div class="diag-panel-header">
-            <span class="diag-title">Database Integrity</span>
-            <span v-if="dbCheckResult !== null" :class="['health-badge', dbCheckResult.ok ? 'health-ok' : 'health-warn']">
-              {{ dbCheckResult.ok ? 'OK' : 'Issues Found' }}
-            </span>
-          </div>
-          <p class="text-sm text-muted">Runs SQLite <code>PRAGMA integrity_check</code> to detect corruption.</p>
-          <div v-if="dbCheckResult" class="db-results">
-            <div v-for="(line, i) in dbCheckResult.results" :key="i" class="db-result-line">{{ line }}</div>
-          </div>
-          <button class="btn btn-sm btn-outline mt-1" :disabled="dbCheckLoading" @click="runDbCheck">
-            {{ dbCheckLoading ? 'Checking...' : 'Check Integrity' }}
-          </button>
+        <div class="form-field">
+          <label class="form-label">Title <span class="req">*</span></label>
+          <input
+            v-model="feedbackForm.title"
+            class="form-input"
+            placeholder="Brief summary of your feedback"
+            maxlength="120"
+            required
+          />
         </div>
-
-        <!-- Download Diagnostic Bundle -->
-        <div class="diag-panel">
-          <div class="diag-panel-header">
-            <span class="diag-title">Diagnostic Bundle</span>
-          </div>
-          <p class="text-sm text-muted">Downloads a JSON file containing version info, DB stats, uptime, and the last 100 log lines. Useful for bug reports.</p>
-          <div v-if="diagData" class="diag-summary">
-            <div class="diag-row"><span>Version</span><span>{{ diagData.version }}</span></div>
-            <div class="diag-row"><span>Users</span><span>{{ diagData.user_count }}</span></div>
-            <div class="diag-row"><span>Hosts</span><span>{{ diagData.host_count }}</span></div>
-            <div class="diag-row"><span>VMs (managed)</span><span>{{ diagData.vm_count }}</span></div>
-            <div class="diag-row"><span>DB size</span><span>{{ formatBytes(diagData.db_size_bytes) }}</span></div>
-            <div class="diag-row"><span>Uptime</span><span>{{ formatUptime(diagData.uptime_seconds) }}</span></div>
-          </div>
-          <button class="btn btn-sm btn-primary mt-1" :disabled="diagLoading" @click="downloadDiagnostics">
-            {{ diagLoading ? 'Collecting...' : 'Download Bundle' }}
-          </button>
+        <div class="form-field">
+          <label class="form-label">Description <span class="req">*</span></label>
+          <textarea
+            v-model="feedbackForm.body"
+            class="form-textarea"
+            rows="5"
+            placeholder="Describe the issue or feature request in detail. For bugs, include steps to reproduce, expected vs actual behavior, and your environment."
+            required
+          ></textarea>
         </div>
-      </div>
+        <div class="form-field">
+          <label class="form-label">Depl0y Version</label>
+          <input v-model="feedbackForm.versionTag" class="form-input" readonly />
+        </div>
+        <div v-if="feedbackError" class="feedback-error">{{ feedbackError }}</div>
+        <div class="feedback-actions">
+          <button type="submit" class="btn-submit-feedback">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>
+            Open as GitHub Issue
+          </button>
+          <span class="feedback-note">Opens a new tab — you'll review and submit on GitHub.</span>
+        </div>
+      </form>
     </div>
 
-    <!-- Changelog -->
-    <div class="card changelog-card">
-      <h3>Changelog</h3>
-      <div class="changelog-list">
-        <div class="changelog-entry">
-          <div class="changelog-header">
-            <span class="changelog-version">v1.7.0</span>
-            <span class="changelog-date">2025-11</span>
-            <span class="changelog-badge badge-primary">Current</span>
-          </div>
-          <ul class="changelog-items">
-            <li>Full Proxmox VE management: VM control, LXC containers, node detail, storage browser</li>
-            <li>noVNC graphical console and xterm.js node/container terminal</li>
-            <li>VM disk resize, NIC management, snapshot create/restore/delete</li>
-            <li>Per-VM and datacenter-level firewall rule management</li>
-            <li>Proxmox Backup Server (PBS) datastore browsing and restore</li>
-            <li>High Availability resource management (add, remove, monitor)</li>
-            <li>VM template management — convert and clone in one click</li>
-            <li>Cluster status and quorum monitoring on the Dashboard</li>
-            <li>Global Ctrl+K search across all VMs, containers, nodes, and hosts</li>
-            <li>Proxmox user and pool management</li>
-          </ul>
-        </div>
-
-        <div class="changelog-entry">
-          <div class="changelog-header">
-            <span class="changelog-version">v1.6.2</span>
-            <span class="changelog-date">2025-08</span>
-          </div>
-          <ul class="changelog-items">
-            <li>LLM deployment wizard — deploy Ollama-backed VMs from a catalog in one click</li>
-            <li>AI Tune panel: pull/delete models, conversation logging, RAG document ingestion</li>
-            <li>iDRAC / iLO management integration for bare-metal power control</li>
-            <li>Audit log viewer for all user actions with export support</li>
-            <li>IP filtering and GeoIP middleware for access control</li>
-            <li>Rate limiting middleware (configurable per-minute request cap)</li>
-          </ul>
-        </div>
-
-        <div class="changelog-entry">
-          <div class="changelog-header">
-            <span class="changelog-version">v1.6.0</span>
-            <span class="changelog-date">2025-05</span>
-          </div>
-          <ul class="changelog-items">
-            <li>Cloud image fast-deploy (30-second VM provisioning via cloned templates)</li>
-            <li>Multi-host Proxmox support — register and manage multiple PVE clusters</li>
-            <li>Dashboard redesign with live PVE stats, cluster health, and quick VM search</li>
-            <li>TOTP two-factor authentication for user accounts</li>
-            <li>Role-based access control: admin, operator, viewer</li>
-            <li>SMTP email notifications for task completion and alerts</li>
-          </ul>
-        </div>
-
-        <div class="changelog-entry">
-          <div class="changelog-header">
-            <span class="changelog-version">v1.5.x</span>
-            <span class="changelog-date">2025-02</span>
-          </div>
-          <ul class="changelog-items">
-            <li>PBS (Proxmox Backup Server) integration for scheduled VM backups</li>
-            <li>ISO image management with URL download and upload</li>
-            <li>VM update manager — check and apply OS updates over SSH</li>
-            <li>Security scan integration (unattended-upgrades, CVE check)</li>
-            <li>API key management for programmatic access</li>
-          </ul>
-        </div>
-
-        <div class="changelog-entry">
-          <div class="changelog-header">
-            <span class="changelog-version">v1.0.0</span>
-            <span class="changelog-date">2024-10</span>
-          </div>
-          <ul class="changelog-items">
-            <li>Initial release: single Proxmox host VM deployment via cloud-init</li>
-            <li>User authentication with JWT tokens</li>
-            <li>Basic VM start/stop/restart controls</li>
-            <li>One-line installer for Ubuntu/Debian</li>
-          </ul>
-        </div>
-      </div>
-    </div>
   </div>
 </template>
 
@@ -281,80 +236,259 @@ export default {
     const toast = useToast()
 
     const isAdmin = computed(() => authStore.isAdmin)
-    const version = ref('1.7.0')
+    const version = ref('1.8.0')
 
-    // Health check
-    const healthStatus = ref(null)
-    const healthLoading = ref(false)
+    // ── Quick help cards ────────────────────────────────────────────────────
+    const quickHelpCards = [
+      {
+        title: 'Documentation',
+        desc: 'Guides, API reference and setup instructions on the GitHub wiki.',
+        href: 'https://github.com/agit8or1/Depl0y/wiki',
+        accent: '#3b82f6',
+        icon: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>',
+      },
+      {
+        title: 'GitHub Issues',
+        desc: 'Report bugs or track known issues on the public issue tracker.',
+        href: 'https://github.com/agit8or1/Depl0y/issues',
+        accent: '#ef4444',
+        icon: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>',
+      },
+      {
+        title: 'Discussions',
+        desc: 'Ask questions and share ideas in the GitHub Discussions forum.',
+        href: 'https://github.com/agit8or1/Depl0y/discussions',
+        accent: '#10b981',
+        icon: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
+      },
+      {
+        title: 'Changelog',
+        desc: 'See what\'s new in every release — features, fixes and improvements.',
+        href: 'https://github.com/agit8or1/Depl0y/releases',
+        accent: '#8b5cf6',
+        icon: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>',
+      },
+      {
+        title: 'Sponsor',
+        desc: 'Support continued development via GitHub Sponsors. Every contribution helps.',
+        href: 'https://github.com/sponsors/agit8or1',
+        accent: '#ec4899',
+        icon: '<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>',
+      },
+      {
+        title: 'Star on GitHub',
+        desc: 'Give Depl0y a star — it helps others discover the project.',
+        href: 'https://github.com/agit8or1/Depl0y',
+        accent: '#f59e0b',
+        icon: '<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>',
+      },
+    ]
 
-    // DB check
-    const dbCheckResult = ref(null)
-    const dbCheckLoading = ref(false)
-
-    // Diagnostics bundle
+    // ── Diagnostics ─────────────────────────────────────────────────────────
     const diagData = ref(null)
     const diagLoading = ref(false)
+    const copyingDiag = ref(false)
+    const showLogs = ref(false)
+    const healthData = ref(null)
 
-    const fetchVersion = async () => {
-      try {
-        const resp = await api.system.getInfo()
-        if (resp.data?.version) version.value = resp.data.version
-      } catch (_) {}
-    }
-
-    const checkHealth = async () => {
-      healthLoading.value = true
-      try {
-        const resp = await api.system.health()
-        healthStatus.value = resp.data
-      } catch (e) {
-        healthStatus.value = { status: 'error', db: 'error' }
-        toast.error('Health check failed')
-      } finally {
-        healthLoading.value = false
-      }
-    }
-
-    const runDbCheck = async () => {
-      dbCheckLoading.value = true
-      try {
-        const resp = await api.system.dbCheck()
-        dbCheckResult.value = resp.data
-        if (resp.data.ok) {
-          toast.success('Database integrity: OK')
-        } else {
-          toast.warning('Database integrity check found issues')
-        }
-      } catch (e) {
-        toast.error('DB check failed')
-      } finally {
-        dbCheckLoading.value = false
-      }
-    }
-
-    const downloadDiagnostics = async () => {
+    const fetchDiagnostics = async () => {
       diagLoading.value = true
       try {
-        const resp = await api.system.getDiagnostics()
-        diagData.value = resp.data
-        const blob = new Blob([JSON.stringify(resp.data, null, 2)], { type: 'application/json' })
-        const url = URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = url
-        const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
-        a.download = `depl0y-diagnostics-${ts}.json`
-        document.body.appendChild(a)
-        a.click()
-        a.remove()
-        URL.revokeObjectURL(url)
-        toast.success('Diagnostic bundle downloaded')
+        const [diagRes, healthRes] = await Promise.all([
+          api.system.getDiagnostics(),
+          api.system.health(),
+        ])
+        diagData.value = diagRes.data
+        healthData.value = healthRes.data
       } catch (e) {
-        toast.error('Failed to collect diagnostics')
+        toast.error('Failed to load diagnostics')
       } finally {
         diagLoading.value = false
       }
     }
 
+    const copyDiagnostics = async () => {
+      if (!diagData.value) return
+      const report = [
+        `## Depl0y Diagnostic Report`,
+        `Generated: ${new Date().toISOString()}`,
+        ``,
+        `**Version:** ${diagData.value.version}`,
+        `**App:** ${diagData.value.app_name}`,
+        `**DB Path:** ${diagData.value.db_path}`,
+        `**DB Size:** ${formatBytes(diagData.value.db_size_bytes)}`,
+        `**Users:** ${diagData.value.user_count}`,
+        `**Hosts:** ${diagData.value.host_count}`,
+        `**VMs (managed):** ${diagData.value.vm_count}`,
+        `**Uptime:** ${formatUptime(diagData.value.uptime_seconds)}`,
+        ``,
+        `### Service Health`,
+        ...(healthData.value ? Object.entries(healthData.value.checks).map(([k, v]) => `- ${k}: ${v}`) : []),
+        ``,
+        `### Last 100 Log Lines`,
+        '```',
+        ...(diagData.value.last_100_log_lines?.slice(-50) || []),
+        '```',
+      ].join('\n')
+
+      try {
+        await navigator.clipboard.writeText(report)
+        copyingDiag.value = true
+        toast.success('Diagnostics copied to clipboard')
+        setTimeout(() => { copyingDiag.value = false }, 2500)
+      } catch {
+        toast.error('Could not copy to clipboard')
+      }
+    }
+
+    const getHealthClass = (key, val) => {
+      if (key === 'db') return val === 'ok' ? 'chip-ok' : 'chip-err'
+      if (key === 'smtp') return val === 'configured' ? 'chip-ok' : 'chip-warn'
+      if (key === 'encryption') return val === 'ok' ? 'chip-ok' : 'chip-err'
+      if (key === 'hosts') return Number(val) > 0 ? 'chip-ok' : 'chip-warn'
+      if (key === 'disk_free_gb') return Number(val) > 1 ? 'chip-ok' : 'chip-warn'
+      return 'chip-neutral'
+    }
+
+    // ── FAQ ─────────────────────────────────────────────────────────────────
+    const openFaqs = ref(new Set())
+    const toggleFaq = (q) => {
+      const s = new Set(openFaqs.value)
+      if (s.has(q)) s.delete(q)
+      else s.add(q)
+      openFaqs.value = s
+    }
+
+    const faqs = [
+      {
+        q: 'How do I add a Proxmox host?',
+        a: 'Go to <strong>Proxmox Hosts</strong> in the sidebar and click <strong>Add Host</strong>. Enter the Proxmox hostname/IP, API port (default 8006), and either a username/password or an API token. Depl0y stores credentials encrypted using AES-256.',
+      },
+      {
+        q: 'What Proxmox VE versions are supported?',
+        a: 'Depl0y is tested against <strong>Proxmox VE 7.x and 8.x</strong>. Most features work with any version that implements the standard Proxmox REST API. Some newer features (SDN, Proxmox Backup Server v3) require PVE 8.',
+      },
+      {
+        q: 'Why do cloud image deployments take 5–10 minutes the first time?',
+        a: 'The first deployment per cloud image must download the image (~500 MB–2 GB), convert it to qcow2 format, and create a reusable template. All subsequent VMs based on the same image are instant clones (~30 seconds).',
+      },
+      {
+        q: 'How do I enable Two-Factor Authentication?',
+        a: 'Go to <strong>Settings → User Profile</strong> and click <strong>Enable 2FA</strong>. Scan the QR code with any TOTP app (Google Authenticator, Authy, Bitwarden), verify the 6-digit code, and 2FA is active on your next login.',
+      },
+      {
+        q: 'Can I manage multiple independent Proxmox clusters?',
+        a: 'Yes. Add each cluster\'s primary node as a separate Proxmox Host. Depl0y will automatically discover nodes within each cluster. You can have as many registered hosts as needed and switch between them in the sidebar.',
+      },
+      {
+        q: 'How do I reset a forgotten admin password?',
+        a: 'Connect to the server running Depl0y and run:<br><code>cd /opt/depl0y &amp;&amp; python3 -m app.scripts.reset_password --username admin --password NewPassword123</code><br>Then restart the service: <code>systemctl restart depl0y-backend</code>',
+      },
+      {
+        q: 'What does the ENCRYPTION_KEY do?',
+        a: 'Depl0y uses a Fernet (AES-128-CBC + HMAC-SHA256) encryption key to encrypt Proxmox API credentials stored in the database. If you lose this key, stored credentials cannot be decrypted. Back up <code>/etc/depl0y/config.env</code>.',
+      },
+      {
+        q: 'How do I update Depl0y?',
+        a: 'Go to <strong>Settings → System Updates</strong> and click <strong>Check for Updates</strong>. If an update is available, click <strong>Install Update</strong>. Depl0y will pull the latest code from GitHub and restart automatically. You can also update manually via git pull on the server.',
+      },
+      {
+        q: 'Where are the backend logs?',
+        a: 'Live logs are viewable in <strong>Settings → Backend Logs</strong>. On the server, logs are written to the path configured in <code>LOG_FILE</code> (see <code>/etc/depl0y/config.env</code>). You can also run <code>journalctl -u depl0y-backend -f</code> for real-time systemd output.',
+      },
+      {
+        q: 'How do I report a security vulnerability?',
+        a: 'Please <strong>do not</strong> open a public GitHub issue for security vulnerabilities. Instead, send an email to the maintainer via the contact form on <a href="https://mspreboot.com" target="_blank" rel="noopener noreferrer">mspreboot.com</a> with the subject line "Depl0y Security Vulnerability".',
+      },
+    ]
+
+    // ── Community links ──────────────────────────────────────────────────────
+    const communityLinks = [
+      {
+        label: 'GitHub Repository',
+        desc: 'Source code, issues and pull requests',
+        href: 'https://github.com/agit8or1/Depl0y',
+        icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/></svg>',
+      },
+      {
+        label: 'GitHub Discussions',
+        desc: 'Community forum — questions and ideas',
+        href: 'https://github.com/agit8or1/Depl0y/discussions',
+        icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
+      },
+      {
+        label: 'GitHub Issues',
+        desc: 'Bug reports and feature requests',
+        href: 'https://github.com/agit8or1/Depl0y/issues',
+        icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>',
+      },
+      {
+        label: 'Releases & Changelog',
+        desc: 'Release notes for every version',
+        href: 'https://github.com/agit8or1/Depl0y/releases',
+        icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>',
+      },
+      {
+        label: 'GitHub Sponsors',
+        desc: 'Support the project financially',
+        href: 'https://github.com/sponsors/agit8or1',
+        icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>',
+      },
+      {
+        label: 'mspreboot.com',
+        desc: 'More projects and resources from the team',
+        href: 'https://mspreboot.com',
+        icon: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>',
+      },
+    ]
+
+    // ── Feedback form ────────────────────────────────────────────────────────
+    const feedbackTypes = [
+      { value: 'bug', label: 'Bug Report' },
+      { value: 'feature', label: 'Feature Request' },
+      { value: 'question', label: 'Question' },
+    ]
+
+    const feedbackForm = ref({
+      type: 'bug',
+      title: '',
+      body: '',
+      versionTag: `v${version.value}`,
+    })
+
+    const feedbackError = ref(null)
+
+    const submitFeedback = () => {
+      feedbackError.value = null
+      if (!feedbackForm.value.title.trim()) {
+        feedbackError.value = 'Please enter a title.'
+        return
+      }
+      if (!feedbackForm.value.body.trim()) {
+        feedbackError.value = 'Please enter a description.'
+        return
+      }
+
+      const typeLabels = { bug: 'bug', feature: 'enhancement', question: 'question' }
+      const ghLabel = typeLabels[feedbackForm.value.type] || 'bug'
+
+      const titleEnc = encodeURIComponent(`[${feedbackForm.value.type.toUpperCase()}] ${feedbackForm.value.title}`)
+
+      const bodyText = [
+        feedbackForm.value.body,
+        '',
+        '---',
+        `**Depl0y Version:** ${feedbackForm.value.versionTag}`,
+        `**Type:** ${feedbackForm.value.type}`,
+      ].join('\n')
+      const bodyEnc = encodeURIComponent(bodyText)
+
+      const url = `https://github.com/agit8or1/Depl0y/issues/new?title=${titleEnc}&body=${bodyEnc}&labels=${ghLabel}`
+      window.open(url, '_blank', 'noopener,noreferrer')
+      toast.success('GitHub issue opened in new tab')
+    }
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
     const formatBytes = (bytes) => {
       if (!bytes) return '0 B'
       if (bytes < 1024) return `${bytes} B`
@@ -372,22 +506,40 @@ export default {
       return `${m}m`
     }
 
-    onMounted(() => {
-      fetchVersion()
+    onMounted(async () => {
+      try {
+        const res = await api.system.getInfo()
+        if (res.data?.version) {
+          version.value = res.data.version
+          feedbackForm.value.versionTag = `v${res.data.version}`
+        }
+      } catch { /* ignore */ }
+
+      if (isAdmin.value) {
+        fetchDiagnostics()
+      }
     })
 
     return {
       isAdmin,
       version,
-      healthStatus,
-      healthLoading,
-      dbCheckResult,
-      dbCheckLoading,
+      quickHelpCards,
       diagData,
       diagLoading,
-      checkHealth,
-      runDbCheck,
-      downloadDiagnostics,
+      copyingDiag,
+      showLogs,
+      healthData,
+      fetchDiagnostics,
+      copyDiagnostics,
+      getHealthClass,
+      openFaqs,
+      toggleFaq,
+      faqs,
+      communityLinks,
+      feedbackTypes,
+      feedbackForm,
+      feedbackError,
+      submitFeedback,
       formatBytes,
       formatUptime,
     }
@@ -399,397 +551,424 @@ export default {
 .support-page {
   display: flex;
   flex-direction: column;
-  gap: 2rem;
-  max-width: 1100px;
+  gap: 1.5rem;
+  max-width: 960px;
   margin: 0 auto;
 }
 
-.breadcrumb {
-  font-size: 0.8rem;
-  color: var(--text-secondary);
-  margin-bottom: 0.25rem;
+/* ── Page header ── */
+.page-header {
+  padding: 0.25rem 0 0.5rem;
 }
 
-.page-header h1 {
-  font-size: 2rem;
-  margin: 0 0 0.25rem 0;
+.page-title {
+  font-size: 1.75rem;
+  font-weight: 800;
+  margin: 0 0 0.35rem;
   color: var(--text-primary);
 }
 
-/* Project Info Card */
-.project-info-card {
+.page-subtitle {
+  font-size: 0.925rem;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+/* ── Quick help grid ── */
+.quick-help-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.875rem;
+}
+
+.quick-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.875rem;
+  padding: 1rem 1.125rem;
+  background: var(--card-bg, var(--surface));
+  border: 1px solid var(--border-color);
+  border-radius: 0.625rem;
+  text-decoration: none;
+  color: var(--text-primary);
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.12s;
+  box-shadow: var(--shadow-sm);
+  position: relative;
+}
+
+.quick-card:hover {
+  border-color: var(--card-accent);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+  transform: translateY(-1px);
+}
+
+.quick-card-icon {
   display: flex;
   align-items: center;
-  gap: 2rem;
-  padding: 1.5rem 2rem;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 0.5rem;
+  background: color-mix(in srgb, var(--card-accent) 12%, transparent);
+  color: var(--card-accent);
+  flex-shrink: 0;
+}
+
+.quick-card-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.quick-card-title {
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 0.2rem;
+}
+
+.quick-card-desc {
+  font-size: 0.775rem;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+.quick-card-arrow {
+  color: var(--text-muted);
+  opacity: 0.5;
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+  transition: opacity 0.15s, transform 0.15s;
+}
+
+.quick-card:hover .quick-card-arrow {
+  opacity: 1;
+  transform: translate(1px, -1px);
+  color: var(--card-accent);
+}
+
+/* ── Card shared ── */
+.card {
+  background: var(--card-bg, var(--surface));
+  border: 1px solid var(--border-color);
+  border-radius: 0.75rem;
+  box-shadow: var(--shadow-sm);
+}
+
+.card-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.25rem 1.5rem 0;
   flex-wrap: wrap;
 }
 
-.project-logo {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.5rem;
-  flex-shrink: 0;
-}
-
-.logo-text {
-  font-size: 2rem;
-  font-weight: 900;
-  color: var(--primary-color);
-  letter-spacing: -0.05em;
-}
-
-.version-badge {
-  background: var(--primary-color);
-  color: #fff;
-  font-size: 0.75rem;
-  font-weight: 700;
-  padding: 0.2rem 0.6rem;
-  border-radius: 1rem;
-}
-
-.project-details {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.detail-row {
-  display: flex;
-  gap: 1rem;
-  font-size: 0.875rem;
-  align-items: baseline;
-}
-
-.detail-label {
-  font-weight: 600;
-  color: var(--text-secondary);
-  min-width: 90px;
-  flex-shrink: 0;
-}
-
-.detail-value {
-  color: var(--text-primary);
-}
-
-.detail-link {
-  color: var(--primary-color);
-  text-decoration: none;
-}
-
-.detail-link:hover {
-  text-decoration: underline;
-}
-
-.project-actions {
-  display: flex;
-  gap: 0.75rem;
-  flex-shrink: 0;
-}
-
-/* Support grid */
-.support-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 1.5rem;
-}
-
-.support-card {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  padding: 1.75rem;
-  background: var(--card-bg, white);
-  border-radius: 0.75rem;
-  border: 2px solid var(--border-color);
-  box-shadow: var(--shadow-md);
-  text-decoration: none;
-  color: var(--text-primary);
-  transition: all 0.2s;
-}
-
-.support-card:hover {
-  border-color: var(--primary-color);
-  box-shadow: 0 8px 24px rgba(59, 130, 246, 0.15);
-  transform: translateY(-2px);
-}
-
-.sponsor-card:hover {
-  border-color: #ec4899;
-  box-shadow: 0 8px 24px rgba(236, 72, 153, 0.15);
-}
-
-.card-icon {
-  font-size: 2.25rem;
-  line-height: 1;
-}
-
-.support-card h3 {
-  margin: 0;
-  font-size: 1.15rem;
-}
-
-.support-card p {
-  margin: 0;
-  color: var(--text-secondary);
-  font-size: 0.875rem;
-  line-height: 1.55;
-  flex: 1;
-}
-
-.card-link {
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: var(--primary-color);
-}
-
-.sponsor-link {
-  color: #ec4899;
-}
-
-/* Contribute */
-.contribute-card,
-.changelog-card,
-.diagnostics-card {
-  padding: 1.75rem 2rem;
-}
-
-.contribute-card h3,
-.changelog-card h3,
-.diagnostics-card h3 {
-  margin: 0 0 1.5rem 0;
-  font-size: 1.15rem;
-  padding-bottom: 0.75rem;
-  border-bottom: 2px solid var(--border-color);
+.card-header-left {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.6rem;
 }
 
-.admin-badge {
-  font-size: 0.65rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  background: #fef3c7;
-  color: #92400e;
-  padding: 0.15rem 0.5rem;
-  border-radius: 0.25rem;
-  letter-spacing: 0.04em;
-}
-
-.contribute-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 1.5rem;
-}
-
-.contribute-item {
-  display: flex;
-  gap: 1rem;
-  align-items: flex-start;
-}
-
-.contribute-icon {
-  font-size: 1.75rem;
-  line-height: 1;
-  flex-shrink: 0;
-}
-
-.contribute-item h4 {
-  margin: 0 0 0.25rem 0;
+.card-header-left h3 {
+  margin: 0;
   font-size: 1rem;
+  font-weight: 700;
   color: var(--text-primary);
 }
 
-.contribute-item p {
-  margin: 0 0 0.75rem 0;
-}
-
-/* Diagnostics */
-.diag-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 1.25rem;
-}
-
-.diag-panel {
-  border: 1px solid var(--border-color);
-  border-radius: 0.5rem;
-  padding: 1.25rem;
+.card-header-actions {
   display: flex;
-  flex-direction: column;
   gap: 0.5rem;
+  flex-wrap: wrap;
 }
 
-.diag-panel-header {
+.card-desc {
+  padding: 0.5rem 1.5rem 0;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.section-title-bar {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  margin-bottom: 0.25rem;
-}
-
-.diag-title {
-  font-weight: 600;
-  font-size: 0.95rem;
+  gap: 0.5rem;
+  margin: 0;
+  font-size: 0.975rem;
+  font-weight: 700;
   color: var(--text-primary);
-  flex: 1;
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid var(--border-color);
 }
 
-.health-badge {
-  font-size: 0.65rem;
+/* ── Buttons ── */
+.btn-outline-sm {
+  padding: 0.35rem 0.875rem;
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: 0.375rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.btn-outline-sm:hover { border-color: var(--primary-color); color: var(--primary-color); }
+.btn-outline-sm:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-primary-sm {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.875rem;
+  background: var(--primary-color);
+  border: none;
+  border-radius: 0.375rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #fff;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.btn-primary-sm:hover { opacity: 0.85; }
+.btn-primary-sm:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ── Admin pill ── */
+.admin-pill {
+  font-size: 0.62rem;
   font-weight: 700;
   text-transform: uppercase;
+  letter-spacing: 0.06em;
+  background: rgba(245,158,11,0.15);
+  color: #d97706;
   padding: 0.15rem 0.5rem;
-  border-radius: 0.25rem;
-  letter-spacing: 0.04em;
+  border-radius: 9999px;
 }
 
-.health-ok {
-  background: rgba(34, 197, 94, 0.15);
-  color: var(--secondary-color, #22c55e);
+/* ── Diagnostics card ── */
+.diag-card {
+  padding-bottom: 1.25rem;
 }
 
-.health-warn {
-  background: rgba(239, 68, 68, 0.12);
-  color: var(--danger-color, #ef4444);
+.diag-loading {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.75rem 1.5rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
 }
 
-.health-details {
+.loading-spinner-sm {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border-color);
+  border-top-color: var(--primary-color);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.diag-body {
+  padding: 0.75rem 1.5rem;
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
-  margin: 0.25rem 0;
+  gap: 1rem;
 }
 
-.health-row {
-  display: flex;
-  justify-content: space-between;
-  font-size: 0.8rem;
-  color: var(--text-secondary);
+.diag-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.625rem;
 }
 
-.health-ok-text {
-  color: var(--secondary-color, #22c55e);
-  font-weight: 600;
-}
-
-.health-err-text {
-  color: var(--danger-color, #ef4444);
-  font-weight: 600;
-}
-
-.db-results {
-  margin: 0.25rem 0;
-  max-height: 80px;
-  overflow-y: auto;
-}
-
-.db-result-line {
-  font-size: 0.78rem;
-  font-family: monospace;
-  color: var(--text-secondary);
-  padding: 0.1rem 0;
-}
-
-.diag-summary {
+.diag-meta-item {
   display: flex;
   flex-direction: column;
   gap: 0.2rem;
-  margin: 0.25rem 0;
+  padding: 0.625rem 0.875rem;
+  background: var(--background);
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
 }
 
-.diag-row {
-  display: flex;
-  justify-content: space-between;
-  font-size: 0.8rem;
-  color: var(--text-secondary);
+.diag-meta-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
 }
 
-.diag-row span:last-child {
+.diag-meta-value {
+  font-size: 0.875rem;
   font-weight: 600;
   color: var(--text-primary);
 }
 
-.mt-1 {
-  margin-top: 0.5rem;
+.diag-logs-section {
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+  overflow: hidden;
 }
 
-/* Changelog */
-.changelog-list {
-  display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
-}
-
-.changelog-entry {
-  border-left: 3px solid var(--border-color);
-  padding-left: 1.25rem;
-}
-
-.changelog-entry:first-child {
-  border-left-color: var(--primary-color);
-}
-
-.changelog-header {
+.diag-logs-header {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  margin-bottom: 0.5rem;
+  justify-content: space-between;
+  padding: 0.625rem 0.875rem;
+  background: var(--background);
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s;
 }
+.diag-logs-header:hover { background: var(--border-color); }
 
-.changelog-version {
-  font-weight: 700;
-  font-size: 1rem;
+.diag-logs-title {
+  font-size: 0.82rem;
+  font-weight: 600;
   color: var(--text-primary);
 }
 
-.changelog-date {
-  font-size: 0.8rem;
-  color: var(--text-secondary);
+.diag-logs-body {
+  border-top: 1px solid var(--border-color);
+  max-height: 300px;
+  overflow-y: auto;
 }
 
-.changelog-badge {
-  font-size: 0.65rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  padding: 0.15rem 0.5rem;
-  border-radius: 0.25rem;
-  letter-spacing: 0.04em;
-}
-
-.badge-primary {
-  background: #e0e7ff;
-  color: #4338ca;
-}
-
-.changelog-items {
-  list-style: disc;
+.diag-logs-pre {
   margin: 0;
-  padding-left: 1.25rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-}
-
-.changelog-items li {
-  font-size: 0.875rem;
+  padding: 0.75rem 0.875rem;
+  font-size: 0.72rem;
+  font-family: monospace;
   color: var(--text-secondary);
+  white-space: pre;
+  word-break: break-all;
   line-height: 1.5;
 }
 
-/* Utility */
-.text-muted {
+.diag-empty {
+  padding: 1rem 1.5rem;
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
+
+/* ── Health summary ── */
+.health-summary {
+  padding: 0 1.5rem;
+  margin-top: 0.25rem;
+}
+
+.health-summary-title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+  margin-bottom: 0.5rem;
+}
+
+.health-checks-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.health-chip {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.1rem;
+  padding: 0.35rem 0.75rem;
+  border-radius: 0.375rem;
+  border: 1px solid;
+}
+
+.health-chip-key {
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.8;
+}
+
+.health-chip-val {
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.chip-ok {
+  background: rgba(16,185,129,0.08);
+  border-color: rgba(16,185,129,0.3);
+  color: #059669;
+}
+[data-theme="dark"] .chip-ok { color: #6ee7b7; }
+
+.chip-err {
+  background: rgba(239,68,68,0.08);
+  border-color: rgba(239,68,68,0.3);
+  color: #dc2626;
+}
+[data-theme="dark"] .chip-err { color: #fca5a5; }
+
+.chip-warn {
+  background: rgba(245,158,11,0.08);
+  border-color: rgba(245,158,11,0.3);
+  color: #d97706;
+}
+[data-theme="dark"] .chip-warn { color: #fcd34d; }
+
+.chip-neutral {
+  background: var(--background);
+  border-color: var(--border-color);
   color: var(--text-secondary);
 }
 
-.text-sm {
-  font-size: 0.875rem;
+/* ── FAQ ── */
+.faq-card {
+  overflow: hidden;
 }
 
-code {
-  background: var(--background, #f9fafb);
+.faq-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.faq-item {
+  border-bottom: 1px solid var(--border-color);
+}
+.faq-item:last-child { border-bottom: none; }
+
+.faq-question {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.875rem 1.5rem;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  user-select: none;
+  transition: background 0.12s;
+}
+.faq-question:hover { background: var(--background); }
+
+.faq-answer {
+  padding: 0 1.5rem 1rem;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  line-height: 1.65;
+  border-top: 1px solid var(--border-color);
+  padding-top: 0.875rem;
+}
+
+.faq-answer code {
+  background: var(--background);
   border: 1px solid var(--border-color);
   padding: 0.1rem 0.35rem;
   border-radius: 0.25rem;
@@ -797,22 +976,270 @@ code {
   font-family: monospace;
 }
 
+.faq-answer a {
+  color: var(--primary-color);
+  text-decoration: none;
+}
+.faq-answer a:hover { text-decoration: underline; }
+
+/* ── Community links ── */
+.community-card {
+  overflow: hidden;
+}
+
+.community-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0;
+}
+
+.community-link-card {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+  padding: 1rem 1.25rem;
+  text-decoration: none;
+  color: var(--text-primary);
+  border-right: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);
+  transition: background 0.12s;
+}
+
+.community-link-card:nth-child(3n) { border-right: none; }
+.community-link-card:nth-last-child(-n+3) { border-bottom: none; }
+.community-link-card:hover { background: var(--background); }
+
+.community-link-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 0.5rem;
+  background: var(--background);
+  color: var(--primary-color);
+  border: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+
+.community-link-label {
+  font-size: 0.875rem;
+  font-weight: 600;
+  margin-bottom: 0.1rem;
+}
+
+.community-link-desc {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+/* ── Feedback form ── */
+.feedback-card {
+  overflow: hidden;
+}
+
+.feedback-intro {
+  padding: 0.5rem 1.5rem 0;
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.feedback-form {
+  padding: 1rem 1.5rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.feedback-row {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.form-label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.req { color: #ef4444; }
+
+.feedback-type-btns {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.type-btn {
+  padding: 0.4rem 1rem;
+  border: 1px solid var(--border-color);
+  background: var(--background);
+  border-radius: 0.375rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.type-btn:hover { border-color: var(--primary-color); color: var(--primary-color); }
+
+.type-btn-active {
+  background: var(--primary-color);
+  border-color: var(--primary-color);
+  color: #fff;
+}
+
+.form-input {
+  width: 100%;
+  padding: 0.55rem 0.875rem;
+  background: var(--background);
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  box-sizing: border-box;
+  transition: border-color 0.15s;
+  outline: none;
+}
+
+.form-input:focus { border-color: var(--primary-color); }
+.form-input[readonly] { opacity: 0.6; cursor: default; }
+
+.form-textarea {
+  width: 100%;
+  padding: 0.6rem 0.875rem;
+  background: var(--background);
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  color: var(--text-primary);
+  box-sizing: border-box;
+  resize: vertical;
+  font-family: inherit;
+  line-height: 1.55;
+  transition: border-color 0.15s;
+  outline: none;
+}
+
+.form-textarea:focus { border-color: var(--primary-color); }
+
+.feedback-error {
+  font-size: 0.85rem;
+  color: #ef4444;
+  padding: 0.5rem 0.75rem;
+  background: rgba(239,68,68,0.07);
+  border: 1px solid rgba(239,68,68,0.2);
+  border-radius: 0.375rem;
+}
+
+.feedback-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+  flex-wrap: wrap;
+}
+
+.btn-submit-feedback {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.55rem 1.25rem;
+  background: #1f2937;
+  border: none;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+[data-theme="dark"] .btn-submit-feedback { background: #374151; }
+.btn-submit-feedback:hover { background: #111827; }
+[data-theme="dark"] .btn-submit-feedback:hover { background: #4b5563; }
+
+.feedback-note {
+  font-size: 0.775rem;
+  color: var(--text-muted);
+}
+
+/* ── Collapse transition ── */
+.chevron {
+  color: var(--text-muted);
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+
+.chevron-open {
+  transform: rotate(180deg);
+}
+
+.collapse-enter-active,
+.collapse-leave-active {
+  transition: all 0.22s ease;
+  overflow: hidden;
+}
+.collapse-enter-from,
+.collapse-leave-to {
+  opacity: 0;
+  max-height: 0;
+}
+.collapse-enter-to,
+.collapse-leave-from {
+  opacity: 1;
+  max-height: 2000px;
+}
+
+/* ── Responsive ── */
 @media (max-width: 768px) {
-  .project-info-card {
+  .quick-help-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .diag-meta-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .community-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .community-link-card:nth-child(3n) { border-right: 1px solid var(--border-color); }
+  .community-link-card:nth-child(2n) { border-right: none; }
+  .community-link-card:nth-last-child(-n+3) { border-bottom: 1px solid var(--border-color); }
+  .community-link-card:nth-last-child(-n+2) { border-bottom: none; }
+}
+
+@media (max-width: 540px) {
+  .quick-help-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .community-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .community-link-card {
+    border-right: none !important;
+    border-bottom: 1px solid var(--border-color) !important;
+  }
+  .community-link-card:last-child { border-bottom: none !important; }
+
+  .card-header-row {
     flex-direction: column;
     align-items: flex-start;
-  }
-
-  .support-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .contribute-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .diag-grid {
-    grid-template-columns: 1fr;
   }
 }
 </style>

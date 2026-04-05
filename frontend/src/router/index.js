@@ -161,6 +161,18 @@ const router = createRouter({
       meta: { requiresAuth: true, requiresAdmin: true }
     },
     {
+      path: '/firewall-manager',
+      name: 'FirewallManager',
+      component: () => import('@/views/FirewallManager.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/firewall-manager/:hostId',
+      name: 'FirewallManagerHost',
+      component: () => import('@/views/FirewallManager.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
       path: '/proxmox/:hostId/nodes/:node/console/:vmid',
       name: 'VMConsole',
       component: () => import('@/views/VMConsole.vue'),
@@ -331,6 +343,12 @@ const router = createRouter({
       meta: { requiresAuth: true, requiresOperator: true }
     },
     {
+      path: '/cloudinit/:hostId/:node/:vmid',
+      name: 'CloudInitEditorDirect',
+      component: () => import('@/views/CloudInitEditor.vue'),
+      meta: { requiresAuth: true, requiresOperator: true }
+    },
+    {
       path: '/create-pve-vm',
       name: 'CreatePVEVM',
       component: () => import('@/views/CreatePVEVM.vue'),
@@ -425,6 +443,12 @@ const router = createRouter({
       name: 'AlertRules',
       component: () => import('@/views/AlertRules.vue'),
       meta: { requiresAuth: true, requiresAdmin: true }
+    },
+    {
+      path: '/notifications',
+      name: 'NotificationCenter',
+      component: () => import('@/views/NotificationCenter.vue'),
+      meta: { requiresAuth: true }
     },
     {
       path: '/:pathMatch(.*)*',

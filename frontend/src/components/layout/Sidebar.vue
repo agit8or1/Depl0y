@@ -111,6 +111,10 @@
         <span class="icon">🕸️</span>
         <span>{{ t('nav.sdn') }}</span>
       </router-link>
+      <router-link v-if="isOperator" to="/firewall-manager" class="nav-item" @click="handleNavClick">
+        <span class="icon">🛡️</span>
+        <span>Firewall</span>
+      </router-link>
       <router-link to="/images" class="nav-item" @click="handleNavClick">
         <span class="icon">💿</span>
         <span>{{ t('nav.images') }}</span>

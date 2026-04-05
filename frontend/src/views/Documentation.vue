@@ -52,7 +52,8 @@
       </nav>
 
       <div class="sidebar-footer">
-        <a href="/api/v1/docs" target="_blank" class="sidebar-link">Swagger UI</a>
+        <a href="/docs" target="_blank" class="sidebar-link">Swagger UI</a>
+        <router-link to="/api-explorer" class="sidebar-link">API Explorer</router-link>
         <router-link to="/support" class="sidebar-link">Support</router-link>
       </div>
     </aside>
@@ -71,16 +72,18 @@
             <span class="bc-current">{{ activeSectionTitle }}</span>
           </template>
         </nav>
+        <div style="margin-left:auto;display:flex;gap:0.5rem;">
+          <a href="/docs" target="_blank" class="btn btn-outline btn-sm">Swagger UI</a>
+          <button class="btn btn-outline btn-sm" :disabled="downloadingPDF" @click="downloadPDF">
+            {{ downloadingPDF ? 'Generating...' : 'Download PDF' }}
+          </button>
+        </div>
       </div>
 
       <!-- Page header -->
       <div class="doc-page-header">
         <h1>Documentation</h1>
-        <p>Complete guide to installing, configuring, and using Depl0y — a Proxmox VE management platform.</p>
-        <div class="doc-header-actions">
-          <a href="/api/v1/docs" target="_blank" class="btn btn-outline btn-sm">Swagger API Docs</a>
-          <router-link to="/support" class="btn btn-outline btn-sm">Support &amp; Changelog</router-link>
-        </div>
+        <p>Complete guide to installing, configuring, and using Depl0y — an open-source Proxmox VE management platform.</p>
       </div>
 
       <!-- Sections -->
@@ -94,14 +97,14 @@
         <div class="section-title-row">
           <h2 class="section-title">
             <span class="section-icon">{{ section.icon }}</span>
-            {{ section.title }}
+            <span v-html="section.title"></span>
           </h2>
-          <a :href="'#' + section.id" class="anchor-link" title="Copy link to section">&#182;</a>
+          <a :href="'#' + section.id" class="anchor-link" title="Link to section">&#182;</a>
         </div>
         <div class="section-body" v-html="section.html"></div>
       </section>
 
-      <!-- Legacy card grid for quick access -->
+      <!-- Quick Links -->
       <section class="doc-section" id="quick-links">
         <div class="section-title-row">
           <h2 class="section-title"><span class="section-icon">&#128279;</span> Quick Links</h2>
@@ -112,17 +115,17 @@
             <h3>Cloud Images Quick Start</h3>
             <p>Deploy VMs in 30 seconds using pre-built cloud images and cloud-init.</p>
             <div class="doc-actions">
-              <button @click="showQuickStart = true" class="btn btn-primary btn-sm">Preview</button>
+              <button @click="showQuickStart = true" class="btn btn-primary btn-sm">View Guide</button>
               <router-link to="/settings" class="btn btn-outline btn-sm">Settings</router-link>
             </div>
           </div>
           <div class="doc-card">
-            <div class="doc-icon">&#128279;</div>
-            <h3>API Documentation</h3>
-            <p>Full OpenAPI docs for every endpoint — ideal for automation and integration.</p>
+            <div class="doc-icon">&#128295;</div>
+            <h3>Interactive API Explorer</h3>
+            <p>Test every API endpoint interactively — enter parameters and send live requests.</p>
             <div class="doc-actions">
-              <a href="/api/v1/docs" target="_blank" class="btn btn-primary btn-sm">Swagger UI</a>
-              <a href="/api/v1/redoc" target="_blank" class="btn btn-outline btn-sm">ReDoc</a>
+              <router-link to="/api-explorer" class="btn btn-primary btn-sm">Open Explorer</router-link>
+              <a href="/docs" target="_blank" class="btn btn-outline btn-sm">Swagger UI</a>
             </div>
           </div>
           <div class="doc-card">
@@ -140,8 +143,8 @@
             <h3>Report a Bug</h3>
             <p>Found an issue? File a detailed bug report with logs and steps to reproduce.</p>
             <div class="doc-actions">
-              <router-link to="/bug-report" class="btn btn-outline btn-sm">Bug Report Form</router-link>
-              <a href="https://github.com/agit8or1/Depl0y/issues" target="_blank" class="btn btn-outline btn-sm">GitHub Issues</a>
+              <router-link to="/bug-report" class="btn btn-outline btn-sm">Bug Report</router-link>
+              <a href="https://github.com/agit8or1/Depl0y/issues" target="_blank" class="btn btn-outline btn-sm">GitHub</a>
             </div>
           </div>
         </div>
@@ -160,7 +163,7 @@
           <p>Cloud images let you deploy VMs in <strong>30 seconds</strong> instead of 20 minutes. No manual OS installation needed!</p>
           <div class="step">
             <strong>Step 1: Check Status</strong>
-            <p>Go to <router-link to="/settings" @click="showQuickStart = false">Settings</router-link> and look for the "Cloud Image Setup" section. A green box means already configured; yellow means setup is needed.</p>
+            <p>Go to <router-link to="/settings" @click="showQuickStart = false">Settings</router-link> and look for the "Cloud Image Setup" section. A green status means already configured; yellow means setup is needed.</p>
           </div>
           <div class="step">
             <strong>Step 2: Run Setup Script</strong>
@@ -192,24 +195,25 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import api from '@/services/api'
 import { useToast } from 'vue-toastification'
 
-// ── Section content definitions ─────────────────────────────────────────────
-function codeBlock(code, label = '') {
+// ── Helper functions ─────────────────────────────────────────────────────────
+function codeBlock(code, lang = '') {
   const id = 'cb-' + Math.random().toString(36).slice(2, 8)
   return `<div class="code-block-wrap"><pre class="code-block" id="${id}">${code}</pre><button class="copy-btn" onclick="navigator.clipboard.writeText(document.getElementById('${id}').innerText).then(()=>{this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)})">Copy</button></div>`
 }
 
-function infoBox(text) {
-  return `<div class="info-box">${text}</div>`
-}
-
-function warnBox(text) {
-  return `<div class="warn-box">${text}</div>`
-}
+function infoBox(text) { return `<div class="info-box">${text}</div>` }
+function warnBox(text) { return `<div class="warn-box">${text}</div>` }
+function tipBox(text)  { return `<div class="tip-box">${text}</div>` }
 
 function step(num, title, body) {
   return `<div class="doc-step"><span class="step-num">${num}</span><div class="step-body"><strong>${title}</strong>${body}</div></div>`
 }
 
+function tabItem(label, content) {
+  return `<div class="tab-item"><strong>${label}</strong><span>${content}</span></div>`
+}
+
+// ── Section content ───────────────────────────────────────────────────────────
 const SECTIONS = [
   {
     id: 'getting-started',
@@ -220,7 +224,7 @@ const SECTIONS = [
 
       <h3>System Requirements</h3>
       <ul>
-        <li><strong>OS:</strong> Ubuntu 22.04/24.04 or Debian 12 (server, not desktop)</li>
+        <li><strong>OS:</strong> Ubuntu 22.04/24.04 or Debian 12 (server)</li>
         <li><strong>RAM:</strong> 1 GB minimum (2 GB recommended)</li>
         <li><strong>Disk:</strong> 4 GB free space (more if storing ISOs)</li>
         <li><strong>Network:</strong> Must be able to reach Proxmox API on port 8006</li>
@@ -228,7 +232,7 @@ const SECTIONS = [
       </ul>
 
       <h3>One-Line Installation</h3>
-      <p>Run this command on a fresh Ubuntu or Debian server to install Depl0y:</p>
+      <p>Run this command on a fresh Ubuntu or Debian server:</p>
       ${codeBlock('curl -sSL https://raw.githubusercontent.com/agit8or1/Depl0y/main/install.sh | sudo bash')}
       <p>The installer will:</p>
       <ol>
@@ -236,108 +240,101 @@ const SECTIONS = [
         <li>Create the <code>/var/lib/depl0y</code> data directory</li>
         <li>Set up a systemd service (<code>depl0y</code>) that starts on boot</li>
         <li>Build the Vue frontend and serve it via the FastAPI backend on port 8000</li>
-        <li>Create an initial admin user (credentials shown at the end)</li>
+        <li>Create an initial admin user (credentials shown at end of install)</li>
       </ol>
 
       <h3>First Login</h3>
       ${step(1, 'Open your browser', '<p>Navigate to <code>http://&lt;server-ip&gt;:8000</code></p>')}
       ${step(2, 'Log in', '<p>Use the admin credentials shown at the end of the install script output.</p>')}
-      ${step(3, 'Add a Proxmox Host', '<p>Go to <strong>Proxmox Hosts</strong> and click <strong>Add Host</strong>. You will need a Proxmox API token (see the Proxmox Hosts Setup section).</p>')}
+      ${step(3, 'Add a Proxmox Host', '<p>Go to <strong>Proxmox Hosts</strong> and click <strong>Add Host</strong>. You will need a Proxmox API token.</p>')}
       ${step(4, 'Poll the host', '<p>Click <strong>Poll</strong> on the new host card to sync all nodes, VMs, and containers.</p>')}
 
       ${infoBox('<strong>Tip:</strong> After login, visit <strong>Settings</strong> to configure SMTP email notifications, set up cloud images, and adjust the auto-refresh interval.')}
+
+      <h3>Service Management</h3>
+      ${codeBlock('# Check status\nsudo systemctl status depl0y\n\n# Restart\nsudo systemctl restart depl0y\n\n# View live logs\nsudo journalctl -u depl0y -f')}
     `
   },
   {
-    id: 'proxmox-hosts',
-    icon: '&#127970;',
-    title: 'Proxmox Hosts Setup',
-    html: `
-      <p>Before managing VMs, you must register at least one Proxmox host. Depl0y communicates with Proxmox exclusively via its REST API using an API token — no root SSH is required.</p>
-
-      <h3>Creating a Proxmox API Token</h3>
-      ${step(1, 'Log into Proxmox Web UI', '<p>Navigate to <code>https://&lt;proxmox-ip&gt;:8006</code> and log in as root.</p>')}
-      ${step(2, 'Create an API token', `<p>Go to <strong>Datacenter → Permissions → API Tokens → Add</strong>. Set:</p><ul><li><strong>User:</strong> root@pam (or a dedicated user)</li><li><strong>Token ID:</strong> e.g. <code>depl0y</code></li><li><strong>Privilege Separation:</strong> Leave unchecked for full root access</li></ul>`)}
-      ${step(3, 'Copy the token secret', '<p>The secret is shown only once. Copy both the token ID and secret before closing the dialog.</p>')}
-
-      <h3>Token Format</h3>
-      <p>The token string you enter in Depl0y has this format:</p>
-      ${codeBlock('PVEAPIToken=root@pam!depl0y=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx')}
-
-      <h3>Adding the Host in Depl0y</h3>
-      <ol>
-        <li>Go to <strong>Proxmox Hosts</strong> and click <strong>Add Host</strong>.</li>
-        <li>Enter the <strong>Host Address</strong> (e.g. <code>pve.example.com:8006</code> or just an IP).</li>
-        <li>Paste the full <strong>API Token</strong> string.</li>
-        <li>Give it a friendly <strong>Display Name</strong>.</li>
-        <li>Click <strong>Save</strong>. Depl0y immediately tests the connection.</li>
-      </ol>
-
-      ${warnBox('<strong>Security:</strong> Depl0y stores API tokens encrypted at rest using Fernet symmetric encryption. Never share your <code>config.env</code> or database file.')}
-
-      <h3>Polling and Sync</h3>
-      <p>After adding a host, click <strong>Poll</strong> to fetch its current state (nodes, VMs, containers, storage). You can also configure auto-poll from Settings. The Dashboard shows the last-polled state; the PVE Live section uses live API calls.</p>
-
-      <h3>Multiple Hosts</h3>
-      <p>Depl0y supports any number of registered hosts. Each host is queried independently. The Dashboard aggregates stats across all active hosts. You can mark a host as inactive (toggle the Active switch) to exclude it from live queries without deleting its records.</p>
-    `
-  },
-  {
-    id: 'deploying-vms',
+    id: 'vm-management',
     icon: '&#9881;&#65039;',
-    title: 'Deploying VMs',
+    title: 'VM Management',
     html: `
-      <p>Depl0y offers two ways to create virtual machines: the native PVE VM wizard and the fast Cloud Image deploy path.</p>
+      <p>Depl0y offers two paths to create virtual machines: the native PVE VM wizard and the fast Cloud Image deploy path.</p>
 
       <h3>Method 1: Create VM (PVE Wizard)</h3>
-      <p>Go to <strong>Create VM (PVE)</strong> for a guided 3-step form that creates a Proxmox-native VM:</p>
-
+      <p>Go to <strong>Create VM (PVE)</strong> for a guided form that creates a Proxmox-native VM:</p>
       <div class="tab-list">
-        <div class="tab-item"><strong>Step 1 — Location</strong><span>Select target host and node. A VM ID is auto-generated (or set your own). Enter a VM name.</span></div>
-        <div class="tab-item"><strong>Step 2 — Hardware</strong><span>CPU cores/sockets, RAM (MB), disk size and storage pool, network bridge and VLAN, ISO image or cloud image source, BIOS/UEFI, and machine type.</span></div>
-        <div class="tab-item"><strong>Step 3 — Review</strong><span>Confirm all settings. Click Create VM to submit. A live task tracker shows Proxmox task progress.</span></div>
+        ${tabItem('Step 1 — Location', 'Select target host and node. VM ID is auto-generated (or set your own). Enter a VM name.')}
+        ${tabItem('Step 2 — Hardware', 'CPU cores/sockets, RAM (MB), disk size and storage pool, network bridge and VLAN, ISO image, BIOS/UEFI, and machine type.')}
+        ${tabItem('Step 3 — Review', 'Confirm all settings. Click Create VM to submit. A live task tracker shows Proxmox task progress.')}
       </div>
 
       <h3>Method 2: Cloud Image Deploy (Fast)</h3>
-      <p>Cloud images clone a pre-configured template, inject cloud-init, and boot in about 30 seconds. Ideal for bulk provisioning or quick dev environments.</p>
-
-      ${step(1, 'Run one-time setup', `<p>SSH to your Depl0y host and run:</p>${codeBlock('sudo /tmp/enable_cloud_images.sh')}<p>This downloads Ubuntu/Debian cloud images to Proxmox and creates reusable templates.</p>`)}
-      ${step(2, 'Go to Deploy', '<p>Navigate to <strong>Deploy VM</strong> and select <strong>Cloud Image (Fast)</strong>.</p>')}
-      ${step(3, 'Configure', '<p>Choose image (Ubuntu 24.04, Debian 12, etc.), set CPU/RAM/disk, enter credentials (username + password or SSH key), and optionally add cloud-init user-data.</p>')}
+      <p>Cloud images clone a pre-configured template, inject cloud-init, and boot in about 30 seconds.</p>
+      ${step(1, 'Run one-time setup', `<p>SSH to your Depl0y host and run:</p>${codeBlock('sudo /tmp/enable_cloud_images.sh')}`)}
+      ${step(2, 'Go to Deploy', '<p>Navigate to <strong>Deploy VM</strong> and select <strong>Cloud Image</strong>.</p>')}
+      ${step(3, 'Configure', '<p>Choose image (Ubuntu 24.04, Debian 12, etc.), set CPU/RAM/disk, enter credentials.</p>')}
       ${step(4, 'Deploy', '<p>Click Create. The VM is cloned and started within ~30 seconds on subsequent runs.</p>')}
 
       <h3>VM Controls</h3>
-      <p>From the VM Detail page (Overview tab) you can:</p>
+      <p>From the VM Detail page you can:</p>
       <ul>
-        <li><strong>Start / Stop / Reboot / Shutdown</strong> — power controls with confirmation</li>
+        <li><strong>Start / Stop / Reboot / Shutdown</strong> — power controls with confirmation dialogs</li>
         <li><strong>Force Stop</strong> — equivalent to pulling the power cord</li>
-        <li><strong>View live stats</strong> — CPU%, RAM usage, disk I/O, network rx/tx</li>
-        <li><strong>Open Console</strong> — noVNC in the browser</li>
+        <li><strong>Suspend / Resume</strong> — save and restore VM state to disk</li>
+        <li><strong>Clone</strong> — full or linked clone to any node</li>
+        <li><strong>Migrate</strong> — live migration to another node in the same cluster</li>
+        <li><strong>Convert to Template</strong> — create a reusable base image</li>
+        <li><strong>Snapshots</strong> — create, restore, and delete point-in-time snapshots</li>
+        <li><strong>Open Console</strong> — noVNC browser console or xterm.js terminal</li>
       </ul>
 
-      ${infoBox('<strong>Note:</strong> The QEMU guest agent must be installed and running inside the VM for accurate memory stats and guest IP detection. Install it with <code>apt install qemu-guest-agent && systemctl enable --now qemu-guest-agent</code>.')}
+      <h3>VM Configuration (Hardware Tab)</h3>
+      <p>The Hardware tab in VM Detail lets you:</p>
+      <ul>
+        <li>Add, resize, and delete virtual disks</li>
+        <li>Add and remove network interfaces (NICs)</li>
+        <li>Modify CPU count and memory allocation (requires reboot)</li>
+        <li>Pass through PCI devices (GPU, NVMe) and USB devices</li>
+        <li>Configure serial ports</li>
+        <li>Edit cloud-init drive configuration</li>
+      </ul>
+
+      ${infoBox('<strong>QEMU Guest Agent:</strong> Install the guest agent inside each VM for accurate memory stats and IP detection: <code>apt install qemu-guest-agent &amp;&amp; systemctl enable --now qemu-guest-agent</code>')}
+
+      <h3>Bulk Operations</h3>
+      <p>Go to <strong>Bulk Operations</strong> to perform actions across multiple VMs simultaneously:</p>
+      <ul>
+        <li>Bulk start, stop, shutdown, or reboot</li>
+        <li>Bulk snapshot creation and deletion</li>
+        <li>Bulk config update (tags, memory, CPU)</li>
+        <li>Bulk live migration to a different node</li>
+        <li>Tag compliance enforcement</li>
+        <li>Resource usage audit</li>
+      </ul>
     `
   },
   {
-    id: 'lxc-containers',
+    id: 'containers',
     icon: '&#128230;',
-    title: 'LXC Containers',
+    title: 'Containers (LXC)',
     html: `
       <p>LXC containers are lightweight OS-level virtualization — faster to create than full VMs and share the host kernel. Depl0y provides full lifecycle management for LXC containers.</p>
 
       <h3>Creating an LXC Container</h3>
       <p>Go to <strong>Create LXC</strong> and fill in:</p>
       <div class="tab-list">
-        <div class="tab-item"><strong>Host &amp; Node</strong><span>Which Proxmox host and node to create the container on.</span></div>
-        <div class="tab-item"><strong>CT ID</strong><span>Container ID. Auto-generated by default; must be unique on the selected node.</span></div>
-        <div class="tab-item"><strong>Hostname</strong><span>The container's hostname for DNS and display.</span></div>
-        <div class="tab-item"><strong>Template</strong><span>LXC template image (Ubuntu 22.04, Debian 12, Alpine, etc.). Downloaded from the node's template storage. Click the storage browser to download new templates.</span></div>
-        <div class="tab-item"><strong>Root Password</strong><span>Password set for the root account inside the container.</span></div>
-        <div class="tab-item"><strong>CPU &amp; Memory</strong><span>CPU core limit and memory allocation in MB.</span></div>
-        <div class="tab-item"><strong>Disk</strong><span>Root filesystem size and storage pool.</span></div>
-        <div class="tab-item"><strong>Network</strong><span>Bridge, IP assignment (DHCP or static CIDR), and default gateway.</span></div>
-        <div class="tab-item"><strong>DNS</strong><span>Optional DNS server and search domain overrides.</span></div>
-        <div class="tab-item"><strong>Start on Create</strong><span>Automatically start the container immediately after creation.</span></div>
+        ${tabItem('Host &amp; Node', 'Which Proxmox host and node to create the container on.')}
+        ${tabItem('CT ID', 'Container ID. Auto-generated by default; must be unique on the selected node.')}
+        ${tabItem('Hostname', "The container's hostname.")}
+        ${tabItem('Template', 'LXC template image (Ubuntu 22.04, Debian 12, Alpine, etc.).')}
+        ${tabItem('Root Password', 'Password for the root account inside the container.')}
+        ${tabItem('CPU &amp; Memory', 'CPU core limit and memory allocation in MB.')}
+        ${tabItem('Disk', 'Root filesystem size and storage pool.')}
+        ${tabItem('Network', 'Bridge, IP assignment (DHCP or static CIDR), and default gateway.')}
+        ${tabItem('DNS', 'Optional DNS server and search domain overrides.')}
+        ${tabItem('Start on Create', 'Automatically start the container immediately after creation.')}
       </div>
 
       <h3>Container Management</h3>
@@ -345,53 +342,86 @@ const SECTIONS = [
       <ul>
         <li>Start, stop, restart, and destroy the container</li>
         <li>Open an interactive shell via the built-in xterm.js terminal</li>
-        <li>View resource usage (CPU, memory, network)</li>
+        <li>View resource usage (CPU, memory, network, disk I/O)</li>
         <li>Edit configuration (memory, CPU, network interfaces)</li>
         <li>Create and restore snapshots</li>
-        <li>View and manage backup archives</li>
+        <li>Clone the container to a new CT ID</li>
+        <li>Migrate to another node in the cluster</li>
+        <li>Resize the root disk</li>
       </ul>
 
-      ${infoBox('<strong>Privileged vs Unprivileged:</strong> Depl0y creates unprivileged containers by default (UID mapping enabled, more secure). Set <code>unprivileged: false</code> in the config only if you need root device access inside the container.')}
+      ${infoBox('<strong>Privileged vs Unprivileged:</strong> Depl0y creates unprivileged containers by default (UID mapping enabled, more secure). Set <code>unprivileged: false</code> only if you need root device access inside the container.')}
 
       <h3>Downloading LXC Templates</h3>
-      <p>Go to <strong>Proxmox Hosts → Node Detail → Storage Browser</strong> and navigate to your template storage (usually <code>local</code>). Click <strong>Download</strong> to fetch templates from the official Proxmox mirror directly onto the Proxmox node.</p>
+      <p>Go to <strong>Proxmox Hosts → Node Detail → Storage Browser</strong> and navigate to your template storage (usually <code>local</code>). Click <strong>Download Template</strong> to fetch templates from the official Proxmox mirror.</p>
     `
   },
   {
-    id: 'templates-images',
-    icon: '&#128448;',
-    title: 'Templates &amp; Images',
+    id: 'networking',
+    icon: '&#127760;',
+    title: 'Networking',
     html: `
-      <p>Depl0y provides several mechanisms for creating reusable VM templates and managing disk images.</p>
+      <p>Depl0y exposes Proxmox's full networking stack: Linux bridges, VLANs, bonds, and the Software-Defined Networking (SDN) layer for advanced multi-tenant setups.</p>
 
-      <h3>Converting a VM to a Template</h3>
-      <p>A VM template is a read-only base image used to clone new VMs quickly. The conversion is irreversible.</p>
-      ${step(1, 'Prepare the VM', '<p>Boot the VM, install all desired software, run <code>cloud-init clean</code> (for cloud images) or sysprep (for Windows) to remove machine-specific state.</p>')}
-      ${step(2, 'Shut it down', '<p>Stop the VM. You cannot convert a running VM.</p>')}
-      ${step(3, 'Convert', '<p>From the VM Detail page or the <strong>Templates</strong> view, click <strong>Convert to Template</strong>. Proxmox marks the VM as a template and locks its disks.</p>')}
-
-      <h3>Cloning from a Template</h3>
-      <ol>
-        <li>Go to <strong>Templates</strong> to see all templates across all registered hosts.</li>
-        <li>Click <strong>Clone</strong> on the template you want to use.</li>
-        <li>Enter a name and target node.</li>
-        <li>Choose <strong>Full Clone</strong> (independent disk copy) or <strong>Linked Clone</strong> (shares base disk — faster but requires template to remain intact).</li>
-        <li>Click <strong>Clone VM</strong>. A Proxmox task tracks progress.</li>
-      </ol>
-
-      ${infoBox('<strong>Best practice:</strong> Use Full Clones for production VMs. Linked Clones are excellent for dev/test environments where you want many short-lived copies.')}
-
-      <h3>ISO Image Management</h3>
-      <p>Go to <strong>ISO Images</strong> to upload or download ISO files for use when creating new VMs.</p>
+      <h3>Node Network Interfaces</h3>
+      <p>Go to <strong>Proxmox Hosts → (host) → Node Detail → Network</strong> to manage network interfaces on a Proxmox node. You can:</p>
       <ul>
-        <li><strong>Upload:</strong> Select a local file. Progress is shown in real time.</li>
-        <li><strong>URL Download:</strong> Paste a direct URL (e.g. Ubuntu ISO mirror). Depl0y downloads it to the server in the background.</li>
-        <li><strong>Verify:</strong> Check SHA256 checksum after download to confirm integrity.</li>
+        <li>View all current network interfaces (bridges, bonds, VLANs, physical NICs)</li>
+        <li>Create a new Linux bridge (<code>vmbr0</code>, etc.) for VM networking</li>
+        <li>Create a bond (LACP or active-backup) across two physical NICs</li>
+        <li>Create a VLAN interface on a physical or bridge interface</li>
+        <li>Edit IP address, gateway, and VLAN settings</li>
+        <li>Apply pending changes (reloads <code>/etc/network/interfaces</code>)</li>
+        <li>Revert unapplied changes</li>
       </ul>
-      <p>Downloaded ISOs are stored in <code>/var/lib/depl0y/isos/</code> and are available when creating new VMs via the PVE wizard.</p>
 
-      <h3>Cloud Image Management</h3>
-      <p>Go to <strong>Cloud Images</strong> to see all configured cloud image profiles (Ubuntu 24.04, Debian 12, Rocky Linux, etc.). Each profile stores the download URL, expected checksum, and template VM ID. Click <strong>Fetch Latest</strong> to check for newer versions from the upstream mirror.</p>
+      ${warnBox('<strong>Caution:</strong> Applying network changes immediately takes effect on the Proxmox host. An incorrect network config can cut your access to the node. Always verify settings before applying, and have console access (iDRAC/iLO) as a fallback.')}
+
+      <h3>VM Network Interfaces</h3>
+      <p>Each VM can have multiple virtual NICs. From the VM Hardware tab you can:</p>
+      <ul>
+        <li>Add a new NIC — choose bridge, model (virtio, e1000), VLAN tag, and firewall setting</li>
+        <li>Remove a NIC (the device is detached and the slot is freed)</li>
+        <li>Set MAC address manually or let Proxmox assign one</li>
+      </ul>
+
+      <h3>VLANs</h3>
+      <p>Proxmox supports VLAN tagging in two modes:</p>
+      <div class="tab-list">
+        ${tabItem('VLAN-aware bridge', 'The bridge itself is VLAN-aware. Assign VLAN tag per VM NIC. Most flexible — single bridge handles all VLANs.')}
+        ${tabItem('VLAN interface', 'Create a separate bridge per VLAN (<code>vmbr0.10</code>). Simpler but requires one bridge per VLAN.')}
+      </div>
+      <p>To enable VLAN-aware on an existing bridge, edit it in the Network tab and check <strong>VLAN aware</strong>. Then assign VLAN tags in each VM's NIC configuration.</p>
+
+      <h3>Software-Defined Networking (SDN)</h3>
+      <p>SDN provides overlay networks for multi-node, multi-tenant environments. Access it via <strong>Network Management → SDN</strong>.</p>
+
+      <h4>Zones</h4>
+      <p>A Zone defines the SDN transport type:</p>
+      <ul>
+        <li><strong>Simple Zone</strong> — basic isolated L2 network on a single node</li>
+        <li><strong>VLAN Zone</strong> — maps VNets to 802.1Q VLAN tags on a physical bridge</li>
+        <li><strong>VXLAN Zone</strong> — L2 overlay over L3 IP networks for cross-node isolation</li>
+        <li><strong>EVPN Zone</strong> — advanced BGP-based L2/L3 VPN with route distribution</li>
+      </ul>
+
+      <h4>VNets</h4>
+      <p>VNets are virtual networks attached to a Zone. VMs connect to a VNet as if it were a normal bridge. Create a VNet, assign it to a Zone, and select it when creating or editing a VM NIC.</p>
+
+      <h4>Subnets</h4>
+      <p>Optional DHCP/IPAM subnets within a VNet. When defined, Proxmox can auto-assign IPs to VMs via DHCP from a built-in server.</p>
+
+      <h4>Applying SDN Configuration</h4>
+      ${codeBlock('# Click "Apply SDN" in the UI, or via the API:\ncurl -X POST /api/v1/sdn/{host_id}/apply \\\n  -H "Authorization: Bearer YOUR_TOKEN"')}
+
+      <h3>Firewall</h3>
+      <p>Proxmox has a stateful firewall at three levels:</p>
+      <ul>
+        <li><strong>Datacenter (cluster) level</strong> — rules applied to all nodes. Managed via <strong>PVE Firewall → Cluster Rules</strong>.</li>
+        <li><strong>Node level</strong> — rules for the Proxmox host OS itself.</li>
+        <li><strong>VM/CT level</strong> — per-VM rules. Managed via the VM Detail Firewall tab.</li>
+      </ul>
+      <p>IPSets group multiple IPs for use in rules. Aliases give friendly names to IPs or CIDR ranges. Both are managed under <strong>PVE Firewall → IPSets / Aliases</strong>.</p>
     `
   },
   {
@@ -404,30 +434,131 @@ const SECTIONS = [
       <h3>Backup Jobs (vzdump)</h3>
       <p>Navigate to <strong>Proxmox Hosts → (select host) → Backup Manager</strong> to manage vzdump backup jobs:</p>
       <ul>
-        <li><strong>Schedules tab:</strong> Lists all configured backup jobs with their cron schedule, included VMs, storage target, and retention policy.</li>
-        <li><strong>Run Now:</strong> Trigger any backup job immediately without waiting for its schedule.</li>
+        <li><strong>Schedules tab:</strong> Lists all configured backup jobs with cron schedule, included VMs, storage target, and retention policy.</li>
+        <li><strong>Run Now:</strong> Trigger any backup job immediately.</li>
         <li><strong>Retention:</strong> Configure keep-last, keep-daily, keep-weekly, and keep-monthly counts per job.</li>
       </ul>
 
       <h3>Manual VM Backup</h3>
-      <p>From any VM's detail page, click <strong>Backup Now</strong> to create a one-off vzdump backup. Select the storage target and compression mode (zstd recommended).</p>
+      <p>From any VM's detail page, click <strong>Backup Now</strong>. Select the storage target and compression mode (zstd recommended for best speed/ratio).</p>
 
       <h3>Proxmox Backup Server (PBS)</h3>
-      <p>If PBS is configured as a storage target on your Proxmox host, Depl0y's Backup Manager shows a <strong>Datastores</strong> tab with:</p>
+      <p>If PBS is registered as a storage target on your Proxmox host, Depl0y's Backup Manager shows a <strong>Datastores</strong> tab:</p>
       <ul>
         <li>Available datastores and their used/total capacity</li>
         <li>Individual backup snapshots with size and creation timestamp</li>
-        <li><strong>Restore:</strong> One-click restore of any snapshot to a target node</li>
-        <li><strong>Delete:</strong> Remove individual backup snapshots to reclaim space</li>
+        <li><strong>Restore:</strong> One-click restore of any snapshot to a target node and storage</li>
+        <li><strong>Verify:</strong> Trigger PBS to verify backup integrity</li>
+        <li><strong>Prune:</strong> Remove old snapshots based on a keep policy</li>
+        <li><strong>Delete:</strong> Remove individual snapshots to reclaim space</li>
       </ul>
 
-      ${infoBox('<strong>PBS deduplication:</strong> PBS deduplicates data across all backups automatically. Two VMs sharing the same OS blocks will store those blocks only once. This makes daily backups of many VMs extremely space-efficient.')}
+      ${infoBox('<strong>PBS deduplication:</strong> PBS deduplicates data across all backups automatically. Two VMs sharing the same OS blocks store those blocks only once, making daily backups of many VMs extremely space-efficient.')}
 
       <h3>Restore Procedure</h3>
-      ${step(1, 'Go to Backup Manager', '<p>Navigate via Proxmox Hosts → (host) → Backup Manager → Datastores.</p>')}
+      ${step(1, 'Go to Backup Manager', '<p>Navigate via Proxmox Hosts → (host) → Backup Manager → Datastores tab.</p>')}
       ${step(2, 'Select the snapshot', '<p>Find the backup by VM name and date. Click <strong>Restore</strong>.</p>')}
-      ${step(3, 'Configure restore options', '<p>Choose target node, storage pool, and whether to assign a new VM ID or restore to the original ID.</p>')}
-      ${step(4, 'Confirm', '<p>Proxmox creates a task to restore the VM. Monitor progress in the Task list.</p>')}
+      ${step(3, 'Configure restore options', '<p>Choose target node, storage pool, and VM ID (restore to original or a new ID).</p>')}
+      ${step(4, 'Confirm', '<p>Proxmox creates a task. Monitor progress in the Task list.</p>')}
+
+      <h3>Backup Schedules — Cron Format</h3>
+      ${codeBlock(`# Daily at 02:00\n0 2 * * *\n\n# Every Sunday at 01:30\n30 1 * * 0\n\n# Every 6 hours\n0 */6 * * *`)}
+    `
+  },
+  {
+    id: 'high-availability',
+    icon: '&#128736;&#65039;',
+    title: 'High Availability',
+    html: `
+      <p>Proxmox HA allows VMs and containers to automatically restart on another node in the cluster if the current node fails. Depl0y provides a full management interface for HA resources and groups.</p>
+
+      <h3>Prerequisites</h3>
+      <ul>
+        <li>Proxmox cluster with at least <strong>3 nodes</strong> (for quorum)</li>
+        <li>Shared storage accessible from all nodes (Ceph, NFS, iSCSI, or PBS)</li>
+        <li>Corosync cluster network configured between nodes</li>
+        <li>All VMs/CTs you want to protect must reside on shared storage</li>
+      </ul>
+
+      ${warnBox('<strong>Two-node clusters:</strong> A two-node cluster loses quorum if one node goes down, preventing HA from automatically restarting VMs. Use a third "witness" node or external corosync quorum device (QDevice) to solve this.')}
+
+      <h3>HA Groups</h3>
+      <p>HA groups define which nodes are <em>preferred</em> for running a set of VMs and their relative priority. Navigate to <strong>HA Management → Groups</strong> to:</p>
+      <ul>
+        <li>Create a group with a list of nodes and per-node priority (0–1000, higher = more preferred)</li>
+        <li>Set <strong>Restricted</strong> to prevent VMs from running on nodes not in the group</li>
+        <li>Set <strong>No-Fail Back</strong> to keep VMs on the current node after recovery (avoids unnecessary migrations)</li>
+      </ul>
+
+      <h3>HA Resources</h3>
+      <p>An HA resource is a VM or container enrolled for HA protection. Navigate to <strong>HA Management → Resources</strong> to:</p>
+      <ul>
+        <li>Add a VM or CT to HA (select it, choose a group and max-restart count)</li>
+        <li>Set the <strong>State</strong>: <code>started</code> (HA keeps it running), <code>stopped</code> (HA keeps it stopped), <code>disabled</code> (HA ignores it)</li>
+        <li>Remove a resource from HA protection</li>
+      </ul>
+
+      <h3>Enrolling a VM in HA via API</h3>
+      ${codeBlock(`POST /api/v1/pve-node/{host_id}/cluster/ha/resources\nContent-Type: application/json\n\n{\n  "sid": "vm:100",\n  "group": "my-ha-group",\n  "max_restart": 3,\n  "state": "started"\n}`)}
+
+      <h3>Node Evacuation</h3>
+      <p>Before taking a node offline for maintenance, use <strong>Cluster Operations → Evacuate Node</strong> to live-migrate all running VMs to other nodes in the cluster. The API endpoint is:</p>
+      ${codeBlock('POST /api/v1/cluster/{host_id}/nodes/{node}/evacuate')}
+
+      <h3>HA Status</h3>
+      <p>Navigate to <strong>HA Management → Status</strong> to see:</p>
+      <ul>
+        <li>Current quorum status and voter counts</li>
+        <li>CRM (Cluster Resource Manager) and LRM (Local Resource Manager) status per node</li>
+        <li>Status of each HA resource (started, stopped, error)</li>
+      </ul>
+
+      ${infoBox('<strong>Monitoring:</strong> Configure an alert rule in <strong>Alerts</strong> to notify you when a VM starts on an unexpected node or when HA triggers a restart.')}
+    `
+  },
+  {
+    id: 'api-access',
+    icon: '&#128273;',
+    title: 'API Access',
+    html: `
+      <p>Depl0y exposes a full REST API that you can use for automation, CI/CD pipelines, and integrations with other tools. The API is documented interactively at <a href="/docs" target="_blank">Swagger UI</a> or explore it in the <router-link to="/api-explorer">API Explorer</router-link>.</p>
+
+      <h3>Authentication Methods</h3>
+      <div class="tab-list">
+        ${tabItem('JWT Bearer Token', 'Obtained via POST /api/v1/auth/login. Access token valid for 30 minutes. Refresh using /api/v1/auth/refresh. Used by the web UI automatically.')}
+        ${tabItem('API Key', 'Long-lived token generated in your Profile. Prefixed with <code>dpl0y_</code>. Pass as <code>Authorization: Bearer dpl0y_xxxx</code>. Revoke from Profile at any time.')}
+      </div>
+
+      <h3>Generating an API Key</h3>
+      ${step(1, 'Open Profile', '<p>Click your username (top-right) → Profile → API Keys tab.</p>')}
+      ${step(2, 'Create key', '<p>Click <strong>New API Key</strong>, enter a descriptive name (e.g. "Terraform automation"), and click Create.</p>')}
+      ${step(3, 'Copy the key', '<p>The key is shown only once. Copy it immediately and store it securely (password manager).</p>')}
+
+      <h3>Using the API</h3>
+      <p>Start a VM:</p>
+      ${codeBlock(`curl -X POST https://depl0y.example.com/api/v1/vms/123/start \\\n  -H "Authorization: Bearer dpl0y_your_key_here"`)}
+      <p>List Proxmox hosts:</p>
+      ${codeBlock(`curl https://depl0y.example.com/api/v1/proxmox/ \\\n  -H "Authorization: Bearer dpl0y_your_key_here"`)}
+      <p>Create a snapshot:</p>
+      ${codeBlock(`curl -X POST https://depl0y.example.com/api/v1/pve-vm/1/pve/100/snapshots \\\n  -H "Authorization: Bearer dpl0y_your_key_here" \\\n  -H "Content-Type: application/json" \\\n  -d '{"snapname": "pre-upgrade", "description": "Before package upgrade"}'`)}
+
+      <h3>Rate Limits</h3>
+      <p>The API enforces rate limits to protect the backend:</p>
+      <ul>
+        <li><strong>General endpoints:</strong> 100 requests/minute per IP</li>
+        <li><strong>Login endpoint:</strong> 5 requests/minute per IP (brute-force protection)</li>
+      </ul>
+      <p>Adjust the limit in <code>/etc/depl0y/config.env</code> by setting <code>RATE_LIMIT_PER_MINUTE</code>. Restart the service after changes.</p>
+
+      ${infoBox('<strong>Hint:</strong> Use the <a href="/api-explorer">API Explorer</a> in Depl0y to test any endpoint with your current session token — no setup needed.')}
+
+      <h3>OpenAPI Schema</h3>
+      <p>Machine-readable OpenAPI 3.0 schema is available at:</p>
+      <ul>
+        <li><a href="/openapi.json" target="_blank"><code>/openapi.json</code></a> — raw JSON schema</li>
+        <li><a href="/docs" target="_blank"><code>/docs</code></a> — Swagger UI</li>
+        <li><a href="/redoc" target="_blank"><code>/redoc</code></a> — ReDoc</li>
+      </ul>
     `
   },
   {
@@ -439,62 +570,133 @@ const SECTIONS = [
 
       <h3>Roles</h3>
       <div class="tab-list">
-        <div class="tab-item"><strong>Admin</strong><span>Full access. Can manage users, system settings, API tokens, diagnostics, security rules, and all Proxmox operations.</span></div>
-        <div class="tab-item"><strong>Operator</strong><span>Can create, modify, start, stop, and delete VMs and containers. Cannot manage users or system settings.</span></div>
-        <div class="tab-item"><strong>Viewer</strong><span>Read-only access. Can view VMs, containers, and stats but cannot make changes.</span></div>
+        ${tabItem('Admin', 'Full access. Can manage users, system settings, API tokens, diagnostics, security rules, and all Proxmox operations.')}
+        ${tabItem('Operator', 'Can create, modify, start, stop, and delete VMs and containers. Cannot manage users or system settings.')}
+        ${tabItem('Viewer', 'Read-only access. Can view VMs, containers, and stats but cannot make changes.')}
       </div>
 
       <h3>Creating a User</h3>
-      <p>Go to <strong>Users</strong> (admin only) and click <strong>Add User</strong>. Set a username, email, temporary password, and role. The user will be prompted to change their password on first login (if that setting is enabled).</p>
+      <p>Go to <strong>Users</strong> (admin only) and click <strong>Add User</strong>. Set a username, email, temporary password, and role. The user will be prompted to change their password on first login.</p>
 
       <h3>Two-Factor Authentication (TOTP)</h3>
       <p>Users can enable TOTP 2FA from their <strong>Profile</strong> page:</p>
       ${step(1, 'Go to Profile', '<p>Click your username in the top-right corner.</p>')}
       ${step(2, 'Enable TOTP', '<p>Click <strong>Enable Two-Factor Auth</strong>. A QR code is shown.</p>')}
-      ${step(3, 'Scan with authenticator app', '<p>Use Google Authenticator, Authy, or any TOTP app. Scan the QR code.</p>')}
-      ${step(4, 'Verify', '<p>Enter the 6-digit code from the app to confirm setup. From now on, login requires both password and TOTP code.</p>')}
+      ${step(3, 'Scan', '<p>Use Google Authenticator, Authy, or any TOTP app. Scan the QR code.</p>')}
+      ${step(4, 'Verify', '<p>Enter the 6-digit code to confirm setup. Login now requires both password and TOTP code.</p>')}
 
       <h3>API Keys</h3>
-      <p>Users can generate API keys for programmatic access from their Profile page. API keys are prefixed with <code>dpl0y_</code> and grant the same permissions as the user's role. Keys can be revoked at any time. Use them in the <code>Authorization: Bearer &lt;key&gt;</code> header.</p>
+      <p>Users can generate API keys for programmatic access from their Profile page. Keys are prefixed with <code>dpl0y_</code> and grant the same permissions as the user's role. Keys can be revoked at any time.</p>
 
-      ${infoBox('<strong>Admin tip:</strong> Go to Settings → Security → 2FA Overview to see which users have 2FA enabled. You can enforce 2FA for all users from the same page.')}
+      <h3>Password Policy</h3>
+      <p>Admins can configure password requirements in <strong>Settings → Security → Password Policy</strong>:</p>
+      <ul>
+        <li>Minimum length (default: 8)</li>
+        <li>Require uppercase, lowercase, digits, and special characters</li>
+        <li>Password expiry interval (force rotation after N days)</li>
+        <li>Prevent reuse of last N passwords</li>
+      </ul>
+
+      <h3>Session Management</h3>
+      <p>Admins can view and invalidate active sessions for any user via <strong>Users → (user) → Actions → Invalidate Sessions</strong>. Users can see their own sessions in Profile → Sessions tab.</p>
+
+      ${infoBox('<strong>Admin tip:</strong> Go to <strong>Settings → Security → 2FA Overview</strong> to see which users have 2FA enabled. You can enforce 2FA for all users from the same page.')}
     `
   },
   {
-    id: 'api-keys',
-    icon: '&#128273;',
-    title: 'API Keys &amp; Integration',
+    id: 'keyboard-shortcuts',
+    icon: '&#9000;',
+    title: 'Keyboard Shortcuts',
     html: `
-      <p>Depl0y exposes a full REST API that you can use for automation, CI/CD pipelines, and integrations with other tools.</p>
+      <p>Depl0y supports keyboard shortcuts to speed up common navigation and actions. Shortcuts are active when no text input is focused.</p>
 
-      <h3>Authentication Methods</h3>
-      <div class="tab-list">
-        <div class="tab-item"><strong>JWT Bearer Token</strong><span>Obtained via POST /api/v1/auth/login. Short-lived (30 min). Refresh using /api/v1/auth/refresh with the refresh token. Used by the web UI.</span></div>
-        <div class="tab-item"><strong>API Key</strong><span>Long-lived token generated in your Profile. Prefixed with <code>dpl0y_</code>. Pass as <code>Authorization: Bearer dpl0y_xxxx</code>. Revoke from Profile at any time.</span></div>
+      <h3>Global Navigation</h3>
+      <div class="shortcuts-table">
+        <div class="shortcut-row header-row">
+          <span>Shortcut</span>
+          <span>Action</span>
+        </div>
+        <div class="shortcut-row"><span><kbd>G</kbd> then <kbd>D</kbd></span><span>Go to Dashboard</span></div>
+        <div class="shortcut-row"><span><kbd>G</kbd> then <kbd>V</kbd></span><span>Go to Virtual Machines</span></div>
+        <div class="shortcut-row"><span><kbd>G</kbd> then <kbd>C</kbd></span><span>Go to Containers (LXC)</span></div>
+        <div class="shortcut-row"><span><kbd>G</kbd> then <kbd>N</kbd></span><span>Go to Nodes / Proxmox Hosts</span></div>
+        <div class="shortcut-row"><span><kbd>G</kbd> then <kbd>B</kbd></span><span>Go to Backup Manager</span></div>
+        <div class="shortcut-row"><span><kbd>G</kbd> then <kbd>T</kbd></span><span>Go to Tasks</span></div>
+        <div class="shortcut-row"><span><kbd>G</kbd> then <kbd>S</kbd></span><span>Go to Settings</span></div>
+        <div class="shortcut-row"><span><kbd>G</kbd> then <kbd>A</kbd></span><span>Go to API Explorer</span></div>
+        <div class="shortcut-row"><span><kbd>G</kbd> then <kbd>?</kbd></span><span>Show this keyboard shortcut reference</span></div>
       </div>
 
-      <h3>Generating an API Key</h3>
-      ${step(1, 'Open Profile', '<p>Click your username (top-right) → Profile → API Keys tab.</p>')}
-      ${step(2, 'Create key', '<p>Click <strong>New API Key</strong>, enter a descriptive name (e.g. "Terraform automation"), and click Create.</p>')}
-      ${step(3, 'Copy the key', '<p>The key is shown only once. Copy it immediately and store it securely.</p>')}
+      <h3>VM / Container Actions (when a VM is selected)</h3>
+      <div class="shortcuts-table">
+        <div class="shortcut-row header-row">
+          <span>Shortcut</span>
+          <span>Action</span>
+        </div>
+        <div class="shortcut-row"><span><kbd>S</kbd></span><span>Start VM/CT</span></div>
+        <div class="shortcut-row"><span><kbd>X</kbd></span><span>Stop VM/CT</span></div>
+        <div class="shortcut-row"><span><kbd>R</kbd></span><span>Reboot VM/CT</span></div>
+        <div class="shortcut-row"><span><kbd>C</kbd></span><span>Open Console</span></div>
+        <div class="shortcut-row"><span><kbd>E</kbd></span><span>Edit / Settings</span></div>
+        <div class="shortcut-row"><span><kbd>Delete</kbd></span><span>Delete VM/CT (with confirmation)</span></div>
+      </div>
 
-      <h3>Using the API</h3>
-      <p>Example: start a VM using an API key:</p>
-      ${codeBlock(`curl -X POST https://depl0y.example.com/api/v1/vms/123/start \\
-  -H "Authorization: Bearer dpl0y_your_key_here"`)}
+      <h3>UI Controls</h3>
+      <div class="shortcuts-table">
+        <div class="shortcut-row header-row">
+          <span>Shortcut</span>
+          <span>Action</span>
+        </div>
+        <div class="shortcut-row"><span><kbd>/</kbd></span><span>Focus global search</span></div>
+        <div class="shortcut-row"><span><kbd>Escape</kbd></span><span>Close modal / clear search</span></div>
+        <div class="shortcut-row"><span><kbd>?</kbd></span><span>Show keyboard shortcut help</span></div>
+        <div class="shortcut-row"><span><kbd>Ctrl</kbd> + <kbd>K</kbd></span><span>Open command palette</span></div>
+        <div class="shortcut-row"><span><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>D</kbd></span><span>Toggle dark/light mode</span></div>
+        <div class="shortcut-row"><span><kbd>F5</kbd></span><span>Refresh current view data</span></div>
+      </div>
 
-      <p>Example: list all Proxmox hosts:</p>
-      ${codeBlock(`curl https://depl0y.example.com/api/v1/proxmox/ \\
-  -H "Authorization: Bearer dpl0y_your_key_here"`)}
+      <h3>Tables &amp; Lists</h3>
+      <div class="shortcuts-table">
+        <div class="shortcut-row header-row">
+          <span>Shortcut</span>
+          <span>Action</span>
+        </div>
+        <div class="shortcut-row"><span><kbd>&#8593;</kbd> / <kbd>&#8595;</kbd></span><span>Navigate rows in a table</span></div>
+        <div class="shortcut-row"><span><kbd>Enter</kbd></span><span>Open selected row</span></div>
+        <div class="shortcut-row"><span><kbd>Space</kbd></span><span>Select/deselect row (for bulk operations)</span></div>
+      </div>
 
-      <h3>API Reference</h3>
-      <p>The full interactive API documentation is available at:</p>
-      <ul>
-        <li><a href="/api/v1/docs" target="_blank"><strong>Swagger UI</strong></a> — interactive, allows running API calls from the browser</li>
-        <li><a href="/api/v1/redoc" target="_blank"><strong>ReDoc</strong></a> — clean, read-only reference format</li>
-      </ul>
+      ${tipBox('<strong>Tip:</strong> Press <kbd>?</kbd> at any time while using Depl0y to show the in-app keyboard shortcut reference panel.')}
+    `
+  },
+  {
+    id: 'proxmox-hosts',
+    icon: '&#127970;',
+    title: 'Proxmox Hosts Setup',
+    html: `
+      <p>Before managing VMs, you must register at least one Proxmox host. Depl0y communicates with Proxmox exclusively via its REST API using an API token — no root SSH required.</p>
 
-      ${infoBox('<strong>Rate limiting:</strong> The API is rate-limited to 100 requests/minute per IP by default. This can be adjusted in <code>/etc/depl0y/config.env</code> by setting <code>RATE_LIMIT_PER_MINUTE</code>.')}
+      <h3>Creating a Proxmox API Token</h3>
+      ${step(1, 'Log into Proxmox Web UI', '<p>Navigate to <code>https://&lt;proxmox-ip&gt;:8006</code> and log in as root.</p>')}
+      ${step(2, 'Create an API token', `<p>Go to <strong>Datacenter → Permissions → API Tokens → Add</strong>. Set:</p><ul><li><strong>User:</strong> root@pam (or a dedicated user)</li><li><strong>Token ID:</strong> e.g. <code>depl0y</code></li><li><strong>Privilege Separation:</strong> Leave unchecked for full access</li></ul>`)}
+      ${step(3, 'Copy the token secret', '<p>The secret is shown only once. Copy both the token ID and secret.</p>')}
+
+      <h3>Token Format</h3>
+      ${codeBlock('PVEAPIToken=root@pam!depl0y=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx')}
+
+      <h3>Adding the Host in Depl0y</h3>
+      <ol>
+        <li>Go to <strong>Proxmox Hosts</strong> and click <strong>Add Host</strong>.</li>
+        <li>Enter the <strong>Host Address</strong> (e.g. <code>pve.example.com:8006</code> or an IP).</li>
+        <li>Paste the full <strong>API Token</strong> string.</li>
+        <li>Give it a friendly <strong>Display Name</strong>.</li>
+        <li>Click <strong>Save</strong>. Depl0y immediately tests the connection.</li>
+      </ol>
+
+      ${warnBox('<strong>Security:</strong> Depl0y stores API tokens encrypted at rest using Fernet symmetric encryption. Never share your <code>config.env</code> or database file.')}
+
+      <h3>Multiple Hosts &amp; Federation</h3>
+      <p>Depl0y supports any number of registered hosts. Each host is queried independently. The Federated Dashboard aggregates stats across all active hosts. You can mark a host as inactive to exclude it from live queries without deleting its records.</p>
     `
   },
   {
@@ -502,17 +704,17 @@ const SECTIONS = [
     icon: '&#128274;',
     title: 'Security Best Practices',
     html: `
-      <p>Depl0y stores privileged credentials (Proxmox API tokens) and provides powerful management capabilities. Follow these recommendations to keep your deployment secure.</p>
+      <p>Depl0y stores privileged credentials and provides powerful management capabilities. Follow these recommendations to keep your deployment secure.</p>
 
       <h3>Network Security</h3>
       <ul>
         <li><strong>Do not expose port 8000 to the internet.</strong> Run Depl0y behind a reverse proxy (nginx, Caddy, Traefik) with TLS termination.</li>
         <li>Use firewall rules to restrict Depl0y to your management VLAN only.</li>
         <li>Enable IP allowlist in <strong>Settings → Security</strong> to whitelist trusted management IPs.</li>
-        <li>Use GeoIP blocking to restrict access to your country if Depl0y must be internet-reachable.</li>
+        <li>Use GeoIP blocking to restrict access by country if Depl0y must be internet-reachable.</li>
       </ul>
 
-      <h3>Reverse Proxy with TLS (nginx example)</h3>
+      <h3>Reverse Proxy with TLS (nginx)</h3>
       ${codeBlock(`server {
     listen 443 ssl;
     server_name depl0y.example.com;
@@ -538,21 +740,14 @@ const SECTIONS = [
         <li>Enable TOTP 2FA for all admin accounts (Settings → Security → 2FA Overview).</li>
         <li>Use the <strong>Operator</strong> role for day-to-day users; reserve <strong>Admin</strong> for designated administrators only.</li>
         <li>Rotate API keys regularly. Revoke old keys from the Profile page.</li>
-        <li>Review the Audit Log (Settings → Audit Log) periodically for unexpected actions.</li>
-      </ul>
-
-      <h3>Proxmox Token Scope</h3>
-      <ul>
-        <li>Create a dedicated Proxmox user (e.g. <code>depl0y@pve</code>) rather than using <code>root@pam</code> if you want to limit what Depl0y can do.</li>
-        <li>Assign only the required Proxmox roles (e.g. <code>PVEAdmin</code> for full management, <code>PVEAuditor</code> for read-only).</li>
-        <li>Enable <strong>Privilege Separation</strong> on the token to further restrict its scope to the token's assigned roles.</li>
+        <li>Review the Audit Log periodically for unexpected actions.</li>
       </ul>
 
       <h3>Data at Rest</h3>
       <ul>
-        <li>Proxmox API tokens are stored encrypted using Fernet symmetric encryption. The key is in <code>/etc/depl0y/config.env</code> as <code>ENCRYPTION_KEY</code>.</li>
+        <li>Proxmox API tokens are encrypted using Fernet symmetric encryption. The key is in <code>/etc/depl0y/config.env</code>.</li>
         <li>Restrict access to <code>/etc/depl0y/config.env</code> and <code>/var/lib/depl0y/db/depl0y.db</code> to the <code>depl0y</code> service user only.</li>
-        <li>Back up the database file regularly. It contains all user accounts, host registrations, and settings.</li>
+        <li>Back up the database file regularly.</li>
       </ul>
     `
   },
@@ -565,55 +760,43 @@ const SECTIONS = [
 
       <h3>Proxmox Host Shows "Inactive" or "Connection Failed"</h3>
       <ol>
-        <li>Verify the host address includes the port: <code>pve.example.com:8006</code> or <code>192.168.1.10:8006</code>.</li>
-        <li>Confirm the API token is correct and includes the full prefix: <code>PVEAPIToken=root@pam!tokenid=secret</code>.</li>
-        <li>Test connectivity from the Depl0y server: <code>curl -k https://&lt;proxmox-ip&gt;:8006/api2/json/version</code></li>
-        <li>Check that the Proxmox firewall allows API access from the Depl0y server's IP.</li>
-        <li>In the Depl0y UI, click <strong>Test Connection</strong> on the host card to see the error detail.</li>
+        <li>Verify the host address includes the port: <code>pve.example.com:8006</code>.</li>
+        <li>Confirm the API token format: <code>PVEAPIToken=root@pam!tokenid=secret</code>.</li>
+        <li>Test connectivity from the Depl0y server: ${codeBlock('curl -k https://&lt;proxmox-ip&gt;:8006/api2/json/version')}</li>
+        <li>Click <strong>Test Connection</strong> on the host card to see the exact error.</li>
       </ol>
 
       <h3>VMs Not Appearing After Poll</h3>
       <ul>
-        <li>Click <strong>Poll</strong> (refresh) on the host card. Wait for the spinner to finish.</li>
-        <li>Verify the Proxmox token has at least <code>PVEAuditor</code> role on the target nodes.</li>
-        <li>Check backend logs: <code>sudo journalctl -u depl0y -f</code></li>
+        <li>Click <strong>Poll</strong> on the host card and wait for it to finish.</li>
+        <li>Verify the token has at least <code>PVEAuditor</code> role on the target nodes.</li>
+        <li>Check backend logs: ${codeBlock('sudo journalctl -u depl0y -f')}</li>
       </ul>
 
       <h3>noVNC Console Fails to Connect</h3>
       <ul>
-        <li>The console requires WebSocket support. Ensure your reverse proxy is configured to upgrade WebSocket connections (see Security section).</li>
+        <li>The console requires WebSocket support. Ensure your reverse proxy upgrades WebSocket connections.</li>
         <li>Verify the VM is running — the console tab shows an error if the VM is stopped.</li>
-        <li>Try a direct connection to Proxmox Web UI to confirm VNC works at the Proxmox level.</li>
       </ul>
 
       <h3>Cloud Image Deploy Fails</h3>
       <ul>
         <li>Run the setup script again: <code>sudo /tmp/enable_cloud_images.sh</code>. It is idempotent.</li>
-        <li>Check that the template VM ID exists on the target Proxmox node in the Templates section.</li>
-        <li>Verify the Proxmox storage pool selected for the new VM has enough free space.</li>
-        <li>Review the Proxmox task log for the clone/create task for the detailed error.</li>
+        <li>Check that the template VM exists on the target Proxmox node in the Templates section.</li>
+        <li>Verify the storage pool has enough free space for the new VM.</li>
       </ul>
 
       <h3>Viewing Backend Logs</h3>
-      ${codeBlock('sudo journalctl -u depl0y -n 100 --no-pager')}
-      <p>Or view the log file directly:</p>
-      ${codeBlock('sudo tail -f /var/log/depl0y/app.log')}
-
-      <h3>Restarting the Service</h3>
-      ${codeBlock('sudo systemctl restart depl0y\nsudo systemctl status depl0y')}
+      ${codeBlock('sudo journalctl -u depl0y -n 100 --no-pager\n\n# Or:\nsudo tail -f /var/log/depl0y/app.log')}
 
       <h3>Database Issues</h3>
-      <p>Use the <strong>Support → Diagnostics → Database Integrity</strong> check to run <code>PRAGMA integrity_check</code>. If corruption is found:</p>
+      <p>Use <strong>Support → Diagnostics → Database Integrity</strong> to run <code>PRAGMA integrity_check</code>. If corruption is found:</p>
       ${codeBlock('sudo systemctl stop depl0y\nsqlite3 /var/lib/depl0y/db/depl0y.db ".recover" | sqlite3 /var/lib/depl0y/db/depl0y_recovered.db\nsudo mv /var/lib/depl0y/db/depl0y.db /var/lib/depl0y/db/depl0y.db.bak\nsudo mv /var/lib/depl0y/db/depl0y_recovered.db /var/lib/depl0y/db/depl0y.db\nsudo systemctl start depl0y')}
 
-      <h3>Checking Configuration</h3>
-      ${codeBlock('sudo cat /etc/depl0y/config.env')}
-
       <h3>Getting Help</h3>
-      <p>If you cannot resolve the issue:</p>
       <ol>
         <li>Go to <router-link to="/support">Support</router-link> and download a Diagnostic Bundle.</li>
-        <li>Open a <a href="https://github.com/agit8or1/Depl0y/issues/new?template=bug_report.md" target="_blank">GitHub Issue</a> and attach the diagnostic JSON (redact any sensitive information before posting).</li>
+        <li>Open a <a href="https://github.com/agit8or1/Depl0y/issues/new?template=bug_report.md" target="_blank">GitHub Issue</a> and attach the diagnostic JSON.</li>
       </ol>
     `
   }
@@ -636,10 +819,9 @@ export default {
 
     const activeSectionTitle = computed(() => {
       const sec = sections.find(s => s.id === activeSection.value)
-      return sec ? sec.title : ''
+      return sec ? sec.title.replace(/<[^>]*>/g, '') : ''
     })
 
-    // Intersection observer for active section highlight
     let observer = null
 
     const scrollToSection = (id) => {
@@ -652,25 +834,20 @@ export default {
 
     const onSearch = () => {
       const q = searchQuery.value.trim().toLowerCase()
-      if (!q) {
-        searchResults.value = []
-        return
-      }
+      if (!q) { searchResults.value = []; return }
       const results = []
       sections.forEach((section) => {
-        // Strip HTML tags for plain text search
         const plain = section.html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ')
         const idx = plain.toLowerCase().indexOf(q)
         if (idx !== -1) {
           const start = Math.max(0, idx - 40)
           const end = Math.min(plain.length, idx + 80)
           let snippet = plain.slice(start, end)
-          // Highlight the match
           const re = new RegExp(`(${q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi')
           snippet = snippet.replace(re, '<mark>$1</mark>')
           results.push({
             sectionId: section.id,
-            sectionTitle: section.title,
+            sectionTitle: section.title.replace(/<[^>]*>/g, ''),
             snippet: (start > 0 ? '...' : '') + snippet + (end < plain.length ? '...' : ''),
             index: idx
           })
@@ -719,7 +896,6 @@ export default {
     }
 
     onMounted(() => {
-      // Observe section visibility
       observer = new IntersectionObserver(
         (entries) => {
           entries.forEach((entry) => {
@@ -728,9 +904,9 @@ export default {
             }
           })
         },
-        { rootMargin: '-20% 0px -70% 0px', threshold: 0 }
+        { rootMargin: '-15% 0px -70% 0px', threshold: 0 }
       )
-      Object.entries(sectionRefs.value).forEach(([id, el]) => {
+      Object.entries(sectionRefs.value).forEach(([, el]) => {
         if (el) observer.observe(el)
       })
     })
@@ -819,11 +995,7 @@ export default {
   background: var(--background, #f9fafb);
 }
 
-.search-icon {
-  font-size: 0.85rem;
-  opacity: 0.6;
-  flex-shrink: 0;
-}
+.search-icon { font-size: 0.85rem; opacity: 0.6; flex-shrink: 0; }
 
 .search-input {
   flex: 1;
@@ -835,9 +1007,7 @@ export default {
   min-width: 0;
 }
 
-.search-input::placeholder {
-  color: var(--text-secondary);
-}
+.search-input::placeholder { color: var(--text-secondary); }
 
 .search-clear {
   background: none;
@@ -865,9 +1035,7 @@ export default {
   gap: 0.2rem;
 }
 
-.search-hit:hover {
-  background: var(--background, #f9fafb);
-}
+.search-hit:hover { background: var(--background, #f9fafb); }
 
 .hit-section {
   font-weight: 600;
@@ -906,18 +1074,15 @@ export default {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.45rem 1rem;
+  padding: 0.42rem 1rem;
   text-decoration: none;
   color: var(--text-secondary);
-  font-size: 0.82rem;
+  font-size: 0.81rem;
   border-left: 3px solid transparent;
   transition: all 0.15s;
 }
 
-.toc-item:hover {
-  color: var(--text-primary);
-  background: var(--background, #f9fafb);
-}
+.toc-item:hover { color: var(--text-primary); background: var(--background, #f9fafb); }
 
 .toc-item.active {
   color: var(--primary-color);
@@ -926,16 +1091,9 @@ export default {
   font-weight: 600;
 }
 
-.toc-icon {
-  font-size: 0.95rem;
-  flex-shrink: 0;
-  width: 1.25rem;
-  text-align: center;
-}
+.toc-icon { font-size: 0.9rem; flex-shrink: 0; width: 1.2rem; text-align: center; }
 
-.toc-label {
-  line-height: 1.3;
-}
+.toc-label { line-height: 1.3; }
 
 .sidebar-footer {
   padding: 0.75rem 1rem;
@@ -951,9 +1109,7 @@ export default {
   text-decoration: none;
 }
 
-.sidebar-link:hover {
-  text-decoration: underline;
-}
+.sidebar-link:hover { text-decoration: underline; }
 
 /* ── Main ────────────────────────────────────────────────────────────────── */
 .doc-main {
@@ -970,6 +1126,7 @@ export default {
   padding: 0.75rem 0;
   border-bottom: 1px solid var(--border-color);
   margin-bottom: 1.5rem;
+  flex-wrap: wrap;
 }
 
 .sidebar-toggle {
@@ -991,27 +1148,13 @@ export default {
   color: var(--text-secondary);
 }
 
-.bc-link {
-  color: var(--primary-color);
-  text-decoration: none;
-}
-
-.bc-link:hover {
-  text-decoration: underline;
-}
-
-.bc-sep {
-  opacity: 0.5;
-}
-
-.bc-current {
-  color: var(--text-primary);
-}
+.bc-link { color: var(--primary-color); text-decoration: none; }
+.bc-link:hover { text-decoration: underline; }
+.bc-sep { opacity: 0.5; }
+.bc-current { color: var(--text-primary); }
 
 /* Page header */
-.doc-page-header {
-  margin-bottom: 2.5rem;
-}
+.doc-page-header { margin-bottom: 2.5rem; }
 
 .doc-page-header h1 {
   font-size: 2.25rem;
@@ -1023,12 +1166,6 @@ export default {
   font-size: 1.05rem;
   color: var(--text-secondary);
   margin: 0 0 1rem 0;
-}
-
-.doc-header-actions {
-  display: flex;
-  gap: 0.75rem;
-  flex-wrap: wrap;
 }
 
 /* Sections */
@@ -1057,9 +1194,7 @@ export default {
   flex: 1;
 }
 
-.section-icon {
-  font-size: 1.4rem;
-}
+.section-icon { font-size: 1.4rem; }
 
 .anchor-link {
   color: var(--text-secondary);
@@ -1069,12 +1204,9 @@ export default {
   transition: opacity 0.15s;
 }
 
-.anchor-link:hover {
-  opacity: 1;
-  color: var(--primary-color);
-}
+.anchor-link:hover { opacity: 1; color: var(--primary-color); }
 
-/* Section body styles (applied via :deep since content is v-html) */
+/* Section body — styles via :deep since content is v-html */
 .section-body :deep(h3) {
   font-size: 1.15rem;
   color: var(--text-primary);
@@ -1102,9 +1234,7 @@ export default {
   line-height: 1.7;
 }
 
-.section-body :deep(li) {
-  margin-bottom: 0.35rem;
-}
+.section-body :deep(li) { margin-bottom: 0.35rem; }
 
 .section-body :deep(a) {
   color: var(--primary-color);
@@ -1129,11 +1259,11 @@ export default {
 .section-body :deep(.code-block) {
   background: #1e293b;
   color: #e2e8f0;
-  padding: 1rem 1rem 1rem;
+  padding: 1rem 3rem 1rem 1rem;
   border-radius: 0.5rem;
   overflow-x: auto;
-  font-family: monospace;
-  font-size: 0.88rem;
+  font-family: 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 0.86rem;
   line-height: 1.6;
   margin: 0;
   white-space: pre;
@@ -1180,8 +1310,20 @@ export default {
   line-height: 1.6;
 }
 
+.section-body :deep(.tip-box) {
+  background: #f0fdf4;
+  border: 2px solid #22c55e;
+  border-radius: 0.5rem;
+  padding: 1rem 1.25rem;
+  margin: 1rem 0;
+  color: #15803d;
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+
 .section-body :deep(.info-box ul),
-.section-body :deep(.warn-box ul) {
+.section-body :deep(.warn-box ul),
+.section-body :deep(.tip-box ul) {
   margin: 0.5rem 0 0 1.25rem;
 }
 
@@ -1194,7 +1336,7 @@ export default {
 
 .section-body :deep(.tab-item) {
   display: grid;
-  grid-template-columns: 160px 1fr;
+  grid-template-columns: 170px 1fr;
   gap: 1rem;
   padding: 0.7rem 1rem;
   background: var(--background, #f9fafb);
@@ -1250,8 +1392,47 @@ export default {
   margin-bottom: 0.25rem;
 }
 
-.section-body :deep(.step-body p) {
-  margin: 0;
+.section-body :deep(.step-body p) { margin: 0; }
+
+/* Keyboard shortcuts table */
+.section-body :deep(.shortcuts-table) {
+  border: 1px solid var(--border-color);
+  border-radius: 0.4rem;
+  overflow: hidden;
+  margin: 0.75rem 0 1.5rem;
+  font-size: 0.875rem;
+}
+
+.section-body :deep(.shortcut-row) {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  gap: 1rem;
+  padding: 0.55rem 1rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.section-body :deep(.shortcut-row:last-child) { border-bottom: none; }
+
+.section-body :deep(.header-row) {
+  background: var(--surface, #f9fafb);
+  font-weight: 700;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.section-body :deep(kbd) {
+  display: inline-block;
+  padding: 0.15rem 0.4rem;
+  border: 1px solid var(--border-color);
+  border-bottom-width: 2px;
+  border-radius: 0.25rem;
+  font-family: monospace;
+  font-size: 0.82em;
+  background: var(--card-bg, white);
+  color: var(--text-primary);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.08);
 }
 
 /* Quick links card grid */
@@ -1275,14 +1456,9 @@ export default {
   box-shadow: var(--shadow-lg);
 }
 
-.doc-card.featured {
-  border-color: var(--primary-color);
-}
+.doc-card.featured { border-color: var(--primary-color); }
 
-.doc-icon {
-  font-size: 2rem;
-  margin-bottom: 0.75rem;
-}
+.doc-icon { font-size: 2rem; margin-bottom: 0.75rem; }
 
 .doc-card h3 {
   font-size: 1.05rem;
@@ -1297,11 +1473,7 @@ export default {
   margin: 0 0 1rem;
 }
 
-.doc-actions {
-  display: flex;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-}
+.doc-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
 
 /* Modal */
 .modal {
@@ -1333,10 +1505,7 @@ export default {
   align-items: center;
 }
 
-.modal-header h3 {
-  margin: 0;
-  font-size: 1.3rem;
-}
+.modal-header h3 { margin: 0; font-size: 1.3rem; }
 
 .btn-close {
   background: none;
@@ -1347,19 +1516,10 @@ export default {
   line-height: 1;
 }
 
-.modal-body {
-  padding: 1.5rem;
-}
+.modal-body { padding: 1.5rem; }
 
-.modal-body h4 {
-  font-size: 1rem;
-  color: var(--primary-color);
-  margin: 1.25rem 0 0.5rem;
-}
-
-.modal-body h4:first-child {
-  margin-top: 0;
-}
+.modal-body h4 { font-size: 1rem; color: var(--primary-color); margin: 1.25rem 0 0.5rem; }
+.modal-body h4:first-child { margin-top: 0; }
 
 .modal-body p {
   color: var(--text-secondary);
@@ -1388,15 +1548,12 @@ export default {
   color: var(--primary-color);
 }
 
-.code-block-wrap {
-  position: relative;
-  margin: 0.5rem 0;
-}
+.code-block-wrap { position: relative; margin: 0.5rem 0; }
 
 .code-block {
   background: #1e293b;
   color: #e2e8f0;
-  padding: 0.75rem 1rem;
+  padding: 0.75rem 3rem 0.75rem 1rem;
   border-radius: 0.375rem;
   font-family: monospace;
   font-size: 0.9rem;
@@ -1417,10 +1574,7 @@ export default {
   cursor: pointer;
 }
 
-.copy-btn:hover {
-  background: rgba(255,255,255,0.2);
-  color: #f8fafc;
-}
+.copy-btn:hover { background: rgba(255,255,255,0.2); color: #f8fafc; }
 
 .info-box {
   background: #dbeafe;
@@ -1433,9 +1587,30 @@ export default {
   line-height: 1.6;
 }
 
-.info-box ul {
-  margin: 0.5rem 0 0 1.25rem;
+.info-box ul { margin: 0.5rem 0 0 1.25rem; }
+
+/* Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.45rem 0.9rem;
+  border-radius: 0.35rem;
+  border: none;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  text-decoration: none;
+  transition: all 0.15s;
+  white-space: nowrap;
 }
+
+.btn-sm           { padding: 0.3rem 0.65rem; font-size: 0.8rem; }
+.btn-primary      { background: #3b82f6; color: white; }
+.btn-primary:hover:not(:disabled) { background: #2563eb; }
+.btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
+.btn-outline      { background: transparent; border: 1px solid var(--border-color, #e5e7eb); color: var(--text, #374151); }
+.btn-outline:hover { background: var(--surface, #f9fafb); }
 
 /* Responsive */
 @media (max-width: 900px) {
@@ -1451,13 +1626,9 @@ export default {
     transition: left 0.25s ease;
   }
 
-  .doc-sidebar.sidebar-open {
-    left: 0;
-  }
+  .doc-sidebar.sidebar-open { left: 0; }
 
-  .sidebar-close {
-    display: block;
-  }
+  .sidebar-close { display: block; }
 
   .sidebar-toggle {
     display: inline-flex;
@@ -1465,8 +1636,18 @@ export default {
     gap: 0.35rem;
   }
 
-  .doc-main {
-    padding: 0 1rem 2rem;
+  .doc-main { padding: 0 1rem 2rem; }
+
+  .doc-topbar { flex-wrap: wrap; }
+
+  .section-body :deep(.tab-item) {
+    grid-template-columns: 1fr;
+    gap: 0.25rem;
+  }
+
+  .section-body :deep(.shortcut-row) {
+    grid-template-columns: 1fr;
+    gap: 0.25rem;
   }
 }
 </style>

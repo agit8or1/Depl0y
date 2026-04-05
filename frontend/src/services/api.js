@@ -753,7 +753,7 @@ export default {
     getTaskLog: (id, upid) => api.get(`/pbs-mgmt/${id}/tasks/${encodeURIComponent(upid)}/log`),
   },
 
-  // PVE Firewall — IPSets, Aliases, rule updates
+  // PVE Firewall — IPSets, Aliases, Security Groups, cluster/node firewall
   pveFirewall: {
     // IPSets
     listIpsets: (h) => api.get(`/pve-firewall/${h}/ipsets`),
@@ -767,8 +767,26 @@ export default {
     createAlias: (h, data) => api.post(`/pve-firewall/${h}/aliases`, data),
     updateAlias: (h, name, data) => api.put(`/pve-firewall/${h}/aliases/${encodeURIComponent(name)}`, data),
     deleteAlias: (h, name) => api.delete(`/pve-firewall/${h}/aliases/${encodeURIComponent(name)}`),
-    // Cluster firewall rule update (enable/disable, reorder)
+    // Cluster firewall rules
     updateClusterFirewallRule: (h, pos, data) => api.put(`/pve-firewall/${h}/cluster/firewall/rules/${pos}`, data),
+    // Cluster firewall options
+    getClusterFirewallOptions: (h) => api.get(`/pve-firewall/${h}/cluster/firewall/options`),
+    setClusterFirewallOptions: (h, data) => api.put(`/pve-firewall/${h}/cluster/firewall/options`, data),
+    // Security Groups
+    listSecurityGroups: (h) => api.get(`/pve-firewall/${h}/security-groups`),
+    createSecurityGroup: (h, data) => api.post(`/pve-firewall/${h}/security-groups`, data),
+    deleteSecurityGroup: (h, name) => api.delete(`/pve-firewall/${h}/security-groups/${encodeURIComponent(name)}`),
+    listSecurityGroupRules: (h, name) => api.get(`/pve-firewall/${h}/security-groups/${encodeURIComponent(name)}`),
+    addSecurityGroupRule: (h, name, data) => api.post(`/pve-firewall/${h}/security-groups/${encodeURIComponent(name)}`, data),
+    updateSecurityGroupRule: (h, name, pos, data) => api.put(`/pve-firewall/${h}/security-groups/${encodeURIComponent(name)}/${pos}`, data),
+    deleteSecurityGroupRule: (h, name, pos) => api.delete(`/pve-firewall/${h}/security-groups/${encodeURIComponent(name)}/${pos}`),
+    // Node firewall
+    listNodeFirewallRules: (h, node) => api.get(`/pve-firewall/${h}/nodes/${node}/firewall/rules`),
+    addNodeFirewallRule: (h, node, data) => api.post(`/pve-firewall/${h}/nodes/${node}/firewall/rules`, data),
+    updateNodeFirewallRule: (h, node, pos, data) => api.put(`/pve-firewall/${h}/nodes/${node}/firewall/rules/${pos}`, data),
+    deleteNodeFirewallRule: (h, node, pos) => api.delete(`/pve-firewall/${h}/nodes/${node}/firewall/rules/${pos}`),
+    getNodeFirewallOptions: (h, node) => api.get(`/pve-firewall/${h}/nodes/${node}/firewall/options`),
+    setNodeFirewallOptions: (h, node, data) => api.put(`/pve-firewall/${h}/nodes/${node}/firewall/options`, data),
   },
 
   // Integrations — Slack, PagerDuty, InfluxDB, OIDC

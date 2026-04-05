@@ -1403,6 +1403,141 @@
       </div>
     </div>
 
+    <!-- ═══════════════════════════════════════════════════════════════════
+         ADVANCED (admin only)
+         ═══════════════════════════════════════════════════════════════════ -->
+    <div class="card" v-if="user && user.role === 'admin'">
+      <div class="card-header">
+        <h3>Advanced</h3>
+        <span class="adv-pill">Admin only</span>
+      </div>
+      <div class="card-body">
+
+        <!-- System Metrics -->
+        <div class="settings-group">
+          <h5 class="subsection-title">System Metrics</h5>
+          <p class="text-sm text-muted" style="margin-bottom:0.75rem;">Request counters and resource stats collected since last backend start.</p>
+          <button @click="fetchAdvancedMetrics" class="btn btn-outline" :disabled="advMetricsLoading" style="margin-bottom:0.75rem;">
+            {{ advMetricsLoading ? 'Loading...' : 'Load Metrics' }}
+          </button>
+          <div v-if="advMetrics" class="adv-metrics-grid">
+            <div class="adv-metric-card">
+              <span class="adv-metric-label">Total Requests</span>
+              <span class="adv-metric-value">{{ advMetrics.depl0y_requests_total?.toLocaleString() ?? '—' }}</span>
+            </div>
+            <div class="adv-metric-card">
+              <span class="adv-metric-label">Uptime</span>
+              <span class="adv-metric-value">{{ advFormatUptime(advMetrics.depl0y_uptime_seconds) }}</span>
+            </div>
+            <div class="adv-metric-card">
+              <span class="adv-metric-label">Users</span>
+              <span class="adv-metric-value">{{ advMetrics.depl0y_users_total ?? '—' }}</span>
+            </div>
+            <div class="adv-metric-card">
+              <span class="adv-metric-label">Proxmox Hosts</span>
+              <span class="adv-metric-value">{{ advMetrics.depl0y_proxmox_hosts_total ?? '—' }}</span>
+            </div>
+            <div class="adv-metric-card">
+              <span class="adv-metric-label">Active API Keys</span>
+              <span class="adv-metric-value">{{ advMetrics.depl0y_api_keys_total ?? '—' }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- DB Maintenance with DB size -->
+        <div class="settings-group" style="margin-top:1.75rem;">
+          <h5 class="subsection-title">Database Maintenance</h5>
+          <p class="text-sm text-muted" style="margin-bottom:0.75rem;">Optimise and inspect the SQLite database.</p>
+          <div v-if="advDbSize !== null" class="adv-dbsize-row">
+            <span class="text-sm text-muted">Current DB size:</span>
+            <span class="adv-dbsize-val">{{ advFormatBytes(advDbSize) }}</span>
+          </div>
+          <div class="action-buttons" style="margin-top:0.6rem;">
+            <button @click="advRunVacuum" class="btn btn-outline" :disabled="advVacuuming">
+              {{ advVacuuming ? 'Running...' : 'Vacuum DB' }}
+            </button>
+            <button @click="advClearCache" class="btn btn-outline" :disabled="advCacheClearBusy">
+              {{ advCacheClearBusy ? 'Clearing...' : 'Clear Cache' }}
+            </button>
+            <button @click="advLoadDbSize" class="btn btn-outline" :disabled="advDbSizeLoading">
+              {{ advDbSizeLoading ? 'Loading...' : 'Refresh DB Size' }}
+            </button>
+          </div>
+          <div v-if="advVacuumResult" :class="['info-box', advVacuumResult.success ? 'alert-success' : 'alert-danger']" style="margin-top:0.75rem;">
+            <span v-if="advVacuumResult.success">
+              Vacuum complete. Freed {{ advFormatBytes(advVacuumResult.freed_bytes) }}
+              ({{ advFormatBytes(advVacuumResult.size_before_bytes) }} &rarr; {{ advFormatBytes(advVacuumResult.size_after_bytes) }})
+            </span>
+            <span v-else>{{ advVacuumResult.message }}</span>
+          </div>
+          <div v-if="advCacheClearResult" class="info-box alert-success" style="margin-top:0.75rem;">
+            {{ advCacheClearResult }}
+          </div>
+        </div>
+
+        <!-- Restart service -->
+        <div class="settings-group" style="margin-top:1.75rem;">
+          <h5 class="subsection-title">Restart Backend Service</h5>
+          <div class="warning-box" style="margin-bottom:0.875rem;">
+            <div class="status-icon">⚠</div>
+            <div>
+              <p><strong>Service Restart</strong></p>
+              <p class="text-sm">The backend will restart. The UI will be temporarily unavailable for a few seconds. All active sessions remain valid.</p>
+            </div>
+          </div>
+          <button @click="advShowRestartModal = true" class="btn btn-danger" v-if="!advShowRestartModal">
+            Restart Backend
+          </button>
+        </div>
+
+        <!-- Export / Import settings -->
+        <div class="settings-group" style="margin-top:1.75rem;">
+          <h5 class="subsection-title">Export / Import Settings</h5>
+          <p class="text-sm text-muted" style="margin-bottom:0.75rem;">Download all system settings as a JSON file, or upload a previously exported file to restore them.</p>
+          <div class="action-buttons">
+            <button @click="advExportSettings" class="btn btn-outline" :disabled="advExporting">
+              {{ advExporting ? 'Exporting...' : 'Export Settings' }}
+            </button>
+            <label class="btn btn-outline adv-import-label" :class="{ 'btn-disabled': advImporting }">
+              {{ advImporting ? 'Importing...' : 'Import Settings' }}
+              <input
+                type="file"
+                accept=".json,application/json"
+                style="display:none;"
+                @change="advImportSettings"
+                :disabled="advImporting"
+              />
+            </label>
+          </div>
+          <div v-if="advImportResult" :class="['info-box', advImportResult.ok ? 'alert-success' : 'alert-danger']" style="margin-top:0.75rem;">
+            {{ advImportResult.message }}
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Restart Confirmation Modal -->
+    <div v-if="advShowRestartModal" class="modal" @click="advShowRestartModal = false">
+      <div class="modal-content" @click.stop>
+        <div class="modal-header">
+          <h3>Restart Backend Service</h3>
+          <button @click="advShowRestartModal = false" class="btn-close">×</button>
+        </div>
+        <div class="modal-body">
+          <p>This will restart the Depl0y backend process. The API will be unavailable for a few seconds and the page will reload automatically.</p>
+          <p class="text-sm text-muted" style="margin-top:0.5rem;">The restart is scheduled 3 seconds after you confirm, giving this request time to complete.</p>
+          <div v-if="advRestartError" class="error-message" style="margin-top:0.75rem;">{{ advRestartError }}</div>
+        </div>
+        <div class="modal-footer">
+          <button @click="advShowRestartModal = false" class="btn btn-outline" :disabled="advRestarting">Cancel</button>
+          <button @click="advDoRestart" class="btn btn-danger" :disabled="advRestarting">
+            {{ advRestarting ? `Restarting... (${advRestartCountdown}s)` : 'Confirm Restart' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- About Section -->
     <div class="card">
       <div class="card-header">
@@ -2897,6 +3032,173 @@ export default {
       }
     }
 
+    // ── Advanced tab ─────────────────────────────────────────────────────────
+    const advMetrics = ref(null)
+    const advMetricsLoading = ref(false)
+    const advDbSize = ref(null)
+    const advDbSizeLoading = ref(false)
+    const advVacuuming = ref(false)
+    const advVacuumResult = ref(null)
+    const advCacheClearBusy = ref(false)
+    const advCacheClearResult = ref(null)
+    const advExporting = ref(false)
+    const advImporting = ref(false)
+    const advImportResult = ref(null)
+    const advShowRestartModal = ref(false)
+    const advRestarting = ref(false)
+    const advRestartCountdown = ref(5)
+    const advRestartError = ref(null)
+    let _advRestartTimer = null
+
+    const advFormatBytes = (bytes) => {
+      if (!bytes) return '0 B'
+      const k = 1024
+      const sizes = ['B', 'KB', 'MB', 'GB']
+      const i = Math.floor(Math.log(bytes) / Math.log(k))
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
+    }
+
+    const advFormatUptime = (seconds) => {
+      if (!seconds) return '—'
+      const d = Math.floor(seconds / 86400)
+      const h = Math.floor((seconds % 86400) / 3600)
+      const m = Math.floor((seconds % 3600) / 60)
+      if (d > 0) return `${d}d ${h}h ${m}m`
+      if (h > 0) return `${h}h ${m}m`
+      return `${m}m`
+    }
+
+    const fetchAdvancedMetrics = async () => {
+      advMetricsLoading.value = true
+      try {
+        const res = await api.system.getMetrics()
+        advMetrics.value = res.data
+      } catch (e) {
+        toast.error('Failed to load metrics')
+      } finally {
+        advMetricsLoading.value = false
+      }
+    }
+
+    const advLoadDbSize = async () => {
+      advDbSizeLoading.value = true
+      try {
+        const res = await api.system.getDiagnostics()
+        advDbSize.value = res.data.db_size_bytes ?? null
+      } catch { /* ignore */ } finally {
+        advDbSizeLoading.value = false
+      }
+    }
+
+    const advRunVacuum = async () => {
+      advVacuuming.value = true
+      advVacuumResult.value = null
+      try {
+        const res = await api.system.dbVacuum()
+        advVacuumResult.value = res.data
+        if (res.data.success) {
+          toast.success('Vacuum completed successfully')
+          advDbSize.value = res.data.size_after_bytes
+        }
+      } catch (e) {
+        advVacuumResult.value = { success: false, message: e.response?.data?.detail || 'Vacuum failed' }
+        toast.error('Vacuum failed')
+      } finally {
+        advVacuuming.value = false
+      }
+    }
+
+    const advClearCache = async () => {
+      advCacheClearBusy.value = true
+      advCacheClearResult.value = null
+      try {
+        const res = await api.system.clearCache()
+        advCacheClearResult.value = res.data.message || 'Cache cleared'
+        toast.success('Cache cleared')
+        setTimeout(() => { advCacheClearResult.value = null }, 4000)
+      } catch (e) {
+        toast.error('Failed to clear cache')
+      } finally {
+        advCacheClearBusy.value = false
+      }
+    }
+
+    const advExportSettings = async () => {
+      advExporting.value = true
+      try {
+        const res = await api.system.getSettings()
+        const json = JSON.stringify(res.data, null, 2)
+        const blob = new Blob([json], { type: 'application/json' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+        a.download = `depl0y-settings-${ts}.json`
+        document.body.appendChild(a)
+        a.click()
+        a.remove()
+        URL.revokeObjectURL(url)
+        toast.success('Settings exported')
+      } catch (e) {
+        toast.error('Failed to export settings')
+      } finally {
+        advExporting.value = false
+      }
+    }
+
+    const advImportSettings = async (event) => {
+      const file = event.target.files?.[0]
+      if (!file) return
+      advImporting.value = true
+      advImportResult.value = null
+      try {
+        const text = await file.text()
+        const parsed = JSON.parse(text)
+        if (typeof parsed !== 'object' || Array.isArray(parsed)) {
+          throw new Error('Invalid settings file: expected a JSON object')
+        }
+        // Filter to string values only (SystemSettings model requires string values)
+        const payload = {}
+        for (const [k, v] of Object.entries(parsed)) {
+          if (v !== null && v !== undefined) payload[k] = String(v)
+        }
+        await api.system.updateSettings(payload)
+        advImportResult.value = { ok: true, message: `Imported ${Object.keys(payload).length} settings successfully. Refresh the page to apply all changes.` }
+        toast.success('Settings imported')
+        // Reload general settings to pick up changes
+        fetchGeneralSettings()
+      } catch (e) {
+        const msg = e.response?.data?.detail || e.message || 'Import failed'
+        advImportResult.value = { ok: false, message: msg }
+        toast.error('Import failed: ' + msg)
+      } finally {
+        advImporting.value = false
+        // Reset file input so the same file can be re-selected
+        event.target.value = ''
+      }
+    }
+
+    const advDoRestart = async () => {
+      advRestarting.value = true
+      advRestartError.value = null
+      advRestartCountdown.value = 5
+      try {
+        await api.system.restartBackend()
+        toast.warning('Backend is restarting…')
+        _advRestartTimer = setInterval(() => {
+          advRestartCountdown.value--
+          if (advRestartCountdown.value <= 0) {
+            clearInterval(_advRestartTimer)
+            window.location.reload()
+          }
+        }, 1000)
+      } catch (e) {
+        advRestartError.value = e.response?.data?.detail || 'Failed to trigger restart'
+        toast.error('Failed to restart backend')
+        advRestarting.value = false
+      }
+    }
+
     onMounted(() => {
       fetchUser()
       fetchSystemInfo()
@@ -3093,12 +3395,104 @@ export default {
       clearCache,
       saveLogLevel,
       restartBackend,
+      // Advanced tab
+      advMetrics,
+      advMetricsLoading,
+      advDbSize,
+      advDbSizeLoading,
+      advVacuuming,
+      advVacuumResult,
+      advCacheClearBusy,
+      advCacheClearResult,
+      advExporting,
+      advImporting,
+      advImportResult,
+      advShowRestartModal,
+      advRestarting,
+      advRestartCountdown,
+      advRestartError,
+      advFormatBytes,
+      advFormatUptime,
+      fetchAdvancedMetrics,
+      advLoadDbSize,
+      advRunVacuum,
+      advClearCache,
+      advExportSettings,
+      advImportSettings,
+      advDoRestart,
     }
   }
 }
 </script>
 
 <style scoped>
+/* ── Advanced tab ─────────────────────────────────────────────────────────── */
+.adv-pill {
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  background: rgba(245,158,11,0.15);
+  color: #d97706;
+  padding: 0.15rem 0.5rem;
+  border-radius: 9999px;
+  margin-left: 0.5rem;
+}
+
+.adv-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 0.625rem;
+}
+
+.adv-metric-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.75rem 1rem;
+  background: var(--background);
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+}
+
+.adv-metric-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+}
+
+.adv-metric-value {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.adv-dbsize-row {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  margin-bottom: 0.25rem;
+}
+
+.adv-dbsize-val {
+  font-weight: 700;
+  font-size: 0.875rem;
+  color: var(--primary-color);
+}
+
+.adv-import-label {
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.adv-import-label.btn-disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
 /* ── Theme toggle ─────────────────────────────────────────────────────────── */
 .theme-options {
   display: flex;

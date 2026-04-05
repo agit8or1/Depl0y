@@ -233,17 +233,28 @@
           </div>
           <div class="nd-header">
             <div class="nd-name">{{ nd.node }}</div>
-            <span class="nd-host-label">{{ nd.hostName }}</span>
+            <span :class="['nd-status-dot', nd.status === 'online' ? 'nd-status-dot--online' : 'nd-status-dot--offline']"></span>
           </div>
+          <div class="nd-host-label">{{ nd.hostName }}</div>
           <div class="nd-counts">
             <span class="nd-count-pill nd-count-pill--vm">&#128421; {{ nd.vms }} VM</span>
             <span class="nd-count-pill nd-count-pill--lxc">&#128230; {{ nd.lxcs }} LXC</span>
+          </div>
+          <div v-if="nd.cpuPct !== null" class="nd-resource-row">
+            <span class="nd-resource-label">CPU</span>
+            <div class="nd-mini-bar"><div class="nd-mini-fill" :style="{ width: nd.cpuPct + '%', background: nd.cpuPct > 80 ? '#ef4444' : nd.cpuPct > 60 ? '#f59e0b' : '#10b981' }"></div></div>
+            <span class="nd-resource-val">{{ nd.cpuPct }}%</span>
+          </div>
+          <div v-if="nd.memPct !== null" class="nd-resource-row">
+            <span class="nd-resource-label">RAM</span>
+            <div class="nd-mini-bar"><div class="nd-mini-fill" :style="{ width: nd.memPct + '%', background: nd.memPct > 80 ? '#ef4444' : nd.memPct > 60 ? '#f59e0b' : '#10b981' }"></div></div>
+            <span class="nd-resource-val">{{ nd.memPct }}%</span>
           </div>
           <div class="nd-bar-wrap">
             <div class="nd-bar" :style="{ width: nd.guestSharePct + '%' }"
               :class="nd.imbalanced ? 'nd-bar--warn' : 'nd-bar--ok'"></div>
           </div>
-          <div class="nd-share-label text-xs text-muted">{{ nd.guestSharePct }}% of cluster guests</div>
+          <div class="nd-share-label">{{ nd.guestSharePct }}% of cluster guests</div>
 
           <!-- Tooltip on hover -->
           <div v-if="hoveredNode === nd" class="nd-tooltip">
@@ -1123,8 +1134,10 @@ const vmPausedSlice = computed(() => {
 // ── Node distribution map ──────────────────────────────────────────────────
 const nodeDistribution = computed(() => {
   const map = {}
+
+  // Seed ALL cluster nodes first (type='node') so empty nodes appear too
   for (const r of allResources.value) {
-    if ((r.type === 'qemu' || r.type === 'lxc') && r.node) {
+    if (r.type === 'node' && r.node) {
       const key = `${r._hostId}-${r.node}`
       if (!map[key]) {
         map[key] = {
@@ -1133,6 +1146,29 @@ const nodeDistribution = computed(() => {
           node: r.node,
           vms: 0,
           lxcs: 0,
+          cpuPct: r.cpu != null ? Math.round(r.cpu * 100) : null,
+          memPct: (r.mem && r.maxmem) ? Math.round((r.mem / r.maxmem) * 100) : null,
+          status: r.status || 'online',
+        }
+      }
+    }
+  }
+
+  // Count guests per node
+  for (const r of allResources.value) {
+    if ((r.type === 'qemu' || r.type === 'lxc') && r.node) {
+      const key = `${r._hostId}-${r.node}`
+      if (!map[key]) {
+        // Guest on a node not listed as type=node (shouldn't happen, but handle gracefully)
+        map[key] = {
+          hostId: r._hostId,
+          hostName: r._hostName || '',
+          node: r.node,
+          vms: 0,
+          lxcs: 0,
+          cpuPct: null,
+          memPct: null,
+          status: 'online',
         }
       }
       if (r.type === 'qemu') map[key].vms++
@@ -1854,7 +1890,7 @@ onUnmounted(() => {
 .ring-fill--ok      { stroke: #10b981; }
 .ring-fill--warning { stroke: #f59e0b; }
 .ring-fill--danger  { stroke: #ef4444; }
-.ring-fill--low     { stroke: var(--text-muted, #888); }
+.ring-fill--low     { stroke: #9aabb8; }
 
 .ring-value {
   font-size: 20px;
@@ -1865,7 +1901,7 @@ onUnmounted(() => {
 
 .ring-label {
   font-size: 9px;
-  fill: var(--text-muted, #888);
+  fill: #9aabb8;
   font-family: inherit;
 }
 
@@ -1884,7 +1920,7 @@ onUnmounted(() => {
 
 .eff-label {
   font-size: 0.75rem;
-  color: var(--text-muted, #888);
+  color: #9aabb8;
   min-width: 52px;
 }
 
@@ -1958,7 +1994,7 @@ onUnmounted(() => {
 
 .donut-center-sub {
   font-size: 8px;
-  fill: var(--text-muted, #888);
+  fill: #9aabb8;
   font-family: inherit;
 }
 
@@ -2029,7 +2065,7 @@ onUnmounted(() => {
 
 .pie-center-sub {
   font-size: 8px;
-  fill: var(--text-muted, #888);
+  fill: #9aabb8;
   font-family: inherit;
 }
 
@@ -2057,7 +2093,7 @@ onUnmounted(() => {
 .vd-dot--stopped { background: #6b7280; }
 .vd-dot--paused  { background: #f59e0b; }
 
-.vd-label { color: var(--text-muted, #888); min-width: 52px; }
+.vd-label { color: #9aabb8; min-width: 52px; }
 .vd-val   { font-weight: 600; color: var(--text-primary); margin-left: auto; }
 
 .vd-sep {
@@ -2097,7 +2133,7 @@ onUnmounted(() => {
 
 .ss-label {
   font-size: 0.7rem;
-  color: var(--text-muted, #888);
+  color: #9aabb8;
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
@@ -2110,7 +2146,7 @@ onUnmounted(() => {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--text-muted, #888);
+  color: #9aabb8;
   margin-bottom: 0.5rem;
 }
 
@@ -2157,8 +2193,11 @@ onUnmounted(() => {
 
 .nd-header {
   display: flex;
-  flex-direction: column;
-  gap: 0.1rem;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.1rem;
 }
 
 .nd-name {
@@ -2170,8 +2209,35 @@ onUnmounted(() => {
 
 .nd-host-label {
   font-size: 0.7rem;
-  color: var(--text-muted, #888);
+  color: #9aabb8;
+  margin-bottom: 0.25rem;
 }
+
+.nd-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.nd-status-dot--online  { background: #10b981; box-shadow: 0 0 4px #10b981; }
+.nd-status-dot--offline { background: #ef4444; }
+
+.nd-resource-row {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.3rem;
+}
+.nd-resource-label { font-size: 0.65rem; color: #9aabb8; min-width: 26px; }
+.nd-resource-val   { font-size: 0.65rem; color: #c8d8e8; min-width: 28px; text-align: right; }
+.nd-mini-bar {
+  flex: 1;
+  height: 4px;
+  background: rgba(255,255,255,0.1);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.nd-mini-fill { height: 100%; border-radius: 2px; transition: width 0.3s; }
 
 .nd-counts {
   display: flex;
@@ -2208,7 +2274,7 @@ onUnmounted(() => {
 .nd-bar--ok   { background: #6366f1; }
 .nd-bar--warn { background: #f59e0b; }
 
-.nd-share-label { font-size: 0.68rem; }
+.nd-share-label { font-size: 0.68rem; color: #9aabb8; margin-top: 0.2rem; }
 
 /* Node tooltip */
 .nd-tooltip {
@@ -2239,7 +2305,7 @@ onUnmounted(() => {
   display: flex;
   justify-content: space-between;
   font-size: 0.8rem;
-  color: var(--text-muted, #888);
+  color: #9aabb8;
   margin-bottom: 0.15rem;
 }
 
@@ -2368,7 +2434,7 @@ onUnmounted(() => {
   border: 1px solid var(--border-color);
   border-radius: 4px;
   background: transparent;
-  color: var(--text-muted, #888);
+  color: #9aabb8;
   cursor: pointer;
   transition: all 0.15s;
 }
@@ -2398,7 +2464,7 @@ onUnmounted(() => {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--text-muted, #888);
+  color: #9aabb8;
 }
 
 .sparkline-wrap {
@@ -2432,7 +2498,7 @@ onUnmounted(() => {
 
 .sp-stat {
   font-size: 0.75rem;
-  color: var(--text-muted, #888);
+  color: #9aabb8;
 }
 
 .sp-stat strong { color: var(--text-primary); }
@@ -2510,7 +2576,7 @@ onUnmounted(() => {
 .node-group-count {
   margin-left: auto;
   font-size: 0.72rem;
-  color: var(--text-muted, #888);
+  color: #9aabb8;
   font-weight: 400;
 }
 
@@ -2565,7 +2631,7 @@ onUnmounted(() => {
 /* ── Top VMs table ───────────────────────────────────────────────────────── */
 .top-vms-refresh-label {
   font-size: 0.75rem;
-  color: var(--text-muted, #888);
+  color: #9aabb8;
   margin-right: 0.5rem;
 }
 
@@ -2614,7 +2680,7 @@ onUnmounted(() => {
 
 .collapse-chevron {
   font-size: 0.75rem;
-  color: var(--text-muted, #888);
+  color: #9aabb8;
   transition: transform 0.2s ease;
   display: inline-block;
   transform: rotate(-90deg);
@@ -2652,7 +2718,7 @@ onUnmounted(() => {
 }
 
 .network-node-title {
-  color: var(--text-muted, #888);
+  color: #9aabb8;
   margin-bottom: 0.25rem;
 }
 
@@ -2704,7 +2770,7 @@ onUnmounted(() => {
 }
 
 .storage-node-title {
-  color: var(--text-muted, #888);
+  color: #9aabb8;
   margin-bottom: 0.25rem;
 }
 
@@ -2763,7 +2829,7 @@ onUnmounted(() => {
   font-size: 0.68rem;
   border-radius: 4px;
   background: var(--bg-secondary, #2a2a3e);
-  color: var(--text-muted, #888);
+  color: #9aabb8;
   white-space: nowrap;
 }
 
@@ -2781,7 +2847,7 @@ onUnmounted(() => {
 .pl-2  { padding-left: 0.5rem; }
 .text-xs  { font-size: 0.75rem; }
 .text-sm  { font-size: 0.875rem; }
-.text-muted   { color: var(--text-muted, #888); }
+.text-muted   { color: #9aabb8; }
 .text-center  { text-align: center; }
 .flex         { display: flex; }
 .gap-1        { gap: 0.5rem; }

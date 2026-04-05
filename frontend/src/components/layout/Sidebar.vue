@@ -301,7 +301,7 @@ export default {
   display: none;
   background: none;
   border: none;
-  color: rgba(255, 255, 255, 0.6);
+  color: #c0cfe4;
   font-size: 1.2rem;
   cursor: pointer;
   padding: 0.25rem;
@@ -330,7 +330,7 @@ export default {
 
 .tagline {
   font-size: 0.75rem;
-  color: rgba(255, 255, 255, 0.7);
+  color: rgba(255, 255, 255, 0.85);
   margin-top: 0.25rem;
 }
 
@@ -345,21 +345,22 @@ export default {
   display: flex;
   align-items: center;
   padding: 0.75rem 1.5rem;
-  color: rgba(255, 255, 255, 0.8);
+  color: #d1d9e6;
   text-decoration: none;
   transition: all 0.2s;
   gap: 0.75rem;
 }
 
 .nav-item:hover {
-  background-color: rgba(255, 255, 255, 0.1);
-  color: white;
+  background-color: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
 }
 
 .nav-item.router-link-active {
-  background-color: rgba(59, 130, 246, 0.15);
-  color: white;
-  border-left: 3px solid #3b82f6;
+  background-color: rgba(59, 130, 246, 0.22);
+  color: #ffffff;
+  border-left: 3px solid #60a5fa;
+  font-weight: 500;
 }
 
 .icon {
@@ -373,12 +374,12 @@ export default {
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.38);
+  color: #7a8fa8;
   margin-top: 0.5rem;
 }
 
 .nav-item-heart {
-  color: rgba(255, 200, 200, 0.85);
+  color: #f9b8b8;
 }
 
 .nav-item-heart:hover {
@@ -387,9 +388,9 @@ export default {
 
 .sidebar-footer {
   padding: 1rem 1.5rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
   font-size: 0.75rem;
-  color: rgba(255, 255, 255, 0.55);
+  color: #8a9ab8;
   flex-shrink: 0;
 }
 

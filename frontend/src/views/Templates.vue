@@ -436,6 +436,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/services/api'
+import toast from '@/plugins/toast.js'
 
 const router = useRouter()
 
@@ -730,7 +731,7 @@ async function loadHosts() {
     hosts.value = res.data || []
   } catch (err) {
     error.value = 'Failed to load Proxmox hosts.'
-    console.error(err)
+    toast.error('Failed to load Proxmox hosts')
   }
 }
 

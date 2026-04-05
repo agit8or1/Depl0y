@@ -152,7 +152,10 @@
         <template v-else>
           <div class="tab-header">
             <h3>Backup Schedules</h3>
-            <button @click="showAddScheduleModal = true" class="btn btn-primary">+ Add Schedule</button>
+            <div class="flex gap-1">
+              <button @click="fetchSchedules" class="btn btn-outline btn-sm" :disabled="loadingSchedules">Refresh</button>
+              <button @click="openCreateScheduleModal" class="btn btn-primary">+ Add Schedule</button>
+            </div>
           </div>
 
           <div v-if="loadingSchedules" class="loading-spinner"></div>
@@ -168,10 +171,13 @@
                   <th>ID</th>
                   <th>Enabled</th>
                   <th>Schedule</th>
+                  <th>Node</th>
                   <th>VMs</th>
                   <th>Storage</th>
                   <th>Mode</th>
+                  <th>Compress</th>
                   <th>Keep Last</th>
+                  <th>Email</th>
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -179,17 +185,30 @@
                 <tr v-for="sched in schedules" :key="sched.id">
                   <td><strong>{{ sched.id }}</strong></td>
                   <td>
-                    <span :class="['badge', sched.enabled == 1 ? 'badge-success' : 'badge-danger']">
+                    <button
+                      @click="toggleScheduleEnabled(sched)"
+                      :class="['toggle-btn', sched.enabled == 1 ? 'toggle-btn--on' : 'toggle-btn--off']"
+                      :title="sched.enabled == 1 ? 'Click to disable' : 'Click to enable'"
+                    >
                       {{ sched.enabled == 1 ? 'Enabled' : 'Disabled' }}
-                    </span>
+                    </button>
                   </td>
-                  <td><code>{{ sched.schedule || sched.dow + ' ' + sched.starttime }}</code></td>
-                  <td class="text-sm">{{ sched.vmid || 'all' }}</td>
+                  <td>
+                    <code class="cron-code">{{ sched.schedule || (sched.dow ? sched.dow + ' ' + sched.starttime : '—') }}</code>
+                    <div class="text-xs text-muted">{{ describeCron(sched.schedule || '') }}</div>
+                  </td>
+                  <td class="text-sm">{{ sched.node || 'all' }}</td>
+                  <td class="text-sm">
+                    <span v-if="!sched.vmid || sched.vmid === 'all'" class="badge badge-info">All VMs</span>
+                    <span v-else class="vm-id-preview" :title="sched.vmid">{{ vmidPreview(sched.vmid) }}</span>
+                  </td>
                   <td>{{ sched.storage || '—' }}</td>
                   <td>
                     <span class="badge badge-info">{{ sched.mode || 'snapshot' }}</span>
                   </td>
+                  <td class="text-sm">{{ sched.compress || '—' }}</td>
                   <td>{{ sched['keep-last'] || sched.maxfiles || '—' }}</td>
+                  <td class="text-sm text-muted">{{ sched.mailnotification || '—' }}</td>
                   <td class="actions-cell">
                     <button
                       @click="runScheduleNow(sched)"
@@ -199,6 +218,7 @@
                     >
                       {{ runningSchedule === sched.id ? 'Starting...' : 'Run Now' }}
                     </button>
+                    <button @click="openEditScheduleModal(sched)" class="btn btn-outline btn-sm">Edit</button>
                     <button @click="deleteSchedule(sched.id)" class="btn btn-danger btn-sm">Delete</button>
                   </td>
                 </tr>
@@ -208,7 +228,7 @@
 
           <!-- Run Now: Node selector modal -->
           <div v-if="showRunNowModal" class="modal" @click="showRunNowModal = false">
-            <div class="modal-content" @click.stop style="max-width: 400px;">
+            <div class="modal-content" @click.stop style="max-width: 420px;">
               <div class="modal-header">
                 <h3>Run Backup Now</h3>
                 <button @click="showRunNowModal = false" class="btn-close">×</button>
@@ -336,63 +356,364 @@
           </div>
         </template>
       </div>
+
+      <!-- History Tab -->
+      <div v-if="activeTab === 'History'" class="tab-content">
+        <div v-if="!selectedHostId" class="text-center text-muted" style="padding: 2rem;">
+          <p>Select a Proxmox host above to view backup history.</p>
+        </div>
+        <template v-else>
+          <div class="tab-header">
+            <h3>Backup History</h3>
+            <div class="flex gap-1 align-center">
+              <button @click="fetchHistory" class="btn btn-outline btn-sm" :disabled="loadingHistory">
+                {{ loadingHistory ? 'Loading...' : 'Refresh' }}
+              </button>
+              <button @click="exportHistoryCSV" class="btn btn-outline btn-sm" :disabled="historyTasks.length === 0">
+                Export CSV
+              </button>
+            </div>
+          </div>
+
+          <!-- Filters -->
+          <div class="history-filters">
+            <div class="filter-group">
+              <label class="filter-label">Node</label>
+              <select v-model="historyFilter.node" class="form-control form-control-sm" @change="fetchHistory">
+                <option value="">All nodes</option>
+                <option v-for="node in nodes" :key="node.node || node.name" :value="node.node || node.name">
+                  {{ node.node || node.name }}
+                </option>
+              </select>
+            </div>
+            <div class="filter-group">
+              <label class="filter-label">VM ID</label>
+              <input v-model="historyFilter.vmid" class="form-control form-control-sm" placeholder="e.g. 100" @input="applyHistoryFilter" />
+            </div>
+            <div class="filter-group">
+              <label class="filter-label">Status</label>
+              <select v-model="historyFilter.status" class="form-control form-control-sm" @change="applyHistoryFilter">
+                <option value="">All</option>
+                <option value="OK">Success</option>
+                <option value="failed">Failed</option>
+                <option value="running">Running</option>
+              </select>
+            </div>
+            <div class="filter-group">
+              <label class="filter-label">Search</label>
+              <input v-model="historyFilter.search" class="form-control form-control-sm" placeholder="Search UPID..." @input="applyHistoryFilter" />
+            </div>
+          </div>
+
+          <div v-if="loadingHistory" class="loading-spinner" style="margin: 2rem 0;"></div>
+
+          <div v-else-if="filteredHistory.length === 0" class="text-center text-muted" style="padding: 2rem;">
+            <p>No backup tasks found.</p>
+          </div>
+
+          <div v-else>
+            <!-- Storage per VM chart -->
+            <div v-if="vmStorageStats.length > 0" class="storage-chart-section">
+              <h4 class="section-subtitle">Backup Storage Usage per VM</h4>
+              <div class="vm-storage-bars">
+                <div v-for="stat in vmStorageStats.slice(0, 15)" :key="stat.vmid" class="vm-bar-row">
+                  <span class="vm-bar-label">VM {{ stat.vmid }}</span>
+                  <div class="vm-bar-track">
+                    <div
+                      class="vm-bar-fill"
+                      :style="{ width: (stat.count / vmStorageStats[0].count * 100) + '%' }"
+                    ></div>
+                  </div>
+                  <span class="vm-bar-count text-sm text-muted">{{ stat.count }} backup{{ stat.count !== 1 ? 's' : '' }}</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="table-container" style="margin-top: 1rem;">
+              <table class="table table-sm">
+                <thead>
+                  <tr>
+                    <th>Start Time</th>
+                    <th>Node</th>
+                    <th>VM ID</th>
+                    <th>Status</th>
+                    <th>Exit</th>
+                    <th>Duration</th>
+                    <th>User</th>
+                    <th>UPID</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="task in filteredHistory.slice(0, 200)" :key="task.upid">
+                    <td class="text-sm">{{ formatDate(task.starttime) }}</td>
+                    <td class="text-sm">{{ task._node || task.node || '—' }}</td>
+                    <td class="text-sm">
+                      <span v-if="extractVmid(task)" class="vmid-chip">{{ extractVmid(task) }}</span>
+                      <span v-else class="text-muted">—</span>
+                    </td>
+                    <td>
+                      <span :class="['history-badge', historyStatusClass(task)]">
+                        {{ historyStatusLabel(task) }}
+                      </span>
+                    </td>
+                    <td class="text-sm">
+                      <span :class="task.exitstatus === 'OK' ? 'text-success' : (task.exitstatus ? 'text-danger' : 'text-muted')">
+                        {{ task.exitstatus || (task.status === 'running' ? 'running' : '—') }}
+                      </span>
+                    </td>
+                    <td class="text-sm text-muted">{{ formatDuration(task.starttime, task.endtime) }}</td>
+                    <td class="text-sm text-muted">{{ task.user || '—' }}</td>
+                    <td class="text-xs upid-cell" :title="task.upid">{{ task.upid ? task.upid.slice(0, 40) + '...' : '—' }}</td>
+                  </tr>
+                </tbody>
+              </table>
+              <p v-if="filteredHistory.length > 200" class="text-xs text-muted" style="padding: 0.5rem 1rem;">
+                Showing 200 of {{ filteredHistory.length }} results. Use filters to narrow results.
+              </p>
+            </div>
+          </div>
+        </template>
+      </div>
     </div>
 
-    <!-- Add Schedule Modal -->
-    <div v-if="showAddScheduleModal" class="modal" @click="showAddScheduleModal = false">
-      <div class="modal-content" @click.stop>
+    <!-- Create / Edit Schedule Modal -->
+    <div v-if="scheduleModal.show" class="modal" @click="closeScheduleModal">
+      <div class="modal-content modal-content--wide" @click.stop>
         <div class="modal-header">
-          <h3>Add Backup Schedule</h3>
-          <button @click="showAddScheduleModal = false" class="btn-close">×</button>
+          <h3>{{ scheduleModal.editing ? 'Edit Backup Schedule' : 'Create Backup Schedule' }}</h3>
+          <button @click="closeScheduleModal" class="btn-close">×</button>
         </div>
-        <form @submit.prevent="addSchedule" class="modal-body">
-          <div class="form-group">
-            <label class="form-label">Schedule <span class="text-muted text-sm">(cron expression)</span></label>
-            <input v-model="newSchedule.schedule" class="form-control" placeholder="0 2 * * *" required />
-            <p class="text-xs text-muted mt-1">e.g. "0 2 * * *" = every day at 2am</p>
+        <form @submit.prevent="saveSchedule" class="modal-body">
+
+          <!-- VM Selection mode -->
+          <div class="form-section">
+            <h4 class="form-section-title">VM Selection</h4>
+            <div class="form-group">
+              <label class="form-label">Selection Mode</label>
+              <div class="radio-group radio-group--inline">
+                <label class="radio-label">
+                  <input type="radio" v-model="scheduleForm.vmSelectionMode" value="all" />
+                  <span>All VMs</span>
+                </label>
+                <label class="radio-label">
+                  <input type="radio" v-model="scheduleForm.vmSelectionMode" value="include" />
+                  <span>Specific VMs (include)</span>
+                </label>
+                <label class="radio-label">
+                  <input type="radio" v-model="scheduleForm.vmSelectionMode" value="exclude" />
+                  <span>All except selected (exclude)</span>
+                </label>
+              </div>
+            </div>
+
+            <!-- VM multi-selector (when include or exclude) -->
+            <div v-if="scheduleForm.vmSelectionMode !== 'all'" class="vm-selector">
+              <div class="vm-selector-search">
+                <input
+                  v-model="vmSelectorSearch"
+                  class="form-control form-control-sm"
+                  placeholder="Search VMs by ID or name..."
+                />
+              </div>
+              <div v-if="loadingAllVms" class="text-sm text-muted" style="padding: 0.5rem;">Loading VMs...</div>
+              <div v-else-if="allVms.length === 0" class="text-sm text-muted" style="padding: 0.5rem;">
+                No VMs found. Select a node to browse VMs, or enter VMIDs manually below.
+              </div>
+              <div v-else class="vm-selector-list">
+                <label
+                  v-for="vm in filteredAllVms"
+                  :key="vm.vmid"
+                  class="vm-selector-item"
+                >
+                  <input
+                    type="checkbox"
+                    :value="String(vm.vmid)"
+                    v-model="scheduleForm.selectedVmids"
+                  />
+                  <span class="vm-selector-vmid">{{ vm.vmid }}</span>
+                  <span class="vm-selector-name">{{ vm.name || '—' }}</span>
+                  <span class="vm-selector-type text-muted text-xs">{{ vm.type || 'vm' }}</span>
+                  <span class="vm-selector-node text-muted text-xs">{{ vm._node }}</span>
+                </label>
+              </div>
+              <div class="vm-selector-footer text-xs text-muted">
+                {{ scheduleForm.selectedVmids.length }} selected
+                <span v-if="scheduleForm.vmSelectionMode === 'include'"> — will back up these VMs</span>
+                <span v-else> — will back up all VMs except these</span>
+              </div>
+            </div>
           </div>
 
-          <div class="form-row">
-            <div class="form-group">
-              <label class="form-label">VMs (vmid)</label>
-              <input v-model="newSchedule.vmid" class="form-control" placeholder="all or 100,101,102" />
-            </div>
-            <div class="form-group">
-              <label class="form-label">Storage</label>
-              <select v-model="newSchedule.storage" class="form-control">
-                <option value="">— Select storage —</option>
-                <option v-for="s in storages" :key="s.storage" :value="s.storage">{{ s.storage }}</option>
-              </select>
-            </div>
-          </div>
-
-          <div class="form-row">
-            <div class="form-group">
-              <label class="form-label">Mode</label>
-              <select v-model="newSchedule.mode" class="form-control">
-                <option value="snapshot">Snapshot</option>
-                <option value="suspend">Suspend</option>
-                <option value="stop">Stop</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label class="form-label">Keep Last (retention)</label>
-              <input v-model.number="newSchedule['keep-last']" type="number" min="1" class="form-control" placeholder="3" />
+          <!-- Storage & Node -->
+          <div class="form-section">
+            <h4 class="form-section-title">Storage & Node</h4>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Storage <span class="required">*</span></label>
+                <select v-model="scheduleForm.storage" class="form-control" required>
+                  <option value="">— Select storage —</option>
+                  <option v-for="s in storages" :key="s.storage" :value="s.storage">{{ s.storage }}</option>
+                </select>
+                <div class="text-xs text-muted mt-1">Only backup-capable storages are listed.</div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Node</label>
+                <select v-model="scheduleForm.node" class="form-control">
+                  <option value="">All nodes</option>
+                  <option v-for="node in nodes" :key="node.node || node.name" :value="node.node || node.name">
+                    {{ node.node || node.name }}
+                  </option>
+                </select>
+              </div>
             </div>
           </div>
 
-          <div class="form-group">
-            <label class="form-label">
-              <input type="checkbox" v-model="newSchedule.enabled" :true-value="1" :false-value="0" />
-              Enabled
-            </label>
+          <!-- Schedule -->
+          <div class="form-section">
+            <h4 class="form-section-title">Schedule</h4>
+            <div class="form-group">
+              <label class="form-label">Preset</label>
+              <div class="cron-presets">
+                <button
+                  v-for="preset in cronPresets"
+                  :key="preset.value"
+                  type="button"
+                  @click="applyCronPreset(preset.value)"
+                  :class="['cron-preset-btn', scheduleForm.schedule === preset.value ? 'cron-preset-btn--active' : '']"
+                >
+                  {{ preset.label }}
+                </button>
+                <button
+                  type="button"
+                  @click="scheduleForm.customCron = true"
+                  :class="['cron-preset-btn', scheduleForm.customCron ? 'cron-preset-btn--active' : '']"
+                >
+                  Custom
+                </button>
+              </div>
+            </div>
+            <div v-if="scheduleForm.customCron" class="form-group">
+              <label class="form-label">Cron Expression <span class="required">*</span></label>
+              <input
+                v-model="scheduleForm.schedule"
+                class="form-control"
+                placeholder="0 2 * * *"
+                required
+              />
+              <div class="text-xs text-muted mt-1">
+                Format: minute hour day month weekday
+                — Preview: <strong>{{ describeCron(scheduleForm.schedule) }}</strong>
+              </div>
+            </div>
+            <div v-else class="form-group">
+              <label class="form-label">Schedule (cron)</label>
+              <input v-model="scheduleForm.schedule" class="form-control" readonly style="background: var(--bg-secondary); cursor: default;" />
+              <div class="text-xs text-muted mt-1">{{ describeCron(scheduleForm.schedule) }}</div>
+            </div>
+          </div>
+
+          <!-- Backup Options -->
+          <div class="form-section">
+            <h4 class="form-section-title">Backup Options</h4>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Backup Mode</label>
+                <select v-model="scheduleForm.mode" class="form-control">
+                  <option value="snapshot">Snapshot (live, no downtime)</option>
+                  <option value="suspend">Suspend (brief pause)</option>
+                  <option value="stop">Stop (offline backup)</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Compression</label>
+                <select v-model="scheduleForm.compress" class="form-control">
+                  <option value="zstd">zstd (recommended)</option>
+                  <option value="gzip">gzip</option>
+                  <option value="lzo">lzo (fast)</option>
+                  <option value="0">none</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Retention -->
+          <div class="form-section">
+            <h4 class="form-section-title">Retention Policy</h4>
+            <div class="form-row form-row-3">
+              <div class="form-group">
+                <label class="form-label">Keep Last</label>
+                <input v-model.number="scheduleForm['keep-last']" type="number" min="0" class="form-control" placeholder="e.g. 3 (0=unlimited)" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">Keep Daily</label>
+                <input v-model.number="scheduleForm['keep-daily']" type="number" min="0" class="form-control" placeholder="e.g. 7" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">Keep Weekly</label>
+                <input v-model.number="scheduleForm['keep-weekly']" type="number" min="0" class="form-control" placeholder="e.g. 4" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">Keep Monthly</label>
+                <input v-model.number="scheduleForm['keep-monthly']" type="number" min="0" class="form-control" placeholder="e.g. 3" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">Keep Yearly</label>
+                <input v-model.number="scheduleForm['keep-yearly']" type="number" min="0" class="form-control" placeholder="e.g. 1" />
+              </div>
+            </div>
+          </div>
+
+          <!-- Notifications -->
+          <div class="form-section">
+            <h4 class="form-section-title">Notifications</h4>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Email on</label>
+                <select v-model="scheduleForm.mailnotification" class="form-control">
+                  <option value="never">Never</option>
+                  <option value="failure">Failure only</option>
+                  <option value="always">Always</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Email address</label>
+                <input
+                  v-model="scheduleForm.mailto"
+                  type="email"
+                  class="form-control"
+                  placeholder="admin@example.com"
+                  :disabled="scheduleForm.mailnotification === 'never'"
+                />
+              </div>
+            </div>
+          </div>
+
+          <!-- Misc -->
+          <div class="form-section">
+            <h4 class="form-section-title">Additional Options</h4>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Comment / Notes</label>
+                <textarea v-model="scheduleForm.comment" class="form-control" rows="2" placeholder="Optional description"></textarea>
+              </div>
+            </div>
+            <div class="flex gap-2" style="flex-wrap: wrap; margin-top: 0.5rem;">
+              <label class="checkbox-label">
+                <input type="checkbox" v-model="scheduleForm.enabled" :true-value="1" :false-value="0" />
+                <span>Enabled</span>
+              </label>
+              <label class="checkbox-label">
+                <input type="checkbox" v-model="scheduleForm.protected" :true-value="1" :false-value="0" />
+                <span>Protected (prevent deletion)</span>
+              </label>
+            </div>
           </div>
 
           <div class="flex gap-1 mt-2">
             <button type="submit" class="btn btn-primary" :disabled="savingSchedule">
-              {{ savingSchedule ? 'Adding...' : 'Add Schedule' }}
+              {{ savingSchedule ? 'Saving...' : (scheduleModal.editing ? 'Save Changes' : 'Create Schedule') }}
             </button>
-            <button type="button" @click="showAddScheduleModal = false" class="btn btn-outline">Cancel</button>
+            <button type="button" @click="closeScheduleModal" class="btn btn-outline">Cancel</button>
           </div>
         </form>
       </div>
@@ -414,7 +735,6 @@ export default {
     const activeTab = ref('PBS Servers')
     const schedules = ref([])
     const loadingSchedules = ref(false)
-    const showAddScheduleModal = ref(false)
     const savingSchedule = ref(false)
     const nodes = ref([])
     const nodeVMs = ref([])
@@ -428,13 +748,12 @@ export default {
     // PBS state
     const pbsServers = ref([])
     const loadingPbs = ref(false)
-    const pbsStatus = ref({})       // id -> 'ok' | 'error' | 'testing'
+    const pbsStatus = ref({})
     const expandedPbs = ref(null)
-    const pbsDatastores = ref({})   // id -> array
+    const pbsDatastores = ref({})
     const loadingDatastores = ref({})
-    // PBS enhancements
-    const pruningDs = ref({})                // 'pbsId:dsName' -> bool
-    const dsLastBackup = ref({})             // 'pbsId:dsName' -> string
+    const pruningDs = ref({})
+    const dsLastBackup = ref({})
 
     // Run Now state
     const runningSchedule = ref(null)
@@ -442,19 +761,48 @@ export default {
     const pendingRunSchedule = ref(null)
     const runNowNode = ref('')
 
-    const availableTabs = computed(() => {
-      const tabs = ['PBS Servers', 'Schedules', 'Run Backup Now']
-      return tabs
-    })
+    // Schedule modal state
+    const scheduleModal = ref({ show: false, editing: false, editId: null })
+    const vmSelectorSearch = ref('')
+    const allVms = ref([])
+    const loadingAllVms = ref(false)
 
-    const newSchedule = ref({
-      schedule: '',
-      vmid: 'all',
+    // History state
+    const historyTasks = ref([])
+    const loadingHistory = ref(false)
+    const historyFilter = ref({ node: '', vmid: '', status: '', search: '' })
+
+    const availableTabs = computed(() => ['PBS Servers', 'Schedules', 'Run Backup Now', 'History'])
+
+    const cronPresets = [
+      { label: 'Daily at 2AM', value: '0 2 * * *' },
+      { label: 'Daily at 4AM', value: '0 4 * * *' },
+      { label: 'Weekly Sunday', value: '0 2 * * 0' },
+      { label: 'Weekly Monday', value: '0 2 * * 1' },
+      { label: 'Monthly 1st', value: '0 2 1 * *' },
+    ]
+
+    const emptyScheduleForm = () => ({
+      vmSelectionMode: 'all',
+      selectedVmids: [],
       storage: '',
+      node: '',
+      schedule: '0 2 * * *',
+      customCron: false,
       mode: 'snapshot',
-      'keep-last': 3,
-      enabled: 1
+      compress: 'zstd',
+      'keep-last': null,
+      'keep-daily': null,
+      'keep-weekly': null,
+      'keep-monthly': null,
+      'keep-yearly': null,
+      mailnotification: 'never',
+      mailto: '',
+      comment: '',
+      enabled: 1,
+      protected: 0,
     })
+    const scheduleForm = ref(emptyScheduleForm())
 
     const manualBackup = ref({
       node: '',
@@ -464,6 +812,45 @@ export default {
       compress: 'zstd'
     })
 
+    const filteredAllVms = computed(() => {
+      if (!vmSelectorSearch.value) return allVms.value
+      const q = vmSelectorSearch.value.toLowerCase()
+      return allVms.value.filter(v =>
+        String(v.vmid).includes(q) || (v.name || '').toLowerCase().includes(q)
+      )
+    })
+
+    const filteredHistory = computed(() => {
+      let tasks = historyTasks.value
+      const f = historyFilter.value
+      if (f.node) tasks = tasks.filter(t => (t._node || t.node) === f.node)
+      if (f.vmid) tasks = tasks.filter(t => String(extractVmid(t) || '').includes(f.vmid))
+      if (f.status) {
+        if (f.status === 'OK') tasks = tasks.filter(t => t.exitstatus === 'OK')
+        else if (f.status === 'failed') tasks = tasks.filter(t => t.exitstatus && t.exitstatus !== 'OK' && t.status === 'stopped')
+        else if (f.status === 'running') tasks = tasks.filter(t => t.status === 'running')
+      }
+      if (f.search) {
+        const q = f.search.toLowerCase()
+        tasks = tasks.filter(t => (t.upid || '').toLowerCase().includes(q) || (t.id || '').toLowerCase().includes(q))
+      }
+      return tasks
+    })
+
+    const vmStorageStats = computed(() => {
+      const counts = {}
+      for (const t of historyTasks.value) {
+        const vmid = extractVmid(t)
+        if (vmid) {
+          counts[vmid] = (counts[vmid] || 0) + 1
+        }
+      }
+      return Object.entries(counts)
+        .map(([vmid, count]) => ({ vmid, count }))
+        .sort((a, b) => b.count - a.count)
+    })
+
+    // Methods
     const fetchHosts = async () => {
       try {
         const response = await api.proxmox.listHosts()
@@ -479,6 +866,7 @@ export default {
       nodes.value = []
       nodeVMs.value = []
       storages.value = []
+      historyTasks.value = []
       manualBackup.value.node = ''
       manualBackup.value.vmid = ''
       manualBackup.value.storage = ''
@@ -509,10 +897,34 @@ export default {
 
     const fetchStorages = async () => {
       try {
-        const response = await api.pveNode.listStorage(selectedHostId.value, nodes.value[0]?.node || nodes.value[0]?.name || '')
+        const firstNode = nodes.value[0]?.node || nodes.value[0]?.name || ''
+        if (!firstNode) return
+        const response = await api.pveNode.listStorage(selectedHostId.value, firstNode)
         storages.value = (response.data || []).filter(s => s.content && s.content.includes('backup'))
       } catch (error) {
         console.error('Failed to fetch storages:', error)
+      }
+    }
+
+    const fetchAllVms = async () => {
+      if (!selectedHostId.value || nodes.value.length === 0) return
+      loadingAllVms.value = true
+      allVms.value = []
+      try {
+        for (const node of nodes.value) {
+          const nodeName = node.node || node.name
+          const [qemuRes, lxcRes] = await Promise.all([
+            api.pveNode.nodeVms(selectedHostId.value, nodeName).catch(() => ({ data: {} })),
+            api.pveNode.listContainers(selectedHostId.value, nodeName).catch(() => ({ data: [] }))
+          ])
+          const qemus = ((qemuRes.data?.vms || qemuRes.data || [])).map(v => ({ ...v, type: 'vm', _node: nodeName }))
+          const lxcs = (lxcRes.data || []).map(v => ({ ...v, type: 'ct', _node: nodeName }))
+          allVms.value.push(...qemus, ...lxcs)
+        }
+      } catch (error) {
+        console.error('Failed to fetch all VMs:', error)
+      } finally {
+        loadingAllVms.value = false
       }
     }
 
@@ -523,7 +935,7 @@ export default {
           api.pveNode.nodeVms(selectedHostId.value, manualBackup.value.node).catch(() => ({ data: [] })),
           api.pveNode.listContainers(selectedHostId.value, manualBackup.value.node).catch(() => ({ data: [] }))
         ])
-        const qemus = (qemuRes.data || []).map(v => ({ ...v, type: 'vm' }))
+        const qemus = ((qemuRes.data?.vms || qemuRes.data || [])).map(v => ({ ...v, type: 'vm' }))
         const lxcs = (lxcRes.data || []).map(v => ({ ...v, type: 'ct' }))
         nodeVMs.value = [...qemus, ...lxcs]
       } catch (error) {
@@ -531,19 +943,104 @@ export default {
       }
     }
 
-    const addSchedule = async () => {
+    // Schedule modal
+    const openCreateScheduleModal = () => {
+      scheduleForm.value = emptyScheduleForm()
+      scheduleModal.value = { show: true, editing: false, editId: null }
+      vmSelectorSearch.value = ''
+      if (allVms.value.length === 0) fetchAllVms()
+    }
+
+    const openEditScheduleModal = (sched) => {
+      const form = emptyScheduleForm()
+      form.storage = sched.storage || ''
+      form.node = sched.node || ''
+      form.schedule = sched.schedule || sched.dow || '0 2 * * *'
+      form.mode = sched.mode || 'snapshot'
+      form.compress = sched.compress || 'zstd'
+      form['keep-last'] = sched['keep-last'] || null
+      form['keep-daily'] = sched['keep-daily'] || null
+      form['keep-weekly'] = sched['keep-weekly'] || null
+      form['keep-monthly'] = sched['keep-monthly'] || null
+      form['keep-yearly'] = sched['keep-yearly'] || null
+      form.mailnotification = sched.mailnotification || 'never'
+      form.mailto = sched.mailto || ''
+      form.comment = sched.comment || ''
+      form.enabled = sched.enabled !== undefined ? sched.enabled : 1
+      form.protected = sched.protected || 0
+      // VM selection
+      if (!sched.vmid || sched.vmid === 'all') {
+        form.vmSelectionMode = 'all'
+        form.selectedVmids = []
+      } else {
+        form.vmSelectionMode = 'include'
+        form.selectedVmids = String(sched.vmid).split(',').map(s => s.trim()).filter(Boolean)
+      }
+      // Detect custom cron
+      const isPreset = cronPresets.some(p => p.value === form.schedule)
+      form.customCron = !isPreset
+      scheduleForm.value = form
+      scheduleModal.value = { show: true, editing: true, editId: sched.id }
+      vmSelectorSearch.value = ''
+      if (allVms.value.length === 0) fetchAllVms()
+    }
+
+    const closeScheduleModal = () => {
+      scheduleModal.value = { show: false, editing: false, editId: null }
+    }
+
+    const applyCronPreset = (value) => {
+      scheduleForm.value.schedule = value
+      scheduleForm.value.customCron = false
+    }
+
+    const buildSchedulePayload = () => {
+      const f = scheduleForm.value
+      const payload = {}
+      if (f.storage) payload.storage = f.storage
+      if (f.node) payload.node = f.node
+      if (f.schedule) payload.schedule = f.schedule
+      if (f.mode) payload.mode = f.mode
+      if (f.compress) payload.compress = f.compress
+      // VM ids
+      if (f.vmSelectionMode === 'all') {
+        // omit vmid → Proxmox defaults to all
+      } else if (f.vmSelectionMode === 'include' && f.selectedVmids.length > 0) {
+        payload.vmid = f.selectedVmids.join(',')
+      } else if (f.vmSelectionMode === 'exclude' && f.selectedVmids.length > 0) {
+        payload.exclude = f.selectedVmids.join(',')
+      }
+      // Retention
+      const keepFields = ['keep-last', 'keep-daily', 'keep-weekly', 'keep-monthly', 'keep-yearly']
+      for (const k of keepFields) {
+        if (f[k] !== null && f[k] !== '' && f[k] >= 0) payload[k] = f[k]
+      }
+      // Notifications
+      payload.mailnotification = f.mailnotification
+      if (f.mailnotification !== 'never' && f.mailto) payload.mailto = f.mailto
+      // Misc
+      if (f.comment) payload.comment = f.comment
+      payload.enabled = f.enabled
+      if (f.protected) payload.protected = 1
+      return payload
+    }
+
+    const saveSchedule = async () => {
       savingSchedule.value = true
       try {
-        const payload = { ...newSchedule.value }
-        if (!payload.vmid || payload.vmid === 'all') delete payload.vmid
-        await api.pveNode.createBackupSchedule(selectedHostId.value, payload)
-        toast.success('Backup schedule added')
-        showAddScheduleModal.value = false
-        newSchedule.value = { schedule: '', vmid: 'all', storage: '', mode: 'snapshot', 'keep-last': 3, enabled: 1 }
+        const payload = buildSchedulePayload()
+        if (scheduleModal.value.editing) {
+          await api.pveNode.updateBackupSchedule(selectedHostId.value, scheduleModal.value.editId, payload)
+          toast.success('Schedule updated')
+        } else {
+          await api.pveNode.createBackupSchedule(selectedHostId.value, payload)
+          toast.success('Schedule created')
+        }
+        closeScheduleModal()
         await fetchSchedules()
       } catch (error) {
-        console.error('Failed to add schedule:', error)
-        toast.error('Failed to add schedule')
+        console.error('Failed to save schedule:', error)
+        toast.error('Failed to save schedule')
       } finally {
         savingSchedule.value = false
       }
@@ -561,7 +1058,19 @@ export default {
       }
     }
 
-    // Run Now: open node-picker modal if nodes are loaded, else pick first available
+    const toggleScheduleEnabled = async (sched) => {
+      const newVal = sched.enabled == 1 ? 0 : 1
+      try {
+        await api.pveNode.updateBackupSchedule(selectedHostId.value, sched.id, { enabled: newVal })
+        sched.enabled = newVal
+        toast.success(`Schedule ${newVal === 1 ? 'enabled' : 'disabled'}`)
+      } catch (error) {
+        console.error('Failed to toggle schedule:', error)
+        toast.error('Failed to update schedule')
+      }
+    }
+
+    // Run Now
     const runScheduleNow = (sched) => {
       if (nodes.value.length === 0) {
         toast.error('No nodes loaded. Select a host first.')
@@ -578,14 +1087,9 @@ export default {
       showRunNowModal.value = false
       runningSchedule.value = sched.id
       try {
-        const payload = {
-          mode: sched.mode || 'snapshot',
-          compress: 'zstd',
-        }
-        if (sched.vmid) payload.vmid = sched.vmid
-        if (sched.storage) payload.storage = sched.storage
-        await api.pveNode.runBackup(selectedHostId.value, runNowNode.value, payload)
-        toast.success(`Backup job "${sched.id}" started on node ${runNowNode.value}`)
+        const res = await api.pveNode.runBackupScheduleNow(selectedHostId.value, sched.id, { node: runNowNode.value })
+        const upid = res.data?.upid || res.data
+        toast.success(`Backup job "${sched.id}" started — UPID: ${String(upid).slice(0, 30)}...`)
       } catch (error) {
         console.error('Failed to run backup schedule:', error)
         toast.error('Failed to start backup job')
@@ -613,7 +1117,7 @@ export default {
             compress: manualBackup.value.compress
           }
         )
-        backupTask.value = { upid: response.data.data || response.data }
+        backupTask.value = { upid: response.data?.upid || response.data }
         toast.success('Backup started')
         pollTaskStatus()
       } catch (error) {
@@ -642,7 +1146,7 @@ export default {
                 manualBackup.value.node,
                 encodeURIComponent(backupTask.value.upid)
               )
-              taskLog.value = (logRes.data || []).map(l => l.t).join('\n')
+              taskLog.value = (logRes.data?.lines || logRes.data || []).join('\n')
             } catch {}
           }
         } catch (error) {
@@ -655,6 +1159,85 @@ export default {
       if (status === 'stopped') return 'badge-success'
       if (status === 'running') return 'badge-info'
       return 'badge-warning'
+    }
+
+    // History
+    const fetchHistory = async () => {
+      if (!selectedHostId.value) return
+      loadingHistory.value = true
+      try {
+        const params = { limit: 500 }
+        if (historyFilter.value.node) params.node = historyFilter.value.node
+        const res = await api.pveNode.getBackupHistory(selectedHostId.value, params)
+        historyTasks.value = res.data || []
+      } catch (error) {
+        console.error('Failed to fetch history:', error)
+        toast.error('Failed to load backup history')
+      } finally {
+        loadingHistory.value = false
+      }
+    }
+
+    const applyHistoryFilter = () => {
+      // reactive filter applied via computed
+    }
+
+    const extractVmid = (task) => {
+      if (!task) return null
+      if (task.id) return task.id
+      const upid = task.upid || ''
+      const m = upid.match(/:(\d+):/)
+      return m ? m[1] : null
+    }
+
+    const historyStatusLabel = (task) => {
+      if (task.status === 'running') return 'Running'
+      if (task.exitstatus === 'OK') return 'OK'
+      if (task.exitstatus) return 'Failed'
+      return task.status || 'Unknown'
+    }
+
+    const historyStatusClass = (task) => {
+      if (task.status === 'running') return 'history-badge--running'
+      if (task.exitstatus === 'OK') return 'history-badge--ok'
+      if (task.exitstatus) return 'history-badge--fail'
+      return 'history-badge--unknown'
+    }
+
+    const formatDuration = (start, end) => {
+      if (!start) return '—'
+      const s = (end || Math.floor(Date.now() / 1000)) - start
+      if (s < 60) return `${s}s`
+      if (s < 3600) return `${Math.floor(s / 60)}m ${s % 60}s`
+      return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`
+    }
+
+    const formatDate = (ctime) => {
+      if (!ctime) return '—'
+      return new Date(ctime * 1000).toLocaleString()
+    }
+
+    const exportHistoryCSV = () => {
+      const tasks = filteredHistory.value
+      const header = ['Start Time', 'Node', 'VM ID', 'Status', 'Exit', 'Duration (s)', 'User', 'UPID']
+      const rows = tasks.map(t => [
+        t.starttime ? new Date(t.starttime * 1000).toISOString() : '',
+        t._node || t.node || '',
+        extractVmid(t) || '',
+        historyStatusLabel(t),
+        t.exitstatus || '',
+        t.endtime && t.starttime ? (t.endtime - t.starttime) : '',
+        t.user || '',
+        t.upid || ''
+      ])
+      const csv = [header, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n')
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `backup-history-${new Date().toISOString().slice(0, 10)}.csv`
+      a.click()
+      URL.revokeObjectURL(url)
     }
 
     // PBS methods
@@ -678,7 +1261,6 @@ export default {
         pbsStatus.value = { ...pbsStatus.value, [pbsId]: 'ok' }
         toast.success('PBS connection successful')
       } catch (error) {
-        console.error('PBS connection test failed:', error)
         pbsStatus.value = { ...pbsStatus.value, [pbsId]: 'error' }
         toast.error('PBS connection failed')
       }
@@ -690,18 +1272,14 @@ export default {
         return
       }
       expandedPbs.value = pbsId
-      if (pbsDatastores.value[pbsId]) return  // already loaded
+      if (pbsDatastores.value[pbsId]) return
       loadingDatastores.value = { ...loadingDatastores.value, [pbsId]: true }
       try {
         const response = await api.pbsMgmt.listDatastores(pbsId)
         const datastores = response.data || []
         pbsDatastores.value = { ...pbsDatastores.value, [pbsId]: datastores }
-        // Fetch last backup time for each datastore (from groups, non-blocking)
-        datastores.forEach(ds => {
-          fetchDsLastBackup(pbsId, ds.store || ds.name)
-        })
+        datastores.forEach(ds => { fetchDsLastBackup(pbsId, ds.store || ds.name) })
       } catch (error) {
-        console.error('Failed to fetch PBS datastores:', error)
         toast.error('Failed to load datastores')
         pbsDatastores.value = { ...pbsDatastores.value, [pbsId]: [] }
       } finally {
@@ -718,12 +1296,9 @@ export default {
           dsLastBackup.value = { ...dsLastBackup.value, [key]: 'none' }
           return
         }
-        // Find the most recent last-backup across all groups
         let maxTs = 0
         for (const g of groups) {
-          if (g['last-backup'] && g['last-backup'] > maxTs) {
-            maxTs = g['last-backup']
-          }
+          if (g['last-backup'] && g['last-backup'] > maxTs) maxTs = g['last-backup']
         }
         dsLastBackup.value = {
           ...dsLastBackup.value,
@@ -742,7 +1317,6 @@ export default {
         await api.pbsMgmt.pruneDatastore(pbsId, dsName, {})
         toast.success(`Prune job started for datastore "${dsName}"`)
       } catch (error) {
-        console.error('Failed to prune datastore:', error)
         toast.error('Failed to start prune job')
       } finally {
         pruningDs.value = { ...pruningDs.value, [key]: false }
@@ -769,6 +1343,39 @@ export default {
       return (bytes / Math.pow(1024, i)).toFixed(1) + ' ' + units[i]
     }
 
+    const describeCron = (cron) => {
+      if (!cron) return ''
+      const parts = cron.trim().split(/\s+/)
+      if (parts.length !== 5) return cron
+      const [min, hour, dom, mon, dow] = parts
+      const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+      try {
+        if (dom === '*' && mon === '*') {
+          if (dow === '*') return `Daily at ${hour.padStart(2, '0')}:${min.padStart(2, '0')}`
+          if (!isNaN(Number(dow))) return `Weekly on ${days[Number(dow)]} at ${hour.padStart(2, '0')}:${min.padStart(2, '0')}`
+        }
+        if (dom !== '*' && mon === '*' && dow === '*') {
+          return `Monthly on day ${dom} at ${hour.padStart(2, '0')}:${min.padStart(2, '0')}`
+        }
+      } catch {}
+      return `At ${min} ${hour} ${dom} ${mon} ${dow}`
+    }
+
+    const vmidPreview = (vmid) => {
+      if (!vmid) return '—'
+      const parts = String(vmid).split(',')
+      if (parts.length <= 3) return vmid
+      return parts.slice(0, 3).join(', ') + ` +${parts.length - 3} more`
+    }
+
+    // Watch for History tab activation
+    const onTabChange = (tab) => {
+      if (tab === 'History' && selectedHostId.value && historyTasks.value.length === 0) {
+        fetchHistory()
+      }
+    }
+
     onMounted(() => {
       fetchHosts()
       fetchPbsServers()
@@ -781,9 +1388,14 @@ export default {
       availableTabs,
       schedules,
       loadingSchedules,
-      showAddScheduleModal,
       savingSchedule,
-      newSchedule,
+      scheduleForm,
+      scheduleModal,
+      cronPresets,
+      vmSelectorSearch,
+      allVms,
+      loadingAllVms,
+      filteredAllVms,
       nodes,
       nodeVMs,
       storages,
@@ -806,15 +1418,35 @@ export default {
       showRunNowModal,
       pendingRunSchedule,
       runNowNode,
+      // History
+      historyTasks,
+      loadingHistory,
+      historyFilter,
+      filteredHistory,
+      vmStorageStats,
       // Methods
       onHostChange,
       onNodeChange,
-      addSchedule,
+      fetchSchedules,
+      openCreateScheduleModal,
+      openEditScheduleModal,
+      closeScheduleModal,
+      applyCronPreset,
+      saveSchedule,
       deleteSchedule,
+      toggleScheduleEnabled,
       runScheduleNow,
       confirmRunNow,
       startBackup,
       getTaskBadge,
+      fetchHistory,
+      applyHistoryFilter,
+      extractVmid,
+      historyStatusLabel,
+      historyStatusClass,
+      formatDuration,
+      formatDate,
+      exportHistoryCSV,
       fetchPbsServers,
       testPbsConnection,
       toggleDatastores,
@@ -822,6 +1454,18 @@ export default {
       dsUsagePct,
       dsUsageClass,
       formatBytes,
+      describeCron,
+      vmidPreview,
+    }
+  },
+  watch: {
+    activeTab(tab) {
+      if (tab === 'History' && this.selectedHostId && this.historyTasks.length === 0) {
+        this.fetchHistory()
+      }
+      if (tab === 'Schedules' && this.selectedHostId && this.schedules.length === 0) {
+        this.fetchSchedules()
+      }
     }
   }
 }
@@ -901,6 +1545,10 @@ export default {
   gap: 1rem;
 }
 
+.form-row-3 {
+  grid-template-columns: 1fr 1fr 1fr;
+}
+
 .backup-form {
   max-width: 700px;
 }
@@ -974,6 +1622,16 @@ export default {
 
 .text-success { color: #059669; }
 .text-danger { color: #ef4444; }
+.text-muted { color: var(--text-secondary); }
+.text-sm { font-size: 0.875rem; }
+.text-xs { font-size: 0.75rem; }
+.text-center { text-align: center; }
+.flex { display: flex; }
+.gap-1 { gap: 0.5rem; }
+.gap-2 { gap: 1rem; }
+.align-center { align-items: center; }
+.mt-1 { margin-top: 0.25rem; }
+.mt-2 { margin-top: 0.75rem; }
 
 /* PBS Servers */
 .pbs-list {
@@ -1023,23 +1681,70 @@ export default {
   border-top: 1px solid var(--border-color);
 }
 
-.table-sm th,
-.table-sm td {
-  padding: 0.4rem 0.75rem;
-  font-size: 0.875rem;
-}
-
 .actions-cell {
   display: flex;
   gap: 0.4rem;
   align-items: center;
 }
 
+/* Toggle button */
+.toggle-btn {
+  border: none;
+  padding: 0.2rem 0.6rem;
+  border-radius: 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  transition: all 0.15s;
+}
+
+.toggle-btn--on {
+  background: rgba(5, 150, 105, 0.12);
+  color: #059669;
+  border: 1px solid #059669;
+}
+
+.toggle-btn--on:hover {
+  background: rgba(5, 150, 105, 0.25);
+}
+
+.toggle-btn--off {
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+  border: 1px solid #ef4444;
+}
+
+.toggle-btn--off:hover {
+  background: rgba(239, 68, 68, 0.2);
+}
+
+/* Cron code */
+.cron-code {
+  font-size: 0.82rem;
+  background: var(--bg-secondary, rgba(255,255,255,0.05));
+  color: var(--text-primary);
+  padding: 0.1rem 0.35rem;
+  border-radius: 0.2rem;
+}
+
+/* VM id preview */
+.vm-id-preview {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: block;
+}
+
 /* Modals */
 .modal {
   position: fixed;
   top: 0; left: 0; right: 0; bottom: 0;
-  background-color: rgba(0, 0, 0, 0.5);
+  background-color: rgba(0, 0, 0, 0.65);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1047,7 +1752,8 @@ export default {
 }
 
 .modal-content {
-  background: white;
+  background: var(--bg-card, #1a1a2e);
+  border: 1px solid var(--border-color);
   border-radius: 0.5rem;
   max-width: 600px;
   width: 90%;
@@ -1056,15 +1762,26 @@ export default {
   box-shadow: var(--shadow-lg);
 }
 
+.modal-content--wide {
+  max-width: 800px;
+}
+
 .modal-header {
   padding: 1.5rem;
   border-bottom: 1px solid var(--border-color);
   display: flex;
   justify-content: space-between;
   align-items: center;
+  position: sticky;
+  top: 0;
+  background: var(--bg-card, #1a1a2e);
+  z-index: 1;
 }
 
-.modal-header h3 { margin: 0; }
+.modal-header h3 {
+  margin: 0;
+  color: var(--text-primary);
+}
 
 .btn-close {
   background: none;
@@ -1077,11 +1794,344 @@ export default {
 
 .modal-body {
   padding: 1.5rem;
+  color: var(--text-primary);
+}
+
+/* Form sections */
+.form-section {
+  margin-bottom: 1.75rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.form-section:last-of-type {
+  border-bottom: none;
+  margin-bottom: 1rem;
+}
+
+.form-section-title {
+  margin: 0 0 1rem 0;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-secondary);
+  font-weight: 700;
+}
+
+/* Cron presets */
+.cron-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.cron-preset-btn {
+  border: 1px solid var(--border-color);
+  background: none;
+  color: var(--text-secondary);
+  padding: 0.3rem 0.75rem;
+  border-radius: 0.25rem;
+  cursor: pointer;
+  font-size: 0.875rem;
+  transition: all 0.15s;
+}
+
+.cron-preset-btn:hover {
+  border-color: var(--primary-color);
+  color: var(--primary-color);
+}
+
+.cron-preset-btn--active {
+  background: var(--primary-color);
+  border-color: var(--primary-color);
+  color: #fff;
+  font-weight: 600;
+}
+
+/* VM Selector */
+.vm-selector {
+  border: 1px solid var(--border-color);
+  border-radius: 0.375rem;
+  overflow: hidden;
+  margin-top: 0.5rem;
+}
+
+.vm-selector-search {
+  padding: 0.5rem;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-secondary, rgba(255,255,255,0.02));
+}
+
+.vm-selector-list {
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.vm-selector-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.4rem 0.75rem;
+  cursor: pointer;
+  font-size: 0.875rem;
+  border-bottom: 1px solid var(--border-color);
+  transition: background 0.1s;
+}
+
+.vm-selector-item:last-child {
+  border-bottom: none;
+}
+
+.vm-selector-item:hover {
+  background: var(--bg-hover, rgba(99,102,241,0.05));
+}
+
+.vm-selector-item input[type="checkbox"] {
+  flex-shrink: 0;
+}
+
+.vm-selector-vmid {
+  font-weight: 600;
+  color: var(--primary-color, #6366f1);
+  min-width: 50px;
+}
+
+.vm-selector-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vm-selector-type {
+  min-width: 30px;
+}
+
+.vm-selector-node {
+  min-width: 70px;
+  text-align: right;
+}
+
+.vm-selector-footer {
+  padding: 0.35rem 0.75rem;
+  background: var(--bg-secondary, rgba(255,255,255,0.02));
+  border-top: 1px solid var(--border-color);
+  color: var(--text-muted);
+}
+
+/* Radio group inline */
+.radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.25rem;
+}
+
+.radio-group--inline {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.radio-label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+  font-size: 0.875rem;
+  color: var(--text-primary);
+}
+
+/* Checkbox label */
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+  font-size: 0.875rem;
+  color: var(--text-primary);
+}
+
+/* History */
+.history-filters {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+  padding: 1rem;
+  background: var(--bg-secondary, rgba(255,255,255,0.02));
+  border: 1px solid var(--border-color);
+  border-radius: 0.375rem;
+}
+
+.filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 150px;
+}
+
+.filter-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+}
+
+.form-control-sm {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.875rem;
+  height: auto;
+}
+
+.vmid-chip {
+  background: var(--primary-color, #6366f1);
+  color: #fff;
+  border-radius: 0.2rem;
+  padding: 0.05rem 0.35rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.upid-cell {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-family: monospace;
+}
+
+/* History status badges */
+.history-badge {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.1rem 0.4rem;
+  border-radius: 0.25rem;
+  text-transform: uppercase;
+  border: 1px solid;
+}
+
+.history-badge--ok {
+  background: rgba(5, 150, 105, 0.1);
+  color: #059669;
+  border-color: #059669;
+}
+
+.history-badge--fail {
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+  border-color: #ef4444;
+}
+
+.history-badge--running {
+  background: rgba(180, 83, 9, 0.1);
+  color: #b45309;
+  border-color: #d97706;
+}
+
+.history-badge--unknown {
+  background: rgba(107, 114, 128, 0.1);
+  color: #6b7280;
+  border-color: #9ca3af;
+}
+
+/* Storage chart */
+.storage-chart-section {
+  margin-top: 0.5rem;
+  padding: 1rem;
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+  background: var(--bg-secondary, rgba(255,255,255,0.02));
+}
+
+.section-subtitle {
+  margin: 0 0 0.75rem 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.vm-storage-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.vm-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.vm-bar-label {
+  min-width: 70px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.vm-bar-track {
+  flex: 1;
+  height: 10px;
+  background: var(--border-color, rgba(255,255,255,0.1));
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+.vm-bar-fill {
+  height: 100%;
+  background: var(--primary-color, #6366f1);
+  border-radius: 5px;
+  transition: width 0.4s ease;
+}
+
+.vm-bar-count {
+  min-width: 80px;
+  text-align: right;
+}
+
+/* Badges */
+.badge {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.1rem 0.45rem;
+  border-radius: 0.25rem;
+  text-transform: uppercase;
+  border: 1px solid;
+}
+
+.badge-success {
+  background: rgba(5, 150, 105, 0.1);
+  color: #059669;
+  border-color: #059669;
+}
+
+.badge-danger {
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+  border-color: #ef4444;
+}
+
+.badge-info {
+  background: rgba(59, 130, 246, 0.1);
+  color: #3b82f6;
+  border-color: #3b82f6;
+}
+
+.badge-warning {
+  background: rgba(245, 158, 11, 0.1);
+  color: #f59e0b;
+  border-color: #f59e0b;
 }
 
 .badge-secondary {
   background-color: var(--border-color);
   color: var(--text-secondary);
+  border-color: var(--border-color);
 }
 
 /* Datastore cards */
@@ -1140,21 +2190,27 @@ export default {
   transition: width 0.4s ease;
 }
 
-.ds-usage-bar--ok {
-  background: #10b981;
-}
-
-.ds-usage-bar--warn {
-  background: #f59e0b;
-}
-
-.ds-usage-bar--danger {
-  background: #ef4444;
-}
+.ds-usage-bar--ok { background: #10b981; }
+.ds-usage-bar--warn { background: #f59e0b; }
+.ds-usage-bar--danger { background: #ef4444; }
 
 .ds-last-backup {
   margin-top: 0.4rem;
   padding-top: 0.4rem;
   border-top: 1px solid var(--border-color);
+}
+
+.required { color: #ef4444; }
+
+@media (max-width: 640px) {
+  .form-row, .form-row-3 {
+    grid-template-columns: 1fr;
+  }
+  .radio-group--inline {
+    flex-direction: column;
+  }
+  .history-filters {
+    flex-direction: column;
+  }
 }
 </style>

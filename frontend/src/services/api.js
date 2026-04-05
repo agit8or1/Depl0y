@@ -97,19 +97,28 @@ export default {
   // Auth
   auth: {
     login: (credentials) => api.post('/auth/login', credentials),
-    logout: () => {
+    login2fa: (data) => api.post('/auth/2fa/login', data),
+    logout: (refreshToken) => {
+      const p = refreshToken
+        ? api.post('/auth/logout', { refresh_token: refreshToken }).catch(() => {})
+        : Promise.resolve()
       localStorage.removeItem('access_token')
       localStorage.removeItem('refresh_token')
+      return p
     },
     getMe: () => api.get('/auth/me'),
     setupTOTP: () => api.post('/auth/totp/setup'),
     verifyTOTP: (code) => api.post('/auth/totp/verify', { code }),
     disableTOTP: (code) => api.post('/auth/totp/disable', { code }),
+    regenerateBackupCodes: (code) => api.post('/auth/totp/backup-codes', { code }),
+    getBackupCodeCount: () => api.get('/auth/totp/backup-codes/count'),
     changePassword: (data) => api.patch('/auth/me/password', data),
     updateMe: (data) => api.patch('/auth/me', data),
     listApiKeys: () => api.get('/auth/api-keys'),
     createApiKey: (data) => api.post('/auth/api-keys', data),
     deleteApiKey: (id) => api.delete('/auth/api-keys/' + id),
+    listSessions: () => api.get('/auth/sessions'),
+    revokeSession: (id) => api.delete('/auth/sessions/' + id),
   },
 
   // Users
@@ -215,7 +224,10 @@ export default {
   dashboard: {
     getStats: () => api.get('/dashboard/stats'),
     getResources: () => api.get('/dashboard/resources'),
-    getActivity: (params) => api.get('/dashboard/activity', { params })
+    getActivity: (params) => api.get('/dashboard/activity', { params }),
+    getSummary: () => api.get('/dashboard/summary'),
+    getRecentActivity: (params) => api.get('/dashboard/recent-activity', { params }),
+    getAlerts: () => api.get('/dashboard/alerts'),
   },
 
   // Bug Report
@@ -564,6 +576,8 @@ export default {
     createBackupSchedule: (h, data) => api.post(`/pve-node/${h}/cluster/backup`, data),
     updateBackupSchedule: (h, id, data) => api.put(`/pve-node/${h}/cluster/backup/${id}`, data),
     deleteBackupSchedule: (h, id) => api.delete(`/pve-node/${h}/cluster/backup/${id}`),
+    runBackupScheduleNow: (h, id, data) => api.post(`/pve-node/${h}/cluster/backup/${id}/run`, data),
+    getBackupHistory: (h, params) => api.get(`/pve-node/${h}/backup/history`, { params }),
     // LXC
     listContainers: (h, node) => api.get(`/pve-node/${h}/nodes/${node}/lxc`),
     getContainerConfig: (h, node, vmid) => api.get(`/pve-node/${h}/nodes/${node}/lxc/${vmid}/config`),
@@ -578,6 +592,14 @@ export default {
     cloneLxc: (h, node, vmid, data) => api.post(`/pve-node/${h}/nodes/${node}/lxc/${vmid}/clone`, data),
     lxcRrdData: (h, node, vmid, params) => api.get(`/pve-node/${h}/nodes/${node}/lxc/${vmid}/rrddata`, { params }),
     resizeLxcDisk: (h, node, vmid, data) => api.post(`/pve-node/${h}/nodes/${node}/lxc/${vmid}/resize`, data),
+    deleteContainerSnapshot: (h, node, vmid, snap) => api.delete(`/pve-node/${h}/nodes/${node}/lxc/${vmid}/snapshots/${snap}`),
+    // LXC Firewall
+    getCtFirewallRules: (h, node, vmid) => api.get(`/pve-node/${h}/nodes/${node}/lxc/${vmid}/firewall/rules`),
+    addCtFirewallRule: (h, node, vmid, data) => api.post(`/pve-node/${h}/nodes/${node}/lxc/${vmid}/firewall/rules`, data),
+    updateCtFirewallRule: (h, node, vmid, pos, data) => api.put(`/pve-node/${h}/nodes/${node}/lxc/${vmid}/firewall/rules/${pos}`, data),
+    deleteCtFirewallRule: (h, node, vmid, pos) => api.delete(`/pve-node/${h}/nodes/${node}/lxc/${vmid}/firewall/rules/${pos}`),
+    getCtFirewallOptions: (h, node, vmid) => api.get(`/pve-node/${h}/nodes/${node}/lxc/${vmid}/firewall/options`),
+    setCtFirewallOptions: (h, node, vmid, data) => api.put(`/pve-node/${h}/nodes/${node}/lxc/${vmid}/firewall/options`, data),
     // Restore
     restoreBackup: (h, node, vmid, data) => api.post(`/pve-node/${h}/nodes/${node}/qemu/${vmid}/restore`, data),
     // Aliases for NodeDetail.vue / Tasks.vue / Containers.vue naming convention
@@ -620,6 +642,7 @@ export default {
   // Audit Log
   audit: {
     list: (params) => api.get('/audit/', { params }),
+    feed: (params) => api.get('/audit/feed', { params }),
   },
 
   // PBS Management

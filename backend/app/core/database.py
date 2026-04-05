@@ -135,3 +135,48 @@ def init_db():
             conn.commit()
         except Exception:
             pass
+
+        # Add TOTP columns to users table if missing
+        for col_name, col_def in [
+            ("totp_secret", "VARCHAR(32)"),
+            ("totp_enabled", "BOOLEAN NOT NULL DEFAULT 0"),
+        ]:
+            try:
+                conn.execute(text(f"ALTER TABLE users ADD COLUMN {col_name} {col_def}"))
+                conn.commit()
+            except Exception:
+                pass
+
+        # Create totp_backup_codes table
+        try:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS totp_backup_codes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL REFERENCES users(id),
+                    code_hash VARCHAR(255) NOT NULL,
+                    used BOOLEAN NOT NULL DEFAULT 0,
+                    used_at DATETIME
+                )
+            """))
+            conn.commit()
+        except Exception:
+            pass
+
+        # Create refresh_tokens table for token rotation
+        try:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS refresh_tokens (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL REFERENCES users(id),
+                    token_hash VARCHAR(255) NOT NULL UNIQUE,
+                    ip_address VARCHAR(50),
+                    user_agent VARCHAR(500),
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    expires_at DATETIME NOT NULL,
+                    revoked BOOLEAN NOT NULL DEFAULT 0,
+                    revoked_at DATETIME
+                )
+            """))
+            conn.commit()
+        except Exception:
+            pass

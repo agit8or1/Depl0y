@@ -8,6 +8,7 @@
       </div>
       <div class="header-actions">
         <span class="refresh-countdown" v-if="!loading">Auto-refresh in {{ countdown }}s</span>
+        <router-link to="/create-lxc" class="btn btn-primary btn-sm">+ Create LXC</router-link>
         <button @click="loadAll(true)" class="btn btn-outline btn-sm" :disabled="loading">
           {{ loading ? 'Refreshing…' : 'Refresh' }}
         </button>
@@ -37,11 +38,19 @@
           </select>
         </div>
 
-        <!-- Host filter (shown when >1 host) -->
+        <!-- Host filter -->
         <div class="filter-group" v-if="hosts.length > 1">
           <select v-model="hostFilter" class="form-input filter-select">
             <option value="all">All Hosts</option>
             <option v-for="h in hosts" :key="h.id" :value="h.id">{{ h.name }}</option>
+          </select>
+        </div>
+
+        <!-- Node filter -->
+        <div class="filter-group" v-if="uniqueNodes.length > 1">
+          <select v-model="nodeFilter" class="form-input filter-select">
+            <option value="all">All Nodes</option>
+            <option v-for="n in uniqueNodes" :key="n" :value="n">{{ n }}</option>
           </select>
         </div>
 
@@ -55,6 +64,17 @@
       </div>
     </div>
 
+    <!-- Bulk Actions Bar -->
+    <div v-if="selectedIds.size > 0" class="bulk-bar card mb-2">
+      <span class="bulk-count">{{ selectedIds.size }} selected</span>
+      <div class="flex gap-1">
+        <button @click="bulkAction('start')" class="btn btn-success btn-sm" :disabled="bulkActioning">Start</button>
+        <button @click="bulkAction('stop')" class="btn btn-outline btn-sm" :disabled="bulkActioning">Stop</button>
+        <button @click="bulkAction('reboot')" class="btn btn-outline btn-sm" :disabled="bulkActioning">Reboot</button>
+        <button @click="selectedIds.clear()" class="btn btn-outline btn-sm">Clear</button>
+      </div>
+    </div>
+
     <!-- Loading spinner -->
     <div v-if="loading && containers.length === 0" class="loading-spinner"></div>
 
@@ -64,21 +84,39 @@
         <table class="table">
           <thead>
             <tr>
-              <th>CT ID</th>
-              <th>Hostname</th>
-              <th>Status</th>
-              <th>Node</th>
-              <th>Host</th>
-              <th>CPU%</th>
-              <th>Memory</th>
-              <th>IP Address</th>
-              <th>Uptime</th>
+              <th style="width:36px;">
+                <input type="checkbox" @change="toggleSelectAll" :checked="allSelected" :indeterminate="someSelected" />
+              </th>
+              <th @click="toggleSort('vmid')" class="sortable-col">
+                CT ID <span class="sort-icon">{{ sortIcon('vmid') }}</span>
+              </th>
+              <th @click="toggleSort('name')" class="sortable-col">
+                Hostname <span class="sort-icon">{{ sortIcon('name') }}</span>
+              </th>
+              <th @click="toggleSort('status')" class="sortable-col">
+                Status <span class="sort-icon">{{ sortIcon('status') }}</span>
+              </th>
+              <th @click="toggleSort('_node')" class="sortable-col">
+                Node <span class="sort-icon">{{ sortIcon('_node') }}</span>
+              </th>
+              <th class="text-sm">Host</th>
+              <th @click="toggleSort('cpu')" class="sortable-col">
+                CPU% <span class="sort-icon">{{ sortIcon('cpu') }}</span>
+              </th>
+              <th @click="toggleSort('mem')" class="sortable-col">
+                Memory <span class="sort-icon">{{ sortIcon('mem') }}</span>
+              </th>
+              <th class="text-sm">Tags</th>
+              <th class="text-sm">IP Address</th>
+              <th @click="toggleSort('uptime')" class="sortable-col">
+                Uptime <span class="sort-icon">{{ sortIcon('uptime') }}</span>
+              </th>
               <th>Actions</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-if="filteredContainers.length === 0">
-              <td colspan="10" class="text-muted text-center empty-row">
+            <tr v-if="sortedContainers.length === 0">
+              <td colspan="12" class="text-muted text-center empty-row">
                 <template v-if="containers.length === 0">
                   No containers found. Make sure your Proxmox hosts are configured and reachable.
                 </template>
@@ -88,10 +126,18 @@
               </td>
             </tr>
             <tr
-              v-for="ct in filteredContainers"
+              v-for="ct in sortedContainers"
               :key="`${ct._hostId}-${ct._node}-${ct.vmid}`"
-              :class="{ 'row-running': ct.status === 'running', 'row-stopped': ct.status === 'stopped' }"
+              :class="{ 'row-running': ct.status === 'running', 'row-stopped': ct.status === 'stopped', 'row-selected': selectedIds.has(ctKey(ct)) }"
             >
+              <!-- Checkbox -->
+              <td>
+                <input type="checkbox"
+                  :checked="selectedIds.has(ctKey(ct))"
+                  @change="toggleSelect(ct)"
+                />
+              </td>
+
               <!-- CT ID -->
               <td class="vmid-cell">
                 <span class="vmid-label">{{ ct.vmid }}</span>
@@ -148,6 +194,14 @@
                     </span>
                   </div>
                 </template>
+                <span v-else class="text-muted">—</span>
+              </td>
+
+              <!-- Tags -->
+              <td>
+                <div v-if="ct.tags" class="tags-row">
+                  <span v-for="tag in parseTags(ct.tags)" :key="tag" class="tag-pill">{{ tag }}</span>
+                </div>
                 <span v-else class="text-muted">—</span>
               </td>
 
@@ -214,7 +268,7 @@
 </template>
 
 <script>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/services/api'
 import { useToast } from 'vue-toastification'
@@ -231,11 +285,20 @@ export default {
     const containers = ref([])
     const hosts = ref([])
     const loading = ref(true)
+    const bulkActioning = ref(false)
 
     // Filters
     const searchQuery = ref('')
     const statusFilter = ref('all')
     const hostFilter = ref('all')
+    const nodeFilter = ref('all')
+
+    // Selection
+    const selectedIds = reactive(new Set())
+
+    // Sort
+    const sortKey = ref('vmid')
+    const sortDir = ref('asc')
 
     // Auto-refresh
     const countdown = ref(REFRESH_SECS)
@@ -243,6 +306,8 @@ export default {
     let tickTimer = null
 
     // ── Helpers ──────────────────────────────────────────────────────────────
+
+    const ctKey = (ct) => `${ct._hostId}:${ct._node}:${ct.vmid}`
 
     function statusBadgeClass(status) {
       if (status === 'running') return 'badge badge-success'
@@ -256,12 +321,8 @@ export default {
       return 'bar-success'
     }
 
-    // Extract IP from Proxmox resource data.
-    // The cluster resources endpoint may include 'ip' or we can parse 'netin'
-    // fields; the most reliable field Proxmox exposes is `ip` on running CTs.
     function extractIp(ct) {
       if (ct.ip) return ct.ip
-      // Some Proxmox versions expose the first interface IP directly
       if (ct.ipconfig0) {
         const m = ct.ipconfig0.match(/ip=([^,/]+)/)
         if (m) return m[1]
@@ -269,12 +330,31 @@ export default {
       return null
     }
 
+    function parseTags(tags) {
+      if (!tags) return []
+      return tags.split(';').map(t => t.trim()).filter(Boolean)
+    }
+
+    // ── Sort helpers ──────────────────────────────────────────────────────────
+
+    const toggleSort = (key) => {
+      if (sortKey.value === key) {
+        sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc'
+      } else {
+        sortKey.value = key
+        sortDir.value = 'asc'
+      }
+    }
+
+    const sortIcon = (key) => {
+      if (sortKey.value !== key) return '↕'
+      return sortDir.value === 'asc' ? '↑' : '↓'
+    }
+
     // ── Data loading ─────────────────────────────────────────────────────────
 
     const loadAll = async (manual = false) => {
-      if (manual) {
-        countdown.value = REFRESH_SECS
-      }
+      if (manual) countdown.value = REFRESH_SECS
       loading.value = true
       try {
         const hostsRes = await api.proxmox.listHosts()
@@ -283,8 +363,6 @@ export default {
         const allCts = await Promise.all(
           hosts.value.map(async (host) => {
             try {
-              // Use clusterResources for lxc — returns all CTs across all nodes
-              // with live cpu/mem/uptime fields in one call.
               const res = await api.pveNode.clusterResources(host.id, 'lxc')
               const items = res.data || []
               return items.map(ct => ({
@@ -311,16 +389,21 @@ export default {
       }
     }
 
+    // ── Computed: unique nodes ────────────────────────────────────────────────
+
+    const uniqueNodes = computed(() => {
+      const nodes = new Set(containers.value.map(ct => ct._node).filter(Boolean))
+      return [...nodes].sort()
+    })
+
     // ── Filtered view ─────────────────────────────────────────────────────────
 
     const filteredContainers = computed(() => {
       const q = searchQuery.value.trim().toLowerCase()
       return containers.value.filter(ct => {
-        // Host filter
         if (hostFilter.value !== 'all' && ct._hostId !== hostFilter.value) return false
-        // Status filter
+        if (nodeFilter.value !== 'all' && ct._node !== nodeFilter.value) return false
         if (statusFilter.value !== 'all' && ct.status !== statusFilter.value) return false
-        // Search (name or vmid)
         if (q) {
           const name = (ct.name || '').toLowerCase()
           const vmid = String(ct.vmid)
@@ -330,11 +413,71 @@ export default {
       })
     })
 
+    const sortedContainers = computed(() => {
+      const list = [...filteredContainers.value]
+      list.sort((a, b) => {
+        let aVal = a[sortKey.value]
+        let bVal = b[sortKey.value]
+        if (aVal == null) aVal = ''
+        if (bVal == null) bVal = ''
+        if (typeof aVal === 'string') aVal = aVal.toLowerCase()
+        if (typeof bVal === 'string') bVal = bVal.toLowerCase()
+        if (aVal < bVal) return sortDir.value === 'asc' ? -1 : 1
+        if (aVal > bVal) return sortDir.value === 'asc' ? 1 : -1
+        return 0
+      })
+      return list
+    })
+
     const runningCount = computed(() =>
       containers.value.filter(c => c.status === 'running').length
     )
 
-    // ── Actions ───────────────────────────────────────────────────────────────
+    // ── Selection ─────────────────────────────────────────────────────────────
+
+    const allSelected = computed(() =>
+      sortedContainers.value.length > 0 && sortedContainers.value.every(ct => selectedIds.has(ctKey(ct)))
+    )
+
+    const someSelected = computed(() =>
+      sortedContainers.value.some(ct => selectedIds.has(ctKey(ct))) && !allSelected.value
+    )
+
+    const toggleSelect = (ct) => {
+      const k = ctKey(ct)
+      if (selectedIds.has(k)) selectedIds.delete(k)
+      else selectedIds.add(k)
+    }
+
+    const toggleSelectAll = () => {
+      if (allSelected.value) {
+        sortedContainers.value.forEach(ct => selectedIds.delete(ctKey(ct)))
+      } else {
+        sortedContainers.value.forEach(ct => selectedIds.add(ctKey(ct)))
+      }
+    }
+
+    // ── Bulk Actions ──────────────────────────────────────────────────────────
+
+    const bulkAction = async (action) => {
+      const targets = sortedContainers.value.filter(ct => selectedIds.has(ctKey(ct)))
+      if (!targets.length) return
+      if (!confirm(`${action} ${targets.length} container(s)?`)) return
+      bulkActioning.value = true
+      const results = await Promise.allSettled(
+        targets.map(ct =>
+          api.pveNode.ctAction(ct._hostId, ct._node, ct.vmid, action)
+        )
+      )
+      const failed = results.filter(r => r.status === 'rejected').length
+      if (failed) toast.error(`${failed} action(s) failed`)
+      else toast.success(`${action} sent to ${targets.length} container(s)`)
+      bulkActioning.value = false
+      selectedIds.clear()
+      setTimeout(() => loadAll(), 3000)
+    }
+
+    // ── Single actions ────────────────────────────────────────────────────────
 
     const ctAction = async (ct, action) => {
       ct._actioning = true
@@ -342,7 +485,6 @@ export default {
       try {
         await api.pveNode.ctAction(ct._hostId, ct._node, ct.vmid, action)
         toast.success(`Container ${ct.name || ct.vmid}: ${action} initiated`)
-        // Reload after a short delay to pick up new status
         setTimeout(() => loadAll(), 3000)
       } catch (e) {
         console.error(e)
@@ -412,26 +554,40 @@ export default {
       searchQuery,
       statusFilter,
       hostFilter,
+      nodeFilter,
+      uniqueNodes,
       countdown,
       filteredContainers,
+      sortedContainers,
       runningCount,
+      selectedIds,
+      allSelected,
+      someSelected,
+      bulkActioning,
+      sortKey,
+      sortDir,
       formatBytes,
       formatUptime,
       statusBadgeClass,
       barClass,
+      parseTags,
       loadAll,
       ctAction,
       openShell,
       openDetail,
+      ctKey,
+      toggleSelect,
+      toggleSelectAll,
+      bulkAction,
+      toggleSort,
+      sortIcon,
     }
   }
 }
 </script>
 
 <style scoped>
-.containers-page {
-  padding: 0;
-}
+.containers-page { padding: 0; }
 
 /* ── Page header ─────────────────────────────────────────────────────────── */
 .page-header {
@@ -439,6 +595,8 @@ export default {
   justify-content: space-between;
   align-items: flex-start;
   margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+  gap: 0.75rem;
 }
 
 .page-header h2 {
@@ -452,6 +610,7 @@ export default {
   display: flex;
   align-items: center;
   gap: 0.75rem;
+  flex-wrap: wrap;
 }
 
 .refresh-countdown {
@@ -488,17 +647,10 @@ export default {
   min-width: 0;
 }
 
-.filter-input {
-  width: 220px;
-}
+.filter-input { width: 220px; }
+.filter-select { width: 150px; }
 
-.filter-select {
-  width: 150px;
-}
-
-.filter-summary {
-  margin-left: auto;
-}
+.filter-summary { margin-left: auto; }
 
 .count-badge {
   font-size: 0.85rem;
@@ -512,19 +664,27 @@ export default {
   margin-left: 0.25rem;
 }
 
+/* ── Bulk bar ────────────────────────────────────────────────────────────── */
+.bulk-bar {
+  padding: 0.6rem 1rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  background: var(--bg-secondary);
+}
+
+.bulk-count {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--primary-color);
+}
+
 /* ── Table ───────────────────────────────────────────────────────────────── */
-.table-container {
-  overflow-x: auto;
-}
+.table-container { overflow-x: auto; }
 
-.empty-row {
-  padding: 2rem 1rem;
-}
+.empty-row { padding: 2rem 1rem; }
 
-.vmid-cell {
-  white-space: nowrap;
-}
-
+.vmid-cell { white-space: nowrap; }
 .vmid-label {
   font-family: monospace;
   font-size: 0.875rem;
@@ -536,7 +696,6 @@ export default {
   color: var(--primary-color);
   font-weight: 500;
 }
-
 .clickable-name:hover {
   text-decoration: underline;
   color: var(--text-primary);
@@ -545,6 +704,33 @@ export default {
 .ip-cell {
   font-family: monospace;
   font-size: 0.8rem;
+}
+
+.sortable-col {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+.sortable-col:hover { color: var(--primary-color); }
+.sort-icon { font-size: 0.75rem; color: var(--text-muted); margin-left: 0.2rem; }
+
+/* ── Tags ────────────────────────────────────────────────────────────────── */
+.tags-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.tag-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.1em 0.5em;
+  font-size: 0.7rem;
+  font-weight: 500;
+  border-radius: 9999px;
+  background: var(--primary-color, #3b82f6);
+  color: white;
+  white-space: nowrap;
 }
 
 /* ── Status badges ───────────────────────────────────────────────────────── */
@@ -571,9 +757,7 @@ export default {
 }
 
 /* ── Inline stat bars ────────────────────────────────────────────────────── */
-.stat-cell {
-  min-width: 140px;
-}
+.stat-cell { min-width: 140px; }
 
 .stat-bar-wrap {
   display: flex;
@@ -621,13 +805,9 @@ export default {
 }
 
 /* ── Row highlight ───────────────────────────────────────────────────────── */
-.row-running td:first-child {
-  border-left: 3px solid #22c55e;
-}
-
-.row-stopped td:first-child {
-  border-left: 3px solid var(--border-color);
-}
+.row-running td:first-child { border-left: 3px solid #22c55e; }
+.row-stopped td:first-child { border-left: 3px solid var(--border-color); }
+.row-selected { background: rgba(59, 130, 246, 0.06); }
 
 /* ── Utility ─────────────────────────────────────────────────────────────── */
 .mb-2     { margin-bottom: 1rem; }
@@ -636,4 +816,5 @@ export default {
 .text-center { text-align: center; }
 .flex { display: flex; }
 .gap-1 { gap: 0.5rem; }
+.btn-sm { padding: 0.25rem 0.6rem; font-size: 0.875rem; }
 </style>

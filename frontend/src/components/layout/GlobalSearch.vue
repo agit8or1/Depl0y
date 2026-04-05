@@ -16,24 +16,45 @@
         @keydown="onKeydown"
         @focus="onFocus"
       />
-      <button v-if="query" class="clear-btn" @click="clearSearch" title="Clear">
+      <button v-if="query" class="clear-btn" @click="clearSearch" title="Clear (Esc)">
         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <line x1="18" y1="6" x2="6" y2="18"></line>
           <line x1="6" y1="6" x2="18" y2="18"></line>
         </svg>
       </button>
       <span v-if="loading" class="spinner"></span>
+      <kbd v-if="!query && !loading" class="search-hint-kbd">Ctrl K</kbd>
     </div>
 
     <div v-if="showDropdown" class="search-dropdown">
+      <!-- Recent searches (shown when no query) -->
+      <template v-if="!query && recentSearches.length">
+        <div class="result-group-label result-group-label--recent">
+          Recent
+          <button class="clear-recent-btn" @mousedown.prevent="clearRecentSearches">Clear</button>
+        </div>
+        <div
+          v-for="(term, idx) in recentSearches"
+          :key="'recent-' + idx"
+          class="result-item result-item--recent"
+          @mousedown.prevent="applyRecent(term)"
+        >
+          <span class="result-icon">🕐</span>
+          <span class="result-name">{{ term }}</span>
+        </div>
+      </template>
+
       <!-- No results -->
-      <div v-if="!loading && results.length === 0 && query.length >= 3" class="no-results">
+      <div v-if="query && !loading && results.length === 0 && query.length >= 2" class="no-results">
         No results for "{{ query }}"
       </div>
 
       <!-- Result groups -->
       <template v-for="group in groupedResults" :key="group.type">
-        <div class="result-group-label">{{ group.label }}</div>
+        <div class="result-group-label">
+          <span class="group-type-icon">{{ group.icon }}</span>
+          {{ group.label }}
+        </div>
         <div
           v-for="(item, idx) in group.items"
           :key="item._key"
@@ -70,7 +91,27 @@ const resourcesCache = {} // keyed by hostId
 const ICONS = { qemu: '🖥️', lxc: '📦', node: '🖧' }
 const TYPE_ORDER = ['qemu', 'lxc', 'node']
 const TYPE_LABELS = { qemu: 'Virtual Machines', lxc: 'Containers', node: 'Nodes' }
-const MAX_RESULTS = 10
+const TYPE_ICONS  = { qemu: '🖥️', lxc: '📦', node: '🌐' }
+const MAX_RESULTS = 12
+const RECENT_KEY  = 'depl0y_recent_searches'
+const MAX_RECENT  = 5
+
+function loadRecentSearches() {
+  try {
+    return JSON.parse(localStorage.getItem(RECENT_KEY) || '[]')
+  } catch {
+    return []
+  }
+}
+
+function saveRecentSearch(term) {
+  const trimmed = term.trim()
+  if (!trimmed) return
+  let list = loadRecentSearches().filter(t => t !== trimmed)
+  list.unshift(trimmed)
+  list = list.slice(0, MAX_RECENT)
+  localStorage.setItem(RECENT_KEY, JSON.stringify(list))
+}
 
 export default {
   name: 'GlobalSearch',
@@ -83,6 +124,7 @@ export default {
     const showDropdown = ref(false)
     const searchContainer = ref(null)
     const inputRef = ref(null)
+    const recentSearches = ref(loadRecentSearches())
 
     let debounceTimer = null
 
@@ -175,7 +217,7 @@ export default {
       }
       return TYPE_ORDER
         .filter(t => map[t] && map[t].length)
-        .map(t => ({ type: t, label: TYPE_LABELS[t] || t, items: map[t] }))
+        .map(t => ({ type: t, label: TYPE_LABELS[t] || t, icon: TYPE_ICONS[t] || '', items: map[t] }))
     })
 
     // Flat index across all groups for keyboard nav
@@ -209,6 +251,12 @@ export default {
         route = `/proxmox/${h}/nodes/${node}`
       }
 
+      // Persist the search term as a recent search
+      if (query.value.trim()) {
+        saveRecentSearch(query.value.trim())
+        recentSearches.value = loadRecentSearches()
+      }
+
       clearSearch()
       router.push(route)
     }
@@ -218,6 +266,16 @@ export default {
       results.value = []
       showDropdown.value = false
       activeIndex.value = -1
+    }
+
+    const clearRecentSearches = () => {
+      localStorage.removeItem(RECENT_KEY)
+      recentSearches.value = []
+    }
+
+    const applyRecent = (term) => {
+      query.value = term
+      inputRef.value?.focus()
     }
 
     // ── Keyboard ─────────────────────────────────────────────────────────────
@@ -244,7 +302,9 @@ export default {
     }
 
     const onFocus = () => {
-      if (query.value.length >= 2) showDropdown.value = true
+      if (query.value.length >= 2 || recentSearches.value.length > 0) {
+        showDropdown.value = true
+      }
     }
 
     // ── Status badge ─────────────────────────────────────────────────────────
@@ -263,7 +323,9 @@ export default {
       clearTimeout(debounceTimer)
       if (val.length < 2) {
         results.value = []
-        showDropdown.value = false
+        // Keep dropdown open if we have recent searches and input is focused
+        const hasFocus = document.activeElement === inputRef.value
+        showDropdown.value = hasFocus && recentSearches.value.length > 0
         loading.value = false
         return
       }
@@ -293,12 +355,15 @@ export default {
       showDropdown,
       searchContainer,
       inputRef,
+      recentSearches,
       groupedResults,
       flatIndex,
       onKeydown,
       onFocus,
       navigateTo,
       clearSearch,
+      clearRecentSearches,
+      applyRecent,
       statusClass
     }
   }
@@ -508,6 +573,57 @@ export default {
   color: rgba(255, 255, 255, 0.65);
 }
 
+/* ── Ctrl K hint ── */
+.search-hint-kbd {
+  font-size: 0.68rem;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 4px;
+  padding: 1px 6px;
+  color: rgba(255, 255, 255, 0.45);
+  white-space: nowrap;
+  flex-shrink: 0;
+  pointer-events: none;
+  font-family: inherit;
+}
+
+/* ── Recent searches ── */
+.result-group-label--recent {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.clear-recent-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.65rem;
+  color: rgba(59, 130, 246, 0.75);
+  padding: 0;
+  transition: color 0.15s;
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: 500;
+}
+
+.clear-recent-btn:hover {
+  color: #60a5fa;
+}
+
+.result-item--recent {
+  opacity: 0.85;
+}
+
+.result-item--recent:hover {
+  opacity: 1;
+}
+
+/* ── Group icon ── */
+.group-type-icon {
+  margin-right: 0.3rem;
+}
+
 /* ── Responsive ── */
 @media (max-width: 768px) {
   .global-search {
@@ -516,6 +632,10 @@ export default {
 
   .search-input {
     font-size: 0.8rem;
+  }
+
+  .search-hint-kbd {
+    display: none;
   }
 }
 </style>

@@ -113,6 +113,7 @@
 <script>
 import { ref, onMounted } from 'vue'
 import api from '@/services/api'
+import toast from '@/plugins/toast.js'
 
 export default {
   name: 'Deploy',
@@ -127,7 +128,7 @@ export default {
         const r = await api.dashboard.getActivity({ limit: 5 })
         recentVMs.value = r.data.recent_vms || []
       } catch (e) {
-        console.error('Failed to load recent deployments:', e)
+        toast.warning('Could not load recent deployments')
         recentVMs.value = []
       } finally {
         loadingRecent.value = false

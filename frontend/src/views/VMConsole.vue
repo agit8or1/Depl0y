@@ -101,6 +101,7 @@
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute } from 'vue-router'
 import api from '@/services/api'
+import toast from '@/plugins/toast.js'
 
 const route = useRoute()
 const hostId = computed(() => route.params.hostId)
@@ -213,7 +214,7 @@ async function connect() {
     })
 
   } catch (e) {
-    console.error('noVNC load/connect error:', e)
+    toast.error(`noVNC failed to load or connect: ${e.message || 'unknown error'}`)
     connectionStatus.value = 'error'
     errorMessage.value = `noVNC failed to load or connect: ${e.message}. Use the Proxmox Web UI console instead.`
   }
@@ -235,7 +236,9 @@ function sendCtrlAltDel() {
 
 function toggleFullscreen() {
   if (!document.fullscreenElement) {
-    document.documentElement.requestFullscreen().catch(err => console.error('Fullscreen error:', err))
+    document.documentElement.requestFullscreen().catch(err => {
+      toast.error(`Fullscreen failed: ${err.message}`)
+    })
   } else {
     document.exitFullscreen()
   }
@@ -244,7 +247,9 @@ function toggleFullscreen() {
 function copyWsUrl() {
   const url = buildWsUrl()
   navigator.clipboard.writeText(url).then(() => {
-    alert('WebSocket URL copied to clipboard')
+    toast.success('WebSocket URL copied to clipboard')
+  }).catch(() => {
+    toast.error('Failed to copy to clipboard')
   })
 }
 

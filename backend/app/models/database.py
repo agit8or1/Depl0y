@@ -503,3 +503,33 @@ class WebhookDelivery(Base):
     success = Column(Boolean, default=False, nullable=False)
     response_body = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class TotpBackupCode(Base):
+    """Backup codes for TOTP 2FA recovery"""
+    __tablename__ = "totp_backup_codes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    code_hash = Column(String(255), nullable=False)
+    used = Column(Boolean, default=False, nullable=False)
+    used_at = Column(DateTime, nullable=True)
+
+    user = relationship("User", backref="totp_backup_codes")
+
+
+class RefreshToken(Base):
+    """Refresh token store for rotation and revocation"""
+    __tablename__ = "refresh_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    token_hash = Column(String(255), unique=True, nullable=False, index=True)
+    ip_address = Column(String(50), nullable=True)
+    user_agent = Column(String(500), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    revoked = Column(Boolean, default=False, nullable=False)
+    revoked_at = Column(DateTime, nullable=True)
+
+    user = relationship("User", backref="refresh_tokens")

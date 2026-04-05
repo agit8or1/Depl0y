@@ -692,6 +692,73 @@ def delete_backup_schedule(host_id: int, id: str, db: Session = Depends(get_db),
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/{host_id}/cluster/backup/{id}/run")
+def run_backup_schedule_now(host_id: int, id: str, data: dict = Body(default={}),
+                             db: Session = Depends(get_db),
+                             current_user=Depends(require_operator)):
+    """Run a backup schedule job immediately on the given node (node required in body)."""
+    host = _get_host(host_id, db)
+    node = data.get("node")
+    if not node:
+        raise HTTPException(status_code=400, detail="'node' is required")
+    try:
+        # Fetch schedule to get its parameters
+        schedules = _pve(host).cluster.backup.get()
+        sched = next((s for s in schedules if str(s.get("id")) == str(id)), None)
+        if not sched:
+            raise HTTPException(status_code=404, detail=f"Backup schedule '{id}' not found")
+        # Build vzdump payload from schedule parameters
+        payload: Dict[str, Any] = {}
+        for k in ("vmid", "storage", "mode", "compress", "mailnotification", "mailto",
+                  "maxfiles", "keep-last", "keep-daily", "keep-weekly", "keep-monthly",
+                  "keep-yearly", "protected", "notes-template"):
+            if k in sched and sched[k] not in (None, ""):
+                payload[k] = sched[k]
+        # Merge any overrides from request body (except 'node')
+        for k, v in data.items():
+            if k != "node":
+                payload[k] = v
+        upid = _pve(host).nodes(node).vzdump.post(**payload)
+        return {"upid": upid}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{host_id}/backup/history")
+def backup_task_history(host_id: int, node: Optional[str] = None,
+                        limit: int = 200, start: int = 0,
+                        db: Session = Depends(get_db),
+                        current_user=Depends(get_current_user)):
+    """Return completed backup tasks across all (or a specific) node(s)."""
+    host = _get_host(host_id, db)
+    try:
+        if node:
+            nodes_to_query = [node]
+        else:
+            resources = _pve(host).cluster.resources.get(type="node")
+            nodes_to_query = [r["node"] for r in resources if "node" in r]
+
+        all_tasks: List[Dict[str, Any]] = []
+        for n in nodes_to_query:
+            try:
+                tasks = _pve(host).nodes(n).tasks.get(
+                    limit=limit, start=start, typefilter="vzdump"
+                )
+                for t in tasks:
+                    t["_node"] = n
+                all_tasks.extend(tasks)
+            except Exception:
+                pass
+
+        # Sort by starttime descending
+        all_tasks.sort(key=lambda t: t.get("starttime", 0), reverse=True)
+        return all_tasks[:limit]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ── LXC containers ────────────────────────────────────────────────────────────
 
 @router.get("/{host_id}/nodes/{node}/lxc")
@@ -820,6 +887,97 @@ def clone_ct(host_id: int, node: str, vmid: int, data: dict,
         upid = _pve(host).nodes(node).lxc(vmid).clone.post(**data)
         pve_cache.clear_prefix(f"pve:{host_id}:")
         return {"upid": upid}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/{host_id}/nodes/{node}/lxc/{vmid}/snapshots/{snapname}")
+def delete_ct_snapshot(host_id: int, node: str, vmid: int, snapname: str,
+                       db: Session = Depends(get_db), current_user=Depends(require_operator)):
+    """Delete an LXC snapshot."""
+    host = _get_host(host_id, db)
+    try:
+        upid = _pve(host).nodes(node).lxc(vmid).snapshot(snapname).delete()
+        return {"upid": upid}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{host_id}/nodes/{node}/lxc/{vmid}/resize")
+def resize_ct_disk(host_id: int, node: str, vmid: int, data: dict,
+                   db: Session = Depends(get_db), current_user=Depends(require_operator)):
+    """Resize an LXC disk/mount point. Expects disk=rootfs|mpN and size=+XG."""
+    host = _get_host(host_id, db)
+    try:
+        upid = _pve(host).nodes(node).lxc(vmid).resize.put(**data)
+        pve_cache.clear_prefix(f"pve:{host_id}:")
+        return {"upid": upid}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── LXC Firewall ──────────────────────────────────────────────────────────────
+
+@router.get("/{host_id}/nodes/{node}/lxc/{vmid}/firewall/rules")
+def list_ct_firewall_rules(host_id: int, node: str, vmid: int,
+                           db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    host = _get_host(host_id, db)
+    try:
+        return _pve(host).nodes(node).lxc(vmid).firewall.rules.get()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{host_id}/nodes/{node}/lxc/{vmid}/firewall/rules")
+def add_ct_firewall_rule(host_id: int, node: str, vmid: int, rule: dict,
+                         db: Session = Depends(get_db), current_user=Depends(require_operator)):
+    host = _get_host(host_id, db)
+    try:
+        _pve(host).nodes(node).lxc(vmid).firewall.rules.post(**rule)
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/{host_id}/nodes/{node}/lxc/{vmid}/firewall/rules/{pos}")
+def update_ct_firewall_rule(host_id: int, node: str, vmid: int, pos: int, rule: dict,
+                            db: Session = Depends(get_db), current_user=Depends(require_operator)):
+    host = _get_host(host_id, db)
+    try:
+        _pve(host).nodes(node).lxc(vmid).firewall.rules(pos).put(**rule)
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/{host_id}/nodes/{node}/lxc/{vmid}/firewall/rules/{pos}")
+def delete_ct_firewall_rule(host_id: int, node: str, vmid: int, pos: int,
+                            db: Session = Depends(get_db), current_user=Depends(require_operator)):
+    host = _get_host(host_id, db)
+    try:
+        _pve(host).nodes(node).lxc(vmid).firewall.rules(pos).delete()
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{host_id}/nodes/{node}/lxc/{vmid}/firewall/options")
+def get_ct_firewall_options(host_id: int, node: str, vmid: int,
+                            db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    host = _get_host(host_id, db)
+    try:
+        return _pve(host).nodes(node).lxc(vmid).firewall.options.get()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/{host_id}/nodes/{node}/lxc/{vmid}/firewall/options")
+def update_ct_firewall_options(host_id: int, node: str, vmid: int, opts: dict,
+                               db: Session = Depends(get_db), current_user=Depends(require_operator)):
+    host = _get_host(host_id, db)
+    try:
+        _pve(host).nodes(node).lxc(vmid).firewall.options.put(**opts)
+        return {"success": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

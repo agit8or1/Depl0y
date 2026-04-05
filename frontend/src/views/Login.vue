@@ -6,7 +6,8 @@
         <p class="login-subtitle">VM Deployment Panel</p>
       </div>
 
-      <form @submit.prevent="handleLogin" class="login-form">
+      <!-- Step 1: Username + Password -->
+      <form v-if="step === 'credentials'" @submit.prevent="handleLogin" class="login-form">
         <div class="form-group">
           <label for="username" class="form-label">Username</label>
           <input
@@ -25,26 +26,14 @@
           <input
             id="password"
             v-model="credentials.password"
-            type="password" autocomplete="current-password"
+            type="password"
+            autocomplete="current-password"
             class="form-control"
             required
           />
         </div>
 
-        <div v-if="show2FA" class="form-group">
-          <label for="totp" class="form-label">2FA Code</label>
-          <input
-            id="totp"
-            ref="totpInput"
-            v-model="credentials.totp_code"
-            type="text"
-            class="form-control"
-            placeholder="000000"
-            maxlength="6"
-            inputmode="numeric"
-            autocomplete="one-time-code"
-          />
-        </div>
+        <div v-if="errorMsg" class="login-error">{{ errorMsg }}</div>
 
         <button
           type="submit"
@@ -54,6 +43,75 @@
           {{ loading ? 'Logging in...' : 'Login' }}
         </button>
       </form>
+
+      <!-- Step 2: 2FA Challenge -->
+      <div v-else-if="step === '2fa'" class="login-form">
+        <div class="twofa-header">
+          <div class="twofa-icon">&#128274;</div>
+          <h2 class="twofa-title">Two-Factor Authentication</h2>
+          <p class="twofa-subtitle">Enter the code from your authenticator app, or use a backup code.</p>
+        </div>
+
+        <form @submit.prevent="handleTwoFA">
+          <div v-if="!useBackupCode" class="form-group">
+            <label for="totp" class="form-label">6-Digit Code</label>
+            <input
+              id="totp"
+              ref="totpInput"
+              v-model="totpCode"
+              type="text"
+              class="form-control totp-input"
+              placeholder="000000"
+              maxlength="6"
+              inputmode="numeric"
+              autocomplete="one-time-code"
+              required
+            />
+          </div>
+
+          <div v-else class="form-group">
+            <label for="backup" class="form-label">Backup Code</label>
+            <input
+              id="backup"
+              ref="backupInput"
+              v-model="totpCode"
+              type="text"
+              class="form-control totp-input"
+              placeholder="XXXXXXXX"
+              maxlength="8"
+              autocomplete="off"
+              required
+            />
+          </div>
+
+          <div v-if="errorMsg" class="login-error">{{ errorMsg }}</div>
+
+          <button
+            type="submit"
+            class="btn btn-primary btn-block"
+            :disabled="loading || totpCode.length < 6"
+          >
+            {{ loading ? 'Verifying...' : 'Verify' }}
+          </button>
+        </form>
+
+        <div class="twofa-footer">
+          <button
+            class="btn-link"
+            type="button"
+            @click="toggleBackupCode"
+          >
+            {{ useBackupCode ? 'Use authenticator app instead' : 'Use a backup code instead' }}
+          </button>
+          <button
+            class="btn-link btn-link-secondary"
+            type="button"
+            @click="backToCredentials"
+          >
+            Back to login
+          </button>
+        </div>
+      </div>
 
       <div class="login-footer">
         <p class="text-muted text-sm text-center">
@@ -75,45 +133,93 @@ export default {
     const router = useRouter()
     const authStore = useAuthStore()
 
-    const credentials = ref({
-      username: '',
-      password: '',
-      totp_code: ''
-    })
-
+    const step = ref('credentials')
+    const credentials = ref({ username: '', password: '' })
+    const totpCode = ref('')
+    const tempToken = ref('')
+    const useBackupCode = ref(false)
     const loading = ref(false)
-    const show2FA = ref(false)
+    const errorMsg = ref('')
+
     const totpInput = ref(null)
+    const backupInput = ref(null)
 
     const handleLogin = async () => {
+      errorMsg.value = ''
       loading.value = true
-
       try {
         const result = await authStore.login(credentials.value)
-
         if (result.success) {
           router.push('/')
+        } else if (result.requires_2fa) {
+          tempToken.value = result.temp_token
+          step.value = '2fa'
+          await nextTick()
+          totpInput.value?.focus()
         } else {
-          // Only show 2FA field if specifically required
-          if (result.error === '2FA code required') {
-            show2FA.value = true
-            await nextTick()
-            totpInput.value?.focus()
-          }
+          errorMsg.value = result.error || 'Login failed'
         }
-      } catch (error) {
-        console.error('Login error:', error)
       } finally {
         loading.value = false
       }
     }
 
+    const handleTwoFA = async () => {
+      errorMsg.value = ''
+      loading.value = true
+      const code = useBackupCode.value ? totpCode.value.toUpperCase() : totpCode.value
+      try {
+        const result = await authStore.login2fa(tempToken.value, code)
+        if (result.success) {
+          router.push('/')
+        } else {
+          errorMsg.value = result.error || 'Verification failed'
+          totpCode.value = ''
+          await nextTick()
+          if (useBackupCode.value) {
+            backupInput.value?.focus()
+          } else {
+            totpInput.value?.focus()
+          }
+        }
+      } finally {
+        loading.value = false
+      }
+    }
+
+    const toggleBackupCode = async () => {
+      useBackupCode.value = !useBackupCode.value
+      totpCode.value = ''
+      errorMsg.value = ''
+      await nextTick()
+      if (useBackupCode.value) {
+        backupInput.value?.focus()
+      } else {
+        totpInput.value?.focus()
+      }
+    }
+
+    const backToCredentials = () => {
+      step.value = 'credentials'
+      totpCode.value = ''
+      tempToken.value = ''
+      useBackupCode.value = false
+      errorMsg.value = ''
+    }
+
     return {
+      step,
       credentials,
+      totpCode,
+      useBackupCode,
       loading,
-      show2FA,
+      errorMsg,
       totpInput,
-      handleLogin
+      backupInput,
+      handleLogin,
+      handleTwoFA,
+      toggleBackupCode,
+      backToCredentials,
     }
   }
 }
@@ -172,5 +278,76 @@ export default {
   margin-top: 2rem;
   padding-top: 1rem;
   border-top: 1px solid var(--border-color);
+}
+
+.login-error {
+  background: #fef2f2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+  border-radius: 0.4rem;
+  padding: 0.6rem 0.9rem;
+  font-size: 0.875rem;
+  margin-top: 0.75rem;
+}
+
+/* 2FA step */
+.twofa-header {
+  text-align: center;
+  margin-bottom: 1.5rem;
+}
+
+.twofa-icon {
+  font-size: 2.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.twofa-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin: 0 0 0.4rem;
+  color: var(--text-primary);
+}
+
+.twofa-subtitle {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.totp-input {
+  letter-spacing: 0.2em;
+  font-size: 1.25rem;
+  text-align: center;
+  font-family: 'Courier New', monospace;
+}
+
+.twofa-footer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 1.25rem;
+}
+
+.btn-link {
+  background: none;
+  border: none;
+  color: #3b82f6;
+  cursor: pointer;
+  font-size: 0.875rem;
+  text-decoration: underline;
+  padding: 0;
+}
+
+.btn-link:hover {
+  color: #1d4ed8;
+}
+
+.btn-link-secondary {
+  color: var(--text-secondary, #6b7280);
+}
+
+.btn-link-secondary:hover {
+  color: var(--text-primary, #111827);
 }
 </style>

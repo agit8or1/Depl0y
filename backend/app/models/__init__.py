@@ -23,6 +23,8 @@ from .database import (
     ScanStatus,
     ScanSeverity,
     ApiKey,
+    TotpBackupCode,
+    RefreshToken,
 )
 from .security import (
     FailedLoginAttempt,
@@ -58,6 +60,8 @@ __all__ = [
     "ScanStatus",
     "ScanSeverity",
     "ApiKey",
+    "TotpBackupCode",
+    "RefreshToken",
     "FailedLoginAttempt",
     "AccountLockout",
     "TokenBlacklist",

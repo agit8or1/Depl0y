@@ -91,6 +91,12 @@
               <div class="summary-item"><span class="summary-label">Start on Boot</span><span>{{ config.onboot ? 'Yes' : 'No' }}</span></div>
               <div class="summary-item"><span class="summary-label">Root FS</span><span class="text-sm">{{ config.rootfs || '—' }}</span></div>
               <div class="summary-item"><span class="summary-label">Template</span><span>{{ config.ostemplate || '—' }}</span></div>
+              <div v-if="config.tags" class="summary-item" style="grid-column: span 2;">
+                <span class="summary-label">Tags</span>
+                <div class="tags-row">
+                  <span v-for="tag in parsedTags" :key="tag" class="tag-pill">{{ tag }}</span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -157,7 +163,7 @@
                 <span class="inline-edit-label">Disk (rootfs)</span>
                 <div class="inline-edit-control">
                   <span class="config-value-inline text-sm">{{ config.rootfs || '—' }}</span>
-                  <button @click="openResizeModal" class="btn btn-outline btn-sm">Resize</button>
+                  <button @click="openResizeModal('rootfs')" class="btn btn-outline btn-sm">Resize</button>
                 </div>
               </div>
 
@@ -165,7 +171,7 @@
           </div>
         </div>
 
-        <!-- Full config edit (existing) -->
+        <!-- Full config edit -->
         <div class="card">
           <div class="card-header">
             <h3>Container Configuration</h3>
@@ -209,6 +215,11 @@
                 <label class="form-label">Startup</label>
                 <input v-if="editMode" v-model="editConfig.startup" class="form-control" placeholder="order=1,up=10" />
                 <div v-else class="config-value">{{ config.startup || '—' }}</div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Tags</label>
+                <input v-if="editMode" v-model="editConfig.tags" class="form-control" placeholder="tag1;tag2" />
+                <div v-else class="config-value">{{ config.tags || '—' }}</div>
               </div>
               <div class="form-group">
                 <label class="form-label">
@@ -268,8 +279,6 @@
           <div class="card-header"><h3>Resource Limits</h3></div>
           <div class="card-body">
             <div class="limits-grid">
-
-              <!-- CPU Weight -->
               <div class="limit-row">
                 <div class="limit-label-col">
                   <span class="limit-label">CPU Weight</span>
@@ -277,67 +286,38 @@
                 </div>
                 <div class="limit-control-col">
                   <div class="slider-row">
-                    <input
-                      v-model.number="limitsEdit.cpuunits"
-                      type="range" min="8" max="512" step="8"
-                      class="range-slider"
-                    />
-                    <input
-                      v-model.number="limitsEdit.cpuunits"
-                      type="number" min="8" max="512" step="8"
-                      class="form-control form-control-sm"
-                      style="width:80px;"
-                    />
+                    <input v-model.number="limitsEdit.cpuunits" type="range" min="8" max="512" step="8" class="range-slider" />
+                    <input v-model.number="limitsEdit.cpuunits" type="number" min="8" max="512" step="8" class="form-control form-control-sm" style="width:80px;" />
                   </div>
-                  <button @click="saveLimitField('cpuunits', limitsEdit.cpuunits)"
-                    class="btn btn-primary btn-sm" :disabled="savingLimit.cpuunits">
+                  <button @click="saveLimitField('cpuunits', limitsEdit.cpuunits)" class="btn btn-primary btn-sm" :disabled="savingLimit.cpuunits">
                     {{ savingLimit.cpuunits ? 'Saving…' : 'Save' }}
                   </button>
                 </div>
               </div>
-
-              <!-- CPU Limit -->
               <div class="limit-row">
                 <div class="limit-label-col">
                   <span class="limit-label">CPU Limit</span>
-                  <span class="limit-hint">cpulimit — max CPU usage (0 = unlimited, e.g. 1.5)</span>
+                  <span class="limit-hint">cpulimit — max CPU usage (0 = unlimited)</span>
                 </div>
                 <div class="limit-control-col">
-                  <input
-                    v-model.number="limitsEdit.cpulimit"
-                    type="number" min="0" max="128" step="0.5"
-                    class="form-control form-control-sm"
-                    style="width:110px;"
-                    placeholder="0"
-                  />
-                  <button @click="saveLimitField('cpulimit', limitsEdit.cpulimit)"
-                    class="btn btn-primary btn-sm" :disabled="savingLimit.cpulimit">
+                  <input v-model.number="limitsEdit.cpulimit" type="number" min="0" max="128" step="0.5" class="form-control form-control-sm" style="width:110px;" placeholder="0" />
+                  <button @click="saveLimitField('cpulimit', limitsEdit.cpulimit)" class="btn btn-primary btn-sm" :disabled="savingLimit.cpulimit">
                     {{ savingLimit.cpulimit ? 'Saving…' : 'Save' }}
                   </button>
                 </div>
               </div>
-
-              <!-- Memory Swap -->
               <div class="limit-row">
                 <div class="limit-label-col">
                   <span class="limit-label">Memory Swap (MB)</span>
                   <span class="limit-hint">swap — allocated swap space</span>
                 </div>
                 <div class="limit-control-col">
-                  <input
-                    v-model.number="limitsEdit.swap"
-                    type="number" min="0" step="16"
-                    class="form-control form-control-sm"
-                    style="width:110px;"
-                  />
-                  <button @click="saveLimitField('swap', limitsEdit.swap)"
-                    class="btn btn-primary btn-sm" :disabled="savingLimit.swap">
+                  <input v-model.number="limitsEdit.swap" type="number" min="0" step="16" class="form-control form-control-sm" style="width:110px;" />
+                  <button @click="saveLimitField('swap', limitsEdit.swap)" class="btn btn-primary btn-sm" :disabled="savingLimit.swap">
                     {{ savingLimit.swap ? 'Saving…' : 'Save' }}
                   </button>
                 </div>
               </div>
-
-              <!-- Disk Quota -->
               <div class="limit-row">
                 <div class="limit-label-col">
                   <span class="limit-label">Disk Quota</span>
@@ -345,22 +325,59 @@
                 </div>
                 <div class="limit-control-col">
                   <label class="toggle-label">
-                    <input
-                      v-model.number="limitsEdit.quota"
-                      type="checkbox"
-                      :true-value="1"
-                      :false-value="0"
-                    />
+                    <input v-model.number="limitsEdit.quota" type="checkbox" :true-value="1" :false-value="0" />
                     <span>{{ limitsEdit.quota ? 'Enabled' : 'Disabled' }}</span>
                   </label>
-                  <button @click="saveLimitField('quota', limitsEdit.quota)"
-                    class="btn btn-primary btn-sm" :disabled="savingLimit.quota">
+                  <button @click="saveLimitField('quota', limitsEdit.quota)" class="btn btn-primary btn-sm" :disabled="savingLimit.quota">
                     {{ savingLimit.quota ? 'Saving…' : 'Save' }}
                   </button>
                 </div>
               </div>
-
             </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bind Mounts Tab -->
+      <div v-if="activeTab === 'mounts'">
+        <div class="card">
+          <div class="card-header">
+            <h3>Bind Mount Points</h3>
+            <button @click="showMountModal = true" class="btn btn-primary btn-sm">+ Add Mount Point</button>
+          </div>
+          <div v-if="parsedMounts.length === 0" class="text-center text-muted" style="padding:2rem;">
+            <p>No bind mount points configured (mp0, mp1, …).</p>
+          </div>
+          <div v-else class="table-container">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Key</th>
+                  <th>Volume</th>
+                  <th>Mount Path</th>
+                  <th>Size</th>
+                  <th>ACL</th>
+                  <th>Quota</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="mp in parsedMounts" :key="mp.key">
+                  <td><code>{{ mp.key }}</code></td>
+                  <td class="text-sm">{{ mp.volume || '—' }}</td>
+                  <td class="text-sm">{{ mp.mp || '—' }}</td>
+                  <td class="text-sm">{{ mp.size || '—' }}</td>
+                  <td class="text-sm">{{ mp.acl ? 'Yes' : 'No' }}</td>
+                  <td class="text-sm">{{ mp.quota ? 'Yes' : 'No' }}</td>
+                  <td>
+                    <div class="flex gap-1">
+                      <button @click="openMountResizeModal(mp)" class="btn btn-outline btn-sm">Resize</button>
+                      <button @click="removeMountPoint(mp.key)" class="btn btn-danger btn-sm" :disabled="actioning">Remove</button>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </div>
       </div>
@@ -384,6 +401,7 @@
               <thead>
                 <tr>
                   <th>Name</th>
+                  <th>Parent</th>
                   <th>Description</th>
                   <th>Created</th>
                   <th>Actions</th>
@@ -392,16 +410,91 @@
               <tbody>
                 <tr v-for="snap in snapshots" :key="snap.name">
                   <td><strong>{{ snap.name }}</strong></td>
+                  <td class="text-sm text-muted">{{ snap.parent || '—' }}</td>
                   <td class="text-sm text-muted">{{ snap.description || '—' }}</td>
                   <td class="text-sm">{{ snap.snaptime ? formatDate(snap.snaptime) : '—' }}</td>
                   <td>
                     <div v-if="snap.name !== 'current'" class="flex gap-1">
-                      <button @click="rollbackSnapshot(snap.name)" class="btn btn-outline btn-sm"
-                        :disabled="actioning">Rollback</button>
-                      <button @click="deleteSnapshot(snap.name)" class="btn btn-danger btn-sm"
-                        :disabled="actioning">Delete</button>
+                      <button @click="rollbackSnapshot(snap.name)" class="btn btn-outline btn-sm" :disabled="actioning">Rollback</button>
+                      <button @click="deleteSnapshot(snap.name)" class="btn btn-danger btn-sm" :disabled="actioning">Delete</button>
                     </div>
                     <span v-else class="text-muted text-sm">current</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Backup Tab -->
+      <div v-if="activeTab === 'backup'">
+        <div class="card mb-2">
+          <div class="card-header">
+            <h3>Create Backup</h3>
+          </div>
+          <div class="card-body">
+            <div class="backup-form-row">
+              <div class="form-group" style="flex:1;min-width:180px;">
+                <label class="form-label">Storage</label>
+                <input v-model="backupForm.storage" class="form-control" placeholder="local" />
+              </div>
+              <div class="form-group" style="flex:1;min-width:180px;">
+                <label class="form-label">Mode</label>
+                <select v-model="backupForm.mode" class="form-control">
+                  <option value="snapshot">Snapshot</option>
+                  <option value="suspend">Suspend</option>
+                  <option value="stop">Stop</option>
+                </select>
+              </div>
+              <div class="form-group" style="flex:1;min-width:180px;">
+                <label class="form-label">Compression</label>
+                <select v-model="backupForm.compress" class="form-control">
+                  <option value="zstd">zstd</option>
+                  <option value="lzo">lzo</option>
+                  <option value="gzip">gzip</option>
+                  <option value="0">None</option>
+                </select>
+              </div>
+              <div class="form-group" style="align-self:flex-end;">
+                <button @click="runBackupNow" class="btn btn-primary" :disabled="runningBackup">
+                  {{ runningBackup ? 'Starting…' : 'Backup Now' }}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h3>Existing Backups</h3>
+            <button @click="fetchBackups" class="btn btn-outline btn-sm" :disabled="loadingBackups">
+              {{ loadingBackups ? 'Loading…' : 'Refresh' }}
+            </button>
+          </div>
+          <div v-if="loadingBackups" class="loading-spinner"></div>
+          <div v-else-if="backups.length === 0" class="text-center text-muted" style="padding:2rem;">
+            <p>No backups found for this container across configured storages.</p>
+          </div>
+          <div v-else class="table-container">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>File</th>
+                  <th>Storage</th>
+                  <th>Size</th>
+                  <th>Created</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="bk in backups" :key="bk.volid">
+                  <td class="text-sm">{{ bk.volid.split('/').pop() }}</td>
+                  <td class="text-sm">{{ bk._storage }}</td>
+                  <td class="text-sm">{{ formatBytes(bk.size) }}</td>
+                  <td class="text-sm">{{ bk.ctime ? formatDate(bk.ctime) : '—' }}</td>
+                  <td>
+                    <button @click="openRestoreModal(bk)" class="btn btn-outline btn-sm">Restore</button>
                   </td>
                 </tr>
               </tbody>
@@ -415,26 +508,73 @@
         <div class="card">
           <div class="card-header">
             <h3>Performance</h3>
-            <button @click="fetchRrdData" class="btn btn-outline btn-sm" :disabled="loadingRrd">
-              {{ loadingRrd ? 'Loading...' : 'Refresh' }}
-            </button>
+            <div class="flex gap-1 align-center">
+              <div class="btn-group">
+                <button v-for="tf in timeframes" :key="tf.value"
+                  :class="['btn', 'btn-sm', rrdTimeframe === tf.value ? 'btn-primary' : 'btn-outline']"
+                  @click="rrdTimeframe = tf.value; fetchRrdData()">
+                  {{ tf.label }}
+                </button>
+              </div>
+              <button @click="fetchRrdData" class="btn btn-outline btn-sm" :disabled="loadingRrd">
+                {{ loadingRrd ? 'Loading...' : 'Refresh' }}
+              </button>
+            </div>
           </div>
           <div class="card-body">
             <div v-if="loadingRrd" class="loading-spinner"></div>
-            <div v-else-if="!rrdPoint" class="text-center text-muted" style="padding:2rem;">
+            <div v-else-if="rrdData.length === 0" class="text-center text-muted" style="padding:2rem;">
               <p>No performance data available.</p>
             </div>
             <div v-else>
-              <div class="perf-timeframe-row mb-2">
-                <label class="form-label" style="margin:0;align-self:center;">Timeframe:</label>
-                <select v-model="rrdTimeframe" @change="fetchRrdData" class="form-control" style="width:auto;">
-                  <option value="hour">Last Hour</option>
-                  <option value="day">Last Day</option>
-                  <option value="week">Last Week</option>
-                  <option value="month">Last Month</option>
-                </select>
+              <!-- Charts grid using PerformanceCharts component -->
+              <div class="charts-grid">
+                <div class="chart-card">
+                  <div class="chart-card__title">CPU Usage</div>
+                  <PerformanceCharts
+                    :data="rrdChartData('cpu', true)"
+                    label="CPU" unit="%" color="#3b82f6" :height="120"
+                  />
+                </div>
+                <div class="chart-card">
+                  <div class="chart-card__title">Memory Usage</div>
+                  <PerformanceCharts
+                    :data="rrdChartData('mem_pct', false)"
+                    label="Memory" unit="%" color="#8b5cf6" :height="120"
+                  />
+                </div>
+                <div class="chart-card">
+                  <div class="chart-card__title">Network In</div>
+                  <PerformanceCharts
+                    :data="rrdChartData('netin')"
+                    label="Net In" unit="B/s" color="#22c55e" :height="120"
+                  />
+                </div>
+                <div class="chart-card">
+                  <div class="chart-card__title">Network Out</div>
+                  <PerformanceCharts
+                    :data="rrdChartData('netout')"
+                    label="Net Out" unit="B/s" color="#f59e0b" :height="120"
+                  />
+                </div>
+                <div class="chart-card">
+                  <div class="chart-card__title">Disk Read</div>
+                  <PerformanceCharts
+                    :data="rrdChartData('diskread')"
+                    label="Disk Read" unit="B/s" color="#06b6d4" :height="120"
+                  />
+                </div>
+                <div class="chart-card">
+                  <div class="chart-card__title">Disk Write</div>
+                  <PerformanceCharts
+                    :data="rrdChartData('diskwrite')"
+                    label="Disk Write" unit="B/s" color="#ef4444" :height="120"
+                  />
+                </div>
               </div>
-              <div class="perf-grid">
+
+              <!-- Latest stats summary -->
+              <div v-if="rrdPoint" class="perf-grid mt-2">
                 <div class="perf-card">
                   <div class="perf-card__label">CPU Usage</div>
                   <div class="perf-card__value">{{ rrdPoint.cpu != null ? (rrdPoint.cpu * 100).toFixed(2) + '%' : '—' }}</div>
@@ -464,7 +604,7 @@
                 </div>
               </div>
               <div class="text-muted text-sm mt-2" style="text-align:right;">
-                Data point: {{ rrdPoint.time ? new Date(rrdPoint.time * 1000).toLocaleString() : 'unknown' }}
+                Latest data: {{ rrdPoint && rrdPoint.time ? new Date(rrdPoint.time * 1000).toLocaleString() : 'unknown' }}
               </div>
             </div>
           </div>
@@ -482,6 +622,82 @@
               Navigates to the Depl0y terminal viewer
               (<code>/proxmox/{{ hostId }}/nodes/{{ node }}/terminal?lxc={{ vmid }}</code>)
             </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Firewall Tab -->
+      <div v-if="activeTab === 'firewall'">
+        <div class="card mb-2">
+          <div class="card-header">
+            <h3>Firewall Options</h3>
+          </div>
+          <div class="card-body">
+            <div v-if="loadingFwOptions" class="loading-spinner"></div>
+            <div v-else class="fw-options-row">
+              <label class="toggle-label">
+                <input type="checkbox"
+                  :checked="fwOptions.enable == 1 || fwOptions.enable === true"
+                  @change="toggleContainerFirewall($event.target.checked)"
+                  :disabled="savingFwOptions"
+                />
+                <span style="margin-left:0.5rem;font-weight:500;">
+                  Firewall {{ (fwOptions.enable == 1 || fwOptions.enable === true) ? 'Enabled' : 'Disabled' }}
+                </span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h3>Firewall Rules</h3>
+            <button @click="openFwRuleModal()" class="btn btn-primary btn-sm">+ Add Rule</button>
+          </div>
+          <div v-if="loadingFwRules" class="loading-spinner"></div>
+          <div v-else-if="fwRules.length === 0" class="text-center text-muted" style="padding:2rem;">
+            <p>No firewall rules configured.</p>
+          </div>
+          <div v-else class="table-container">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Pos</th>
+                  <th>En</th>
+                  <th>Direction</th>
+                  <th>Action</th>
+                  <th>Proto</th>
+                  <th>Source</th>
+                  <th>Dest</th>
+                  <th>Port</th>
+                  <th>Comment</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="rule in fwRules" :key="rule.pos">
+                  <td class="text-sm">{{ rule.pos }}</td>
+                  <td>
+                    <span :class="rule.enable == 1 || rule.enable === true ? 'badge badge-success' : 'badge badge-secondary'">
+                      {{ rule.enable == 1 || rule.enable === true ? 'On' : 'Off' }}
+                    </span>
+                  </td>
+                  <td class="text-sm">{{ rule.type || '—' }}</td>
+                  <td class="text-sm"><strong>{{ rule.action || '—' }}</strong></td>
+                  <td class="text-sm">{{ rule.proto || '—' }}</td>
+                  <td class="text-sm">{{ rule.source || '—' }}</td>
+                  <td class="text-sm">{{ rule.dest || '—' }}</td>
+                  <td class="text-sm">{{ rule.dport || rule.sport || '—' }}</td>
+                  <td class="text-sm text-muted">{{ rule.comment || '—' }}</td>
+                  <td>
+                    <div class="flex gap-1">
+                      <button @click="openFwRuleModal(rule)" class="btn btn-outline btn-sm">Edit</button>
+                      <button @click="deleteFwRule(rule.pos)" class="btn btn-danger btn-sm">Del</button>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </div>
       </div>
@@ -561,13 +777,13 @@
     <div v-if="showResizeModal" class="modal" @click="showResizeModal = false">
       <div class="modal-content" @click.stop>
         <div class="modal-header">
-          <h3>Resize rootfs — CT{{ vmid }}</h3>
+          <h3>Resize {{ resizeDiskKey }} — CT{{ vmid }}</h3>
           <button @click="showResizeModal = false" class="btn-close">×</button>
         </div>
         <div class="modal-body">
           <div class="form-group">
-            <label class="form-label">Current size</label>
-            <div class="config-value text-sm">{{ config.rootfs || '—' }}</div>
+            <label class="form-label">Current disk key</label>
+            <div class="config-value text-sm">{{ resizeDiskKey }}</div>
           </div>
           <div class="form-group">
             <label class="form-label">Additional space (e.g. +5G, +500M)</label>
@@ -590,6 +806,154 @@
       </div>
     </div>
 
+    <!-- Add Mount Point Modal -->
+    <div v-if="showMountModal" class="modal" @click="showMountModal = false">
+      <div class="modal-content" @click.stop>
+        <div class="modal-header">
+          <h3>Add Mount Point</h3>
+          <button @click="showMountModal = false" class="btn-close">×</button>
+        </div>
+        <form @submit.prevent="addMountPoint" class="modal-body">
+          <div class="form-group">
+            <label class="form-label">Mount Key (mp0, mp1, …)</label>
+            <input v-model="mountForm.key" class="form-control" placeholder="mp0" required />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Storage</label>
+            <input v-model="mountForm.storage" class="form-control" placeholder="local-lvm" required />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Size (e.g. 10G)</label>
+            <input v-model="mountForm.size" class="form-control" placeholder="10G" required />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Mount Path (inside container)</label>
+            <input v-model="mountForm.mp" class="form-control" placeholder="/mnt/data" required />
+          </div>
+          <div class="form-group">
+            <label class="toggle-label">
+              <input type="checkbox" v-model="mountForm.acl" />
+              <span style="margin-left:0.5rem;">Enable ACL</span>
+            </label>
+          </div>
+          <div class="form-group">
+            <label class="toggle-label">
+              <input type="checkbox" v-model="mountForm.quota" />
+              <span style="margin-left:0.5rem;">Enable Quota</span>
+            </label>
+          </div>
+          <div class="flex gap-1 mt-2">
+            <button type="submit" class="btn btn-primary" :disabled="savingMount">
+              {{ savingMount ? 'Adding…' : 'Add' }}
+            </button>
+            <button type="button" @click="showMountModal = false" class="btn btn-outline">Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Restore Backup Modal -->
+    <div v-if="showRestoreModal" class="modal" @click="showRestoreModal = false">
+      <div class="modal-content" @click.stop>
+        <div class="modal-header">
+          <h3>Restore Backup</h3>
+          <button @click="showRestoreModal = false" class="btn-close">×</button>
+        </div>
+        <form @submit.prevent="submitRestore" class="modal-body">
+          <div class="form-group">
+            <label class="form-label">Backup File</label>
+            <div class="config-value text-sm">{{ restoreForm.volid }}</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Target CT ID</label>
+            <input v-model.number="restoreForm.newid" type="number" min="100" class="form-control" required />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Target Storage</label>
+            <input v-model="restoreForm.storage" class="form-control" placeholder="local-lvm" />
+          </div>
+          <div class="form-group">
+            <label class="toggle-label">
+              <input type="checkbox" v-model="restoreForm.start" />
+              <span style="margin-left:0.5rem;">Start after restore</span>
+            </label>
+          </div>
+          <div class="flex gap-1 mt-2">
+            <button type="submit" class="btn btn-primary" :disabled="restoringBackup">
+              {{ restoringBackup ? 'Restoring…' : 'Restore' }}
+            </button>
+            <button type="button" @click="showRestoreModal = false" class="btn btn-outline">Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Firewall Rule Modal -->
+    <div v-if="showFwRuleModal" class="modal" @click="showFwRuleModal = false">
+      <div class="modal-content" style="max-width:600px;" @click.stop>
+        <div class="modal-header">
+          <h3>{{ fwRuleEdit.pos !== undefined ? 'Edit' : 'Add' }} Firewall Rule</h3>
+          <button @click="showFwRuleModal = false" class="btn-close">×</button>
+        </div>
+        <form @submit.prevent="saveFwRule" class="modal-body">
+          <div class="config-grid">
+            <div class="form-group">
+              <label class="form-label">Direction</label>
+              <select v-model="fwRuleEdit.type" class="form-control">
+                <option value="in">In</option>
+                <option value="out">Out</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Action</label>
+              <select v-model="fwRuleEdit.action" class="form-control">
+                <option value="ACCEPT">ACCEPT</option>
+                <option value="DROP">DROP</option>
+                <option value="REJECT">REJECT</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Protocol</label>
+              <select v-model="fwRuleEdit.proto" class="form-control">
+                <option value="">Any</option>
+                <option value="tcp">TCP</option>
+                <option value="udp">UDP</option>
+                <option value="icmp">ICMP</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Source</label>
+              <input v-model="fwRuleEdit.source" class="form-control" placeholder="0.0.0.0/0" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Dest</label>
+              <input v-model="fwRuleEdit.dest" class="form-control" placeholder="optional" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Dest Port</label>
+              <input v-model="fwRuleEdit.dport" class="form-control" placeholder="80,443" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Comment</label>
+              <input v-model="fwRuleEdit.comment" class="form-control" placeholder="optional comment" />
+            </div>
+            <div class="form-group">
+              <label class="toggle-label" style="margin-top:1.5rem;">
+                <input type="checkbox" v-model="fwRuleEdit.enable" :true-value="1" :false-value="0" />
+                <span style="margin-left:0.5rem;">Enabled</span>
+              </label>
+            </div>
+          </div>
+          <div class="flex gap-1 mt-2">
+            <button type="submit" class="btn btn-primary" :disabled="savingFwRule">
+              {{ savingFwRule ? 'Saving…' : 'Save Rule' }}
+            </button>
+            <button type="button" @click="showFwRuleModal = false" class="btn btn-outline">Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
     <!-- Task Progress Modal -->
     <TaskProgressModal
       :visible="showTaskProgress"
@@ -604,12 +968,13 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useToast } from 'vue-toastification'
 import api from '@/services/api'
 import { formatBytes, formatUptime } from '@/utils/proxmox'
 import TaskProgressModal from '@/components/TaskProgressModal.vue'
+import PerformanceCharts from '@/components/PerformanceCharts.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -645,8 +1010,14 @@ const cloneForm = ref({ newid: null, hostname: '', target: '', full: true, stora
 const rrdData = ref([])
 const loadingRrd = ref(false)
 const rrdTimeframe = ref('hour')
+const timeframes = [
+  { value: 'hour', label: '1h' },
+  { value: 'day', label: '24h' },
+  { value: 'week', label: '1w' },
+  { value: 'month', label: '1m' },
+]
 
-// Inline edit state (Config tab)
+// Inline edit state
 const inlineEdit = ref({ hostname: '', cores: 1, memory: 512, swap: 0 })
 const savingField = ref({ hostname: false, cores: false, memory: false, swap: false })
 
@@ -658,11 +1029,36 @@ const savingLimit = ref({ cpuunits: false, cpulimit: false, swap: false, quota: 
 const showResizeModal = ref(false)
 const resizeAmount = ref('')
 const resizing = ref(false)
+const resizeDiskKey = ref('rootfs')
 
 // Task progress modal
 const showTaskProgress = ref(false)
 const taskUpid = ref('')
 const taskProgressNode = ref('')
+
+// Bind mounts
+const showMountModal = ref(false)
+const savingMount = ref(false)
+const mountForm = ref({ key: 'mp0', storage: '', size: '10G', mp: '/mnt/data', acl: false, quota: false })
+
+// Backup tab
+const backups = ref([])
+const loadingBackups = ref(false)
+const runningBackup = ref(false)
+const backupForm = ref({ storage: 'local', mode: 'snapshot', compress: 'zstd' })
+const showRestoreModal = ref(false)
+const restoringBackup = ref(false)
+const restoreForm = ref({ volid: '', newid: null, storage: '', start: false })
+
+// Firewall tab
+const fwRules = ref([])
+const fwOptions = ref({ enable: 0 })
+const loadingFwRules = ref(false)
+const loadingFwOptions = ref(false)
+const savingFwOptions = ref(false)
+const showFwRuleModal = ref(false)
+const savingFwRule = ref(false)
+const fwRuleEdit = ref({ type: 'in', action: 'ACCEPT', proto: '', source: '', dest: '', dport: '', comment: '', enable: 1 })
 
 let pollInterval = null
 
@@ -670,12 +1066,16 @@ const tabs = [
   { id: 'overview', label: 'Overview' },
   { id: 'config', label: 'Config' },
   { id: 'limits', label: 'Limits' },
+  { id: 'mounts', label: 'Bind Mounts' },
   { id: 'snapshots', label: 'Snapshots' },
+  { id: 'backup', label: 'Backup' },
   { id: 'performance', label: 'Performance' },
+  { id: 'firewall', label: 'Firewall' },
   { id: 'terminal', label: 'Terminal' },
 ]
 
 const NET_KEYS = ['net0', 'net1', 'net2', 'net3', 'net4', 'net5', 'net6', 'net7']
+const MOUNT_KEYS = ['mp0', 'mp1', 'mp2', 'mp3', 'mp4', 'mp5', 'mp6', 'mp7']
 
 const parsedNets = computed(() => {
   if (!config.value) return []
@@ -692,6 +1092,31 @@ const parsedNets = computed(() => {
       })
       return result
     })
+})
+
+const parsedMounts = computed(() => {
+  if (!config.value) return []
+  return MOUNT_KEYS
+    .filter(k => config.value[k])
+    .map(k => {
+      const raw = config.value[k]
+      const result = { key: k, raw, volume: '', mp: '', size: '', acl: false, quota: false }
+      const parts = raw.split(',')
+      // First token is typically storage:volume or just the volume path
+      if (parts[0]) result.volume = parts[0]
+      parts.forEach(part => {
+        if (part.startsWith('mp=')) result.mp = part.slice(3)
+        else if (part.startsWith('size=')) result.size = part.slice(5)
+        else if (part === 'acl=1') result.acl = true
+        else if (part === 'quota=1') result.quota = true
+      })
+      return result
+    })
+})
+
+const parsedTags = computed(() => {
+  if (!config.value?.tags) return []
+  return config.value.tags.split(';').map(t => t.trim()).filter(Boolean)
 })
 
 // Sync inlineEdit and limitsEdit when config loads
@@ -751,6 +1176,170 @@ const fetchSnapshots = async () => {
   }
 }
 
+// Backups
+const fetchBackups = async () => {
+  loadingBackups.value = true
+  backups.value = []
+  try {
+    const storageRes = await api.pveNode.listStorage(hostId.value, node.value)
+    const storages = (storageRes.data || []).filter(s => s.content && s.content.includes('backup'))
+    const allBackups = await Promise.all(storages.map(async s => {
+      try {
+        const res = await api.pveNode.browseStorage(hostId.value, node.value, s.storage, { content: 'backup' })
+        const items = (res.data || []).filter(b => {
+          const name = b.volid || ''
+          return name.includes(`-ct-${vmid.value}-`) || name.includes(`/ct-${vmid.value}-`)
+        })
+        return items.map(b => ({ ...b, _storage: s.storage }))
+      } catch { return [] }
+    }))
+    backups.value = allBackups.flat().sort((a, b) => (b.ctime || 0) - (a.ctime || 0))
+  } catch (e) {
+    console.error('Failed to fetch backups:', e)
+    toast.error('Failed to load backups')
+  } finally {
+    loadingBackups.value = false
+  }
+}
+
+const runBackupNow = async () => {
+  runningBackup.value = true
+  try {
+    const res = await api.pveNode.runBackup(hostId.value, node.value, {
+      vmid: vmid.value,
+      storage: backupForm.value.storage,
+      mode: backupForm.value.mode,
+      compress: backupForm.value.compress,
+    })
+    const upid = res.data?.upid || res.data
+    if (upid && typeof upid === 'string' && upid.startsWith('UPID')) {
+      taskUpid.value = upid
+      taskProgressNode.value = node.value
+      showTaskProgress.value = true
+    } else {
+      toast.success('Backup task started')
+    }
+  } catch (e) {
+    console.error('Failed to start backup:', e)
+    toast.error('Failed to start backup')
+  } finally {
+    runningBackup.value = false
+  }
+}
+
+const openRestoreModal = (bk) => {
+  restoreForm.value = { volid: bk.volid, newid: parseInt(vmid.value), storage: bk._storage, start: false }
+  showRestoreModal.value = true
+}
+
+const submitRestore = async () => {
+  restoringBackup.value = true
+  try {
+    const res = await api.pveNode.createLxc(hostId.value, node.value, {
+      vmid: restoreForm.value.newid,
+      ostemplate: restoreForm.value.volid,
+      storage: restoreForm.value.storage || undefined,
+      restore: 1,
+      start: restoreForm.value.start ? 1 : 0,
+    })
+    showRestoreModal.value = false
+    const upid = res.data?.upid || res.data
+    if (upid && typeof upid === 'string' && upid.startsWith('UPID')) {
+      taskUpid.value = upid
+      taskProgressNode.value = node.value
+      showTaskProgress.value = true
+    } else {
+      toast.success('Restore task started')
+    }
+  } catch (e) {
+    console.error('Failed to restore backup:', e)
+    toast.error('Failed to restore backup')
+  } finally {
+    restoringBackup.value = false
+  }
+}
+
+// Firewall
+const fetchFwRules = async () => {
+  loadingFwRules.value = true
+  try {
+    const res = await api.pveNode.getCtFirewallRules(hostId.value, node.value, vmid.value)
+    fwRules.value = res.data || []
+  } catch (e) {
+    console.error('Failed to load firewall rules:', e)
+  } finally {
+    loadingFwRules.value = false
+  }
+}
+
+const fetchFwOptions = async () => {
+  loadingFwOptions.value = true
+  try {
+    const res = await api.pveNode.getCtFirewallOptions(hostId.value, node.value, vmid.value)
+    fwOptions.value = res.data || { enable: 0 }
+  } catch (e) {
+    console.error('Failed to load firewall options:', e)
+  } finally {
+    loadingFwOptions.value = false
+  }
+}
+
+const toggleContainerFirewall = async (val) => {
+  savingFwOptions.value = true
+  try {
+    await api.pveNode.setCtFirewallOptions(hostId.value, node.value, vmid.value, { enable: val ? 1 : 0 })
+    fwOptions.value.enable = val ? 1 : 0
+    toast.success(`Firewall ${val ? 'enabled' : 'disabled'}`)
+  } catch (e) {
+    toast.error('Failed to update firewall options')
+  } finally {
+    savingFwOptions.value = false
+  }
+}
+
+const openFwRuleModal = (rule) => {
+  if (rule) {
+    fwRuleEdit.value = { ...rule }
+  } else {
+    fwRuleEdit.value = { type: 'in', action: 'ACCEPT', proto: '', source: '', dest: '', dport: '', comment: '', enable: 1 }
+  }
+  showFwRuleModal.value = true
+}
+
+const saveFwRule = async () => {
+  savingFwRule.value = true
+  try {
+    const payload = { ...fwRuleEdit.value }
+    // Remove empty strings
+    Object.keys(payload).forEach(k => { if (payload[k] === '') delete payload[k] })
+    if (payload.pos !== undefined) {
+      const pos = payload.pos
+      delete payload.pos
+      await api.pveNode.updateCtFirewallRule(hostId.value, node.value, vmid.value, pos, payload)
+    } else {
+      await api.pveNode.addCtFirewallRule(hostId.value, node.value, vmid.value, payload)
+    }
+    toast.success('Firewall rule saved')
+    showFwRuleModal.value = false
+    await fetchFwRules()
+  } catch (e) {
+    toast.error('Failed to save firewall rule')
+  } finally {
+    savingFwRule.value = false
+  }
+}
+
+const deleteFwRule = async (pos) => {
+  if (!confirm(`Delete firewall rule at position ${pos}?`)) return
+  try {
+    await api.pveNode.deleteCtFirewallRule(hostId.value, node.value, vmid.value, pos)
+    toast.success('Rule deleted')
+    await fetchFwRules()
+  } catch (e) {
+    toast.error('Failed to delete rule')
+  }
+}
+
 // RRD computed helpers
 const rrdPoint = computed(() => {
   if (!rrdData.value || rrdData.value.length === 0) return null
@@ -780,11 +1369,28 @@ const memBarColor = computed(() => {
   return '#3b82f6'
 })
 
+// Convert RRD data array to PerformanceCharts format
+const rrdChartData = (field, isPercent = false) => {
+  return (rrdData.value || []).map(d => {
+    if (!d) return null
+    let val = d[field]
+    if (val == null || isNaN(val)) return { time: d.time, value: null }
+    if (isPercent) val = val * 100
+    // mem_pct is a synthetic field
+    if (field === 'mem_pct') {
+      val = d.maxmem ? (d.mem / d.maxmem) * 100 : null
+    }
+    return { time: d.time, value: val }
+  }).filter(Boolean)
+}
+
 const switchTab = (tab) => {
   activeTab.value = tab
   if (tab === 'snapshots') fetchSnapshots()
   if (tab === 'overview') fetchStatus()
   if (tab === 'performance') fetchRrdData()
+  if (tab === 'backup') fetchBackups()
+  if (tab === 'firewall') { fetchFwRules(); fetchFwOptions() }
 }
 
 const startPolling = () => {
@@ -814,7 +1420,7 @@ const action = async (act) => {
   }
 }
 
-// Inline single-field save (Config tab)
+// Inline single-field save
 const saveInlineField = async (field, value) => {
   savingField.value[field] = true
   try {
@@ -822,14 +1428,12 @@ const saveInlineField = async (field, value) => {
     toast.success(`${field} updated`)
     await fetchAll()
   } catch (error) {
-    console.error(`Failed to save ${field}:`, error)
     toast.error(`Failed to save ${field}`)
   } finally {
     savingField.value[field] = false
   }
 }
 
-// Limits tab single-field save
 const saveLimitField = async (field, value) => {
   savingLimit.value[field] = true
   try {
@@ -837,7 +1441,6 @@ const saveLimitField = async (field, value) => {
     toast.success(`${field} updated`)
     await fetchAll()
   } catch (error) {
-    console.error(`Failed to save ${field}:`, error)
     toast.error(`Failed to save ${field}`)
   } finally {
     savingLimit.value[field] = false
@@ -853,13 +1456,12 @@ const enterEditMode = () => {
     startup: config.value.startup || '',
     onboot: config.value.onboot || 0,
     description: config.value.description || '',
+    tags: config.value.tags || '',
   }
   editMode.value = true
 }
 
-const cancelEdit = () => {
-  editMode.value = false
-}
+const cancelEdit = () => { editMode.value = false }
 
 const saveConfig = async () => {
   savingConfig.value = true
@@ -873,15 +1475,54 @@ const saveConfig = async () => {
     editMode.value = false
     await fetchAll()
   } catch (error) {
-    console.error('Failed to save config:', error)
     toast.error('Failed to save configuration')
   } finally {
     savingConfig.value = false
   }
 }
 
+// Mount point operations
+const addMountPoint = async () => {
+  savingMount.value = true
+  try {
+    const { key, storage, size, mp, acl, quota } = mountForm.value
+    let val = `${storage}:${size},mp=${mp}`
+    if (acl) val += ',acl=1'
+    if (quota) val += ',quota=1'
+    await api.pveNode.updateContainerConfig(hostId.value, node.value, vmid.value, { [key]: val })
+    toast.success(`Mount point ${key} added`)
+    showMountModal.value = false
+    await fetchAll()
+  } catch (e) {
+    toast.error('Failed to add mount point')
+  } finally {
+    savingMount.value = false
+  }
+}
+
+const removeMountPoint = async (key) => {
+  if (!confirm(`Remove mount point ${key}? The volume will be detached but not deleted.`)) return
+  actioning.value = true
+  try {
+    await api.pveNode.updateContainerConfig(hostId.value, node.value, vmid.value, { delete: key })
+    toast.success(`Mount point ${key} removed`)
+    await fetchAll()
+  } catch (e) {
+    toast.error('Failed to remove mount point')
+  } finally {
+    actioning.value = false
+  }
+}
+
+const openMountResizeModal = (mp) => {
+  resizeDiskKey.value = mp.key
+  resizeAmount.value = ''
+  showResizeModal.value = true
+}
+
 // Resize disk modal
-const openResizeModal = () => {
+const openResizeModal = (diskKey = 'rootfs') => {
+  resizeDiskKey.value = diskKey
   resizeAmount.value = ''
   showResizeModal.value = true
 }
@@ -895,14 +1536,13 @@ const submitResize = async () => {
   resizing.value = true
   try {
     await api.pveNode.resizeLxcDisk(hostId.value, node.value, vmid.value, {
-      disk: 'rootfs',
+      disk: resizeDiskKey.value,
       size: resizeAmount.value,
     })
     toast.success(`Disk resize to ${resizeAmount.value} initiated`)
     showResizeModal.value = false
     await fetchAll()
   } catch (error) {
-    console.error('Failed to resize disk:', error)
     toast.error('Failed to resize disk')
   } finally {
     resizing.value = false
@@ -922,7 +1562,6 @@ const createSnapshot = async () => {
     newSnapshot.value = { snapname: '', description: '' }
     await fetchSnapshots()
   } catch (error) {
-    console.error('Failed to create snapshot:', error)
     toast.error('Failed to create snapshot')
   } finally {
     savingSnapshot.value = false
@@ -933,11 +1572,17 @@ const rollbackSnapshot = async (snapname) => {
   if (!confirm(`Roll back to snapshot "${snapname}"? Current container state will be lost.`)) return
   actioning.value = true
   try {
-    await api.pveNode.rollbackContainerSnapshot(hostId.value, node.value, vmid.value, snapname)
-    toast.success('Rollback initiated')
+    const res = await api.pveNode.rollbackContainerSnapshot(hostId.value, node.value, vmid.value, snapname)
+    const upid = res.data?.upid || res.data
+    if (upid && typeof upid === 'string' && upid.startsWith('UPID')) {
+      taskUpid.value = upid
+      taskProgressNode.value = node.value
+      showTaskProgress.value = true
+    } else {
+      toast.success('Rollback initiated')
+    }
     await fetchSnapshots()
   } catch (error) {
-    console.error('Failed to rollback:', error)
     toast.error('Failed to rollback')
   } finally {
     actioning.value = false
@@ -948,16 +1593,10 @@ const deleteSnapshot = async (snapname) => {
   if (!confirm(`Delete snapshot "${snapname}"?`)) return
   actioning.value = true
   try {
-    const token = localStorage.getItem('access_token')
-    const { default: axios } = await import('axios')
-    await axios.delete(
-      `/api/v1/pve-node/${hostId.value}/nodes/${node.value}/lxc/${vmid.value}/snapshots/${snapname}`,
-      { headers: { Authorization: `Bearer ${token}` } }
-    )
+    await api.pveNode.deleteContainerSnapshot(hostId.value, node.value, vmid.value, snapname)
     toast.success('Snapshot deleted')
     await fetchSnapshots()
   } catch (error) {
-    console.error('Failed to delete snapshot:', error)
     toast.error('Failed to delete snapshot')
   } finally {
     actioning.value = false
@@ -972,7 +1611,6 @@ const deleteContainer = async () => {
     toast.success('Container deleted')
     router.push(`/proxmox/${hostId.value}/nodes/${node.value}`)
   } catch (error) {
-    console.error('Failed to delete container:', error)
     toast.error('Failed to delete container')
   } finally {
     actioning.value = false
@@ -1023,10 +1661,7 @@ const openCloneModal = async () => {
 }
 
 const submitClone = async () => {
-  if (!cloneForm.value.newid) {
-    toast.error('New CT ID is required')
-    return
-  }
+  if (!cloneForm.value.newid) { toast.error('New CT ID is required'); return }
   cloningLxc.value = true
   try {
     const payload = { newid: cloneForm.value.newid, full: cloneForm.value.full ? 1 : 0 }
@@ -1044,7 +1679,6 @@ const submitClone = async () => {
       toast.success(`Clone task started — new CT ${cloneForm.value.newid}`)
     }
   } catch (e) {
-    console.error('Failed to clone container:', e)
     toast.error('Failed to clone container')
   } finally {
     cloningLxc.value = false
@@ -1087,9 +1721,7 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.container-detail-page {
-  padding: 0;
-}
+.container-detail-page { padding: 0; }
 
 .page-header {
   display: flex;
@@ -1111,10 +1743,7 @@ onUnmounted(() => {
   text-decoration: none;
   font-size: 0.875rem;
 }
-
-.back-link:hover {
-  color: var(--text-primary);
-}
+.back-link:hover { color: var(--text-primary); }
 
 .ct-title {
   margin: 0;
@@ -1131,22 +1760,22 @@ onUnmounted(() => {
   gap: 0;
   border-bottom: 2px solid var(--border-color);
   margin-bottom: 1.5rem;
+  flex-wrap: wrap;
 }
 
 .tab-btn {
   background: none;
   border: none;
-  padding: 0.6rem 1.25rem;
+  padding: 0.6rem 1.1rem;
   cursor: pointer;
   color: var(--text-secondary);
-  font-size: 0.9rem;
+  font-size: 0.875rem;
   border-bottom: 2px solid transparent;
   margin-bottom: -2px;
   transition: color 0.15s, border-color 0.15s;
+  white-space: nowrap;
 }
-
 .tab-btn:hover { color: var(--text-primary); }
-
 .tab-btn--active {
   color: var(--primary-color);
   border-bottom-color: var(--primary-color);
@@ -1166,7 +1795,6 @@ onUnmounted(() => {
   border-radius: 0.5rem;
   padding: 0.875rem 1rem;
 }
-
 .stat-card-sm__label {
   font-size: 0.7rem;
   color: var(--text-secondary);
@@ -1174,16 +1802,13 @@ onUnmounted(() => {
   letter-spacing: 0.05em;
   margin-bottom: 0.25rem;
 }
-
 .stat-card-sm__value {
   font-size: 1rem;
   font-weight: 600;
   color: var(--text-primary);
 }
 
-.card-body {
-  padding: 1.5rem;
-}
+.card-body { padding: 1.5rem; }
 
 .summary-grid {
   display: grid;
@@ -1209,12 +1834,26 @@ onUnmounted(() => {
   font-weight: 600;
 }
 
-/* Inline edit (Config tab) */
-.inline-edit-grid {
+.tags-row {
   display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.25rem;
 }
+
+.tag-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.15em 0.6em;
+  font-size: 0.75rem;
+  font-weight: 500;
+  border-radius: 9999px;
+  background: var(--primary-color, #3b82f6);
+  color: white;
+}
+
+/* Inline edit */
+.inline-edit-grid { display: flex; flex-direction: column; gap: 0.75rem; }
 
 .inline-edit-row {
   display: flex;
@@ -1223,10 +1862,7 @@ onUnmounted(() => {
   padding: 0.625rem 0;
   border-bottom: 1px solid var(--border-color);
 }
-
-.inline-edit-row:last-child {
-  border-bottom: none;
-}
+.inline-edit-row:last-child { border-bottom: none; }
 
 .inline-edit-label {
   width: 160px;
@@ -1255,17 +1891,10 @@ onUnmounted(() => {
   word-break: break-all;
 }
 
-.form-control-sm {
-  padding: 0.3rem 0.6rem;
-  font-size: 0.875rem;
-}
+.form-control-sm { padding: 0.3rem 0.6rem; font-size: 0.875rem; }
 
-/* Limits tab */
-.limits-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-}
+/* Limits */
+.limits-grid { display: flex; flex-direction: column; gap: 0; }
 
 .limit-row {
   display: flex;
@@ -1274,10 +1903,7 @@ onUnmounted(() => {
   padding: 1rem 0;
   border-bottom: 1px solid var(--border-color);
 }
-
-.limit-row:last-child {
-  border-bottom: none;
-}
+.limit-row:last-child { border-bottom: none; }
 
 .limit-label-col {
   width: 220px;
@@ -1286,17 +1912,8 @@ onUnmounted(() => {
   flex-direction: column;
   gap: 0.2rem;
 }
-
-.limit-label {
-  font-size: 0.9rem;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.limit-hint {
-  font-size: 0.75rem;
-  color: var(--text-secondary);
-}
+.limit-label { font-size: 0.9rem; font-weight: 600; color: var(--text-primary); }
+.limit-hint { font-size: 0.75rem; color: var(--text-secondary); }
 
 .limit-control-col {
   display: flex;
@@ -1313,11 +1930,7 @@ onUnmounted(() => {
   flex: 1;
 }
 
-.range-slider {
-  flex: 1;
-  accent-color: var(--primary-color);
-  cursor: pointer;
-}
+.range-slider { flex: 1; accent-color: var(--primary-color); cursor: pointer; }
 
 .toggle-label {
   display: flex;
@@ -1327,7 +1940,7 @@ onUnmounted(() => {
   font-size: 0.9rem;
 }
 
-/* Full config edit */
+/* Config grid */
 .config-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1375,7 +1988,6 @@ onUnmounted(() => {
   grid-template-columns: 180px 1fr;
   border-bottom: 1px solid var(--border-color);
 }
-
 .raw-config-row:last-child { border-bottom: none; }
 
 .raw-config-key {
@@ -1398,6 +2010,91 @@ onUnmounted(() => {
 
 .table-container { overflow-x: auto; }
 
+/* Backup form */
+.backup-form-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: flex-end;
+}
+
+/* Charts */
+.charts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1rem;
+}
+
+.chart-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+}
+
+.chart-card__title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.5rem;
+}
+
+/* Performance summary cards */
+.perf-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.perf-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+  padding: 1rem 1.25rem;
+}
+.perf-card__label {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.35rem;
+  font-weight: 600;
+}
+.perf-card__value {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 0.5rem;
+}
+.perf-card__sub {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  margin-top: 0.25rem;
+}
+
+.perf-bar-track {
+  height: 6px;
+  background: var(--border-color);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-top: 0.25rem;
+}
+.perf-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.4s ease;
+}
+
+/* Firewall */
+.fw-options-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+/* Modals */
 .modal {
   position: fixed;
   top: 0; left: 0; right: 0; bottom: 0;
@@ -1426,7 +2123,6 @@ onUnmounted(() => {
   justify-content: space-between;
   align-items: center;
 }
-
 .modal-header h3 { margin: 0; font-size: 1.1rem; }
 
 .btn-close {
@@ -1441,6 +2137,7 @@ onUnmounted(() => {
 
 .modal-body { padding: 1.5rem; }
 
+.align-center { align-items: center; }
 .flex { display: flex; }
 .flex-wrap { flex-wrap: wrap; }
 .gap-1 { gap: 0.5rem; }
@@ -1453,67 +2150,18 @@ onUnmounted(() => {
 .text-muted { color: var(--text-secondary); }
 .text-center { text-align: center; }
 
-/* Performance tab */
-.perf-timeframe-row {
-  display: flex;
-  gap: 0.75rem;
-  align-items: center;
-}
-
-.perf-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 1rem;
-}
-
-.perf-card {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  border-radius: 0.5rem;
-  padding: 1rem 1.25rem;
-}
-
-.perf-card__label {
-  font-size: 0.7rem;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  margin-bottom: 0.35rem;
-  font-weight: 600;
-}
-
-.perf-card__value {
-  font-size: 1.15rem;
-  font-weight: 700;
-  color: var(--text-primary);
-  margin-bottom: 0.5rem;
-}
-
-.perf-card__sub {
-  font-size: 0.75rem;
-  color: var(--text-secondary);
-  margin-top: 0.25rem;
-}
-
-.perf-bar-track {
-  height: 6px;
-  background: var(--border-color);
-  border-radius: 3px;
-  overflow: hidden;
-  margin-top: 0.25rem;
-}
-
-.perf-bar-fill {
-  height: 100%;
-  border-radius: 3px;
-  transition: width 0.4s ease;
-}
-
-/* Clone modal extras */
 .checkbox-label {
   display: flex;
   align-items: center;
   cursor: pointer;
   font-weight: 500;
 }
+
+.btn-group {
+  display: flex;
+  gap: 0;
+}
+.btn-group .btn { border-radius: 0; }
+.btn-group .btn:first-child { border-radius: 0.375rem 0 0 0.375rem; }
+.btn-group .btn:last-child { border-radius: 0 0.375rem 0.375rem 0; }
 </style>

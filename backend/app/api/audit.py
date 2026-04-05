@@ -42,3 +42,62 @@ async def list_audit_logs(
             "created_at": l.timestamp.isoformat(),
         } for l in logs
     ]}
+
+
+def _action_icon(action: str) -> str:
+    """Map an audit action string to a display icon."""
+    a = action.lower()
+    if "login" in a or "logout" in a or "auth" in a:
+        return "login"
+    if "create" in a or "deploy" in a or "add" in a:
+        return "create"
+    if "delete" in a or "remove" in a or "destroy" in a:
+        return "delete"
+    if "update" in a or "edit" in a or "patch" in a or "modify" in a or "change" in a:
+        return "modify"
+    if "start" in a or "stop" in a or "restart" in a or "reboot" in a:
+        return "power"
+    if "backup" in a or "restore" in a:
+        return "backup"
+    if "scan" in a or "check" in a:
+        return "scan"
+    return "info"
+
+
+@router.get("/feed")
+async def get_audit_feed(
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Get simplified activity feed for the dashboard (all authenticated users)."""
+    from app.models.database import AuditLog
+    from sqlalchemy import desc
+
+    logs = (
+        db.query(AuditLog)
+        .order_by(desc(AuditLog.timestamp))
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+
+    feed = []
+    for l in logs:
+        username = l.user.username if l.user else "system"
+        resource = l.resource_type or ""
+        if l.resource_id:
+            resource = f"{resource} #{l.resource_id}" if resource else f"#{l.resource_id}"
+        # Build a human-friendly action description
+        action_display = l.action.replace("_", " ").lower()
+        feed.append({
+            "id": l.id,
+            "time": l.timestamp.isoformat(),
+            "user": username,
+            "action": action_display,
+            "resource": resource,
+            "resource_type": l.resource_type or "",
+            "icon": _action_icon(l.action),
+        })
+    return feed

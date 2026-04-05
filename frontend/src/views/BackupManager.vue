@@ -35,6 +35,10 @@
         :class="['tab-btn', activeTab === 'notifications' ? 'tab-btn--active' : '']"
         @click="activeTab = 'notifications'"
       >Notifications</button>
+      <button
+        :class="['tab-btn', activeTab === 'retention' ? 'tab-btn--active' : '']"
+        @click="activeTab = 'retention'; onRetentionTabOpen()"
+      >Retention Policies</button>
     </div>
 
     <!-- Schedules tab -->
@@ -560,6 +564,127 @@
       </div>
     </div>
 
+    <!-- Retention Policies tab -->
+    <div v-if="activeTab === 'retention'">
+      <!-- Per-Schedule Retention -->
+      <div class="card mb-2">
+        <div class="card-header">
+          <h3>Per-Schedule Retention</h3>
+          <button @click="fetchSchedules" class="btn btn-outline btn-sm" :disabled="loadingSchedules">Refresh</button>
+        </div>
+
+        <div v-if="loadingSchedules" class="loading-spinner"></div>
+        <div v-else-if="schedules.length === 0" class="text-center text-muted p-3">
+          No backup schedules configured. Create a schedule first.
+        </div>
+        <div v-else>
+          <div
+            v-for="sched in schedules"
+            :key="sched.id"
+            class="retention-sched-card"
+          >
+            <div class="retention-sched-header">
+              <div class="retention-sched-meta">
+                <strong class="retention-sched-id">{{ sched.id }}</strong>
+                <code class="retention-cron">{{ sched.schedule || '—' }}</code>
+                <span class="text-muted text-sm">{{ sched.storage || 'no storage' }}</span>
+              </div>
+              <button
+                @click="openRetentionEditModal(sched)"
+                class="btn btn-outline btn-sm"
+              >Edit Retention</button>
+            </div>
+
+            <!-- Current policy display -->
+            <div class="retention-policy-chips">
+              <span v-if="sched['keep-last']" class="retention-chip">Last: {{ sched['keep-last'] }}</span>
+              <span v-if="sched['keep-daily']" class="retention-chip">Daily: {{ sched['keep-daily'] }}</span>
+              <span v-if="sched['keep-weekly']" class="retention-chip">Weekly: {{ sched['keep-weekly'] }}</span>
+              <span v-if="sched['keep-monthly']" class="retention-chip">Monthly: {{ sched['keep-monthly'] }}</span>
+              <span v-if="sched['keep-yearly']" class="retention-chip">Yearly: {{ sched['keep-yearly'] }}</span>
+              <span v-if="sched.maxfiles && !sched['keep-last']" class="retention-chip">Max files: {{ sched.maxfiles }}</span>
+              <span
+                v-if="!sched['keep-last'] && !sched['keep-daily'] && !sched['keep-weekly'] && !sched['keep-monthly'] && !sched['keep-yearly'] && !sched.maxfiles"
+                class="text-muted text-sm"
+              >No retention policy set (keep all)</span>
+            </div>
+
+            <!-- Visual retention timeline calculator -->
+            <div v-if="retentionTimeline(sched).length > 0" class="retention-timeline">
+              <div class="retention-timeline-label text-xs text-muted">Estimated backups kept over time:</div>
+              <div class="retention-timeline-bars">
+                <div
+                  v-for="(bucket, i) in retentionTimeline(sched)"
+                  :key="i"
+                  class="retention-timeline-bucket"
+                  :title="bucket.label + ': ' + bucket.count + ' backup(s)'"
+                >
+                  <div
+                    class="retention-timeline-bar"
+                    :style="{ height: Math.min(40, bucket.count * 8) + 'px' }"
+                  ></div>
+                  <span class="retention-timeline-tick text-xs text-muted">{{ bucket.shortLabel }}</span>
+                </div>
+              </div>
+              <div class="retention-timeline-summary text-xs text-muted">
+                ~{{ retentionTotal(sched) }} backup{{ retentionTotal(sched) !== 1 ? 's' : '' }} retained at steady state
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- PBS Per-Datastore Retention -->
+      <div class="card">
+        <div class="card-header">
+          <h3>PBS Datastore Retention</h3>
+          <div class="flex gap-1 align-center">
+            <select v-model="retentionPbs.serverId" class="form-control form-control-sm" @change="fetchRetentionPbsDatastores">
+              <option value="">Select PBS server...</option>
+              <option v-for="srv in pbsServerList" :key="srv.id" :value="srv.id">
+                {{ srv.name }} ({{ srv.hostname }})
+              </option>
+            </select>
+          </div>
+        </div>
+
+        <div v-if="!retentionPbs.serverId" class="text-center text-muted p-3">
+          Select a PBS server to manage per-datastore retention.
+        </div>
+        <div v-else-if="retentionPbs.loadingDatastores" class="loading-spinner"></div>
+        <div v-else-if="retentionPbs.datastores.length === 0" class="text-center text-muted p-3">
+          No datastores found on this PBS server.
+        </div>
+        <div v-else>
+          <div
+            v-for="ds in retentionPbs.datastores"
+            :key="ds.store || ds.name"
+            class="retention-ds-card"
+          >
+            <div class="retention-ds-header">
+              <div>
+                <strong>{{ ds.store || ds.name }}</strong>
+                <span class="text-muted text-sm" style="margin-left: 0.5rem;">{{ ds.path || '' }}</span>
+              </div>
+              <button
+                @click="openPbsRetentionModal(ds)"
+                class="btn btn-outline btn-sm"
+              >Configure Prune Policy</button>
+            </div>
+
+            <div v-if="retentionPbs.policies[ds.store || ds.name]" class="retention-policy-chips">
+              <template v-for="(v, k) in retentionPbs.policies[ds.store || ds.name]" :key="k">
+                <span v-if="v" class="retention-chip">{{ k.replace('keep-', '') }}: {{ v }}</span>
+              </template>
+            </div>
+            <div v-else class="text-muted text-sm" style="padding: 0.25rem 0;">
+              No prune policy configured — all backups kept.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Create / Edit Schedule Modal -->
     <div v-if="scheduleModal.show" class="modal" @click="closeScheduleModal">
       <div class="modal-content" @click.stop>
@@ -888,6 +1013,194 @@
           <pre v-else class="task-log-pre">{{ taskLogModal.lines.join('\n') }}</pre>
           <div class="flex gap-1 mt-2">
             <button @click="closeTaskLogModal" class="btn btn-outline">Close</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Retention Edit Modal (per-schedule) -->
+    <div v-if="retentionModal.show" class="modal" @click="closeRetentionModal">
+      <div class="modal-content" @click.stop>
+        <div class="modal-header">
+          <h3>Edit Retention Policy</h3>
+          <button @click="closeRetentionModal" class="btn-close">&#215;</button>
+        </div>
+        <div class="modal-body">
+          <div class="restore-source-info mb-2">
+            <div class="text-sm text-muted">Schedule: <strong>{{ retentionModal.scheduleId }}</strong></div>
+          </div>
+
+          <p class="text-sm text-muted mb-2">
+            Configure how many backups to retain. Leave blank for no limit on that dimension.
+          </p>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Keep Last</label>
+              <input v-model.number="retentionForm['keep-last']" type="number" min="0" class="form-control" placeholder="e.g. 3" />
+              <div class="text-xs text-muted mt-1">Keep the N most recent backups regardless of schedule.</div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Keep Daily</label>
+              <input v-model.number="retentionForm['keep-daily']" type="number" min="0" class="form-control" placeholder="e.g. 7" />
+              <div class="text-xs text-muted mt-1">Keep 1 backup per day for the last N days.</div>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Keep Weekly</label>
+              <input v-model.number="retentionForm['keep-weekly']" type="number" min="0" class="form-control" placeholder="e.g. 4" />
+              <div class="text-xs text-muted mt-1">Keep 1 backup per week for the last N weeks.</div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Keep Monthly</label>
+              <input v-model.number="retentionForm['keep-monthly']" type="number" min="0" class="form-control" placeholder="e.g. 3" />
+              <div class="text-xs text-muted mt-1">Keep 1 backup per month for the last N months.</div>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Keep Yearly</label>
+              <input v-model.number="retentionForm['keep-yearly']" type="number" min="0" class="form-control" placeholder="e.g. 1" />
+              <div class="text-xs text-muted mt-1">Keep 1 backup per year for the last N years.</div>
+            </div>
+          </div>
+
+          <!-- Preview -->
+          <div v-if="retentionPreviewTotal > 0" class="retention-preview-box">
+            <strong class="text-sm">Policy Preview</strong>
+            <div class="retention-preview-chips">
+              <span v-if="retentionForm['keep-last']" class="retention-chip">Last {{ retentionForm['keep-last'] }}</span>
+              <span v-if="retentionForm['keep-daily']" class="retention-chip">{{ retentionForm['keep-daily'] }} daily</span>
+              <span v-if="retentionForm['keep-weekly']" class="retention-chip">{{ retentionForm['keep-weekly'] }} weekly</span>
+              <span v-if="retentionForm['keep-monthly']" class="retention-chip">{{ retentionForm['keep-monthly'] }} monthly</span>
+              <span v-if="retentionForm['keep-yearly']" class="retention-chip">{{ retentionForm['keep-yearly'] }} yearly</span>
+            </div>
+            <div class="text-sm text-muted">
+              Approximately <strong>{{ retentionPreviewTotal }}</strong> backups retained at steady state.
+            </div>
+          </div>
+
+          <div v-if="retentionModal.result" :class="['notif-result', retentionModal.result.ok ? 'notif-result--ok' : 'notif-result--err']">
+            {{ retentionModal.result.message }}
+          </div>
+
+          <div class="flex gap-1 mt-2">
+            <button @click="saveRetentionPolicy" class="btn btn-primary" :disabled="retentionModal.saving">
+              {{ retentionModal.saving ? 'Saving...' : 'Save Policy' }}
+            </button>
+            <button @click="closeRetentionModal" class="btn btn-outline">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PBS Prune Policy Modal (per-datastore) -->
+    <div v-if="pbsRetentionModal.show" class="modal" @click="closePbsRetentionModal">
+      <div class="modal-content" @click.stop>
+        <div class="modal-header">
+          <h3>Configure Prune Policy</h3>
+          <button @click="closePbsRetentionModal" class="btn-close">&#215;</button>
+        </div>
+        <div class="modal-body">
+          <div class="restore-source-info mb-2">
+            <div class="text-sm text-muted">Datastore: <strong>{{ pbsRetentionModal.dsName }}</strong></div>
+          </div>
+
+          <p class="text-sm text-muted mb-2">
+            Set the prune/garbage-collection policy for this datastore.
+            This will be applied to all backup groups when a prune job runs.
+          </p>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Keep Last</label>
+              <input v-model.number="pbsRetentionForm['keep-last']" type="number" min="0" class="form-control" placeholder="e.g. 3" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Keep Hourly</label>
+              <input v-model.number="pbsRetentionForm['keep-hourly']" type="number" min="0" class="form-control" placeholder="e.g. 0" />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Keep Daily</label>
+              <input v-model.number="pbsRetentionForm['keep-daily']" type="number" min="0" class="form-control" placeholder="e.g. 7" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Keep Weekly</label>
+              <input v-model.number="pbsRetentionForm['keep-weekly']" type="number" min="0" class="form-control" placeholder="e.g. 4" />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Keep Monthly</label>
+              <input v-model.number="pbsRetentionForm['keep-monthly']" type="number" min="0" class="form-control" placeholder="e.g. 12" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Keep Yearly</label>
+              <input v-model.number="pbsRetentionForm['keep-yearly']" type="number" min="0" class="form-control" placeholder="e.g. 0" />
+            </div>
+          </div>
+
+          <!-- Apply to existing backups section -->
+          <div class="prune-apply-section">
+            <h4 class="prune-apply-title">Apply to Existing Backups</h4>
+            <p class="text-sm text-muted mb-2">
+              Run a prune job now on all groups in this datastore using the policy above.
+              A preview is shown before deletion.
+            </p>
+            <div v-if="pbsRetentionModal.prunePreview" class="prune-preview-box">
+              <div class="prune-preview-header">
+                <strong class="text-sm">Prune Preview</strong>
+                <span class="text-sm text-muted">{{ pbsRetentionModal.prunePreview.length }} group(s)</span>
+              </div>
+              <div v-if="pbsRetentionModal.prunePreview.length === 0" class="text-sm text-muted" style="padding: 0.5rem 0;">
+                No backups would be deleted.
+              </div>
+              <div v-else class="prune-preview-list">
+                <div
+                  v-for="item in pbsRetentionModal.prunePreview.slice(0, 10)"
+                  :key="item.key"
+                  class="prune-preview-item"
+                >
+                  <span class="text-sm">{{ item['backup-type'] }}/{{ item['backup-id'] }}</span>
+                  <span class="text-danger text-sm">-{{ item.remove }} to remove</span>
+                  <span class="text-success text-sm">keep {{ item.keep }}</span>
+                </div>
+                <div v-if="pbsRetentionModal.prunePreview.length > 10" class="text-xs text-muted" style="padding: 0.25rem 0;">
+                  ...and {{ pbsRetentionModal.prunePreview.length - 10 }} more groups
+                </div>
+              </div>
+            </div>
+            <div class="flex gap-1">
+              <button
+                @click="previewPbsPrune"
+                class="btn btn-outline"
+                :disabled="pbsRetentionModal.loadingPreview"
+              >
+                {{ pbsRetentionModal.loadingPreview ? 'Loading preview...' : 'Preview Prune' }}
+              </button>
+              <button
+                v-if="pbsRetentionModal.prunePreview !== null"
+                @click="applyPbsPrune"
+                class="btn btn-danger"
+                :disabled="pbsRetentionModal.pruning"
+              >
+                {{ pbsRetentionModal.pruning ? 'Pruning...' : 'Apply Prune Now' }}
+              </button>
+            </div>
+          </div>
+
+          <div v-if="pbsRetentionModal.result" :class="['notif-result', pbsRetentionModal.result.ok ? 'notif-result--ok' : 'notif-result--err']">
+            {{ pbsRetentionModal.result.message }}
+          </div>
+
+          <div class="flex gap-1 mt-2">
+            <button @click="savePbsRetentionPolicy" class="btn btn-primary" :disabled="pbsRetentionModal.saving">
+              {{ pbsRetentionModal.saving ? 'Saving...' : 'Save Policy' }}
+            </button>
+            <button @click="closePbsRetentionModal" class="btn btn-outline">Cancel</button>
           </div>
         </div>
       </div>
@@ -1733,6 +2046,298 @@ async function saveNotifications() {
   }
 }
 
+// ── Retention Policies ────────────────────────────────────────────────────────
+
+const retentionModal = ref({ show: false, scheduleId: null, saving: false, result: null })
+const retentionForm = ref({
+  'keep-last': null,
+  'keep-daily': null,
+  'keep-weekly': null,
+  'keep-monthly': null,
+  'keep-yearly': null,
+})
+
+const retentionPreviewTotal = computed(() => {
+  const f = retentionForm.value
+  let total = 0
+  if (f['keep-last']) total += Number(f['keep-last'])
+  if (f['keep-daily']) total += Number(f['keep-daily'])
+  if (f['keep-weekly']) total += Number(f['keep-weekly'])
+  if (f['keep-monthly']) total += Number(f['keep-monthly'])
+  if (f['keep-yearly']) total += Number(f['keep-yearly'])
+  return total
+})
+
+function retentionTimeline(sched) {
+  const buckets = []
+  const keepLast = Number(sched['keep-last'] || 0)
+  const keepDaily = Number(sched['keep-daily'] || 0)
+  const keepWeekly = Number(sched['keep-weekly'] || 0)
+  const keepMonthly = Number(sched['keep-monthly'] || 0)
+  const keepYearly = Number(sched['keep-yearly'] || 0)
+
+  if (keepDaily > 0) {
+    for (let i = 0; i < Math.min(keepDaily, 14); i++) {
+      buckets.push({ label: `Day -${i + 1}`, shortLabel: `D${i + 1}`, count: 1 })
+    }
+  }
+  if (keepWeekly > 0) {
+    for (let i = 0; i < Math.min(keepWeekly, 8); i++) {
+      buckets.push({ label: `Week -${i + 1}`, shortLabel: `W${i + 1}`, count: 1 })
+    }
+  }
+  if (keepMonthly > 0) {
+    for (let i = 0; i < Math.min(keepMonthly, 12); i++) {
+      buckets.push({ label: `Month -${i + 1}`, shortLabel: `M${i + 1}`, count: 1 })
+    }
+  }
+  if (keepYearly > 0) {
+    for (let i = 0; i < Math.min(keepYearly, 5); i++) {
+      buckets.push({ label: `Year -${i + 1}`, shortLabel: `Y${i + 1}`, count: 1 })
+    }
+  }
+  return buckets.slice(0, 30)
+}
+
+function retentionTotal(sched) {
+  return (
+    Number(sched['keep-last'] || 0) +
+    Number(sched['keep-daily'] || 0) +
+    Number(sched['keep-weekly'] || 0) +
+    Number(sched['keep-monthly'] || 0) +
+    Number(sched['keep-yearly'] || 0)
+  )
+}
+
+function openRetentionEditModal(sched) {
+  retentionForm.value = {
+    'keep-last': sched['keep-last'] || null,
+    'keep-daily': sched['keep-daily'] || null,
+    'keep-weekly': sched['keep-weekly'] || null,
+    'keep-monthly': sched['keep-monthly'] || null,
+    'keep-yearly': sched['keep-yearly'] || null,
+  }
+  retentionModal.value = { show: true, scheduleId: sched.id, saving: false, result: null }
+}
+
+function closeRetentionModal() {
+  retentionModal.value = { show: false, scheduleId: null, saving: false, result: null }
+}
+
+async function saveRetentionPolicy() {
+  if (!retentionModal.value.scheduleId) return
+  retentionModal.value.saving = true
+  retentionModal.value.result = null
+
+  const payload = {}
+  const keepFields = ['keep-last', 'keep-daily', 'keep-weekly', 'keep-monthly', 'keep-yearly']
+  for (const k of keepFields) {
+    if (retentionForm.value[k] !== null && retentionForm.value[k] !== '') {
+      payload[k] = retentionForm.value[k]
+    }
+  }
+
+  try {
+    await api.pveNode.updateBackupSchedule(hostId.value, retentionModal.value.scheduleId, payload)
+    retentionModal.value.result = { ok: true, message: 'Retention policy saved.' }
+    toast.success('Retention policy saved')
+    await fetchSchedules()
+  } catch (err) {
+    console.error('Failed to save retention policy:', err)
+    retentionModal.value.result = { ok: false, message: 'Failed to save retention policy.' }
+    toast.error('Failed to save retention policy')
+  } finally {
+    retentionModal.value.saving = false
+  }
+}
+
+// PBS per-datastore retention
+const retentionPbs = ref({
+  serverId: '',
+  loadingDatastores: false,
+  datastores: [],
+  policies: {},  // dsName -> { keep-last, keep-daily, ... }
+})
+
+const pbsRetentionModal = ref({
+  show: false,
+  dsName: '',
+  saving: false,
+  result: null,
+  loadingPreview: false,
+  prunePreview: null,
+  pruning: false,
+})
+
+const pbsRetentionForm = ref({
+  'keep-last': null,
+  'keep-hourly': null,
+  'keep-daily': null,
+  'keep-weekly': null,
+  'keep-monthly': null,
+  'keep-yearly': null,
+})
+
+function onRetentionTabOpen() {
+  if (pbsServerList.value.length === 0) {
+    fetchPbsServerListCrud()
+  }
+}
+
+async function fetchRetentionPbsDatastores() {
+  if (!retentionPbs.value.serverId) return
+  retentionPbs.value.loadingDatastores = true
+  retentionPbs.value.datastores = []
+  try {
+    const res = await api.pbsMgmt.listDatastores(retentionPbs.value.serverId)
+    retentionPbs.value.datastores = res.data || []
+  } catch (err) {
+    console.error('Failed to load PBS datastores for retention:', err)
+    toast.error('Failed to load datastores')
+  } finally {
+    retentionPbs.value.loadingDatastores = false
+  }
+}
+
+function openPbsRetentionModal(ds) {
+  const dsName = ds.store || ds.name
+  const existing = retentionPbs.value.policies[dsName] || {}
+  pbsRetentionForm.value = {
+    'keep-last': existing['keep-last'] || null,
+    'keep-hourly': existing['keep-hourly'] || null,
+    'keep-daily': existing['keep-daily'] || null,
+    'keep-weekly': existing['keep-weekly'] || null,
+    'keep-monthly': existing['keep-monthly'] || null,
+    'keep-yearly': existing['keep-yearly'] || null,
+  }
+  pbsRetentionModal.value = {
+    show: true,
+    dsName,
+    saving: false,
+    result: null,
+    loadingPreview: false,
+    prunePreview: null,
+    pruning: false,
+  }
+}
+
+function closePbsRetentionModal() {
+  pbsRetentionModal.value = {
+    show: false,
+    dsName: '',
+    saving: false,
+    result: null,
+    loadingPreview: false,
+    prunePreview: null,
+    pruning: false,
+  }
+}
+
+function savePbsRetentionPolicy() {
+  // Store policy locally (PBS datastore prune config is applied at prune time)
+  const dsName = pbsRetentionModal.value.dsName
+  const policy = {}
+  for (const [k, v] of Object.entries(pbsRetentionForm.value)) {
+    if (v !== null && v !== '') policy[k] = v
+  }
+  retentionPbs.value.policies = { ...retentionPbs.value.policies, [dsName]: policy }
+  pbsRetentionModal.value.result = { ok: true, message: 'Policy saved locally. Use "Apply Prune Now" to apply to existing backups.' }
+  toast.success('Policy saved')
+  pbsRetentionModal.value.saving = false
+}
+
+async function previewPbsPrune() {
+  const dsName = pbsRetentionModal.value.dsName
+  pbsRetentionModal.value.loadingPreview = true
+  pbsRetentionModal.value.prunePreview = null
+  try {
+    // Get all groups in this datastore and simulate what would be pruned
+    const res = await api.pbsMgmt.listGroups(retentionPbs.value.serverId, dsName)
+    const groups = res.data || []
+    // Build a preview: for each group show how many would be kept/removed
+    const keepLast = Number(pbsRetentionForm.value['keep-last'] || 0)
+    const keepDaily = Number(pbsRetentionForm.value['keep-daily'] || 0)
+    const keepWeekly = Number(pbsRetentionForm.value['keep-weekly'] || 0)
+    const keepMonthly = Number(pbsRetentionForm.value['keep-monthly'] || 0)
+
+    const preview = []
+    for (const g of groups) {
+      const total = g['backup-count'] || 0
+      // Rough estimation: keep = sum of retention values, remove = max(0, total - keep)
+      const maxKeep = Math.max(keepLast, keepDaily + keepWeekly + keepMonthly)
+      const wouldKeep = Math.min(total, maxKeep || total)
+      const wouldRemove = Math.max(0, total - wouldKeep)
+      if (wouldRemove > 0) {
+        preview.push({
+          'backup-type': g['backup-type'],
+          'backup-id': g['backup-id'],
+          key: `${g['backup-type']}/${g['backup-id']}`,
+          keep: wouldKeep,
+          remove: wouldRemove,
+        })
+      }
+    }
+    pbsRetentionModal.value.prunePreview = preview
+  } catch (err) {
+    console.error('Failed to build prune preview:', err)
+    toast.error('Failed to load preview')
+    pbsRetentionModal.value.prunePreview = []
+  } finally {
+    pbsRetentionModal.value.loadingPreview = false
+  }
+}
+
+async function applyPbsPrune() {
+  const dsName = pbsRetentionModal.value.dsName
+  const groupsToProcess = pbsRetentionModal.value.prunePreview || []
+
+  if (groupsToProcess.length === 0) {
+    toast.info('Nothing to prune.')
+    return
+  }
+
+  const confirmed = confirm(`Prune ${groupsToProcess.length} group(s) in datastore "${dsName}"? This will permanently delete old backups.`)
+  if (!confirmed) return
+
+  pbsRetentionModal.value.pruning = true
+  pbsRetentionModal.value.result = null
+
+  const keepPolicy = {}
+  for (const [k, v] of Object.entries(pbsRetentionForm.value)) {
+    if (v !== null && v !== '' && v > 0) keepPolicy[k] = v
+  }
+
+  let successCount = 0
+  let failCount = 0
+  for (const g of groupsToProcess) {
+    try {
+      await api.pbsMgmt.pruneGroup(
+        retentionPbs.value.serverId,
+        dsName,
+        {
+          'backup-type': g['backup-type'],
+          'backup-id': g['backup-id'],
+          ...keepPolicy,
+        }
+      )
+      successCount++
+    } catch (err) {
+      console.error(`Failed to prune group ${g['backup-type']}/${g['backup-id']}:`, err)
+      failCount++
+    }
+  }
+
+  pbsRetentionModal.value.pruning = false
+  if (failCount === 0) {
+    pbsRetentionModal.value.result = { ok: true, message: `Prune jobs started for ${successCount} group(s).` }
+    toast.success(`Prune started for ${successCount} groups`)
+  } else {
+    pbsRetentionModal.value.result = { ok: false, message: `Pruned ${successCount}, failed ${failCount} groups.` }
+    toast.error('Some prune jobs failed')
+  }
+  pbsRetentionModal.value.prunePreview = null
+}
+
 onMounted(async () => {
   await Promise.all([fetchSchedules(), fetchClusterNodes()])
 })
@@ -2220,5 +2825,190 @@ onUnmounted(() => {
   .pbs-group-meta {
     display: none;
   }
+  .retention-sched-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
 }
+
+/* Retention Policies tab */
+.retention-sched-card {
+  border-bottom: 1px solid var(--border-color);
+  padding: 1rem 1.25rem;
+}
+
+.retention-sched-card:last-child {
+  border-bottom: none;
+}
+
+.retention-sched-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.65rem;
+}
+
+.retention-sched-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.retention-sched-id {
+  font-size: 0.95rem;
+  color: var(--text-primary);
+}
+
+.retention-cron {
+  font-size: 0.8rem;
+  background: var(--bg-secondary, rgba(255,255,255,0.05));
+  color: var(--text-secondary);
+  padding: 0.1rem 0.35rem;
+  border-radius: 0.2rem;
+}
+
+.retention-policy-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.5rem;
+}
+
+.retention-chip {
+  background: rgba(99, 102, 241, 0.1);
+  color: var(--primary-color, #6366f1);
+  border: 1px solid var(--primary-color, #6366f1);
+  border-radius: 0.25rem;
+  padding: 0.1rem 0.45rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+/* Retention timeline */
+.retention-timeline {
+  margin-top: 0.5rem;
+}
+
+.retention-timeline-label {
+  margin-bottom: 0.35rem;
+}
+
+.retention-timeline-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 52px;
+  overflow-x: auto;
+  padding-bottom: 0.25rem;
+}
+
+.retention-timeline-bucket {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  min-width: 28px;
+}
+
+.retention-timeline-bar {
+  width: 20px;
+  background: var(--primary-color, #6366f1);
+  border-radius: 3px 3px 0 0;
+  opacity: 0.8;
+  min-height: 4px;
+  transition: height 0.3s ease;
+}
+
+.retention-timeline-tick {
+  font-size: 0.62rem;
+  white-space: nowrap;
+}
+
+.retention-timeline-summary {
+  margin-top: 0.35rem;
+}
+
+/* PBS datastore retention */
+.retention-ds-card {
+  border-bottom: 1px solid var(--border-color);
+  padding: 1rem 1.25rem;
+}
+
+.retention-ds-card:last-child {
+  border-bottom: none;
+}
+
+.retention-ds-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+/* Retention edit modal */
+.retention-preview-box {
+  padding: 0.75rem 1rem;
+  background: rgba(99, 102, 241, 0.07);
+  border: 1px solid var(--primary-color, #6366f1);
+  border-radius: 0.375rem;
+  margin-bottom: 1rem;
+}
+
+.retention-preview-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin: 0.4rem 0;
+}
+
+/* PBS prune policy modal */
+.prune-apply-section {
+  border-top: 1px solid var(--border-color);
+  padding-top: 1.25rem;
+  margin-top: 1.25rem;
+}
+
+.prune-apply-title {
+  margin: 0 0 0.75rem 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.prune-preview-box {
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border-color);
+  border-radius: 0.375rem;
+  background: var(--bg-secondary, rgba(255,255,255,0.02));
+  margin-bottom: 0.75rem;
+}
+
+.prune-preview-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.prune-preview-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.prune-preview-item {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  font-size: 0.875rem;
+  flex-wrap: wrap;
+}
+
+.text-danger { color: #ef4444; }
+.text-success { color: #059669; }
 </style>

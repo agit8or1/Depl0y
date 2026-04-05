@@ -4,12 +4,13 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, EmailStr
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, timedelta
 import qrcode
 import io
 import base64
 import secrets
 import string
+import hashlib
 import time
 from collections import defaultdict
 
@@ -25,7 +26,7 @@ from app.core.security import (
     verify_totp_code,
 )
 from app.models import User, UserRole
-from app.models.database import ApiKey
+from app.models.database import ApiKey, TotpBackupCode, RefreshToken
 
 router = APIRouter()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/v1/auth/login", auto_error=False)
@@ -33,6 +34,82 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/v1/auth/login", auto_error=Fa
 # In-memory rate limiting for API keys: {key_id: [timestamp, ...]}
 _api_key_rate: dict = defaultdict(list)
 _API_KEY_RPM = 60  # requests per minute per API key
+
+# Temp token store for 2FA login challenge: {temp_token: {username, expires_at}}
+_temp_tokens: dict = {}
+_TEMP_TOKEN_TTL = 300  # 5 minutes
+
+
+def _cleanup_temp_tokens():
+    """Remove expired temp tokens from in-memory store."""
+    now = datetime.utcnow()
+    expired = [k for k, v in _temp_tokens.items() if v["expires_at"] < now]
+    for k in expired:
+        del _temp_tokens[k]
+
+
+def _hash_token(token: str) -> str:
+    """SHA-256 hash a token for DB storage (not bcrypt — speed matters here)."""
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def _store_refresh_token(
+    db: Session,
+    user_id: int,
+    token: str,
+    ip_address: Optional[str],
+    user_agent: Optional[str],
+    expires_delta_days: int = 30,
+) -> RefreshToken:
+    """Persist a refresh token hash to the database."""
+    from app.core.config import settings
+    expires_at = datetime.utcnow() + timedelta(days=expires_delta_days)
+    rt = RefreshToken(
+        user_id=user_id,
+        token_hash=_hash_token(token),
+        ip_address=ip_address,
+        user_agent=user_agent[:500] if user_agent else None,
+        created_at=datetime.utcnow(),
+        expires_at=expires_at,
+        revoked=False,
+    )
+    db.add(rt)
+    db.commit()
+    db.refresh(rt)
+    return rt
+
+
+def _revoke_refresh_token(db: Session, token: str) -> bool:
+    """Mark a refresh token as revoked. Returns True if found."""
+    token_hash = _hash_token(token)
+    rt = db.query(RefreshToken).filter(
+        RefreshToken.token_hash == token_hash,
+        RefreshToken.revoked == False,
+    ).first()
+    if rt:
+        rt.revoked = True
+        rt.revoked_at = datetime.utcnow()
+        db.commit()
+        return True
+    return False
+
+
+def _validate_refresh_token(db: Session, token: str) -> Optional[RefreshToken]:
+    """Return the RefreshToken row if valid (exists, not revoked, not expired)."""
+    token_hash = _hash_token(token)
+    rt = db.query(RefreshToken).filter(
+        RefreshToken.token_hash == token_hash,
+        RefreshToken.revoked == False,
+    ).first()
+    if rt is None:
+        return None
+    if rt.expires_at < datetime.utcnow():
+        # Expired — revoke it to keep the table clean
+        rt.revoked = True
+        rt.revoked_at = datetime.utcnow()
+        db.commit()
+        return None
+    return rt
 
 
 # Pydantic models
@@ -45,7 +122,15 @@ class Token(BaseModel):
 class LoginRequest(BaseModel):
     username: str
     password: str
-    totp_code: Optional[str] = None
+
+
+class TwoFactorLoginRequest(BaseModel):
+    temp_token: str
+    totp_code: str
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str
 
 
 class TOTPSetupResponse(BaseModel):
@@ -56,6 +141,26 @@ class TOTPSetupResponse(BaseModel):
 
 class TOTPVerifyRequest(BaseModel):
     code: str
+
+
+class TOTPDisableRequest(BaseModel):
+    code: str
+
+
+class BackupCodesResponse(BaseModel):
+    codes: List[str]
+    remaining: int
+
+
+class SessionResponse(BaseModel):
+    id: int
+    ip_address: Optional[str]
+    user_agent: Optional[str]
+    created_at: datetime
+    expires_at: datetime
+
+    class Config:
+        from_attributes = True
 
 
 class UserResponse(BaseModel):
@@ -311,16 +416,92 @@ def _record_login_attempt(
         db.rollback()
 
 
-@router.post("/login", response_model=Token)
+def _generate_backup_codes() -> List[str]:
+    """Generate 8 random 8-character alphanumeric backup codes."""
+    alphabet = string.ascii_uppercase + string.digits
+    codes = []
+    for _ in range(8):
+        code = ''.join(secrets.choice(alphabet) for _ in range(8))
+        codes.append(code)
+    return codes
+
+
+def _count_remaining_backup_codes(db: Session, user_id: int) -> int:
+    """Count unused backup codes for a user."""
+    return (
+        db.query(TotpBackupCode)
+        .filter(TotpBackupCode.user_id == user_id, TotpBackupCode.used == False)
+        .count()
+    )
+
+
+def _finalize_login(
+    db: Session,
+    user: User,
+    ip_address: str,
+    user_agent: str,
+) -> dict:
+    """Complete a successful login: update last_login, create tokens, store refresh token."""
+    import random
+
+    is_first_login = user.last_login is None
+    user.last_login = datetime.utcnow()
+    db.commit()
+
+    # Welcome notification on first login
+    if is_first_login:
+        try:
+            from app.models.database import Notification
+            welcome = Notification(
+                user_id=user.id,
+                title=f"Welcome to Depl0y, {user.username}!",
+                message="Your account is ready. Explore the dashboard to manage your Proxmox infrastructure.",
+                type="success",
+                action_url="/dashboard",
+            )
+            db.add(welcome)
+            db.commit()
+        except Exception:
+            pass
+
+    token_version = getattr(user, "token_version", 0) or 0
+    access_token = create_access_token(data={"sub": user.username, "tv": token_version})
+    refresh_token_value = create_refresh_token(data={"sub": user.username, "tv": token_version})
+
+    # Store refresh token in DB for rotation/revocation
+    from app.core.config import settings
+    _store_refresh_token(
+        db,
+        user_id=user.id,
+        token=refresh_token_value,
+        ip_address=ip_address,
+        user_agent=user_agent,
+        expires_delta_days=getattr(settings, "REFRESH_TOKEN_EXPIRE_DAYS", 30),
+    )
+
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token_value,
+        "token_type": "bearer",
+    }
+
+
+@router.post("/login")
 async def login(credentials: LoginRequest, request: Request, db: Session = Depends(get_db)):
-    """Login endpoint with brute-force protection and timing attack mitigation."""
-    import time
+    """
+    Login endpoint — step 1 of 2.
+
+    If the user has 2FA enabled, returns:
+        {requires_2fa: true, temp_token: "..."}
+
+    Otherwise returns the standard Token response.
+    """
     import random
 
     client_ip = request.client.host if request.client else "unknown"
     user_agent = request.headers.get("user-agent", "")
 
-    # ── Brute-force: check if account is locked ──────────────────────────
+    # Brute-force: check if account is locked
     lockout_msg = _check_account_lockout(db, credentials.username)
     if lockout_msg:
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=lockout_msg)
@@ -358,60 +539,111 @@ async def login(credentials: LoginRequest, request: Request, db: Session = Depen
         _record_login_attempt(db, user.id, credentials.username, client_ip, user_agent, False, "account_disabled")
         raise HTTPException(status_code=400, detail="Inactive user")
 
-    # Check 2FA if enabled
+    # If 2FA is enabled, issue a short-lived temp token and require second step
     if user.totp_enabled:
-        if not credentials.totp_code:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="2FA code required",
+        _cleanup_temp_tokens()
+        temp_token = secrets.token_urlsafe(32)
+        _temp_tokens[temp_token] = {
+            "username": user.username,
+            "ip_address": client_ip,
+            "user_agent": user_agent,
+            "expires_at": datetime.utcnow() + timedelta(seconds=_TEMP_TOKEN_TTL),
+        }
+        return {"requires_2fa": True, "temp_token": temp_token}
+
+    # No 2FA — complete login immediately
+    _clear_failed_attempts(db, credentials.username)
+    _record_login_attempt(db, user.id, credentials.username, client_ip, user_agent, True, None)
+
+    return _finalize_login(db, user, client_ip, user_agent)
+
+
+@router.post("/2fa/login", response_model=Token)
+async def login_2fa(data: TwoFactorLoginRequest, request: Request, db: Session = Depends(get_db)):
+    """
+    Login step 2: verify TOTP or backup code against temp_token from step 1.
+    Returns full JWT tokens on success.
+    """
+    _cleanup_temp_tokens()
+
+    entry = _temp_tokens.get(data.temp_token)
+    if not entry or entry["expires_at"] < datetime.utcnow():
+        # Remove stale token if present
+        _temp_tokens.pop(data.temp_token, None)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired 2FA session. Please log in again.",
+        )
+
+    client_ip = request.client.host if request.client else "unknown"
+    user_agent = request.headers.get("user-agent", "")
+    username = entry["username"]
+
+    user = db.query(User).filter(User.username == username).first()
+    if not user or not user.is_active:
+        _temp_tokens.pop(data.temp_token, None)
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found or inactive")
+
+    # Check lockout again (in case they were locked during the 2FA window)
+    lockout_msg = _check_account_lockout(db, username)
+    if lockout_msg:
+        _temp_tokens.pop(data.temp_token, None)
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=lockout_msg)
+
+    code = data.totp_code.strip().upper()
+
+    # Try TOTP first
+    totp_valid = user.totp_secret and verify_totp_code(user.totp_secret, code)
+
+    # If TOTP fails, try backup codes
+    if not totp_valid:
+        backup_valid = False
+        if len(code) == 8:
+            # Check unused backup codes
+            backup_codes = (
+                db.query(TotpBackupCode)
+                .filter(TotpBackupCode.user_id == user.id, TotpBackupCode.used == False)
+                .all()
             )
-        if not verify_totp_code(user.totp_secret, credentials.totp_code):
-            _record_failed_login(db, credentials.username, client_ip, user_agent)
-            _record_login_attempt(db, user.id, credentials.username, client_ip, user_agent, False, "2fa_failed")
+            for bc in backup_codes:
+                if verify_password(code, bc.code_hash):
+                    # Mark as used
+                    bc.used = True
+                    bc.used_at = datetime.utcnow()
+                    db.commit()
+                    backup_valid = True
+                    break
+
+        if not backup_valid:
+            _record_failed_login(db, username, client_ip, user_agent)
+            _record_login_attempt(db, user.id, username, client_ip, user_agent, False, "2fa_failed")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid 2FA code",
             )
 
-    # Successful login — clear lockout state and record success
-    _clear_failed_attempts(db, credentials.username)
-    _record_login_attempt(db, user.id, credentials.username, client_ip, user_agent, True, None)
+    # Successful 2FA — consume temp token
+    del _temp_tokens[data.temp_token]
+    _clear_failed_attempts(db, username)
+    _record_login_attempt(db, user.id, username, client_ip, user_agent, True, None)
 
-    is_first_login = user.last_login is None
-    user.last_login = datetime.utcnow()
-    db.commit()
-
-    # Create welcome notification on first login
-    if is_first_login:
-        try:
-            from app.models.database import Notification
-            welcome = Notification(
-                user_id=user.id,
-                title=f"Welcome to Depl0y, {user.username}!",
-                message="Your account is ready. Explore the dashboard to manage your Proxmox infrastructure.",
-                type="success",
-                action_url="/dashboard",
-            )
-            db.add(welcome)
-            db.commit()
-        except Exception:
-            pass
-
-    token_version = getattr(user, "token_version", 0) or 0
-    access_token = create_access_token(data={"sub": user.username, "tv": token_version})
-    refresh_token = create_refresh_token(data={"sub": user.username, "tv": token_version})
-
-    return {
-        "access_token": access_token,
-        "refresh_token": refresh_token,
-        "token_type": "bearer",
-    }
+    return _finalize_login(db, user, client_ip, user_agent)
 
 
 @router.post("/refresh", response_model=Token)
-async def refresh_token(refresh_token: str, db: Session = Depends(get_db)):
-    """Refresh access token"""
-    payload = decode_token(refresh_token)
+async def refresh_token(
+    request: Request,
+    body: RefreshRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Refresh token rotation:
+    - Validates old refresh token against DB (must exist, not revoked, not expired)
+    - Revokes old token
+    - Issues new access + refresh token pair
+    """
+    token_value = body.refresh_token
+    payload = decode_token(token_value)
 
     if payload is None or payload.get("type") != "refresh":
         raise HTTPException(
@@ -431,16 +663,96 @@ async def refresh_token(refresh_token: str, db: Session = Depends(get_db)):
     if token_version < user_token_version:
         raise HTTPException(status_code=401, detail="Session invalidated")
 
-    # Create new tokens
+    # Validate against DB store (rotation check)
+    rt = _validate_refresh_token(db, token_value)
+    if rt is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Refresh token has been revoked or expired",
+        )
+
+    # Revoke the old token (rotation)
+    _revoke_refresh_token(db, token_value)
+
+    # Issue new pair
+    client_ip = request.client.host if request.client else "unknown"
+    user_agent = request.headers.get("user-agent", "")
     tv = user_token_version
+
     access_token = create_access_token(data={"sub": user.username, "tv": tv})
-    new_refresh_token = create_refresh_token(data={"sub": user.username, "tv": tv})
+    new_refresh_token_value = create_refresh_token(data={"sub": user.username, "tv": tv})
+
+    from app.core.config import settings
+    _store_refresh_token(
+        db,
+        user_id=user.id,
+        token=new_refresh_token_value,
+        ip_address=client_ip,
+        user_agent=user_agent,
+        expires_delta_days=getattr(settings, "REFRESH_TOKEN_EXPIRE_DAYS", 30),
+    )
 
     return {
         "access_token": access_token,
-        "refresh_token": new_refresh_token,
+        "refresh_token": new_refresh_token_value,
         "token_type": "bearer",
     }
+
+
+class LogoutRequest(BaseModel):
+    refresh_token: Optional[str] = None
+
+
+@router.post("/logout")
+async def logout(
+    data: LogoutRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Revoke the current refresh token, invalidating this session."""
+    if data.refresh_token:
+        _revoke_refresh_token(db, data.refresh_token)
+    return {"message": "Logged out successfully"}
+
+
+@router.get("/sessions", response_model=List[SessionResponse])
+async def list_sessions(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """List active (non-revoked, non-expired) refresh tokens for the current user."""
+    now = datetime.utcnow()
+    sessions = (
+        db.query(RefreshToken)
+        .filter(
+            RefreshToken.user_id == current_user.id,
+            RefreshToken.revoked == False,
+            RefreshToken.expires_at > now,
+        )
+        .order_by(RefreshToken.created_at.desc())
+        .all()
+    )
+    return sessions
+
+
+@router.delete("/sessions/{session_id}")
+async def revoke_session(
+    session_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Revoke a specific session by ID (must belong to current user)."""
+    rt = db.query(RefreshToken).filter(
+        RefreshToken.id == session_id,
+        RefreshToken.user_id == current_user.id,
+        RefreshToken.revoked == False,
+    ).first()
+    if not rt:
+        raise HTTPException(status_code=404, detail="Session not found")
+    rt.revoked = True
+    rt.revoked_at = datetime.utcnow()
+    db.commit()
+    return {"message": "Session revoked"}
 
 
 @router.get("/me", response_model=UserResponse)
@@ -474,25 +786,29 @@ async def change_own_password(
     return {"message": "Password changed"}
 
 
+# ── TOTP 2FA ──────────────────────────────────────────────────────────────────
+
 @router.post("/totp/setup", response_model=TOTPSetupResponse)
 async def setup_totp(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    """Setup TOTP 2FA for current user"""
-    # Generate new secret
+    """
+    Generate a new TOTP secret and return it with a QR code URI.
+    The secret is stored temporarily (totp_enabled remains False until /totp/verify succeeds).
+    """
     secret = generate_totp_secret()
     uri = generate_totp_uri(secret, current_user.username)
 
-    # Generate QR code
+    # Generate QR code as base64 PNG
     qr = qrcode.QRCode(version=1, box_size=10, border=5)
     qr.add_data(uri)
     qr.make(fit=True)
-
     img = qr.make_image(fill_color="black", back_color="white")
     buffer = io.BytesIO()
     img.save(buffer, format="PNG")
     qr_code_base64 = base64.b64encode(buffer.getvalue()).decode()
 
-    # Store secret temporarily (not enabled yet)
+    # Store secret (not yet enabled) — frontend must call /totp/verify to activate
     current_user.totp_secret = secret
+    current_user.totp_enabled = False
     db.commit()
 
     return {
@@ -508,39 +824,119 @@ async def verify_totp(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Verify and enable TOTP 2FA"""
+    """
+    Verify the TOTP code against the pending secret and enable 2FA.
+    Returns backup codes on first enable (one-time display).
+    """
     if not current_user.totp_secret:
-        raise HTTPException(status_code=400, detail="TOTP not set up")
+        raise HTTPException(status_code=400, detail="TOTP not set up. Call /totp/setup first.")
 
     if not verify_totp_code(current_user.totp_secret, request.code):
         raise HTTPException(status_code=400, detail="Invalid TOTP code")
 
-    # Enable TOTP
+    # Enable 2FA
     current_user.totp_enabled = True
     db.commit()
 
-    return {"message": "2FA enabled successfully"}
+    # Generate and return backup codes
+    codes = _generate_backup_codes()
+    # Delete any existing backup codes for this user
+    db.query(TotpBackupCode).filter(TotpBackupCode.user_id == current_user.id).delete()
+    for code in codes:
+        bc = TotpBackupCode(
+            user_id=current_user.id,
+            code_hash=get_password_hash(code),
+            used=False,
+        )
+        db.add(bc)
+    db.commit()
+
+    return {
+        "message": "2FA enabled successfully",
+        "backup_codes": codes,
+        "backup_codes_remaining": len(codes),
+    }
 
 
 @router.post("/totp/disable")
 async def disable_totp(
+    request: TOTPDisableRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Disable TOTP 2FA. Requires current TOTP code or a valid backup code.
+    """
+    if not current_user.totp_enabled:
+        raise HTTPException(status_code=400, detail="2FA not enabled")
+
+    code = request.code.strip().upper()
+    totp_valid = current_user.totp_secret and verify_totp_code(current_user.totp_secret, code)
+
+    if not totp_valid:
+        # Try backup code
+        if len(code) == 8:
+            backup_codes = (
+                db.query(TotpBackupCode)
+                .filter(TotpBackupCode.user_id == current_user.id, TotpBackupCode.used == False)
+                .all()
+            )
+            for bc in backup_codes:
+                if verify_password(code, bc.code_hash):
+                    totp_valid = True
+                    break
+
+    if not totp_valid:
+        raise HTTPException(status_code=400, detail="Invalid TOTP code")
+
+    # Disable TOTP and clean up
+    current_user.totp_enabled = False
+    current_user.totp_secret = None
+    db.query(TotpBackupCode).filter(TotpBackupCode.user_id == current_user.id).delete()
+    db.commit()
+
+    return {"message": "2FA disabled successfully"}
+
+
+@router.post("/totp/backup-codes", response_model=BackupCodesResponse)
+async def regenerate_backup_codes(
     request: TOTPVerifyRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Disable TOTP 2FA"""
+    """
+    Regenerate backup codes. Requires current TOTP code to confirm identity.
+    Returns new plaintext codes once — old codes are immediately invalidated.
+    """
     if not current_user.totp_enabled:
         raise HTTPException(status_code=400, detail="2FA not enabled")
 
     if not verify_totp_code(current_user.totp_secret, request.code):
         raise HTTPException(status_code=400, detail="Invalid TOTP code")
 
-    # Disable TOTP
-    current_user.totp_enabled = False
-    current_user.totp_secret = None
+    # Delete existing backup codes and generate new ones
+    db.query(TotpBackupCode).filter(TotpBackupCode.user_id == current_user.id).delete()
+    codes = _generate_backup_codes()
+    for code in codes:
+        bc = TotpBackupCode(
+            user_id=current_user.id,
+            code_hash=get_password_hash(code),
+            used=False,
+        )
+        db.add(bc)
     db.commit()
 
-    return {"message": "2FA disabled successfully"}
+    return {"codes": codes, "remaining": len(codes)}
+
+
+@router.get("/totp/backup-codes/count")
+async def get_backup_code_count(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Return the number of unused backup codes remaining for the current user."""
+    remaining = _count_remaining_backup_codes(db, current_user.id)
+    return {"remaining": remaining}
 
 
 # ── API Key Management ────────────────────────────────────────────────────────

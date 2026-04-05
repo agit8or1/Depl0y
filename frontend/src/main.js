@@ -6,6 +6,7 @@ import 'vue-toastification/dist/index.css'
 import App from './App.vue'
 import router from './router'
 import './assets/style.css'
+import { ToastPlugin } from './plugins/toast.js'
 
 // ── Theme initialisation (before mounting to prevent flash) ─────────────────
 const applyTheme = (theme) => {
@@ -37,6 +38,7 @@ const app = createApp(App)
 
 app.use(createPinia())
 app.use(router)
+app.use(ToastPlugin)
 app.use(Toast, {
   position: 'top-right',
   timeout: 3000,

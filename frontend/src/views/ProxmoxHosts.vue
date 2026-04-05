@@ -7,9 +7,11 @@
           <h2>Proxmox Datacenters and Hosts</h2>
           <p class="text-muted">Manage your Proxmox clusters and hypervisor nodes</p>
         </div>
-        <router-link to="/federation" class="btn btn-outline">
-          🌍 Federation View
-        </router-link>
+        <div class="flex gap-1 align-center">
+          <router-link to="/federation" class="btn btn-outline">
+            🌍 Federation View
+          </router-link>
+        </div>
       </div>
     </div>
 
@@ -17,84 +19,173 @@
     <div class="card mb-2">
       <div class="card-header">
         <h3>Datacenters</h3>
-        <button @click="showAddModal = true" class="btn btn-primary">+ Add Datacenter</button>
+        <div class="flex gap-1 align-center">
+          <button
+            v-if="hosts.length > 1"
+            @click="testAllConnections"
+            class="btn btn-outline btn-sm"
+            :disabled="testingAll">
+            {{ testingAll ? 'Testing...' : 'Test All' }}
+          </button>
+          <button @click="showAddModal = true" class="btn btn-primary">+ Add Datacenter</button>
+        </div>
       </div>
 
       <div v-if="loading" class="loading-spinner"></div>
 
-      <div v-else-if="hosts.length === 0" class="text-center text-muted">
+      <div v-else-if="hosts.length === 0" class="text-center text-muted" style="padding: 2rem;">
         <p>No Proxmox datacenters configured yet.</p>
         <p class="text-sm">Add a datacenter to start deploying VMs.</p>
       </div>
 
-      <div v-else class="table-container">
+      <!-- Card view -->
+      <div v-else class="host-cards-grid">
+        <div
+          v-for="host in hosts"
+          :key="host.id"
+          class="host-card"
+          :class="hostCardClass(host)">
+
+          <!-- Card header: status pulse + name -->
+          <div class="host-card__header">
+            <div class="flex align-center gap-1">
+              <span class="status-pulse" :class="hostPulseClass(host)"></span>
+              <h4 class="host-card__name">{{ host.name }}</h4>
+            </div>
+            <span :class="['badge', host.is_active ? 'badge-success' : 'badge-danger']">
+              {{ host.is_active ? 'Active' : 'Inactive' }}
+            </span>
+          </div>
+
+          <!-- Hostname row -->
+          <div class="host-card__hostname text-sm text-muted">
+            <code>{{ host.hostname }}:{{ host.port }}</code>
+          </div>
+
+          <!-- Cluster info row -->
+          <div v-if="getFedSummary(host.id)" class="host-card__cluster-info">
+            <div class="cluster-info-row">
+              <span class="ci-label">Cluster</span>
+              <span class="ci-value">{{ getFedSummary(host.id).cluster_name || '—' }}</span>
+            </div>
+            <div class="cluster-info-row">
+              <span class="ci-label">Nodes</span>
+              <span class="ci-value">{{ getFedSummary(host.id).node_count }}</span>
+            </div>
+            <div class="cluster-info-row">
+              <span class="ci-label">VMs / LXC</span>
+              <span class="ci-value">
+                <span class="badge badge-info">{{ getFedSummary(host.id).vm_count }} VMs</span>
+                <span class="badge badge-secondary ml-1">{{ getFedSummary(host.id).lxc_count }} LXC</span>
+              </span>
+            </div>
+          </div>
+
+          <!-- Resource summary bars -->
+          <div v-if="getHostResourceSummary(host.id)" class="host-card__resources">
+            <div class="res-bar-row">
+              <span class="res-label">CPU</span>
+              <div class="res-bar-wrap">
+                <div class="res-bar">
+                  <div
+                    class="res-bar-fill"
+                    :class="pctBarClass(getHostResourceSummary(host.id).cpuPct)"
+                    :style="{ width: getHostResourceSummary(host.id).cpuPct + '%' }">
+                  </div>
+                </div>
+                <span class="res-bar-label">{{ getHostResourceSummary(host.id).cpuPct }}%</span>
+              </div>
+            </div>
+            <div class="res-bar-row">
+              <span class="res-label">RAM</span>
+              <div class="res-bar-wrap">
+                <div class="res-bar">
+                  <div
+                    class="res-bar-fill"
+                    :class="pctBarClass(getHostResourceSummary(host.id).ramPct)"
+                    :style="{ width: getHostResourceSummary(host.id).ramPct + '%' }">
+                  </div>
+                </div>
+                <span class="res-bar-label">{{ getHostResourceSummary(host.id).ramPct }}% ({{ getHostResourceSummary(host.id).ramUsedGB }}GB / {{ getHostResourceSummary(host.id).ramTotalGB }}GB)</span>
+              </div>
+            </div>
+            <div class="res-bar-row">
+              <span class="res-label">Disk</span>
+              <div class="res-bar-wrap">
+                <div class="res-bar">
+                  <div
+                    class="res-bar-fill"
+                    :class="pctBarClass(getHostResourceSummary(host.id).diskPct)"
+                    :style="{ width: getHostResourceSummary(host.id).diskPct + '%' }">
+                  </div>
+                </div>
+                <span class="res-bar-label">{{ getHostResourceSummary(host.id).diskPct }}% ({{ getHostResourceSummary(host.id).diskUsedTB }} / {{ getHostResourceSummary(host.id).diskTotalTB }})</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Latency + health -->
+          <div class="host-card__meta flex align-center gap-1 mt-1">
+            <template v-if="getFedSummary(host.id)">
+              <span :class="latencyBadgeClass(getFedSummary(host.id).latency_ms)" class="badge">
+                {{ getFedSummary(host.id).latency_ms != null ? getFedSummary(host.id).latency_ms + 'ms' : '—' }}
+              </span>
+            </template>
+            <template v-if="testResults[host.id]">
+              <span :class="['badge', testResults[host.id].ok ? 'badge-success' : 'badge-danger']">
+                {{ testResults[host.id].ok ? 'Reachable' : 'Unreachable' }}
+              </span>
+            </template>
+            <span v-if="host.idrac_type" class="badge badge-info">{{ host.idrac_type.toUpperCase() }}</span>
+            <span v-if="host.last_poll" class="text-xs text-muted ml-auto">{{ formatDate(host.last_poll) }}</span>
+          </div>
+
+          <!-- iDRAC row -->
+          <div v-if="host.idrac_hostname" class="text-sm text-muted mt-1">
+            BMC: {{ host.idrac_hostname }}
+          </div>
+
+          <!-- Action buttons -->
+          <div class="host-card__actions flex gap-1 mt-1">
+            <router-link
+              :to="`/proxmox/${host.id}/cluster`"
+              class="btn btn-primary btn-sm flex-1 text-center">
+              Open Cluster
+            </router-link>
+            <button @click="testConnection(host.id)" class="btn btn-outline btn-sm" :disabled="testing[host.id]" title="Test Connection">
+              {{ testing[host.id] ? '...' : 'Test' }}
+            </button>
+            <button @click="pollHost(host.id)" class="btn btn-outline btn-sm" title="Force poll">Poll</button>
+            <button @click="openEdit(host)" class="btn btn-outline btn-sm" title="Edit">Edit</button>
+            <button @click="deleteHost(host.id)" class="btn btn-danger btn-sm" title="Delete">Del</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Test-All Results Table -->
+      <div v-if="testAllResults.length > 0" class="test-all-results">
+        <h5 class="test-all-title">Connection Test Results</h5>
         <table class="table">
           <thead>
             <tr>
-              <th>Datacenter Name</th>
+              <th>Datacenter</th>
               <th>Hostname</th>
-              <th>Cluster</th>
-              <th>Nodes</th>
-              <th>VMs / LXC</th>
-              <th>Latency</th>
-              <th>iDRAC/iLO</th>
               <th>Status</th>
-              <th>Last Poll</th>
-              <th>Actions</th>
+              <th>Latency</th>
+              <th>Message</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="host in hosts" :key="host.id">
-              <td>{{ host.name }}</td>
-              <td>{{ host.hostname }}:{{ host.port }}</td>
+            <tr v-for="r in testAllResults" :key="r.id">
+              <td>{{ r.name }}</td>
+              <td class="text-sm"><code>{{ r.hostname }}</code></td>
               <td>
-                <span v-if="getFedSummary(host.id)" class="text-sm">
-                  {{ getFedSummary(host.id).cluster_name || '—' }}
-                </span>
-                <span v-else class="text-muted text-sm">—</span>
-              </td>
-              <td>
-                <span v-if="getFedSummary(host.id)" class="text-sm">{{ getFedSummary(host.id).node_count }}</span>
-                <span v-else class="text-muted text-sm">—</span>
-              </td>
-              <td>
-                <span v-if="getFedSummary(host.id)" class="text-sm">
-                  {{ getFedSummary(host.id).vm_count }} / {{ getFedSummary(host.id).lxc_count }}
-                </span>
-                <span v-else class="text-muted text-sm">—</span>
-              </td>
-              <td>
-                <span v-if="getFedSummary(host.id)" class="text-sm">
-                  <span :class="latencyBadgeClass(getFedSummary(host.id).latency_ms)" class="badge">
-                    {{ getFedSummary(host.id).latency_ms != null ? getFedSummary(host.id).latency_ms + 'ms' : '—' }}
-                  </span>
-                </span>
-                <span v-else class="text-muted text-sm">—</span>
-              </td>
-              <td>
-                <span v-if="host.idrac_hostname" class="text-sm">
-                  <span class="badge badge-info">{{ host.idrac_type?.toUpperCase() }}</span>
-                  {{ host.idrac_hostname }}
-                </span>
-                <span v-else class="text-muted text-sm">—</span>
-              </td>
-              <td>
-                <span :class="['badge', host.is_active ? 'badge-success' : 'badge-danger']">
-                  {{ host.is_active ? 'Active' : 'Inactive' }}
+                <span :class="['badge', r.ok ? 'badge-success' : 'badge-danger']">
+                  {{ r.ok ? 'Online' : 'Offline' }}
                 </span>
               </td>
-              <td>
-                <span v-if="host.last_poll" class="text-sm">{{ formatDate(host.last_poll) }}</span>
-                <span v-else class="text-muted text-sm">Never</span>
-              </td>
-              <td>
-                <div class="flex gap-1">
-                  <button @click="testConnection(host.id)" class="btn btn-outline btn-sm">Test</button>
-                  <button @click="pollHost(host.id)" class="btn btn-outline btn-sm">Poll</button>
-                  <button @click="openEdit(host)" class="btn btn-outline btn-sm">Edit</button>
-                  <button @click="deleteHost(host.id)" class="btn btn-danger btn-sm">Delete</button>
-                </div>
-              </td>
+              <td class="text-sm">{{ r.latency != null ? r.latency + 'ms' : '—' }}</td>
+              <td class="text-sm text-muted">{{ r.message || '—' }}</td>
             </tr>
           </tbody>
         </table>
@@ -106,14 +197,14 @@
       <div class="card-header">
         <h3>Cluster Nodes</h3>
         <button @click="handleRefreshAll" class="btn btn-outline">
-          <span v-if="!loadingNodes">🔄 Refresh All</span>
+          <span v-if="!loadingNodes">Refresh All</span>
           <span v-else>Loading...</span>
         </button>
       </div>
 
       <div v-if="loadingNodes" class="loading-spinner"></div>
 
-      <div v-else-if="allNodes.length === 0" class="text-center text-muted">
+      <div v-else-if="allNodes.length === 0" class="text-center text-muted" style="padding: 2rem;">
         <p>No cluster nodes found.</p>
         <p class="text-sm">Poll your datacenters to discover nodes.</p>
       </div>
@@ -122,7 +213,7 @@
         <div v-for="datacenter in datacentersWithNodes" :key="datacenter.id" class="datacenter-section">
           <h4 class="datacenter-title">{{ datacenter.name }}</h4>
 
-          <div v-if="datacenter.nodes.length === 0" class="text-muted text-sm">
+          <div v-if="datacenter.nodes.length === 0" class="text-muted text-sm" style="padding: 0.5rem 0;">
             No nodes discovered yet. Click "Poll" to discover nodes.
           </div>
 
@@ -258,33 +349,99 @@
           <button @click="showEditModal = false" class="btn-close">×</button>
         </div>
         <form @submit.prevent="saveEdit" class="modal-body">
-          <div class="form-group">
-            <label class="form-label">Name</label>
-            <input v-model="editHost.name" class="form-control" required />
+
+          <!-- Basic Settings -->
+          <div class="edit-section">
+            <h5 class="section-subtitle">Basic Settings</h5>
+            <div class="form-group">
+              <label class="form-label">Name</label>
+              <input v-model="editHost.name" class="form-control" required />
+            </div>
+            <div class="form-row-2">
+              <div class="form-group">
+                <label class="form-label">Hostname / IP</label>
+                <input v-model="editHost.hostname" class="form-control" required />
+              </div>
+              <div class="form-group">
+                <label class="form-label">Port</label>
+                <input v-model.number="editHost.port" type="number" class="form-control" />
+              </div>
+            </div>
+            <div class="form-inline-row">
+              <label class="form-label inline-check">
+                <input v-model="editHost.is_active" type="checkbox" />
+                Active
+              </label>
+              <label class="form-label inline-check">
+                <input v-model="editHost.verify_ssl" type="checkbox" />
+                Verify SSL Certificate
+              </label>
+            </div>
           </div>
-          <div class="form-group">
-            <label class="form-label">Hostname / IP</label>
-            <input v-model="editHost.hostname" class="form-control" required />
+
+          <!-- Authentication -->
+          <div class="edit-section">
+            <h5 class="section-subtitle">Authentication</h5>
+            <div class="form-group">
+              <label class="form-label">Auth Method</label>
+              <select v-model="editAuthMethod" class="form-control">
+                <option value="token">API Token (recommended)</option>
+                <option value="password">Username / Password</option>
+              </select>
+            </div>
+            <template v-if="editAuthMethod === 'token'">
+              <div class="form-group">
+                <label class="form-label">API Token ID</label>
+                <input v-model="editHost.token_id" class="form-control" placeholder="e.g. root@pam!mytoken" autocomplete="off" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">API Token Secret <span class="text-muted text-sm">(leave blank to keep current)</span></label>
+                <input v-model="editHost.token_secret" type="password" class="form-control" autocomplete="new-password" />
+              </div>
+              <div class="info-box text-sm">
+                <strong>Token format:</strong> Create via PVE &rarr; Datacenter &rarr; Permissions &rarr; API Tokens.
+                Token ID format: <code>user@realm!tokenname</code>
+              </div>
+            </template>
+            <template v-else>
+              <div class="form-group">
+                <label class="form-label">Username</label>
+                <input v-model="editHost.username" class="form-control" placeholder="root@pam" autocomplete="off" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">Password <span class="text-muted text-sm">(leave blank to keep current)</span></label>
+                <input v-model="editHost.password" type="password" class="form-control" autocomplete="new-password" />
+              </div>
+            </template>
           </div>
-          <div class="form-group">
-            <label class="form-label">Port</label>
-            <input v-model.number="editHost.port" type="number" class="form-control" />
-          </div>
-          <div class="form-group">
-            <label class="form-label">
-              <input v-model="editHost.is_active" type="checkbox" />
-              Active
-            </label>
-          </div>
-          <div class="form-group">
-            <label class="form-label">
-              <input v-model="editHost.verify_ssl" type="checkbox" />
-              Verify SSL Certificate
-            </label>
+
+          <!-- Defaults -->
+          <div class="edit-section">
+            <h5 class="section-subtitle">Deployment Defaults</h5>
+            <div class="form-row-2">
+              <div class="form-group">
+                <label class="form-label">Default Storage</label>
+                <input v-model="editHost.default_storage" class="form-control" placeholder="e.g. local-lvm" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">Default Bridge</label>
+                <input v-model="editHost.default_bridge" class="form-control" placeholder="e.g. vmbr0" />
+              </div>
+            </div>
+            <div class="form-row-2">
+              <div class="form-group">
+                <label class="form-label">Default Node</label>
+                <input v-model="editHost.default_node" class="form-control" placeholder="e.g. pve" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">ISO Storage</label>
+                <input v-model="editHost.iso_storage" class="form-control" placeholder="e.g. local" />
+              </div>
+            </div>
           </div>
 
           <!-- iDRAC / iLO -->
-          <div class="auth-section mt-1">
+          <div class="edit-section">
             <h5 class="section-subtitle">iDRAC / iLO</h5>
             <div class="form-group">
               <label class="form-label">BMC Type</label>
@@ -295,21 +452,25 @@
               </select>
             </div>
             <div v-if="editHost.idrac_type">
-              <div class="form-group">
-                <label class="form-label">BMC Hostname / IP</label>
-                <input v-model="editHost.idrac_hostname" class="form-control" placeholder="192.168.1.10" />
+              <div class="form-row-2">
+                <div class="form-group">
+                  <label class="form-label">BMC Hostname / IP</label>
+                  <input v-model="editHost.idrac_hostname" class="form-control" placeholder="192.168.1.10" />
+                </div>
+                <div class="form-group">
+                  <label class="form-label">BMC Port</label>
+                  <input v-model.number="editHost.idrac_port" type="number" class="form-control" placeholder="443" />
+                </div>
               </div>
-              <div class="form-group">
-                <label class="form-label">BMC Port</label>
-                <input v-model.number="editHost.idrac_port" type="number" class="form-control" placeholder="443" />
-              </div>
-              <div class="form-group">
-                <label class="form-label">BMC Username</label>
-                <input v-model="editHost.idrac_username" class="form-control" placeholder="root or administrator" />
-              </div>
-              <div class="form-group">
-                <label class="form-label">BMC Password <span class="text-muted text-sm">(leave blank to keep current)</span></label>
-                <input v-model="editHost.idrac_password" type="password" autocomplete="new-password" class="form-control" />
+              <div class="form-row-2">
+                <div class="form-group">
+                  <label class="form-label">BMC Username</label>
+                  <input v-model="editHost.idrac_username" class="form-control" placeholder="root or administrator" />
+                </div>
+                <div class="form-group">
+                  <label class="form-label">BMC Password <span class="text-muted text-sm">(leave blank to keep)</span></label>
+                  <input v-model="editHost.idrac_password" type="password" autocomplete="new-password" class="form-control" />
+                </div>
               </div>
             </div>
           </div>
@@ -350,6 +511,16 @@ export default {
     const showAddModal = ref(false)
     const showEditModal = ref(false)
     const useApiToken = ref(false)
+    const editAuthMethod = ref('token')
+
+    // Per-host test loading
+    const testing = ref({})
+    // Per-host test results (simple ok/latency)
+    const testResults = ref({})
+
+    // Test-all state
+    const testingAll = ref(false)
+    const testAllResults = ref([])
 
     // Federation summary keyed by host_id
     const federationSummary = ref({})
@@ -357,9 +528,15 @@ export default {
     // Live stats keyed by "${hostId}-${nodeName}"
     const nodeStats = ref({})
 
+    // Host resource summaries (aggregated from node stats) keyed by hostId
+    const hostResourceSummary = ref({})
+
     const editHost = ref({
       id: null, name: '', hostname: '', port: 8006,
       is_active: true, verify_ssl: false,
+      token_id: '', token_secret: '',
+      username: '', password: '',
+      default_storage: '', default_bridge: '', default_node: '', iso_storage: '',
       idrac_type: '', idrac_hostname: '', idrac_port: 443,
       idrac_username: '', idrac_password: '',
     })
@@ -400,6 +577,75 @@ export default {
       return 'badge-danger'
     }
 
+    const hostCardClass = (host) => {
+      if (!host.is_active) return 'host-card--inactive'
+      const fed = getFedSummary(host.id)
+      if (!fed) return ''
+      if (fed.latency_ms == null) return 'host-card--unknown'
+      if (fed.latency_ms > 500) return 'host-card--degraded'
+      return 'host-card--online'
+    }
+
+    const hostPulseClass = (host) => {
+      if (!host.is_active) return 'pulse-inactive'
+      const fed = getFedSummary(host.id)
+      if (!fed) return 'pulse-unknown'
+      if (fed.latency_ms == null) return 'pulse-unknown'
+      if (fed.latency_ms > 500) return 'pulse-warning'
+      return 'pulse-online'
+    }
+
+    const pctBarClass = (pct) => {
+      if (pct >= 85) return 'bar-danger'
+      if (pct >= 65) return 'bar-warning'
+      return 'bar-success'
+    }
+
+    const getHostResourceSummary = (hostId) => {
+      return hostResourceSummary.value[hostId] || null
+    }
+
+    const computeHostResourceSummary = () => {
+      const result = {}
+      for (const host of hosts.value) {
+        const hostNodes = allNodes.value.filter(n => n.host_id === host.id)
+        if (!hostNodes.length) continue
+
+        let totalCpu = 0
+        let totalMem = 0
+        let usedMem = 0
+        let totalDisk = 0
+        let usedDisk = 0
+        let statCount = 0
+
+        for (const node of hostNodes) {
+          const stat = nodeStats.value[`${host.id}-${node.node_name}`]
+          if (!stat) continue
+          statCount++
+          if (stat.cpu != null) totalCpu += stat.cpu
+          if (stat.memory?.total) { totalMem += stat.memory.total; usedMem += stat.memory.used || 0 }
+          if (stat.rootfs?.total) { totalDisk += stat.rootfs.total; usedDisk += stat.rootfs.used || 0 }
+        }
+
+        if (!statCount) continue
+
+        const cpuPct = Math.round((totalCpu / statCount) * 100)
+        const ramPct = totalMem ? Math.round((usedMem / totalMem) * 100) : 0
+        const diskPct = totalDisk ? Math.round((usedDisk / totalDisk) * 100) : 0
+
+        result[host.id] = {
+          cpuPct,
+          ramPct,
+          diskPct,
+          ramUsedGB: (usedMem / (1024 ** 3)).toFixed(0),
+          ramTotalGB: (totalMem / (1024 ** 3)).toFixed(0),
+          diskUsedTB: totalDisk > (1024 ** 4) ? (usedDisk / (1024 ** 4)).toFixed(1) + 'TB' : (usedDisk / (1024 ** 3)).toFixed(0) + 'GB',
+          diskTotalTB: totalDisk > (1024 ** 4) ? (totalDisk / (1024 ** 4)).toFixed(1) + 'TB' : (totalDisk / (1024 ** 3)).toFixed(0) + 'GB',
+        }
+      }
+      hostResourceSummary.value = result
+    }
+
     const onHostAdded = async () => {
       showAddModal.value = false
       await fetchHosts()
@@ -407,15 +653,64 @@ export default {
     }
 
     const testConnection = async (hostId) => {
+      testing.value[hostId] = true
       try {
         const response = await api.proxmox.testConnection(hostId)
-        if (response.data.status === 'success') {
+        const ok = response.data.status === 'success'
+        testResults.value = {
+          ...testResults.value,
+          [hostId]: { ok, latency: response.data.latency_ms, message: response.data.message }
+        }
+        if (ok) {
           toast.success('Connection successful!')
         } else {
           toast.error('Connection failed: ' + response.data.message)
         }
       } catch (error) {
+        testResults.value = {
+          ...testResults.value,
+          [hostId]: { ok: false, latency: null, message: 'Request failed' }
+        }
         console.error('Failed to test connection:', error)
+      } finally {
+        delete testing.value[hostId]
+      }
+    }
+
+    const testAllConnections = async () => {
+      testingAll.value = true
+      testAllResults.value = []
+      try {
+        const results = await Promise.all(
+          hosts.value.map(host =>
+            api.proxmox.testConnection(host.id)
+              .then(res => ({
+                id: host.id,
+                name: host.name,
+                hostname: `${host.hostname}:${host.port}`,
+                ok: res.data.status === 'success',
+                latency: res.data.latency_ms,
+                message: res.data.message || '',
+              }))
+              .catch(err => ({
+                id: host.id,
+                name: host.name,
+                hostname: `${host.hostname}:${host.port}`,
+                ok: false,
+                latency: null,
+                message: err?.response?.data?.detail || 'Request failed',
+              }))
+          )
+        )
+        testAllResults.value = results
+        const failed = results.filter(r => !r.ok).length
+        if (failed === 0) {
+          toast.success(`All ${results.length} hosts reachable`)
+        } else {
+          toast.warning(`${failed} of ${results.length} hosts unreachable`)
+        }
+      } finally {
+        testingAll.value = false
       }
     }
 
@@ -492,6 +787,7 @@ export default {
       })
 
       await Promise.allSettled(tasks)
+      computeHostResourceSummary()
     }
 
     // Combined refresh: nodes first, then live stats async (non-blocking)
@@ -569,12 +865,21 @@ export default {
         port: host.port,
         is_active: host.is_active,
         verify_ssl: host.verify_ssl,
+        token_id: host.token_id || '',
+        token_secret: '',
+        username: host.username || '',
+        password: '',
+        default_storage: host.default_storage || '',
+        default_bridge: host.default_bridge || '',
+        default_node: host.default_node || '',
+        iso_storage: host.iso_storage || '',
         idrac_type: host.idrac_type || '',
         idrac_hostname: host.idrac_hostname || '',
         idrac_port: host.idrac_port || 443,
         idrac_username: host.idrac_username || '',
         idrac_password: '',
       }
+      editAuthMethod.value = host.token_id ? 'token' : 'password'
       showEditModal.value = true
     }
 
@@ -582,13 +887,15 @@ export default {
       saving.value = true
       try {
         const data = { ...editHost.value }
-        // Don't send empty password (would clear existing)
+        // Don't send empty secrets (would clear existing)
+        if (!data.token_secret) delete data.token_secret
+        if (!data.password) delete data.password
         if (!data.idrac_password) delete data.idrac_password
         // Clear iDRAC fields if type removed
         if (!data.idrac_type) {
           data.idrac_hostname = ''
           data.idrac_username = ''
-          data.idrac_password = ''
+          delete data.idrac_password
         }
         await api.proxmox.updateHost(editHost.value.id, data)
         toast.success('Host updated')
@@ -639,14 +946,20 @@ export default {
       showAddModal,
       showEditModal,
       editHost,
+      editAuthMethod,
       useApiToken,
       nodeStats,
       federationSummary,
       datacentersWithNodes,
+      testing,
+      testResults,
+      testingAll,
+      testAllResults,
       onHostAdded,
       openEdit,
       saveEdit,
       testConnection,
+      testAllConnections,
       pollHost,
       refreshAllNodes,
       handleRefreshAll,
@@ -657,7 +970,11 @@ export default {
       formatGB,
       getNodeStat,
       getFedSummary,
+      getHostResourceSummary,
       latencyBadgeClass,
+      hostCardClass,
+      hostPulseClass,
+      pctBarClass,
       cpuPct,
       cpuBarClass,
       ramPct,
@@ -692,19 +1009,228 @@ export default {
   font-size: 0.95rem;
 }
 
+/* ── Host cards grid ──────────────────────────────────────────────────────── */
+
+.host-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 1rem;
+  padding: 1rem;
+}
+
+.host-card {
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+  padding: 1rem 1.25rem;
+  background: var(--background);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.host-card--online {
+  border-left: 3px solid #22c55e;
+}
+
+.host-card--degraded {
+  border-left: 3px solid #f59e0b;
+}
+
+.host-card--inactive {
+  border-left: 3px solid #6b7280;
+  opacity: 0.75;
+}
+
+.host-card--unknown {
+  border-left: 3px solid var(--border-color);
+}
+
+.host-card__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.host-card__name {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.host-card__hostname {
+  font-family: monospace;
+}
+
+/* Animated status pulse dot */
+.status-pulse {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.pulse-online {
+  background-color: #22c55e;
+  box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.6);
+  animation: pulse-green 2s infinite;
+}
+
+.pulse-warning {
+  background-color: #f59e0b;
+  box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.6);
+  animation: pulse-orange 2s infinite;
+}
+
+.pulse-inactive {
+  background-color: #6b7280;
+}
+
+.pulse-unknown {
+  background-color: var(--border-color);
+}
+
+@keyframes pulse-green {
+  0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.6); }
+  70% { box-shadow: 0 0 0 8px rgba(34, 197, 94, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+}
+
+@keyframes pulse-orange {
+  0% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.6); }
+  70% { box-shadow: 0 0 0 8px rgba(245, 158, 11, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }
+}
+
+/* Cluster info rows */
+.host-card__cluster-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.5rem 0;
+  border-top: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.cluster-info-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+}
+
+.ci-label {
+  color: var(--text-secondary);
+  width: 4rem;
+  flex-shrink: 0;
+  font-weight: 500;
+}
+
+.ci-value {
+  color: var(--text-primary);
+}
+
+/* Resource bars */
+.host-card__resources {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.res-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+}
+
+.res-label {
+  color: var(--text-secondary);
+  font-weight: 500;
+  width: 2.75rem;
+  flex-shrink: 0;
+}
+
+.res-bar-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.res-bar {
+  flex: 1;
+  height: 6px;
+  background: var(--border-color);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.res-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.4s ease;
+}
+
+.res-bar-label {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  font-family: monospace;
+}
+
+/* Action buttons */
+.host-card__actions {
+  flex-wrap: wrap;
+}
+
+.flex-1 {
+  flex: 1;
+}
+
+/* Test-all results */
+.test-all-results {
+  padding: 1rem;
+  border-top: 1px solid var(--border-color);
+}
+
+.test-all-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin: 0 0 0.75rem 0;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* ── Badge colors ─────────────────────────────────────────────────────────── */
+
 .badge-warning {
   background-color: #f59e0b;
   color: #fff;
 }
+
+.badge-secondary {
+  background-color: var(--text-secondary, #6b7280);
+  color: #fff;
+}
+
+.bar-success { background-color: #22c55e; }
+.bar-warning { background-color: #f59e0b; }
+.bar-danger  { background-color: #ef4444; }
+
+/* ── Button sizes ─────────────────────────────────────────────────────────── */
 
 .btn-sm {
   padding: 0.25rem 0.5rem;
   font-size: 0.875rem;
 }
 
-.nodes-section {
-  padding: 0;
-}
+/* ── Nodes section ────────────────────────────────────────────────────────── */
+
+.nodes-section { padding: 0; }
 
 .datacenter-section {
   margin-bottom: 2rem;
@@ -726,90 +1252,6 @@ export default {
   padding-left: 0.5rem;
   border-left: 3px solid var(--primary-color);
 }
-
-.modal {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-}
-
-.modal-content {
-  background: white;
-  border-radius: 0.5rem;
-  max-width: 600px;
-  width: 90%;
-  max-height: 90vh;
-  overflow-y: auto;
-  box-shadow: var(--shadow-lg);
-}
-
-.modal-header {
-  padding: 1.5rem;
-  border-bottom: 1px solid var(--border-color);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.modal-header h3 {
-  margin: 0;
-}
-
-.btn-close {
-  background: none;
-  border: none;
-  font-size: 2rem;
-  cursor: pointer;
-  color: var(--text-secondary);
-  line-height: 1;
-}
-
-.modal-body {
-  padding: 1.5rem;
-}
-
-.auth-section {
-  margin: 1rem 0;
-  padding: 1rem;
-  background-color: var(--background);
-  border-radius: 0.5rem;
-  border: 1px solid var(--border-color);
-}
-
-.section-subtitle {
-  font-size: 1rem;
-  font-weight: 600;
-  margin-bottom: 0.5rem;
-  color: var(--text-primary);
-}
-
-.warning-box {
-  margin-top: 1rem;
-  padding: 1rem;
-  background-color: #fff3cd;
-  border: 1px solid #ffc107;
-  border-radius: 0.375rem;
-  color: #856404;
-}
-
-.warning-box strong {
-  display: block;
-  margin-bottom: 0.5rem;
-  font-size: 0.875rem;
-}
-
-.warning-box p {
-  margin: 0.25rem 0;
-  font-size: 0.875rem;
-}
-
 
 .nodes-grid {
   display: grid;
@@ -838,13 +1280,12 @@ export default {
   font-size: 1.125rem;
   font-weight: 600;
 }
+
 .node-link {
   color: #3b82f6;
   text-decoration: none;
 }
-.node-link:hover {
-  text-decoration: underline;
-}
+.node-link:hover { text-decoration: underline; }
 
 .node-stats {
   display: flex;
@@ -869,9 +1310,7 @@ export default {
 }
 
 /* Live stats section */
-.node-live-stats {
-  margin-top: 0.75rem;
-}
+.node-live-stats { margin-top: 0.75rem; }
 
 .live-stats-divider {
   border-top: 1px dashed var(--border-color);
@@ -886,9 +1325,7 @@ export default {
   margin-bottom: 0.5rem;
 }
 
-.live-stat-row:last-child {
-  margin-bottom: 0;
-}
+.live-stat-row:last-child { margin-bottom: 0; }
 
 .live-stat-label {
   color: var(--text-secondary);
@@ -920,18 +1357,6 @@ export default {
   transition: width 0.4s ease;
 }
 
-.bar-success {
-  background-color: #22c55e;
-}
-
-.bar-warning {
-  background-color: #f59e0b;
-}
-
-.bar-danger {
-  background-color: #ef4444;
-}
-
 .stat-bar-label {
   color: var(--text-primary);
   font-family: monospace;
@@ -944,14 +1369,125 @@ export default {
   gap: 0.375rem;
 }
 
-.badge-secondary {
-  background-color: var(--text-secondary, #6b7280);
-  color: #fff;
-}
-
 .stat-skeleton {
   color: var(--text-secondary);
   opacity: 0.45;
   font-size: 0.875rem;
 }
+
+/* ── Modal ────────────────────────────────────────────────────────────────── */
+
+.modal {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  background: var(--surface, white);
+  border-radius: 0.5rem;
+  max-width: 640px;
+  width: 90%;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: var(--shadow-lg);
+}
+
+.modal-header {
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.modal-header h3 { margin: 0; }
+
+.btn-close {
+  background: none;
+  border: none;
+  font-size: 2rem;
+  cursor: pointer;
+  color: var(--text-secondary);
+  line-height: 1;
+}
+
+.modal-body { padding: 1.5rem; }
+
+/* Edit sections */
+.edit-section {
+  margin-bottom: 1.25rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.edit-section:last-of-type {
+  border-bottom: none;
+  margin-bottom: 0;
+}
+
+.section-subtitle {
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0 0 0.75rem 0;
+  color: var(--text-secondary);
+}
+
+.form-group { margin-bottom: 0.875rem; }
+
+.form-label {
+  display: block;
+  margin-bottom: 0.35rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.form-row-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.form-inline-row {
+  display: flex;
+  gap: 1.5rem;
+  align-items: center;
+}
+
+.inline-check {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0;
+  cursor: pointer;
+}
+
+.info-box {
+  background: var(--background);
+  border: 1px solid var(--border-color);
+  border-radius: 0.375rem;
+  padding: 0.625rem 0.75rem;
+  color: var(--text-secondary);
+  margin-top: 0.5rem;
+}
+
+/* ── Utility ──────────────────────────────────────────────────────────────── */
+
+.flex { display: flex; }
+.gap-1 { gap: 0.5rem; }
+.align-center { align-items: center; }
+.mt-1 { margin-top: 0.5rem; }
+.ml-1 { margin-left: 0.25rem; }
+.text-sm { font-size: 0.875rem; }
+.text-xs { font-size: 0.75rem; }
+.text-muted { color: var(--text-secondary); }
+.text-center { text-align: center; }
+.ml-auto { margin-left: auto; }
 </style>

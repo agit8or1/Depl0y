@@ -54,10 +54,22 @@
           </select>
         </div>
 
+        <!-- Memory filter -->
+        <div class="filter-group">
+          <select v-model="memFilter" class="form-input filter-select" style="width:130px;">
+            <option value="all">Any Memory</option>
+            <option value="512">≥ 512 MB</option>
+            <option value="1024">≥ 1 GB</option>
+            <option value="2048">≥ 2 GB</option>
+            <option value="4096">≥ 4 GB</option>
+            <option value="8192">≥ 8 GB</option>
+          </select>
+        </div>
+
         <!-- Count summary -->
         <div class="filter-summary">
           <span class="count-badge">
-            {{ filteredContainers.length }} container{{ filteredContainers.length !== 1 ? 's' : '' }}
+            Showing {{ sortedContainers.length }} of {{ containers.length }} container{{ containers.length !== 1 ? 's' : '' }}
             <span class="count-running">({{ runningCount }} running)</span>
           </span>
         </div>
@@ -287,7 +299,7 @@
 </template>
 
 <script>
-import { ref, computed, onMounted, onUnmounted, reactive } from 'vue'
+import { ref, computed, onMounted, onUnmounted, reactive, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/services/api'
 import { useToast } from 'vue-toastification'
@@ -306,11 +318,19 @@ export default {
     const loading = ref(true)
     const bulkActioning = ref(false)
 
+    // Persist filter state
+    const CT_FILTER_KEY = 'depl0y_ct_filter'
+    function loadCtFilter() {
+      try { return JSON.parse(sessionStorage.getItem(CT_FILTER_KEY) || '{}') } catch { return {} }
+    }
+    const savedCtFilter = loadCtFilter()
+
     // Filters
-    const searchQuery = ref('')
-    const statusFilter = ref('all')
-    const hostFilter = ref('all')
-    const nodeFilter = ref('all')
+    const searchQuery = ref(savedCtFilter.search || '')
+    const statusFilter = ref(savedCtFilter.status || 'all')
+    const hostFilter = ref(savedCtFilter.host || 'all')
+    const nodeFilter = ref(savedCtFilter.node || 'all')
+    const memFilter = ref(savedCtFilter.mem || 'all')
 
     // Selection
     const selectedIds = reactive(new Set())
@@ -417,12 +437,28 @@ export default {
 
     // ── Filtered view ─────────────────────────────────────────────────────────
 
+    // Persist filter changes to sessionStorage
+    watch([searchQuery, statusFilter, hostFilter, nodeFilter, memFilter], () => {
+      sessionStorage.setItem(CT_FILTER_KEY, JSON.stringify({
+        search: searchQuery.value,
+        status: statusFilter.value,
+        host: hostFilter.value,
+        node: nodeFilter.value,
+        mem: memFilter.value,
+      }))
+    })
+
     const filteredContainers = computed(() => {
       const q = searchQuery.value.trim().toLowerCase()
+      const minMemMb = memFilter.value !== 'all' ? parseInt(memFilter.value, 10) : 0
       return containers.value.filter(ct => {
         if (hostFilter.value !== 'all' && ct._hostId !== hostFilter.value) return false
         if (nodeFilter.value !== 'all' && ct._node !== nodeFilter.value) return false
         if (statusFilter.value !== 'all' && ct.status !== statusFilter.value) return false
+        if (minMemMb > 0) {
+          const maxMemMb = (ct.maxmem || 0) / (1024 * 1024)
+          if (maxMemMb < minMemMb) return false
+        }
         if (q) {
           const name = (ct.name || '').toLowerCase()
           const vmid = String(ct.vmid)
@@ -574,6 +610,7 @@ export default {
       statusFilter,
       hostFilter,
       nodeFilter,
+      memFilter,
       uniqueNodes,
       countdown,
       filteredContainers,

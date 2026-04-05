@@ -65,16 +65,24 @@
         >
           <span class="result-icon">{{ item._icon }}</span>
           <div class="result-info">
-            <span class="result-name">{{ item.name || item.id }}</span>
+            <span class="result-name" v-html="highlightQuery(item.name || item.id || '')"></span>
             <span class="result-meta">
               <span v-if="item.vmid" class="meta-chip">ID {{ item.vmid }}</span>
-              <span v-if="item.node && item.type !== 'node'" class="meta-chip">{{ item.node }}</span>
-              <span class="meta-chip host-chip">{{ item._hostName }}</span>
+              <!-- Breadcrumb: host → node → vmid -->
+              <span class="meta-chip breadcrumb-chip">
+                {{ item._hostName }}<span class="breadcrumb-sep">›</span>{{ item.node }}<span v-if="item.vmid" class="breadcrumb-sep">›</span><span v-if="item.vmid">{{ item.vmid }}</span>
+              </span>
             </span>
           </div>
           <span class="result-status" :class="statusClass(item.status)">{{ item.status || 'unknown' }}</span>
         </div>
       </template>
+
+      <!-- See all results link -->
+      <div v-if="query && results.length > 0" class="see-all-row" @mousedown.prevent="seeAllResults">
+        <span>See all results for "{{ query }}"</span>
+        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+      </div>
     </div>
   </div>
 </template>
@@ -268,6 +276,23 @@ export default {
       activeIndex.value = -1
     }
 
+    const seeAllResults = () => {
+      const q = query.value.trim()
+      if (q) {
+        saveRecentSearch(q)
+        recentSearches.value = loadRecentSearches()
+      }
+      clearSearch()
+      router.push({ path: '/vm-search', query: q ? { q } : {} })
+    }
+
+    const highlightQuery = (text) => {
+      const q = query.value.trim()
+      if (!q || q.length < 2) return text
+      const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      return text.replace(new RegExp(`(${escaped})`, 'gi'), '<mark>$1</mark>')
+    }
+
     const clearRecentSearches = () => {
       localStorage.removeItem(RECENT_KEY)
       recentSearches.value = []
@@ -331,7 +356,7 @@ export default {
       }
       showDropdown.value = true
       loading.value = true
-      debounceTimer = setTimeout(() => runSearch(val), 400)
+      debounceTimer = setTimeout(() => runSearch(val), 300)
     })
 
     // ── Click outside ─────────────────────────────────────────────────────────
@@ -364,7 +389,9 @@ export default {
       clearSearch,
       clearRecentSearches,
       applyRecent,
-      statusClass
+      statusClass,
+      seeAllResults,
+      highlightQuery,
     }
   }
 }
@@ -622,6 +649,44 @@ export default {
 /* ── Group icon ── */
 .group-type-icon {
   margin-right: 0.3rem;
+}
+
+/* ── Breadcrumb chip ── */
+.breadcrumb-chip {
+  color: rgba(147, 197, 253, 0.85);
+  font-family: monospace;
+  font-size: 0.68rem;
+}
+
+.breadcrumb-sep {
+  opacity: 0.5;
+  margin: 0 0.2rem;
+}
+
+/* ── See all results ── */
+.see-all-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.55rem 1rem;
+  cursor: pointer;
+  font-size: 0.8rem;
+  color: rgba(59, 130, 246, 0.85);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  transition: background 0.12s;
+}
+
+.see-all-row:hover {
+  background: rgba(59, 130, 246, 0.1);
+  color: #60a5fa;
+}
+
+/* ── Highlight mark ── */
+:deep(mark) {
+  background: rgba(251, 191, 36, 0.35);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
 }
 
 /* ── Responsive ── */

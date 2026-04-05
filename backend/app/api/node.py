@@ -1441,3 +1441,113 @@ def ceph_pools(host_id: int, node: str, db: Session = Depends(get_db),
         return _pve(host).nodes(node).ceph.pools.get()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── APT / Package updates ──────────────────────────────────────────────────────
+
+@router.get("/{host_id}/nodes/{node}/apt/update")
+def apt_list_updates(host_id: int, node: str, db: Session = Depends(get_db),
+                     current_user=Depends(get_current_user)):
+    """List available package updates on a node."""
+    host = _get_host(host_id, db)
+    cache_key = f"pve:{host_id}:nodes/{node}/apt/update"
+    cached = pve_cache.get(cache_key)
+    if cached is not None:
+        return cached
+    try:
+        result = _pve(host).nodes(node).apt.update.get()
+        pve_cache.set(cache_key, result, ttl=120)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{host_id}/nodes/{node}/apt/update")
+def apt_refresh_packages(host_id: int, node: str, db: Session = Depends(get_db),
+                         current_user=Depends(require_operator)):
+    """Refresh package list (apt-get update) on a node."""
+    host = _get_host(host_id, db)
+    try:
+        upid = _pve(host).nodes(node).apt.update.post()
+        pve_cache.clear_prefix(f"pve:{host_id}:nodes/{node}/apt")
+        task_tracker.register(
+            upid, host_id, node,
+            f"APT refresh packages on {node}",
+            user_id=getattr(current_user, "id", None),
+            task_type="aptupdate",
+        )
+        return {"upid": upid}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{host_id}/nodes/{node}/apt/upgrade")
+def apt_upgrade_all(host_id: int, node: str, db: Session = Depends(get_db),
+                    current_user=Depends(require_admin)):
+    """Upgrade all packages on a node (dist-upgrade)."""
+    host = _get_host(host_id, db)
+    try:
+        upid = _pve(host).nodes(node).apt.upgrade.post()
+        pve_cache.clear_prefix(f"pve:{host_id}:nodes/{node}/apt")
+        task_tracker.register(
+            upid, host_id, node,
+            f"APT upgrade all packages on {node}",
+            user_id=getattr(current_user, "id", None),
+            task_type="aptupgrade",
+        )
+        return {"upid": upid}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{host_id}/nodes/{node}/apt/versions")
+def apt_installed_versions(host_id: int, node: str, db: Session = Depends(get_db),
+                           current_user=Depends(get_current_user)):
+    """Get currently installed Proxmox package versions."""
+    host = _get_host(host_id, db)
+    cache_key = f"pve:{host_id}:nodes/{node}/apt/versions"
+    cached = pve_cache.get(cache_key)
+    if cached is not None:
+        return cached
+    try:
+        result = _pve(host).nodes(node).apt.versions.get()
+        pve_cache.set(cache_key, result, ttl=300)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Hardware info ──────────────────────────────────────────────────────────────
+
+@router.get("/{host_id}/nodes/{node}/hardware/pci")
+def list_pci_devices(host_id: int, node: str, db: Session = Depends(get_db),
+                     current_user=Depends(get_current_user)):
+    """List PCI devices on a node (passthrough candidates)."""
+    host = _get_host(host_id, db)
+    cache_key = f"pve:{host_id}:nodes/{node}/hardware/pci"
+    cached = pve_cache.get(cache_key)
+    if cached is not None:
+        return cached
+    try:
+        result = _pve(host).nodes(node).hardware.pci.get()
+        pve_cache.set(cache_key, result, ttl=300)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{host_id}/nodes/{node}/hardware/usb")
+def list_usb_devices(host_id: int, node: str, db: Session = Depends(get_db),
+                     current_user=Depends(get_current_user)):
+    """List USB devices on a node."""
+    host = _get_host(host_id, db)
+    cache_key = f"pve:{host_id}:nodes/{node}/hardware/usb"
+    cached = pve_cache.get(cache_key)
+    if cached is not None:
+        return cached
+    try:
+        result = _pve(host).nodes(node).hardware.usb.get()
+        pve_cache.set(cache_key, result, ttl=300)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

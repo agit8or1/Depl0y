@@ -373,6 +373,12 @@ const router = createRouter({
       meta: { requiresAuth: true, requiresAdmin: true }
     },
     {
+      path: '/integrations',
+      name: 'Integrations',
+      component: () => import('@/views/Integrations.vue'),
+      meta: { requiresAuth: true, requiresAdmin: true }
+    },
+    {
       path: '/snapshots',
       name: 'SnapshotManager',
       component: () => import('@/views/SnapshotManager.vue'),
@@ -389,6 +395,18 @@ const router = createRouter({
       name: 'BulkOperations',
       component: () => import('@/views/BulkOperations.vue'),
       meta: { requiresAuth: true, requiresOperator: true }
+    },
+    {
+      path: '/vm-search',
+      name: 'VMSearch',
+      component: () => import('@/views/VMSearch.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/alerts',
+      name: 'AlertRules',
+      component: () => import('@/views/AlertRules.vue'),
+      meta: { requiresAuth: true, requiresAdmin: true }
     },
     {
       path: '/:pathMatch(.*)*',

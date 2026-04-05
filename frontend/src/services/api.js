@@ -385,6 +385,11 @@ export default {
     vmwareTest: (data) => api.post('/vm-import/vmware/test', data),
     vmwareListVMs: (data) => api.post('/vm-import/vmware/vms', data),
     vmwarePrepare: (data) => api.post('/vm-import/vmware/prepare', data),
+    // URL / OVF / format-detect / disk-convert
+    fromUrl: (data) => api.post('/vm-import/from-url', data),
+    fromOvf: (data) => api.post('/vm-import/from-ovf', data),
+    detectFormat: (params) => api.get('/vm-import/detect-format', { params }),
+    convertDisk: (data) => api.post('/vm-import/convert-disk', data),
   },
 
   // VM Agent
@@ -557,6 +562,8 @@ export default {
     removeNIC: (h, node, vmid, nic) => api.delete(`/pve-vm/${h}/${node}/${vmid}/network/${nic}`),
     template: (h, node, vmid) => api.post(`/pve-vm/${h}/${node}/${vmid}/template`),
     delete: (h, node, vmid) => api.delete(`/pve-vm/${h}/${node}/${vmid}`),
+    // VM search across all hosts
+    search: (params) => api.get('/pve-vm/search', { params }),
     // Cloud-init
     getCloudInit: (h, node, vmid) => api.get(`/pve-vm/${h}/${node}/${vmid}/config`),
     updateCloudInit: (h, node, vmid, data) => api.put(`/pve-vm/${h}/${node}/${vmid}/cloudinit`, data),
@@ -694,6 +701,14 @@ export default {
     serviceAction: (h, node, service, cmd) => api.post(`/pve-node/${h}/nodes/${node}/services/${service}/${cmd}`),
     // Certificates
     listCertificates: (h, node) => api.get(`/pve-node/${h}/nodes/${node}/certificates/info`),
+    // APT / Package updates
+    aptListUpdates: (h, node) => api.get(`/pve-node/${h}/nodes/${node}/apt/update`),
+    aptRefreshPackages: (h, node) => api.post(`/pve-node/${h}/nodes/${node}/apt/update`),
+    aptUpgradeAll: (h, node) => api.post(`/pve-node/${h}/nodes/${node}/apt/upgrade`),
+    aptInstalledVersions: (h, node) => api.get(`/pve-node/${h}/nodes/${node}/apt/versions`),
+    // Hardware
+    listPciDevices: (h, node) => api.get(`/pve-node/${h}/nodes/${node}/hardware/pci`),
+    listUsbDevices: (h, node) => api.get(`/pve-node/${h}/nodes/${node}/hardware/usb`),
   },
 
   // Audit Log
@@ -732,6 +747,24 @@ export default {
     deleteAlias: (h, name) => api.delete(`/pve-firewall/${h}/aliases/${encodeURIComponent(name)}`),
     // Cluster firewall rule update (enable/disable, reorder)
     updateClusterFirewallRule: (h, pos, data) => api.put(`/pve-firewall/${h}/cluster/firewall/rules/${pos}`, data),
+  },
+
+  // Integrations — Slack, PagerDuty, InfluxDB, OIDC
+  integrations: {
+    getAll: () => api.get('/integrations/all'),
+    // Slack
+    getSlack: () => api.get('/integrations/slack'),
+    saveSlack: (data) => api.put('/integrations/slack', data),
+    testSlack: () => api.post('/integrations/slack/test'),
+    // PagerDuty
+    getPagerDuty: () => api.get('/integrations/pagerduty'),
+    savePagerDuty: (data) => api.put('/integrations/pagerduty', data),
+    // InfluxDB
+    getInfluxDB: () => api.get('/integrations/influxdb'),
+    saveInfluxDB: (data) => api.put('/integrations/influxdb', data),
+    // OIDC
+    getOIDC: () => api.get('/integrations/oidc'),
+    saveOIDC: (data) => api.put('/integrations/oidc', data),
   },
 
   // Notifications / Webhooks
@@ -851,6 +884,21 @@ export default {
     getStatus: (hostId, node, upid) => api.get(`/tasks/${hostId}/${node}/${encodeURIComponent(upid)}/status`),
     getLog: (hostId, node, upid) => api.get(`/tasks/${hostId}/${node}/${encodeURIComponent(upid)}/log`),
     stop: (hostId, node, upid) => api.delete(`/tasks/${hostId}/${node}/${encodeURIComponent(upid)}`),
+  },
+
+  // Alerts — proactive monitoring & alert rules
+  alerts: {
+    getActive: () => api.get('/alerts/active'),
+    dismiss: (id) => api.post(`/alerts/${id}/dismiss`),
+    dismissAll: () => api.post('/alerts/dismiss-all'),
+    getHistory: (params) => api.get('/alerts/history', { params }),
+    getSparkline: (days = 7) => api.get('/alerts/history/sparkline', { params: { days } }),
+    listRules: () => api.get('/alerts/rules'),
+    createRule: (data) => api.post('/alerts/rules', data),
+    updateRule: (id, data) => api.put(`/alerts/rules/${id}`, data),
+    deleteRule: (id) => api.delete(`/alerts/rules/${id}`),
+    toggleRule: (id) => api.post(`/alerts/rules/${id}/toggle`),
+    evaluate: () => api.post('/alerts/evaluate'),
   },
 
   // SDN — Software-Defined Networking

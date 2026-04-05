@@ -50,11 +50,17 @@
         <div class="stat-card-sm">
           <div class="stat-card-sm__label">CPU Cores</div>
           <div class="stat-card-sm__value">{{ nodeStatus.cpuinfo?.cpus || nodeStatus.cpu_count || '—' }}</div>
+          <div v-if="nodeStatus.cpuinfo?.model" class="stat-card-sm__sub text-xs text-muted">{{ nodeStatus.cpuinfo.model }}</div>
         </div>
         <div class="stat-card-sm">
           <div class="stat-card-sm__label">RAM Used / Total</div>
           <div class="stat-card-sm__value">
             {{ formatBytes(nodeStatus.memory?.used) }} / {{ formatBytes(nodeStatus.memory?.total) }}
+          </div>
+          <div class="stat-card-sm__sub">
+            <div class="mini-usage-bar">
+              <div class="mini-usage-fill" :style="{ width: nodeRamPct + '%', background: nodeRamPct > 85 ? '#ef4444' : nodeRamPct > 65 ? '#f59e0b' : '#22c55e' }"></div>
+            </div>
           </div>
         </div>
         <div class="stat-card-sm">
@@ -64,6 +70,15 @@
         <div class="stat-card-sm">
           <div class="stat-card-sm__label">Load Avg</div>
           <div class="stat-card-sm__value">{{ formatLoadAvg(nodeStatus.loadavg) }}</div>
+        </div>
+        <div v-if="nodeStatus.cpuinfo?.sockets" class="stat-card-sm">
+          <div class="stat-card-sm__label">CPU Sockets</div>
+          <div class="stat-card-sm__value">{{ nodeStatus.cpuinfo.sockets }}</div>
+          <div v-if="nodeStatus.cpuinfo?.cores" class="stat-card-sm__sub text-xs text-muted">{{ nodeStatus.cpuinfo.cores }} cores/socket</div>
+        </div>
+        <div v-if="nodeStatus.swap" class="stat-card-sm">
+          <div class="stat-card-sm__label">Swap</div>
+          <div class="stat-card-sm__value">{{ formatBytes(nodeStatus.swap?.used) }} / {{ formatBytes(nodeStatus.swap?.total) }}</div>
         </div>
       </div>
 
@@ -310,6 +325,187 @@
                       {{ networkIfaceDeleting[iface.iface] ? '...' : 'Delete' }}
                     </button>
                   </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ─── Updates Tab ─── -->
+      <div v-if="activeTab === 'updates'">
+        <!-- Installed PVE Versions -->
+        <div class="card mb-2">
+          <div class="card-header">
+            <h3>Installed Proxmox Versions</h3>
+            <button @click="loadAptVersions" class="btn btn-outline btn-sm" :disabled="loadingAptVersions">
+              {{ loadingAptVersions ? 'Loading...' : 'Refresh' }}
+            </button>
+          </div>
+          <div v-if="loadingAptVersions" class="loading-spinner"></div>
+          <div v-else-if="aptVersions.length === 0" class="text-muted text-center" style="padding:1.5rem">No version data available</div>
+          <div v-else class="table-container">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Package</th>
+                  <th>Current Version</th>
+                  <th>Latest Available</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="pkg in aptVersions" :key="pkg.Package || pkg.package">
+                  <td><code class="text-sm">{{ pkg.Package || pkg.package }}</code></td>
+                  <td class="text-sm">{{ pkg.CurrentVersion || pkg.current_version || '—' }}</td>
+                  <td class="text-sm">{{ pkg.NewVersion || pkg.new_version || pkg.Version || '—' }}</td>
+                  <td>
+                    <span v-if="(pkg.NewVersion || pkg.new_version) && (pkg.NewVersion || pkg.new_version) !== (pkg.CurrentVersion || pkg.current_version)" class="badge badge-warning">Update Available</span>
+                    <span v-else class="badge badge-success">Up to date</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Available Updates -->
+        <div class="card">
+          <div class="card-header">
+            <h3>
+              Available Updates
+              <span v-if="aptUpdates.length > 0" class="badge badge-warning ml-1">{{ aptUpdates.length }}</span>
+            </h3>
+            <div class="flex gap-1">
+              <button
+                @click="refreshPackageList"
+                class="btn btn-outline btn-sm"
+                :disabled="refreshingPackages">
+                {{ refreshingPackages ? 'Refreshing...' : 'Refresh Package List' }}
+              </button>
+              <button
+                v-if="aptUpdates.length > 0"
+                @click="upgradeAllPackages"
+                class="btn btn-primary btn-sm"
+                :disabled="upgradingAll">
+                {{ upgradingAll ? 'Starting upgrade...' : 'Upgrade All' }}
+              </button>
+              <button @click="loadAptUpdates" class="btn btn-outline btn-sm" :disabled="loadingAptUpdates">
+                {{ loadingAptUpdates ? 'Loading...' : 'Reload' }}
+              </button>
+            </div>
+          </div>
+
+          <div v-if="upgradeTaskUpid" class="info-banner text-sm">
+            Task running: <code>{{ upgradeTaskUpid }}</code> — see Tasks tab for progress.
+            <button @click="upgradeTaskUpid = null" class="btn-inline-close">×</button>
+          </div>
+
+          <div v-if="loadingAptUpdates" class="loading-spinner"></div>
+          <div v-else-if="aptUpdates.length === 0" class="text-center" style="padding:2rem">
+            <span class="badge badge-success" style="font-size:1rem;padding:0.5rem 1rem">System is up to date</span>
+          </div>
+          <div v-else class="table-container">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Package</th>
+                  <th>Current Version</th>
+                  <th>New Version</th>
+                  <th>Priority</th>
+                  <th>Section</th>
+                  <th>Description</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="pkg in aptUpdates" :key="pkg.Package || pkg.package">
+                  <td><code class="text-sm">{{ pkg.Package || pkg.package }}</code></td>
+                  <td class="text-sm text-muted">{{ pkg.OldVersion || pkg.old_version || pkg.current_version || '—' }}</td>
+                  <td class="text-sm">
+                    <strong>{{ pkg.Version || pkg.new_version || pkg.NewVersion || '—' }}</strong>
+                  </td>
+                  <td class="text-sm">{{ pkg.Priority || pkg.priority || '—' }}</td>
+                  <td class="text-sm">{{ pkg.Section || pkg.section || '—' }}</td>
+                  <td class="text-sm text-muted" style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" :title="pkg.Description || pkg.description || ''">
+                    {{ pkg.Description || pkg.description || '—' }}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ─── Hardware Tab ─── -->
+      <div v-if="activeTab === 'hardware'">
+        <!-- PCI Devices -->
+        <div class="card mb-2">
+          <div class="card-header">
+            <h3>PCI Devices</h3>
+            <button @click="loadPciDevices" class="btn btn-outline btn-sm" :disabled="loadingPci">
+              {{ loadingPci ? 'Loading...' : 'Refresh' }}
+            </button>
+          </div>
+          <div v-if="loadingPci" class="loading-spinner"></div>
+          <div v-else-if="pciDevices.length === 0" class="text-muted text-center" style="padding:1.5rem">No PCI device data available</div>
+          <div v-else class="table-container">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Vendor</th>
+                  <th>Device</th>
+                  <th>Class</th>
+                  <th>IOMMU Group</th>
+                  <th>Sub-devices</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="dev in pciDevices" :key="dev.id || dev.device_name">
+                  <td><code class="text-sm">{{ dev.id }}</code></td>
+                  <td class="text-sm">{{ dev.vendor_name || dev.vendor || '—' }}</td>
+                  <td class="text-sm">{{ dev.device_name || dev.device || '—' }}</td>
+                  <td class="text-sm text-muted">{{ dev.class_name || dev.class || '—' }}</td>
+                  <td class="text-sm">{{ dev.iommugroup != null ? dev.iommugroup : '—' }}</td>
+                  <td class="text-sm text-muted">{{ dev.mdev ? 'mdev' : '' }}{{ dev.subsystem_vendor_name ? dev.subsystem_vendor_name + ' ' + (dev.subsystem_device_name || '') : '—' }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- USB Devices -->
+        <div class="card">
+          <div class="card-header">
+            <h3>USB Devices</h3>
+            <button @click="loadUsbDevices" class="btn btn-outline btn-sm" :disabled="loadingUsb">
+              {{ loadingUsb ? 'Loading...' : 'Refresh' }}
+            </button>
+          </div>
+          <div v-if="loadingUsb" class="loading-spinner"></div>
+          <div v-else-if="usbDevices.length === 0" class="text-muted text-center" style="padding:1.5rem">No USB device data available</div>
+          <div v-else class="table-container">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Bus/Dev</th>
+                  <th>Vendor ID</th>
+                  <th>Product ID</th>
+                  <th>Manufacturer</th>
+                  <th>Product</th>
+                  <th>Speed</th>
+                  <th>Class</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="dev in usbDevices" :key="`${dev.busnum}-${dev.devnum}`">
+                  <td><code class="text-sm">{{ dev.busnum }}/{{ dev.devnum }}</code></td>
+                  <td><code class="text-sm">{{ dev.vendid || dev.vendor_id || '—' }}</code></td>
+                  <td><code class="text-sm">{{ dev.prodid || dev.product_id || '—' }}</code></td>
+                  <td class="text-sm">{{ dev.manufacturer || dev.vendor_name || '—' }}</td>
+                  <td class="text-sm">{{ dev.product || dev.product_name || '—' }}</td>
+                  <td class="text-sm">{{ dev.speed || '—' }}</td>
+                  <td class="text-sm text-muted">{{ dev.class || dev.usbclass || '—' }}</td>
                 </tr>
               </tbody>
             </table>
@@ -933,6 +1129,21 @@ const serviceActioning = ref({})
 const certificatesList = ref([])
 const loadingCertificates = ref(false)
 
+// APT / Updates
+const aptUpdates = ref([])
+const aptVersions = ref([])
+const loadingAptUpdates = ref(false)
+const loadingAptVersions = ref(false)
+const refreshingPackages = ref(false)
+const upgradingAll = ref(false)
+const upgradeTaskUpid = ref(null)
+
+// Hardware (PCI / USB)
+const pciDevices = ref([])
+const usbDevices = ref([])
+const loadingPci = ref(false)
+const loadingUsb = ref(false)
+
 // Polling
 let pollInterval = null
 
@@ -941,9 +1152,11 @@ const tabs = [
   { id: 'guests', label: 'VMs & Containers' },
   { id: 'storage', label: 'Storage' },
   { id: 'network', label: 'Network' },
+  { id: 'updates', label: 'Updates' },
   { id: 'backups', label: 'Backup Schedules' },
   { id: 'tasks', label: 'Tasks' },
   { id: 'disks', label: 'Disk Health' },
+  { id: 'hardware', label: 'Hardware' },
   { id: 'services', label: 'Services' },
   { id: 'certificates', label: 'Certificates' },
   { id: 'terminal', label: 'Terminal' },
@@ -1164,6 +1377,8 @@ const switchTab = (tab) => {
   if (tab === 'services') loadServices()
   if (tab === 'certificates') loadCertificates()
   if (tab === 'overview') { loadNodeStatus(); loadRrd() }
+  if (tab === 'updates') { loadAptUpdates(); loadAptVersions() }
+  if (tab === 'hardware') { loadPciDevices(); loadUsbDevices() }
 }
 
 // ── Polling ────────────────────────────────────────────────────────────────────
@@ -1560,6 +1775,95 @@ const certExpiryLabel = (notafter) => {
   return `${dateStr} (${days}d)`
 }
 
+// ── APT / Updates ──────────────────────────────────────────────────────────────
+
+const loadAptUpdates = async () => {
+  loadingAptUpdates.value = true
+  try {
+    const res = await api.pveNode.aptListUpdates(hostId.value, node.value)
+    aptUpdates.value = res.data || []
+  } catch (e) {
+    console.warn('APT updates failed', e)
+    aptUpdates.value = []
+  } finally {
+    loadingAptUpdates.value = false
+  }
+}
+
+const loadAptVersions = async () => {
+  loadingAptVersions.value = true
+  try {
+    const res = await api.pveNode.aptInstalledVersions(hostId.value, node.value)
+    aptVersions.value = res.data || []
+  } catch (e) {
+    console.warn('APT versions failed', e)
+    aptVersions.value = []
+  } finally {
+    loadingAptVersions.value = false
+  }
+}
+
+const refreshPackageList = async () => {
+  if (!confirm('This will run apt-get update on the node. Continue?')) return
+  refreshingPackages.value = true
+  try {
+    const res = await api.pveNode.aptRefreshPackages(hostId.value, node.value)
+    toast.info('Package list refresh started')
+    upgradeTaskUpid.value = res.data?.upid || null
+    // Reload the updates list after a short delay
+    setTimeout(() => loadAptUpdates(), 4000)
+  } catch (e) {
+    toast.error('Failed to refresh package list: ' + (e?.response?.data?.detail || e.message || 'Unknown error'))
+    console.error(e)
+  } finally {
+    refreshingPackages.value = false
+  }
+}
+
+const upgradeAllPackages = async () => {
+  if (!confirm('This will upgrade ALL packages on this node. This is a potentially disruptive operation. Continue?')) return
+  upgradingAll.value = true
+  try {
+    const res = await api.pveNode.aptUpgradeAll(hostId.value, node.value)
+    toast.success('Package upgrade started — check Tasks tab for progress')
+    upgradeTaskUpid.value = res.data?.upid || null
+    setTimeout(() => loadAptUpdates(), 10000)
+  } catch (e) {
+    toast.error('Failed to start upgrade: ' + (e?.response?.data?.detail || e.message || 'Unknown error'))
+    console.error(e)
+  } finally {
+    upgradingAll.value = false
+  }
+}
+
+// ── Hardware (PCI / USB) ────────────────────────────────────────────────────────
+
+const loadPciDevices = async () => {
+  loadingPci.value = true
+  try {
+    const res = await api.pveNode.listPciDevices(hostId.value, node.value)
+    pciDevices.value = res.data || []
+  } catch (e) {
+    console.warn('PCI list failed', e)
+    pciDevices.value = []
+  } finally {
+    loadingPci.value = false
+  }
+}
+
+const loadUsbDevices = async () => {
+  loadingUsb.value = true
+  try {
+    const res = await api.pveNode.listUsbDevices(hostId.value, node.value)
+    usbDevices.value = res.data || []
+  } catch (e) {
+    console.warn('USB list failed', e)
+    usbDevices.value = []
+  } finally {
+    loadingUsb.value = false
+  }
+}
+
 // ── Terminal ───────────────────────────────────────────────────────────────────
 
 const openTerminal = () => {
@@ -1932,6 +2236,52 @@ onUnmounted(() => {
 
 .cert-value {
   flex: 1;
+}
+
+/* ── Stats card sub-text ──────────────────────────────────────────────── */
+.stat-card-sm__sub {
+  margin-top: 0.25rem;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mini-usage-bar {
+  height: 4px;
+  background: var(--border-color);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: 0.375rem;
+}
+
+.mini-usage-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.4s ease;
+}
+
+/* ── Info banner (updates tab) ──────────────────────────────────────── */
+.info-banner {
+  padding: 0.625rem 1rem;
+  background: rgba(59,130,246,0.08);
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.btn-inline-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 1rem;
+  color: var(--text-secondary);
+  margin-left: auto;
+  line-height: 1;
+  padding: 0;
 }
 
 /* ── Mobile Responsive ──────────────────────────────────────────────────── */

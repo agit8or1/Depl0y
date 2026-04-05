@@ -34,7 +34,8 @@ def init_db():
     Initialize database tables
     """
     from app.models.database import Base
-    import app.models.security  # ensure security tables are registered  # noqa: F401
+    import app.models.security      # ensure security tables are registered  # noqa: F401
+    import app.models.alert_models  # ensure alert tables are registered     # noqa: F401
     Base.metadata.create_all(bind=engine)
 
     # Add new columns to proxmox_nodes if they don't already exist (migration helper)
@@ -192,6 +193,49 @@ def init_db():
                     host_id INTEGER REFERENCES proxmox_hosts(id),
                     vmids TEXT NOT NULL DEFAULT '[]',
                     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+            """))
+            conn.commit()
+        except Exception:
+            pass
+
+        # Create alert_rules table for user-configured alert rules
+        try:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS alert_rules (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name VARCHAR(200) NOT NULL,
+                    rule_type VARCHAR(50) NOT NULL,
+                    threshold REAL,
+                    host_id INTEGER REFERENCES proxmox_hosts(id),
+                    node VARCHAR(100),
+                    enabled BOOLEAN NOT NULL DEFAULT 1,
+                    notify_in_app BOOLEAN NOT NULL DEFAULT 1,
+                    notify_webhook BOOLEAN NOT NULL DEFAULT 0,
+                    notify_slack BOOLEAN NOT NULL DEFAULT 0,
+                    cooldown_minutes INTEGER NOT NULL DEFAULT 60,
+                    last_fired_at DATETIME,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+            """))
+            conn.commit()
+        except Exception:
+            pass
+
+        # Create alert_events table for fired alert history
+        try:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS alert_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    rule_id INTEGER REFERENCES alert_rules(id),
+                    rule_key VARCHAR(255),
+                    severity VARCHAR(20) NOT NULL DEFAULT 'warning',
+                    title VARCHAR(255) NOT NULL,
+                    message TEXT NOT NULL,
+                    fired_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    acknowledged BOOLEAN NOT NULL DEFAULT 0,
+                    acknowledged_at DATETIME,
+                    acknowledged_by INTEGER REFERENCES users(id)
                 )
             """))
             conn.commit()

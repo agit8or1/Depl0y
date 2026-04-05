@@ -21,6 +21,79 @@
     </div>
 
     <div v-else class="health-grid">
+
+      <!-- 0. Live Alerts Panel (full-width) -->
+      <div class="card health-card alerts-panel">
+        <div class="card-header">
+          <span class="card-icon">🚨</span>
+          <h3>Live Alerts</h3>
+          <span
+            class="badge ml-2"
+            :class="activeAlerts.length > 0 ? 'badge-red' : 'badge-green'"
+          >
+            {{ activeAlerts.length }}
+          </span>
+          <div class="ml-auto header-actions">
+            <router-link to="/alerts" class="btn btn-sm btn-secondary">
+              Configure Rules
+            </router-link>
+            <button
+              v-if="activeAlerts.length > 0"
+              class="btn btn-sm btn-secondary"
+              @click="acknowledgeAllAlerts"
+              :disabled="acknowledgingAlerts"
+            >
+              {{ acknowledgingAlerts ? 'Acknowledging...' : 'Acknowledge All' }}
+            </button>
+          </div>
+        </div>
+        <div class="card-body">
+          <div v-if="loadingAlerts" class="text-muted">Loading alerts...</div>
+          <div v-else-if="activeAlerts.length === 0" class="empty-state">
+            No active alerts — infrastructure looks healthy.
+          </div>
+          <div v-else class="active-alert-list">
+            <div
+              v-for="alert in activeAlerts.slice(0, 5)"
+              :key="alert.id"
+              class="active-alert-row"
+              :class="`sev-bg-${alert.severity}`"
+            >
+              <span class="alert-sev-dot" :class="`dot-${alert.severity}`"></span>
+              <div class="alert-row-content">
+                <span class="alert-row-title">{{ alert.title }}</span>
+                <span class="alert-row-time text-muted">{{ formatTimestamp(alert.fired_at) }}</span>
+              </div>
+              <button class="btn btn-sm btn-ghost" @click="dismissAlert(alert.id)">×</button>
+            </div>
+            <div v-if="activeAlerts.length > 5" class="more-alerts text-muted">
+              + {{ activeAlerts.length - 5 }} more —
+              <router-link to="/alerts" class="link">view all</router-link>
+            </div>
+          </div>
+
+          <!-- Sparkline: alerts per day, last 7 days -->
+          <div class="sparkline-section" v-if="sparkline.labels.length > 0">
+            <div class="sparkline-label">Alert frequency — last 7 days</div>
+            <div class="sparkline-bars">
+              <div
+                v-for="(cnt, idx) in sparkline.counts"
+                :key="idx"
+                class="spark-bar-wrap"
+                :title="`${sparkline.labels[idx]}: ${cnt} alert${cnt !== 1 ? 's' : ''}`"
+              >
+                <div
+                  class="spark-bar"
+                  :style="{ height: sparkBarHeight(cnt) + 'px' }"
+                  :class="cnt > 0 ? 'spark-bar-active' : 'spark-bar-empty'"
+                ></div>
+                <div class="spark-day-label">{{ sparkDayLabel(sparkline.labels[idx]) }}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- 1. System Info Card -->
       <div class="card health-card">
         <div class="card-header">
@@ -298,6 +371,12 @@ export default {
         { key: 'audit_logs', label: 'Audit Logs' },
       ],
 
+      // Alerts
+      activeAlerts: [],
+      loadingAlerts: false,
+      acknowledgingAlerts: false,
+      sparkline: { labels: [], counts: [] },
+
       proxmoxHosts: [],
       hostStatus: {},
       testingAll: false,
@@ -342,6 +421,8 @@ export default {
           this.loadProxmoxHosts(),
           this.loadSecurity(),
           this.loadUsers(),
+          this.loadActiveAlerts(),
+          this.loadSparkline(),
         ])
         this.lastRefresh = new Date()
       } finally {
@@ -499,6 +580,60 @@ export default {
       } catch (e) {
         console.warn('Failed to load users:', e)
       }
+    },
+
+    async loadActiveAlerts() {
+      this.loadingAlerts = true
+      try {
+        const res = await api.alerts.getActive()
+        this.activeAlerts = res.data || []
+      } catch (e) {
+        // Silently ignore — alert engine may not be firing yet
+      } finally {
+        this.loadingAlerts = false
+      }
+    },
+
+    async loadSparkline() {
+      try {
+        const res = await api.alerts.getSparkline(7)
+        this.sparkline = res.data || { labels: [], counts: [] }
+      } catch (e) {
+        // ignore
+      }
+    },
+
+    async dismissAlert(id) {
+      try {
+        await api.alerts.dismiss(id)
+        this.activeAlerts = this.activeAlerts.filter(a => a.id !== id)
+      } catch (e) {
+        console.warn('Failed to dismiss alert:', e)
+      }
+    },
+
+    async acknowledgeAllAlerts() {
+      if (!confirm('Acknowledge all active alerts?')) return
+      this.acknowledgingAlerts = true
+      try {
+        await api.alerts.dismissAll()
+        this.activeAlerts = []
+      } catch (e) {
+        console.warn('Failed to acknowledge all alerts:', e)
+      } finally {
+        this.acknowledgingAlerts = false
+      }
+    },
+
+    sparkBarHeight(cnt) {
+      const max = Math.max(...(this.sparkline.counts || [1]), 1)
+      return Math.max(4, Math.round((cnt / max) * 40))
+    },
+
+    sparkDayLabel(isoDate) {
+      if (!isoDate) return ''
+      const d = new Date(isoDate)
+      return d.toLocaleDateString(undefined, { weekday: 'short' })
     },
 
     formatTime(date) {
@@ -819,5 +954,127 @@ export default {
 
 .mb-2 {
   margin-bottom: 0.5rem;
+}
+
+/* Alerts panel — full-width card */
+.alerts-panel {
+  grid-column: 1 / -1;
+}
+
+.ml-2 { margin-left: 0.5rem; }
+
+.header-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+/* Active alert rows */
+.active-alert-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-bottom: 1rem;
+}
+
+.active-alert-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: 0.4rem;
+  border: 1px solid var(--border-color, rgba(255,255,255,0.08));
+}
+
+.sev-bg-critical { border-color: rgba(239,68,68,0.3); background: rgba(239,68,68,0.06); }
+.sev-bg-warning  { border-color: rgba(245,158,11,0.3); background: rgba(245,158,11,0.06); }
+.sev-bg-info     { border-color: rgba(59,130,246,0.3);  background: rgba(59,130,246,0.06);  }
+
+.alert-sev-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.dot-critical { background: #ef4444; box-shadow: 0 0 5px #ef444480; }
+.dot-warning  { background: #f59e0b; box-shadow: 0 0 5px #f59e0b80; }
+.dot-info     { background: #3b82f6; box-shadow: 0 0 5px #3b82f680; }
+
+.alert-row-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.alert-row-title {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-primary, #f1f5f9);
+}
+
+.alert-row-time {
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.more-alerts {
+  font-size: 0.8rem;
+  padding: 0.25rem 0;
+}
+
+.link {
+  color: #60a5fa;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* Sparkline */
+.sparkline-section {
+  border-top: 1px solid var(--border-color, rgba(255,255,255,0.08));
+  padding-top: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.sparkline-label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+  color: var(--text-muted, rgba(255,255,255,0.4));
+  margin-bottom: 0.5rem;
+}
+
+.sparkline-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  height: 56px;
+}
+
+.spark-bar-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+}
+
+.spark-bar {
+  width: 100%;
+  border-radius: 3px 3px 0 0;
+  min-height: 4px;
+  transition: height 0.3s;
+}
+
+.spark-bar-active { background: #3b82f6; }
+.spark-bar-empty  { background: rgba(255,255,255,0.1); }
+
+.spark-day-label {
+  font-size: 0.65rem;
+  color: var(--text-muted, rgba(255,255,255,0.4));
+  text-align: center;
 }
 </style>

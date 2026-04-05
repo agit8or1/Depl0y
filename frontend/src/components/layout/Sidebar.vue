@@ -142,6 +142,10 @@
         <span class="icon">🔒</span>
         <span>Security</span>
       </router-link>
+      <router-link v-if="isAdmin" to="/alerts" class="nav-item" @click="handleNavClick">
+        <span class="icon">🚨</span>
+        <span>Alert Rules</span>
+      </router-link>
       <router-link v-if="isAdmin" to="/system-health" class="nav-item" @click="handleNavClick">
         <span class="icon">💚</span>
         <span>System Health</span>
@@ -153,6 +157,10 @@
       <router-link v-if="isAdmin" to="/users" class="nav-item" @click="handleNavClick">
         <span class="icon">👥</span>
         <span>Users</span>
+      </router-link>
+      <router-link v-if="isAdmin" to="/integrations" class="nav-item" @click="handleNavClick">
+        <span class="icon">🔗</span>
+        <span>Integrations</span>
       </router-link>
       <router-link v-if="isAdmin" to="/api-explorer" class="nav-item" @click="handleNavClick">
         <span class="icon">⚡</span>

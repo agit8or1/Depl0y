@@ -39,11 +39,11 @@
             <option value="stopped">Stopped</option>
             <option value="paused">Paused</option>
           </select>
-          <span class="filter-count">{{ filteredVMs.length }} VM{{ filteredVMs.length !== 1 ? 's' : '' }}</span>
+          <span class="filter-count">Showing {{ filteredVMs.length }} of {{ vms.length }} VM{{ vms.length !== 1 ? 's' : '' }}</span>
         </div>
-        <button v-if="managedSearch || managedStatusFilter || statusFilter" @click="clearFilter" class="btn btn-sm btn-secondary">
-          Clear
-        </button>
+        <div class="filter-actions">
+          <button v-if="managedSearch || managedStatusFilter || statusFilter" @click="clearFilter" class="btn btn-sm btn-secondary">Clear</button>
+        </div>
       </div>
 
       <div v-if="loading" class="loading-spinner"></div>
@@ -176,11 +176,49 @@
             <option value="stopped">Stopped</option>
             <option value="paused">Paused</option>
           </select>
-          <span class="filter-count">{{ filteredAllVMs.length }} VM{{ filteredAllVMs.length !== 1 ? 's' : '' }}</span>
+
+          <!-- Filter Presets -->
+          <div class="preset-wrap">
+            <select class="form-control" style="width: 155px;" @change="applyPreset($event.target.value); $event.target.value = ''">
+              <option value="">Load preset…</option>
+              <optgroup label="Built-in">
+                <option value="__running__">All Running</option>
+                <option value="__stopped__">All Stopped</option>
+                <option value="__all__">Clear Filters</option>
+              </optgroup>
+              <optgroup v-if="savedFilterPresets.length > 0" label="Saved">
+                <option v-for="p in savedFilterPresets" :key="p.name" :value="'__saved__' + p.name">{{ p.name }}</option>
+              </optgroup>
+            </select>
+            <button class="btn btn-sm btn-outline" title="Save current filter as preset" @click="openSavePresetModal">Save</button>
+          </div>
+
+          <span class="filter-count">Showing {{ filteredAllVMs.length }} of {{ allVMs.length }} VM{{ allVMs.length !== 1 ? 's' : '' }}</span>
         </div>
-        <button v-if="allSearch || allStatusFilter" @click="allSearch = ''; allStatusFilter = ''" class="btn btn-sm btn-secondary">
+        <button v-if="allSearch || allStatusFilter || activeTagFilters.size > 0" @click="allSearch = ''; allStatusFilter = ''; activeTagFilters = new Set()" class="btn btn-sm btn-secondary">
           Clear
         </button>
+      </div>
+
+      <!-- Save Preset Modal -->
+      <div v-if="showSavePresetModal" class="modal-overlay" @click.self="showSavePresetModal = false">
+        <div class="modal-content" @click.stop style="max-width: 360px;">
+          <div class="modal-header">
+            <h3>Save Filter Preset</h3>
+            <button @click="showSavePresetModal = false" class="btn-close">×</button>
+          </div>
+          <div class="modal-body">
+            <div class="form-group">
+              <label>Preset Name <span class="text-danger">*</span></label>
+              <input v-model="newPresetName" type="text" class="form-control" placeholder="e.g. Production Running" @keyup.enter="savePreset" />
+            </div>
+            <p class="text-muted text-sm">Current filter: status="{{ allStatusFilter || 'all' }}" search="{{ allSearch }}"</p>
+          </div>
+          <div class="modal-footer">
+            <button @click="showSavePresetModal = false" class="btn btn-secondary">Cancel</button>
+            <button @click="savePreset" class="btn btn-primary" :disabled="!newPresetName.trim()">Save</button>
+          </div>
+        </div>
       </div>
 
       <!-- Tag Filter Pills -->
@@ -843,13 +881,67 @@ export default {
     })
 
     // ── All Proxmox VMs tab ────────────────────────────────────────────────
+    const ALL_FILTER_KEY = 'depl0y_all_vms_filter'
+    const PRESETS_KEY = 'depl0y_vm_filter_presets'
+
+    function loadSavedFilter() {
+      try { return JSON.parse(sessionStorage.getItem(ALL_FILTER_KEY) || '{}') } catch { return {} }
+    }
+
+    const savedFilter = loadSavedFilter()
+
     const allVMs = ref([])
     const allLoading = ref(false)
     const allError = ref(null)
-    const allSearch = ref('')
-    const allStatusFilter = ref('')
+    const allSearch = ref(savedFilter.search || '')
+    const allStatusFilter = ref(savedFilter.status || '')
     const allSortField = ref('vmid')
     const allSortDirection = ref('asc')
+
+    // Persist filter changes to sessionStorage
+    watch([allSearch, allStatusFilter], () => {
+      sessionStorage.setItem(ALL_FILTER_KEY, JSON.stringify({ search: allSearch.value, status: allStatusFilter.value }))
+    })
+
+    // ── Filter Presets ──────────────────────────────────────────────────────
+    const savedFilterPresets = ref([])
+    const showSavePresetModal = ref(false)
+    const newPresetName = ref('')
+
+    function loadPresets() {
+      try { savedFilterPresets.value = JSON.parse(localStorage.getItem(PRESETS_KEY) || '[]') } catch { savedFilterPresets.value = [] }
+    }
+
+    function savePreset() {
+      const name = newPresetName.value.trim()
+      if (!name) return
+      const preset = { name, search: allSearch.value, status: allStatusFilter.value }
+      const list = savedFilterPresets.value.filter(p => p.name !== name)
+      list.push(preset)
+      localStorage.setItem(PRESETS_KEY, JSON.stringify(list))
+      savedFilterPresets.value = list
+      showSavePresetModal.value = false
+      newPresetName.value = ''
+    }
+
+    function applyPreset(value) {
+      if (!value) return
+      if (value === '__running__') { allStatusFilter.value = 'running'; allSearch.value = ''; activeTagFilters.value = new Set() }
+      else if (value === '__stopped__') { allStatusFilter.value = 'stopped'; allSearch.value = ''; activeTagFilters.value = new Set() }
+      else if (value === '__all__') { allStatusFilter.value = ''; allSearch.value = ''; activeTagFilters.value = new Set() }
+      else if (value.startsWith('__saved__')) {
+        const name = value.slice(9)
+        const preset = savedFilterPresets.value.find(p => p.name === name)
+        if (preset) { allSearch.value = preset.search || ''; allStatusFilter.value = preset.status || '' }
+      }
+    }
+
+    function openSavePresetModal() {
+      newPresetName.value = ''
+      showSavePresetModal.value = true
+    }
+
+    loadPresets()
 
     const fetchAllProxmoxVMs = async (resetCountdown = false) => {
       if (resetCountdown) {
@@ -1440,6 +1532,13 @@ export default {
       allShutdownVM,
       allCountdown,
       openConsole,
+      // presets
+      savedFilterPresets,
+      showSavePresetModal,
+      newPresetName,
+      savePreset,
+      applyPreset,
+      openSavePresetModal,
       // shared
       formatBytes,
       getStatusBadgeClass,
@@ -1581,6 +1680,18 @@ export default {
   font-size: 0.875rem;
   color: var(--text-muted);
   margin-left: 0.25rem;
+}
+
+.filter-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.preset-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
 }
 
 /* Delete Confirmation Modal */

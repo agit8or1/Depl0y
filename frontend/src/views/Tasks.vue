@@ -14,6 +14,9 @@
           Enable Notifications
         </button>
         <span v-else class="text-xs text-muted">Notifications On</span>
+        <button @click="exportCsv" class="btn btn-outline btn-sm" :disabled="displayedTasks.length === 0">
+          Export CSV
+        </button>
         <button @click="exportLog" class="btn btn-outline btn-sm" :disabled="tasks.length === 0">
           Export .txt
         </button>
@@ -196,6 +199,16 @@
               <label class="form-label">VMID</label>
               <input v-model.number="filterVmid" @input="onFilterChange" type="number" class="form-control" placeholder="100" />
             </div>
+            <div class="form-group">
+              <label class="form-label">Time Range</label>
+              <select v-model="filterTimeRange" @change="onLocalFilter" class="form-control">
+                <option value="">All time</option>
+                <option value="1h">Last 1 hour</option>
+                <option value="6h">Last 6 hours</option>
+                <option value="24h">Last 24 hours</option>
+                <option value="7d">Last 7 days</option>
+              </select>
+            </div>
             <div class="form-group form-group--btn">
               <button @click="loadTasks(true)" class="btn btn-outline btn-sm">Refresh</button>
             </div>
@@ -277,6 +290,7 @@
                 <th>VMID</th>
                 <th>Type</th>
                 <th>Status</th>
+                <th>Duration</th>
                 <th>UPID</th>
               </tr>
             </thead>
@@ -294,6 +308,7 @@
                 <td>
                   <span :class="statusBadgeClass(task.status)">{{ task.status || 'running' }}</span>
                 </td>
+                <td class="text-sm text-muted">{{ taskDuration(task) }}</td>
                 <td class="text-sm text-muted upid-cell">{{ task.upid }}</td>
               </tr>
             </tbody>
@@ -537,12 +552,20 @@ export default {
     const hasMore = ref(false)
     const page = ref(0)
 
-    const selectedHostId = ref(route.params.hostId || '')
-    const selectedNode = ref('')
-    const filterType = ref('')
-    const customType = ref('')
-    const filterVmid = ref(null)
-    const filterStatus = ref('')
+    // Persist Proxmox task filters
+    const TASK_FILTER_KEY = 'depl0y_task_filter'
+    function loadTaskFilter() {
+      try { return JSON.parse(sessionStorage.getItem(TASK_FILTER_KEY) || '{}') } catch { return {} }
+    }
+    const savedTaskFilter = loadTaskFilter()
+
+    const selectedHostId = ref(route.params.hostId || savedTaskFilter.hostId || '')
+    const selectedNode = ref(savedTaskFilter.node || '')
+    const filterType = ref(savedTaskFilter.type || '')
+    const customType = ref(savedTaskFilter.customType || '')
+    const filterVmid = ref(savedTaskFilter.vmid || null)
+    const filterStatus = ref(savedTaskFilter.status || '')
+    const filterTimeRange = ref(savedTaskFilter.timeRange || '')
 
     let runningPollTimer = null
     const RUNNING_POLL_INTERVAL = 3000
@@ -629,17 +652,61 @@ export default {
 
     const displayedTasks = computed(() => {
       let list = tasks.value
+
+      // Status filter
       if (filterStatus.value === 'running') {
-        list = tasks.value.filter(t => !t.status || t.status === 'running')
+        list = list.filter(t => !t.status || t.status === 'running')
       } else if (filterStatus.value === 'OK') {
-        list = tasks.value.filter(t => t.status === 'OK')
+        list = list.filter(t => t.status === 'OK')
       } else if (filterStatus.value === 'error') {
-        list = tasks.value.filter(t => t.status && t.status !== 'OK' && t.status !== 'running')
+        list = list.filter(t => t.status && t.status !== 'OK' && t.status !== 'running')
       } else {
-        list = tasks.value.filter(t => t.status && t.status !== 'running')
+        list = list.filter(t => t.status && t.status !== 'running')
       }
+
+      // Time range filter
+      if (filterTimeRange.value) {
+        const nowSec = Date.now() / 1000
+        const rangeMap = { '1h': 3600, '6h': 21600, '24h': 86400, '7d': 604800 }
+        const rangeSec = rangeMap[filterTimeRange.value]
+        if (rangeSec) {
+          list = list.filter(t => t.starttime && (nowSec - t.starttime) <= rangeSec)
+        }
+      }
+
       return list
     })
+
+    // Task duration helper
+    function taskDuration(task) {
+      if (!task.starttime) return '—'
+      const end = task.endtime || Math.floor(Date.now() / 1000)
+      const secs = end - task.starttime
+      if (secs < 60) return `${secs}s`
+      if (secs < 3600) return `${Math.floor(secs / 60)}m ${secs % 60}s`
+      return `${Math.floor(secs / 3600)}h ${Math.floor((secs % 3600) / 60)}m`
+    }
+
+    // CSV export for displayed tasks
+    function exportCsv() {
+      const headers = ['Start Time', 'End Time', 'Node', 'VMID', 'Type', 'Status', 'Duration', 'UPID']
+      const rows = displayedTasks.value.map(t => {
+        const start = t.starttime ? new Date(t.starttime * 1000).toISOString() : ''
+        const end = t.endtime ? new Date(t.endtime * 1000).toISOString() : ''
+        return [
+          start, end, t.node || t._node || '', t.id || '', t.type || '',
+          t.status || 'running', taskDuration(t), `"${(t.upid || '').replace(/"/g, '""')}"`
+        ].join(',')
+      })
+      const csv = [headers.join(','), ...rows].join('\n')
+      const blob = new Blob([csv], { type: 'text/csv' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `tasks-${Date.now()}.csv`
+      a.click()
+      URL.revokeObjectURL(url)
+    }
 
     const loadHosts = async () => {
       try {
@@ -854,8 +921,22 @@ export default {
       filterStatus.value = ''
       filterVmid.value = null
       customType.value = ''
+      filterTimeRange.value = ''
       onFilterChange()
     }
+
+    // Persist task filters on change
+    watch([selectedHostId, selectedNode, filterType, customType, filterVmid, filterStatus, filterTimeRange], () => {
+      sessionStorage.setItem(TASK_FILTER_KEY, JSON.stringify({
+        hostId: selectedHostId.value,
+        node: selectedNode.value,
+        type: filterType.value,
+        customType: customType.value,
+        vmid: filterVmid.value,
+        status: filterStatus.value,
+        timeRange: filterTimeRange.value,
+      }))
+    })
 
     return {
       activeTab,
@@ -865,13 +946,14 @@ export default {
       stopDeplTask, openDeplDetail, loadDeplHistory, deplStatusClass, formatTime,
       // Proxmox tasks
       hosts, nodes, tasks, loading, loadingMore, hasMore,
-      selectedHostId, selectedNode, filterType, customType, filterVmid, filterStatus,
+      selectedHostId, selectedNode, filterType, customType, filterVmid, filterStatus, filterTimeRange,
       runningTasks, displayedTasks, stoppingTask,
       detailTask, detailLog, detailLoading, detailTaskRunning,
       loadTasks, loadMore, onHostChange, onFilterChange, onLocalFilter,
       statusBadgeClass,
       notifPermission, requestNotifPermission,
-      openTaskDetail, stopTask, exportLog, exportTaskLog,
+      openTaskDetail, stopTask, exportLog, exportTaskLog, exportCsv,
+      taskDuration,
       clearFilters,
     }
   }

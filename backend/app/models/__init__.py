@@ -1,4 +1,5 @@
 """Database models package"""
+from .alert_models import AlertRule, AlertEvent  # noqa: F401  (registers tables with Base)
 from .database import (
     Base,
     User,
@@ -73,4 +74,6 @@ __all__ = [
     "IPBanList",
     "GeoIPRule",
     "LoginAttempt",
+    "AlertRule",
+    "AlertEvent",
 ]

@@ -82,8 +82,16 @@
           <div class="form-grid">
             <div class="form-group span-2">
               <label>File URL</label>
-              <input v-model="ovaUrl" type="url" class="input" placeholder="https://example.com/image.ova" />
+              <input v-model="ovaUrl" type="url" class="input"
+                placeholder="https://example.com/image.ova"
+                @blur="detectUrlFormat" @paste="onUrlPaste" />
             </div>
+          </div>
+          <div v-if="urlFormatInfo" class="format-badge-row">
+            <span :class="['format-badge', urlFormatInfo.supported ? 'format-badge--ok' : 'format-badge--warn']">
+              {{ urlFormatInfo.format.toUpperCase() }}
+            </span>
+            <span v-for="r in urlFormatInfo.recommendations" :key="r" class="format-hint">{{ r }}</span>
           </div>
           <div class="actions">
             <button class="btn btn-primary" :disabled="!ovaUrl || uploading" @click="uploadFromUrl">
@@ -261,7 +269,8 @@
         <div v-if="importCompleted" class="success-box">
           <p>VM imported successfully! VMID: <strong>{{ importedVmid }}</strong></p>
           <div class="actions">
-            <button class="btn btn-primary" @click="$router.push('/vm-management')">Go to VM Management</button>
+            <button class="btn btn-primary" @click="navigateToVm">Configure VM</button>
+            <button class="btn btn-secondary" @click="$router.push('/vm-management')">Go to VM Management</button>
             <button class="btn btn-secondary" @click="resetWizard">Import Another</button>
           </div>
         </div>
@@ -402,9 +411,22 @@
         <div v-if="diskImportResult" class="success-box mt-2">
           <p>Task started: <code>{{ diskImportResult }}</code></p>
           <p class="text-sm text-muted">Monitor the task in the Proxmox node Tasks tab.</p>
+          <div class="actions" style="margin-top:.75rem">
+            <button class="btn btn-primary" @click="$router.push('/vm-management')">Go to VM Management</button>
+          </div>
         </div>
         <div v-if="diskImportError" class="error-box mt-2">
           <p>{{ diskImportError }}</p>
+          <div v-if="diskConvertSuggested" class="actions" style="margin-top:.75rem">
+            <button class="btn btn-secondary" :disabled="diskConverting" @click="startDiskConvert">
+              {{ diskConverting ? 'Converting...' : 'Convert Disk to qcow2 on Proxmox Node' }}
+            </button>
+          </div>
+        </div>
+        <div v-if="diskConvertResult" class="info-box mt-2">
+          <strong>{{ diskConvertResult.success ? 'Conversion started' : 'Conversion note' }}</strong><br/>
+          {{ diskConvertResult.note }}<br/>
+          <code v-if="diskConvertResult.command" class="code-block" style="display:block;margin-top:.5rem">{{ diskConvertResult.command }}</code>
         </div>
       </div>
     </div>
@@ -648,7 +670,8 @@
         <div v-if="importCompleted" class="success-box">
           <p>VM imported successfully! VMID: <strong>{{ importedVmid }}</strong></p>
           <div class="actions">
-            <button class="btn btn-primary" @click="$router.push('/vm-management')">Go to VM Management</button>
+            <button class="btn btn-primary" @click="navigateToVm">Configure VM</button>
+            <button class="btn btn-secondary" @click="$router.push('/vm-management')">Go to VM Management</button>
             <button class="btn btn-secondary" @click="resetWizard">Import Another</button>
           </div>
         </div>
@@ -712,7 +735,7 @@
           </div>
           <div class="form-group">
             <label>Target Node</label>
-            <select v-model="clone.target_node" class="input" :disabled="!clone.target_host_id">
+            <select v-model="clone.target_node" class="input" :disabled="!clone.target_host_id" @change="onCloneTargetNodeChange">
               <option value="" disabled>Select node...</option>
               <option v-for="n in cloneTargetNodes" :key="n.node_name" :value="n.node_name">{{ n.node_name }}</option>
             </select>
@@ -785,6 +808,9 @@
         <div v-if="cloneResult" class="success-box mt-2">
           <p>Clone task started: <code>{{ cloneResult }}</code></p>
           <p class="text-sm text-muted">Monitor the task in the Proxmox node Tasks tab.</p>
+          <div class="actions" style="margin-top:.75rem">
+            <button class="btn btn-primary" @click="$router.push('/vm-management')">Go to VM Management</button>
+          </div>
         </div>
         <div v-if="cloneError" class="error-box mt-2">
           <p>{{ cloneError }}</p>
@@ -822,6 +848,7 @@ export default {
     const ovaStep = ref(0)
     const ovaSource = ref('upload')
     const ovaUrl = ref('')
+    const urlFormatInfo = ref(null)
     const ovaNetworkMap = ref({})
     const ovaDiskMap = ref({})
     const selectedFile = ref(null)
@@ -883,6 +910,9 @@ export default {
     const diskImporting = ref(false)
     const diskImportResult = ref(null)
     const diskImportError = ref(null)
+    const diskConverting = ref(false)
+    const diskConvertResult = ref(null)
+    const diskConvertSuggested = ref(false)
 
     // ── Clone tab state ───────────────────────────────────────────────────────
     const clone = ref({
@@ -990,23 +1020,68 @@ export default {
 
     const uploadFromUrl = async () => {
       if (!ovaUrl.value) return
+      // For OVA/OVF URLs: use the existing upload endpoint with a multipart form containing the URL
+      // The backend will fetch it server-side using the download-url Proxmox API
       uploading.value = true; uploadProgress.value = 0
       try {
-        const res = await api.vmImport.upload(
-          Object.assign(new FormData(), { url: ovaUrl.value }),
-          () => {}
-        )
-        // Fallback: some backends accept a URL field
-        const data = res.data
-        jobId.value = data.job_id
-        jobFilename.value = data.filename || ovaUrl.value
-        parsedSpecs.value = data.specs || {}
-        _prefillForm(parsedSpecs.value)
-        ovaStep.value = 1
-        toast.success('File fetched and analysed!')
+        // First detect format to give user feedback
+        const fmt = await _detectFormat(ovaUrl.value)
+        if (fmt && !fmt.supported) {
+          toast.warning(`Format '${fmt.format}' may not be directly importable via this method.`)
+        }
+
+        // Encode URL as filename query so the backend parses it as a URL fetch
+        const fd = new FormData()
+        // Create a tiny text blob with the URL as content named "url.txt" — not ideal.
+        // Better: POST a JSON body. The upload endpoint expects a file, so we use
+        // the vmImport.fromUrl endpoint which calls Proxmox download-url directly.
+        // For now route: if we have a node/storage selected, use fromUrl;
+        // otherwise fall back to trying upload with a synthetic blob.
+        if (form.value.proxmox_host_id && form.value.node_id && form.value.storage) {
+          const nodeObj = nodes.value.find(n => n.id === form.value.node_id)
+          const nodeName = nodeObj?.node_name || form.value.node_id
+          const res = await api.vmImport.fromUrl({
+            url: ovaUrl.value,
+            proxmox_host_id: form.value.proxmox_host_id,
+            node: nodeName,
+            storage: form.value.storage,
+            vm_name: form.value.vm_name || 'imported-vm',
+            cores: form.value.cpu_cores,
+            memory: form.value.memory_mb,
+            os_type: form.value.os_type || 'l26',
+            network_bridge: form.value.network_bridge || 'vmbr0',
+          })
+          jobId.value = res.data.job_id
+          jobFilename.value = ovaUrl.value.split('/').pop().split('?')[0] || 'imported-disk'
+          // Jump straight to progress step
+          ovaStep.value = 4
+          pollProgress()
+          toast.info('URL download started on Proxmox node...')
+        } else {
+          // No host/storage yet — prompt user to select target first
+          toast.warning('Please select a Proxmox host, node, and storage first (Step 2), then re-enter the URL.')
+          ovaStep.value = 2
+        }
       } catch (e) {
-        toast.error('Failed to fetch URL: ' + (e.response?.data?.detail || e.message))
+        toast.error('Failed to start URL import: ' + (e.response?.data?.detail || e.message))
       } finally { uploading.value = false }
+    }
+
+    const detectUrlFormat = async () => {
+      if (!ovaUrl.value) return
+      urlFormatInfo.value = await _detectFormat(ovaUrl.value)
+    }
+
+    const onUrlPaste = () => {
+      // Trigger format detection after the paste value settles
+      setTimeout(detectUrlFormat, 150)
+    }
+
+    const _detectFormat = async (urlOrFilename) => {
+      try {
+        const res = await api.vmImport.detectFormat({ url: urlOrFilename })
+        return res.data
+      } catch { return null }
     }
 
     const volFileName = (volid) => {
@@ -1183,6 +1258,7 @@ export default {
 
     const startDiskImport = async () => {
       diskImportResult.value = null; diskImportError.value = null
+      diskConvertResult.value = null; diskConvertSuggested.value = false
       diskImporting.value = true
       try {
         const payload = {
@@ -1203,7 +1279,46 @@ export default {
       } catch (e) {
         diskImportError.value = e.response?.data?.detail || e.message
         toast.error('Disk import failed: ' + diskImportError.value)
+        // Suggest conversion if the error looks format-related and source is VMDK/VHD
+        const volid = diskImport.value.selected_volid || ''
+        if (/vmdk|vhd|vhdx/i.test(volid) || /format|unsupported/i.test(diskImportError.value)) {
+          diskConvertSuggested.value = true
+        }
       } finally { diskImporting.value = false }
+    }
+
+    // ── Navigate to VM detail after import ────────────────────────────────────
+    const navigateToVm = () => {
+      if (importedVmid.value) {
+        // Navigate to VM management, ideally to specific VM
+        router.push('/vm-management')
+      }
+    }
+
+    // ── Disk convert (VMDK → qcow2 on Proxmox node) ───────────────────────────
+    const startDiskConvert = async () => {
+      if (!diskImport.value.selected_volid) return
+      diskConverting.value = true; diskConvertResult.value = null
+      try {
+        const res = await api.vmImport.convertDisk({
+          proxmox_host_id: diskImport.value.host_id,
+          node: diskImport.value.node,
+          source_volid: diskImport.value.selected_volid,
+          target_storage: diskImport.value.target_storage || 'local',
+          target_format: 'qcow2',
+        })
+        diskConvertResult.value = res.data
+        if (res.data.success) {
+          toast.success('Disk conversion completed on Proxmox node!')
+        } else {
+          toast.warning('Conversion command generated — run manually if SSH is unavailable.')
+        }
+      } catch (e) {
+        diskConvertResult.value = {
+          success: false,
+          note: 'Conversion request failed: ' + (e.response?.data?.detail || e.message),
+        }
+      } finally { diskConverting.value = false }
     }
 
     // ── Clone tab ─────────────────────────────────────────────────────────────
@@ -1224,6 +1339,17 @@ export default {
         const res = await api.proxmox.listNodes(clone.value.target_host_id)
         cloneTargetNodes.value = res.data || []
       } catch { toast.error('Failed to load target nodes') }
+    }
+
+    const onCloneTargetNodeChange = async () => {
+      cloneStorages.value = []
+      if (!clone.value.target_node || !clone.value.target_host_id) return
+      try {
+        const res = await api.pveNode.listStorage(clone.value.target_host_id, clone.value.target_node)
+        cloneStorages.value = (res.data || []).filter(s =>
+          s.content && (s.content.includes('images') || s.content.includes('rootdir'))
+        )
+      } catch { toast.error('Failed to load target storage') }
     }
 
     const loadTemplates = async () => {
@@ -1293,7 +1419,7 @@ export default {
 
     return {
       activeImportTab, importTabs, switchImportTab,
-      ovaSteps, ovaStep, ovaSource, ovaUrl, ovaNetworkMap, ovaDiskMap,
+      ovaSteps, ovaStep, ovaSource, ovaUrl, urlFormatInfo, ovaNetworkMap, ovaDiskMap,
       selectedFile, isDragging, uploading, uploadProgress, availableBridges,
       steps, currentStep, sourceMode,
       vmware, vmwareConnecting, vmwareInfo, vmwareVMs,
@@ -1304,14 +1430,16 @@ export default {
       importCompleted, importFailed, errorMessage, importedVmid, manualImportCmd,
       diskImport, diskNodes, diskStorages, diskFiles, diskBrowseLoading,
       diskImporting, diskImportResult, diskImportError,
+      diskConverting, diskConvertResult, diskConvertSuggested,
       clone, cloneNodes, cloneTargetNodes, cloneStorages,
       templates, templateLoading, cloneSubmitting, cloneResult, cloneError,
       onDrop, onFileSelected, formatBytes, uploadFile, uploadFromUrl, volFileName,
+      detectUrlFormat, onUrlPaste,
       vmwareConnect, vmwarePrepareImport,
       onHostChange, onNodeChange,
-      onDiskHostChange, onDiskNodeChange, browseDiskStorage, startDiskImport,
-      onCloneHostChange, onCloneTargetHostChange, loadTemplates, startClone,
-      startDeploy, resetWizard,
+      onDiskHostChange, onDiskNodeChange, browseDiskStorage, startDiskImport, startDiskConvert,
+      onCloneHostChange, onCloneTargetHostChange, onCloneTargetNodeChange, loadTemplates, startClone,
+      startDeploy, resetWizard, navigateToVm,
     }
   }
 }
@@ -1490,6 +1618,22 @@ export default {
 
 .text-muted { color: #6b7280; }
 .text-sm { font-size: 0.875rem; }
+
+/* Format detection badge */
+.format-badge-row {
+  display: flex; align-items: flex-start; gap: 0.75rem; margin-bottom: 1.25rem;
+  flex-wrap: wrap;
+}
+.format-badge {
+  padding: 0.25rem 0.75rem; border-radius: 999px; font-size: 0.75rem;
+  font-weight: 700; letter-spacing: 0.05em; flex-shrink: 0;
+}
+.format-badge--ok { background: #d1fae5; color: #065f46; }
+.format-badge--warn { background: #fef3c7; color: #92400e; }
+.format-hint {
+  font-size: 0.8rem; color: #4b5563; line-height: 1.4;
+  background: #f9fafb; border-radius: 6px; padding: 0.2rem 0.6rem;
+}
 
 @media (max-width: 640px) {
   .form-grid, .form-grid.three-col { grid-template-columns: 1fr; }

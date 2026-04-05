@@ -188,6 +188,37 @@ def _register_vm_task(upid, host_id, node, vmid, action, current_user):
     )
 
 
+def _fire_vm_webhook(db, event_type, host, node, vmid, current_user, host_id):
+    """Fire webhook + Slack for a VM lifecycle event (non-blocking background task)."""
+    import asyncio
+    from app.services.webhook_dispatcher import dispatcher
+    payload = {
+        "vm_id": vmid,
+        "node": node,
+        "host": host.hostname,
+        "host_id": host_id,
+        "action": event_type.split(".")[-1],
+        "user": getattr(current_user, "username", ""),
+    }
+    emoji_map = {
+        "vm.started": ":arrow_forward:",
+        "vm.stopped": ":stop_sign:",
+        "vm.shutdown": ":zzz:",
+    }
+    emoji = emoji_map.get(event_type, ":gear:")
+    slack_msg = (
+        f"{emoji} VM *{vmid}* on `{node}` "
+        f"{event_type.split('.')[-1]} by {getattr(current_user, 'username', '')}"
+    )
+    try:
+        loop = asyncio.get_event_loop()
+        loop.create_task(
+            dispatcher.dispatch_and_slack(db, event_type, payload, slack_msg, host_id=host_id)
+        )
+    except Exception:
+        pass
+
+
 @router.post("/{host_id}/{node}/{vmid}/start")
 def start_vm(host_id: int, node: str, vmid: int, db: Session = Depends(get_db),
              current_user=Depends(require_operator)):
@@ -196,6 +227,7 @@ def start_vm(host_id: int, node: str, vmid: int, db: Session = Depends(get_db),
         upid = _pve(_svc(host)).nodes(node).qemu(vmid).status.start.post()
         pve_cache.clear_prefix(f"pve:{host_id}:")
         _register_vm_task(upid, host_id, node, vmid, "start", current_user)
+        _fire_vm_webhook(db, "vm.started", host, node, vmid, current_user, host_id)
         return {"upid": upid}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -209,6 +241,7 @@ def stop_vm(host_id: int, node: str, vmid: int, db: Session = Depends(get_db),
         upid = _pve(_svc(host)).nodes(node).qemu(vmid).status.stop.post()
         pve_cache.clear_prefix(f"pve:{host_id}:")
         _register_vm_task(upid, host_id, node, vmid, "stop", current_user)
+        _fire_vm_webhook(db, "vm.stopped", host, node, vmid, current_user, host_id)
         return {"upid": upid}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -222,6 +255,7 @@ def shutdown_vm(host_id: int, node: str, vmid: int, db: Session = Depends(get_db
         upid = _pve(_svc(host)).nodes(node).qemu(vmid).status.shutdown.post()
         pve_cache.clear_prefix(f"pve:{host_id}:")
         _register_vm_task(upid, host_id, node, vmid, "shutdown", current_user)
+        _fire_vm_webhook(db, "vm.shutdown", host, node, vmid, current_user, host_id)
         return {"upid": upid}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -822,6 +856,124 @@ def _parse_tags(tags_str: str) -> List[str]:
 
 def _tags_to_str(tags: List[str]) -> str:
     return ";".join(tags)
+
+
+@router.get("/search")
+def search_vms(
+    q: Optional[str] = Query(None, description="Text search across name, VMID, node"),
+    host_id: Optional[int] = Query(None),
+    node: Optional[str] = Query(None),
+    status: Optional[str] = Query(None, description="running or stopped"),
+    tags: Optional[str] = Query(None, description="Comma-separated tag list"),
+    min_cpu: Optional[float] = Query(None),
+    max_cpu: Optional[float] = Query(None),
+    min_ram_gb: Optional[float] = Query(None),
+    max_ram_gb: Optional[float] = Query(None),
+    os_type: Optional[str] = Query(None),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=500),
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Search VMs across all hosts (or a specific host) with filtering and pagination."""
+    if host_id is not None:
+        hosts = db.query(ProxmoxHost).filter(ProxmoxHost.id == host_id, ProxmoxHost.is_active == True).all()
+    else:
+        hosts = db.query(ProxmoxHost).filter(ProxmoxHost.is_active == True).all()
+
+    tag_filter = [t.strip().lower() for t in tags.split(",") if t.strip()] if tags else []
+    q_lower = q.strip().lower() if q else None
+
+    matched: List[Dict[str, Any]] = []
+
+    for host in hosts:
+        try:
+            pve = _pve(_svc(host))
+            resources = pve.cluster.resources.get(type="vm")
+        except Exception:
+            continue
+
+        for item in resources:
+            if item.get("type") != "qemu":
+                continue
+
+            # Node filter
+            if node and item.get("node", "").lower() != node.lower():
+                continue
+
+            # Status filter
+            if status and item.get("status", "").lower() != status.lower():
+                continue
+
+            # CPU usage filter (0.0–1.0 from PVE, compare as percentage)
+            cpu_pct = (item.get("cpu") or 0) * 100
+            if min_cpu is not None and cpu_pct < min_cpu:
+                continue
+            if max_cpu is not None and cpu_pct > max_cpu:
+                continue
+
+            # RAM filter (maxmem in bytes → GB)
+            maxmem_gb = (item.get("maxmem") or 0) / (1024 ** 3)
+            if min_ram_gb is not None and maxmem_gb < min_ram_gb:
+                continue
+            if max_ram_gb is not None and maxmem_gb > max_ram_gb:
+                continue
+
+            # Tag filter
+            if tag_filter:
+                vm_tags = _parse_tags(item.get("tags", "") or "")
+                if not all(t in vm_tags for t in tag_filter):
+                    continue
+
+            # OS type filter (check config if requested — lightweight: check name heuristic)
+            if os_type:
+                name_lower = (item.get("name") or "").lower()
+                if os_type.lower() not in name_lower:
+                    # do a quick config lookup (only if os_type explicitly requested)
+                    try:
+                        cfg = pve.nodes(item["node"]).qemu(item["vmid"]).config.get()
+                        ostype_val = (cfg.get("ostype") or "").lower()
+                        if os_type.lower() not in ostype_val:
+                            continue
+                    except Exception:
+                        continue
+
+            # Text search
+            if q_lower:
+                name = (item.get("name") or "").lower()
+                vmid_str = str(item.get("vmid") or "")
+                node_str = (item.get("node") or "").lower()
+                host_name = (host.name or host.hostname or "").lower()
+                tags_str = (item.get("tags") or "").lower()
+                if not (
+                    q_lower in name
+                    or q_lower in vmid_str
+                    or q_lower in node_str
+                    or q_lower in host_name
+                    or q_lower in tags_str
+                ):
+                    continue
+
+            matched.append({
+                "vmid": item.get("vmid"),
+                "name": item.get("name") or "",
+                "status": item.get("status") or "unknown",
+                "node": item.get("node") or "",
+                "host_id": host.id,
+                "host_name": host.name or host.hostname or f"Host {host.id}",
+                "cpu": item.get("cpu"),
+                "mem": item.get("mem"),
+                "maxmem": item.get("maxmem"),
+                "tags": item.get("tags") or "",
+                "uptime": item.get("uptime"),
+            })
+
+    total = len(matched)
+    # Sort by name then vmid
+    matched.sort(key=lambda x: (x.get("name") or "", x.get("vmid") or 0))
+    paginated = matched[skip: skip + limit]
+
+    return {"total": total, "vms": paginated}
 
 
 @router.get("/{host_id}/tags")

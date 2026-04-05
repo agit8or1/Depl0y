@@ -479,6 +479,31 @@ def _finalize_login(
         expires_delta_days=getattr(settings, "REFRESH_TOKEN_EXPIRE_DAYS", 30),
     )
 
+    # Dispatch user.login webhook + Slack (non-blocking)
+    try:
+        import asyncio
+        from app.services.webhook_dispatcher import dispatcher
+        from app.core.database import SessionLocal
+
+        async def _fire_login_event():
+            _db = SessionLocal()
+            try:
+                await dispatcher.dispatch_and_slack(
+                    _db,
+                    "user.login",
+                    {"username": user.username, "user_id": user.id, "ip_address": ip_address},
+                    f":bust_in_silhouette: User *{user.username}* logged in from `{ip_address}`",
+                )
+            except Exception:
+                pass
+            finally:
+                _db.close()
+
+        loop = asyncio.get_event_loop()
+        loop.create_task(_fire_login_event())
+    except Exception:
+        pass
+
     return {
         "access_token": access_token,
         "refresh_token": refresh_token_value,

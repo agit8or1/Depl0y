@@ -198,18 +198,33 @@
           </div>
         </div>
 
+        <!-- Backup search/filter bar -->
+        <div v-if="!loadingBackupFiles && restoreFilter.node && restoreFilter.storage && backupGroups.length > 0" class="backup-filter-bar">
+          <input v-model="backupSearch" type="text" class="form-control form-control-sm" placeholder="Search by VMID or filename…" style="width:200px;" />
+          <input v-model="backupDateFrom" type="date" class="form-control form-control-sm" style="width:145px;" title="From date" />
+          <input v-model="backupDateTo" type="date" class="form-control form-control-sm" style="width:145px;" title="To date" />
+          <select v-model="backupSortBy" class="form-control form-control-sm" style="width:130px;">
+            <option value="date_desc">Newest first</option>
+            <option value="date_asc">Oldest first</option>
+            <option value="size_desc">Largest first</option>
+            <option value="size_asc">Smallest first</option>
+          </select>
+          <button v-if="backupSearch || backupDateFrom || backupDateTo" @click="backupSearch=''; backupDateFrom=''; backupDateTo=''" class="btn btn-outline btn-sm">Clear</button>
+        </div>
+
         <div v-if="loadingBackupFiles" class="loading-spinner"></div>
 
         <div v-else-if="!restoreFilter.node || !restoreFilter.storage" class="text-center text-muted p-3">
           Select a node and storage to browse backup files.
         </div>
 
-        <div v-else-if="backupGroups.length === 0" class="text-center text-muted p-3">
-          No backup files found in this storage.
+        <div v-else-if="filteredBackupGroups.length === 0" class="text-center text-muted p-3">
+          <span v-if="backupGroups.length === 0">No backup files found in this storage.</span>
+          <span v-else>No backups match your search/filter.</span>
         </div>
 
         <div v-else>
-          <div v-for="group in backupGroups" :key="group.vmid" class="backup-group">
+          <div v-for="group in filteredBackupGroups" :key="group.vmid" class="backup-group">
             <div class="backup-group-header">
               <span class="vmid-badge">VMID {{ group.vmid }}</span>
               <span class="text-muted text-sm ml-1">{{ group.backups.length }} backup{{ group.backups.length !== 1 ? 's' : '' }}</span>
@@ -1617,6 +1632,53 @@ function parseVmidFromVolid(volid) {
   return m ? m[1] : null
 }
 
+// Backup filter state
+const backupSearch = ref('')
+const backupDateFrom = ref('')
+const backupDateTo = ref('')
+const backupSortBy = ref('date_desc')
+
+const filteredBackupGroups = computed(() => {
+  const q = backupSearch.value.trim().toLowerCase()
+  const fromTs = backupDateFrom.value ? new Date(backupDateFrom.value).getTime() / 1000 : null
+  const toTs = backupDateTo.value ? (new Date(backupDateTo.value).getTime() / 1000) + 86399 : null
+
+  return backupGroups.value
+    .map(group => {
+      // Filter by VMID search
+      if (q && !String(group.vmid).includes(q)) {
+        // Also check individual backup voids
+        const matchedBackups = group.backups.filter(bk =>
+          (bk.volid || '').toLowerCase().includes(q)
+        )
+        if (matchedBackups.length === 0) return null
+        return { ...group, backups: sortBackups(filterBackupsByDate(matchedBackups, fromTs, toTs)) }
+      }
+      const filtered = filterBackupsByDate(group.backups, fromTs, toTs)
+      if (filtered.length === 0) return null
+      return { ...group, backups: sortBackups(filtered) }
+    })
+    .filter(Boolean)
+})
+
+function filterBackupsByDate(backups, fromTs, toTs) {
+  return backups.filter(bk => {
+    if (fromTs && (bk.ctime || 0) < fromTs) return false
+    if (toTs && (bk.ctime || 0) > toTs) return false
+    return true
+  })
+}
+
+function sortBackups(backups) {
+  return [...backups].sort((a, b) => {
+    if (backupSortBy.value === 'date_desc') return (b.ctime || 0) - (a.ctime || 0)
+    if (backupSortBy.value === 'date_asc') return (a.ctime || 0) - (b.ctime || 0)
+    if (backupSortBy.value === 'size_desc') return (b.size || 0) - (a.size || 0)
+    if (backupSortBy.value === 'size_asc') return (a.size || 0) - (b.size || 0)
+    return 0
+  })
+}
+
 function formatDate(ctime) {
   if (!ctime) return '—'
   return new Date(ctime * 1000).toLocaleString()
@@ -2464,6 +2526,38 @@ onUnmounted(() => {
   padding: 0.25rem 0.5rem;
   font-size: 0.875rem;
   height: auto;
+}
+
+/* Backup filter bar */
+.backup-filter-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.6rem 1rem;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--background);
+}
+
+.backup-filter-bar input,
+.backup-filter-bar select {
+  background: var(--bg-secondary, rgba(255,255,255,0.05));
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-primary);
+  padding: 0.3rem 0.6rem;
+  font-size: 0.85rem;
+}
+
+.backup-filter-bar input[type="text"] {
+  flex: 1;
+  min-width: 160px;
+}
+
+.backup-filter-bar label {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
 }
 
 /* Restore tab */

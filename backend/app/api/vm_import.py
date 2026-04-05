@@ -2,17 +2,20 @@
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
+import time
 import zipfile
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile, status
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 
 from app.api.auth import require_operator
-from app.core.database import SessionLocal
+from app.core.database import SessionLocal, get_db
 from app.services import vm_import_service as svc
+from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
@@ -384,3 +387,499 @@ def cancel_import(job_id: str, current_user=Depends(require_operator)):
 
     svc.delete_import_job(job_id)
     return {"message": "Import job deleted"}
+
+
+# ---------------------------------------------------------------------------
+# New import endpoints
+# ---------------------------------------------------------------------------
+
+# Format detection map: extension → (format, recommendations)
+_FORMAT_MAP = {
+    ".qcow2":  ("qcow2",  ["Ready to import directly via Disk Image tab",
+                            "Most efficient format for KVM/QEMU VMs"]),
+    ".vmdk":   ("vmdk",   ["Import via Disk Image tab",
+                            "Consider converting to qcow2 for better performance",
+                            "Use convert-disk endpoint to convert on the Proxmox node"]),
+    ".vhd":    ("vhd",    ["Hyper-V disk image",
+                            "Convert to qcow2 before importing for best compatibility"]),
+    ".vhdx":   ("vhdx",   ["Hyper-V VHDX disk image",
+                            "Convert to qcow2 before importing for best compatibility"]),
+    ".raw":    ("raw",    ["Raw disk image",
+                            "Can be imported directly; qcow2 is preferred for snapshots"]),
+    ".img":    ("raw",    ["Raw disk image (IMG)",
+                            "Importable directly; rename or convert to qcow2 if needed"]),
+    ".ova":    ("ova",    ["VMware/VirtualBox archive containing OVF + VMDK",
+                            "Upload via OVA/OVF tab for automatic spec extraction",
+                            "The VMDK disk inside will be converted to qcow2 during import"]),
+    ".ovf":    ("ovf",    ["OVF descriptor file",
+                            "Upload together with its VMDK disk via OVA/OVF tab"]),
+    ".iso":    ("iso",    ["CD/DVD ISO image — not a disk image for VM import",
+                            "Upload to Proxmox ISO storage and attach to a VM instead"]),
+    ".zip":    ("zip",    ["ZIP archive — may contain OVF+VMDK",
+                            "Upload via OVA/OVF tab; the server will extract and detect contents"]),
+}
+
+
+class DetectFormatRequest(BaseModel):
+    filename: Optional[str] = None
+    url: Optional[str] = None
+
+
+@router.get("/detect-format")
+def detect_format(
+    filename: Optional[str] = None,
+    url: Optional[str] = None,
+    current_user=Depends(require_operator),
+):
+    """
+    Detect disk/VM image format from a filename or URL.
+    Returns the detected format and import recommendations.
+    """
+    name = filename or url or ""
+    # Strip query strings from URL paths
+    name = name.split("?")[0].split("#")[0]
+    _, ext = os.path.splitext(name.lower())
+
+    fmt, recommendations = _FORMAT_MAP.get(ext, (
+        "unknown",
+        [f"Unrecognised extension '{ext}'",
+         "Supported: qcow2, vmdk, vhd, vhdx, raw, img, ova, ovf, zip"],
+    ))
+
+    return {
+        "filename": os.path.basename(name),
+        "extension": ext,
+        "format": fmt,
+        "recommendations": recommendations,
+        "supported": fmt != "unknown",
+        "direct_import": fmt in ("qcow2", "raw"),
+        "needs_conversion": fmt in ("vmdk", "vhd", "vhdx"),
+        "is_archive": fmt in ("ova", "zip", "ovf"),
+    }
+
+
+# ---------------------------------------------------------------------------
+# From-URL import (downloads directly to Proxmox storage, then creates VM)
+# ---------------------------------------------------------------------------
+
+class FromUrlRequest(BaseModel):
+    url: str
+    proxmox_host_id: int
+    node: str          # node name, e.g. "pve"
+    storage: str       # Proxmox storage ID, e.g. "local-lvm"
+    filename: Optional[str] = None      # override filename on Proxmox side
+    checksum: Optional[str] = None
+    checksum_algorithm: Optional[str] = None
+    # VM creation params
+    vm_name: Optional[str] = "imported-vm"
+    vmid: Optional[int] = None
+    cores: Optional[int] = 2
+    memory: Optional[int] = 2048       # MB
+    os_type: Optional[str] = "l26"
+    network_bridge: Optional[str] = "vmbr0"
+    disk_bus: Optional[str] = "scsi"   # scsi|virtio|sata|ide
+
+
+@router.post("/from-url", status_code=status.HTTP_202_ACCEPTED)
+async def import_from_url(
+    req: FromUrlRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_operator),
+):
+    """
+    Download a VM image/OVA from a URL directly to Proxmox storage, then
+    create a VM using the downloaded disk.
+
+    Steps:
+      1. POST /nodes/{node}/storage/{storage}/download-url  (Proxmox API)
+      2. Poll the returned UPID until the task finishes
+      3. POST /nodes/{node}/qemu  to create the VM with import-from
+
+    Returns: { job_id, upid, status }
+    """
+    from app.models import ProxmoxHost
+    from app.services.proxmox import ProxmoxService
+
+    host = db.query(ProxmoxHost).filter(
+        ProxmoxHost.id == req.proxmox_host_id,
+        ProxmoxHost.is_active == True,
+    ).first()
+    if not host:
+        raise HTTPException(status_code=404, detail="Proxmox host not found")
+
+    job_id = svc.create_import_job()
+    job = svc.get_import_job(job_id)
+    job["source_type"] = "url"
+    job["status"] = "downloading"
+    job["status_message"] = f"Queued: downloading from {req.url}"
+
+    background_tasks.add_task(
+        _run_from_url_import,
+        job_id,
+        req.model_dump(),
+        host.id,
+    )
+
+    return {"job_id": job_id, "status": "downloading",
+            "message": "URL import started — poll /{job_id}/progress for updates"}
+
+
+async def _run_from_url_import(job_id: str, req: dict, host_id: int):
+    """Background: download URL → Proxmox storage → create VM."""
+    import asyncio
+    from app.core.database import SessionLocal
+    from app.models import ProxmoxHost
+    from app.services.proxmox import ProxmoxService
+
+    job = svc.get_import_job(job_id)
+    if not job:
+        return
+
+    db = SessionLocal()
+    try:
+        host = db.query(ProxmoxHost).filter(ProxmoxHost.id == host_id).first()
+        if not host:
+            job["status"] = "error"
+            job["error"] = "Proxmox host not found"
+            return
+
+        pve = ProxmoxService(host).proxmox
+        node = req["node"]
+        storage = req["storage"]
+
+        # 1. Determine filename from URL if not provided
+        raw_url = req["url"]
+        filename = req.get("filename") or ""
+        if not filename:
+            url_path = raw_url.split("?")[0].split("#")[0]
+            filename = os.path.basename(url_path) or "imported-disk.img"
+        # Sanitize
+        filename = re.sub(r"[^a-zA-Z0-9._-]", "_", filename)
+
+        # 2. Trigger Proxmox download-url
+        job["status_message"] = f"Requesting Proxmox to download: {filename}"
+        download_params = {
+            "url": raw_url,
+            "content": "import",
+            "filename": filename,
+        }
+        if req.get("checksum"):
+            download_params["checksum"] = req["checksum"]
+        if req.get("checksum_algorithm"):
+            download_params["checksum-algorithm"] = req["checksum_algorithm"]
+
+        try:
+            dl_result = pve.nodes(node).storage(storage).post(
+                "download-url", **download_params
+            )
+        except Exception as e:
+            # Some Proxmox versions expose as a sub-resource path
+            try:
+                dl_result = pve.nodes(node).storage(storage).__getattr__("download-url").post(
+                    **download_params
+                )
+            except Exception:
+                raise e
+
+        download_upid = dl_result if isinstance(dl_result, str) else str(dl_result)
+        job["status_message"] = f"Downloading via Proxmox (UPID: {download_upid[:30]}...)"
+        job["download_upid"] = download_upid
+
+        # 3. Poll download task
+        max_wait = 7200  # 2 hours
+        waited = 0
+        poll_interval = 5
+        while waited < max_wait:
+            await asyncio.sleep(poll_interval)
+            waited += poll_interval
+            try:
+                task_status = pve.nodes(node).tasks(download_upid).status.get()
+                pct = int(task_status.get("upid_extra", {}).get("progress", 0) or 0)
+                job["progress"] = min(50, pct // 2)
+                if task_status.get("status") == "stopped":
+                    exit_status = task_status.get("exitstatus", "")
+                    if exit_status == "OK":
+                        break
+                    else:
+                        raise RuntimeError(f"Download task failed: {exit_status}")
+            except RuntimeError:
+                raise
+            except Exception:
+                pass  # ignore transient poll errors
+
+        job["progress"] = 50
+        job["status_message"] = f"Download complete. Creating VM from {filename}..."
+
+        # 4. Get next VMID if not provided
+        vmid = req.get("vmid") or None
+        if not vmid:
+            try:
+                vmid = int(pve.cluster.nextid.get())
+            except Exception:
+                vmid = 9000
+
+        vm_name = re.sub(r"[^a-zA-Z0-9_-]", "-", req.get("vm_name") or "imported-vm")[:63] or "imported-vm"
+        cores = max(1, int(req.get("cores") or 2))
+        memory = max(256, int(req.get("memory") or 2048))
+        os_type = req.get("os_type") or "l26"
+        bridge = req.get("network_bridge") or "vmbr0"
+        bus = req.get("disk_bus") or "scsi"
+        _, ext = os.path.splitext(filename.lower())
+        fmt_hint = ""
+        if ext in (".qcow2",):
+            fmt_hint = ",format=qcow2"
+        elif ext in (".vmdk",):
+            fmt_hint = ",format=vmdk"
+        elif ext in (".raw", ".img"):
+            fmt_hint = ",format=raw"
+
+        disk_key = f"{bus}0"
+        import_volid = f"{storage}:0,import-from={storage}:{filename}{fmt_hint}"
+
+        # 5. Create VM
+        job["status"] = "deploying"
+        job["status_message"] = f"Creating VM {vm_name} (VMID {vmid})..."
+        create_params = {
+            "vmid": vmid,
+            "name": vm_name,
+            "cores": cores,
+            "memory": memory,
+            "scsihw": "virtio-scsi-pci",
+            "ostype": os_type,
+            "net0": f"virtio,bridge={bridge}",
+            "agent": "1",
+            "onboot": 1,
+            disk_key: import_volid,
+        }
+        create_upid = pve.nodes(node).qemu.post(**create_params)
+
+        job["vmid"] = vmid
+        job["vm_create_upid"] = str(create_upid)
+        job["status"] = "completed"
+        job["progress"] = 100
+        job["status_message"] = f"VM {vm_name} (VMID {vmid}) created successfully"
+
+    except Exception as e:
+        logger.error(f"from-url import job {job_id} failed: {e}", exc_info=True)
+        job["status"] = "error"
+        job["error"] = str(e)
+        job["status_message"] = f"Import failed: {str(e)}"
+    finally:
+        db.close()
+
+
+# ---------------------------------------------------------------------------
+# From-OVF import (client parses OVF XML, sends config, we create the VM)
+# ---------------------------------------------------------------------------
+
+class OvfDisk(BaseModel):
+    id: str = ""
+    capacity_gb: int = 20
+    file_ref: str = ""
+    filename: str = ""
+    volid: Optional[str] = None   # already-uploaded Proxmox volume ID
+
+
+class OvfNic(BaseModel):
+    name: str = ""
+    bridge: str = "vmbr0"
+
+
+class FromOvfRequest(BaseModel):
+    # OVF-extracted config
+    vm_name: str = "imported-vm"
+    cpu_cores: int = 2
+    memory_mb: int = 2048
+    os_type: str = "l26"
+    disks: List[OvfDisk] = []
+    nics: List[OvfNic] = []
+    description: str = ""
+    # Proxmox target
+    proxmox_host_id: int
+    node: str
+    storage: str
+    vmid: Optional[int] = None
+    network_bridge: str = "vmbr0"
+
+
+@router.post("/from-ovf", status_code=status.HTTP_201_CREATED)
+def import_from_ovf(
+    req: FromOvfRequest,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_operator),
+):
+    """
+    Create a Proxmox VM from an OVF specification parsed on the client side.
+    Assumes disk files have already been uploaded to the target Proxmox storage.
+
+    Returns: { vmid, upid }
+    """
+    from app.models import ProxmoxHost
+    from app.services.proxmox import ProxmoxService
+
+    host = db.query(ProxmoxHost).filter(
+        ProxmoxHost.id == req.proxmox_host_id,
+        ProxmoxHost.is_active == True,
+    ).first()
+    if not host:
+        raise HTTPException(status_code=404, detail="Proxmox host not found")
+
+    pve = ProxmoxService(host).proxmox
+
+    # Resolve VMID
+    vmid = req.vmid or None
+    if not vmid:
+        try:
+            vmid = int(pve.cluster.nextid.get())
+        except Exception:
+            vmid = 9000
+
+    vm_name = re.sub(r"[^a-zA-Z0-9_-]", "-", req.vm_name)[:63] or "imported-vm"
+    cores = max(1, req.cpu_cores)
+    memory = max(256, req.memory_mb)
+    os_type = req.os_type or "l26"
+
+    # Build create params
+    create_params: dict = {
+        "vmid": vmid,
+        "name": vm_name,
+        "cores": cores,
+        "sockets": 1,
+        "memory": memory,
+        "ostype": os_type,
+        "scsihw": "virtio-scsi-pci",
+        "agent": "1",
+        "onboot": 1,
+    }
+    if req.description:
+        create_params["description"] = req.description[:512]
+
+    # Network interfaces — first NIC uses OVF mapping, rest use bridge from nics list
+    if req.nics:
+        for i, nic in enumerate(req.nics[:4]):
+            bridge = nic.bridge or req.network_bridge or "vmbr0"
+            create_params[f"net{i}"] = f"virtio,bridge={bridge}"
+    else:
+        create_params["net0"] = f"virtio,bridge={req.network_bridge or 'vmbr0'}"
+
+    # Disks — attach by volid if provided
+    for i, disk in enumerate(req.disks[:8]):
+        if disk.volid:
+            bus_key = f"scsi{i}"
+            create_params[bus_key] = disk.volid
+        elif disk.filename:
+            # import-from syntax
+            bus_key = f"scsi{i}"
+            create_params[bus_key] = (
+                f"{req.storage}:{disk.capacity_gb},"
+                f"import-from={req.storage}:{disk.filename}"
+            )
+    if i == 0 and req.disks:
+        create_params["boot"] = "order=scsi0"
+
+    try:
+        upid = pve.nodes(req.node).qemu.post(**create_params)
+        return {"vmid": vmid, "upid": str(upid), "vm_name": vm_name}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"VM creation failed: {str(e)}")
+
+
+# ---------------------------------------------------------------------------
+# Convert-disk (runs qemu-img convert on the Proxmox node via SSH)
+# ---------------------------------------------------------------------------
+
+class ConvertDiskRequest(BaseModel):
+    proxmox_host_id: int
+    node: str
+    source_volid: str     # e.g. "local:iso/disk.vmdk"
+    target_storage: str   # e.g. "local-lvm"
+    target_format: str = "qcow2"   # qcow2|raw
+    target_filename: Optional[str] = None
+
+
+@router.post("/convert-disk", status_code=status.HTTP_202_ACCEPTED)
+def convert_disk(
+    req: ConvertDiskRequest,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_operator),
+):
+    """
+    Trigger a disk format conversion on a Proxmox node via SSH.
+    Converts VMDK/VHD → qcow2 (or raw) using qemu-img, producing a new
+    volume in target_storage.
+
+    Returns: { command, note }  — the exact command executed, so the user
+    can also run it manually if SSH is not available.
+    """
+    from app.models import ProxmoxHost
+    from app.services import vm_import_service as _svc
+
+    host = db.query(ProxmoxHost).filter(
+        ProxmoxHost.id == req.proxmox_host_id,
+        ProxmoxHost.is_active == True,
+    ).first()
+    if not host:
+        raise HTTPException(status_code=404, detail="Proxmox host not found")
+
+    # Resolve full source path from volid
+    # Volid format: "storage:path/file.vmdk"
+    parts = req.source_volid.split(":", 1)
+    if len(parts) != 2:
+        raise HTTPException(status_code=400, detail="source_volid must be 'storage:path/filename'")
+    src_storage, src_rel = parts
+
+    # Common storage roots on Proxmox
+    storage_roots = {
+        "local": "/var/lib/vz",
+        "local-lvm": "/dev/pve",
+    }
+    # Best-effort: guess /var/lib/vz or /mnt/pve/<storage>
+    if src_storage in storage_roots:
+        src_path = os.path.join(storage_roots[src_storage], src_rel)
+    else:
+        src_path = f"/mnt/pve/{src_storage}/{src_rel}"
+
+    _, src_ext = os.path.splitext(src_path.lower())
+    fmt_map = {".vmdk": "vmdk", ".vhd": "vpc", ".vhdx": "vhdx",
+               ".qcow2": "qcow2", ".raw": "raw", ".img": "raw"}
+    src_fmt = fmt_map.get(src_ext, "raw")
+
+    target_filename = req.target_filename or (
+        re.sub(r"\.[^.]+$", "", os.path.basename(src_path)) + f".{req.target_format}"
+    )
+    target_filename = re.sub(r"[^a-zA-Z0-9._-]", "_", target_filename)
+    dst_path = f"/var/lib/vz/images/{target_filename}"
+
+    cmd = (
+        f"qemu-img convert -p -f {src_fmt} -O {req.target_format} "
+        f"{src_path} {dst_path}"
+    )
+
+    try:
+        result = _svc._ssh_run(host.hostname, cmd, timeout=3600)
+        if result.returncode == 0:
+            return {
+                "success": True,
+                "command": cmd,
+                "output": result.stdout[:500] if result.stdout else "",
+                "target_path": dst_path,
+                "note": (
+                    f"Conversion complete. The converted disk is at {dst_path} on node "
+                    f"{req.node}. Use the Disk Image tab to create a VM from it."
+                ),
+            }
+        else:
+            return {
+                "success": False,
+                "command": cmd,
+                "error": result.stderr[:500],
+                "note": "SSH conversion failed. You can run the command manually on the Proxmox node.",
+            }
+    except Exception as e:
+        return {
+            "success": False,
+            "command": cmd,
+            "error": str(e),
+            "note": "Could not reach Proxmox node via SSH. Run the command manually.",
+        }

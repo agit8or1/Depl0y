@@ -546,7 +546,7 @@ onBeforeUnmount(() => {
 }
 
 .btn-primary-lg:hover:not(:disabled) { background: #2ea043; }
-.btn-primary-lg:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn-primary-lg:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .btn-secondary-lg {
   background: #21262d;
@@ -566,7 +566,7 @@ onBeforeUnmount(() => {
 
 .note {
   font-size: 0.78rem;
-  color: #6e7681;
+  color: #9ca3af;
   line-height: 1.5;
   margin: 0;
 }

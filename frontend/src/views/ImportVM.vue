@@ -814,7 +814,7 @@ export default {
 }
 
 .step.active .step-circle { background: #3b82f6; color: white; }
-.step.completed .step-circle { background: #10b981; color: white; }
+.step.completed .step-circle { background: #059669; color: white; }
 
 .step-label {
   font-size: 0.8rem;
@@ -885,7 +885,7 @@ export default {
 
 .drop-icon { font-size: 3rem; margin-bottom: 0.75rem; }
 .drop-text { font-size: 1rem; font-weight: 500; margin: 0 0 0.25rem; }
-.drop-hint { font-size: 0.8rem; color: #9ca3af; margin: 0; }
+.drop-hint { font-size: 0.8rem; color: #6b7280; margin: 0; }
 
 /* Forms */
 .form-grid {

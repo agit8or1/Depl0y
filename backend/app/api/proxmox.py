@@ -92,9 +92,23 @@ class ProxmoxNodeResponse(BaseModel):
     vm_count: Optional[int] = 0
     lxc_count: Optional[int] = 0
     last_updated: datetime
+    idrac_hostname: Optional[str] = None
+    idrac_port: Optional[int] = None
+    idrac_username: Optional[str] = None
+    idrac_type: Optional[str] = None
+    idrac_use_ssh: Optional[bool] = None
 
     class Config:
         from_attributes = True
+
+
+class NodeIdracUpdate(BaseModel):
+    idrac_hostname: Optional[str] = None
+    idrac_port: Optional[int] = None
+    idrac_username: Optional[str] = None
+    idrac_password: Optional[str] = None
+    idrac_type: Optional[str] = None
+    idrac_use_ssh: Optional[bool] = None
 
 
 @router.get("/", response_model=List[ProxmoxHostResponse])
@@ -443,3 +457,34 @@ async def get_node_network(
     except Exception as e:
         logger.error(f"Failed to get network for node {node.node_name}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get network: {str(e)}")
+
+
+@router.patch("/nodes/{node_id}/idrac", response_model=ProxmoxNodeResponse)
+async def update_node_idrac(
+    node_id: int,
+    data: NodeIdracUpdate,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Update iDRAC/BMC configuration for a specific cluster node (admin only)"""
+    node = db.query(ProxmoxNode).filter(ProxmoxNode.id == node_id).first()
+    if not node:
+        raise HTTPException(status_code=404, detail="Node not found")
+
+    if data.idrac_hostname is not None:
+        node.idrac_hostname = data.idrac_hostname or None
+    if data.idrac_port is not None:
+        node.idrac_port = data.idrac_port
+    if data.idrac_username is not None:
+        node.idrac_username = data.idrac_username or None
+    if data.idrac_password is not None:
+        from app.core.security import encrypt_data
+        node.idrac_password = encrypt_data(data.idrac_password) if data.idrac_password else None
+    if data.idrac_type is not None:
+        node.idrac_type = data.idrac_type or None
+    if data.idrac_use_ssh is not None:
+        node.idrac_use_ssh = data.idrac_use_ssh
+
+    db.commit()
+    db.refresh(node)
+    return node

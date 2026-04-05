@@ -128,6 +128,14 @@ class ProxmoxNode(Base):
     lxc_count = Column(Integer, default=0, nullable=True)  # Number of LXC containers on this node
     last_updated = Column(DateTime, default=datetime.utcnow, nullable=False)
 
+    # iDRAC / iLO out-of-band management per physical node
+    idrac_hostname = Column(String(255), nullable=True)
+    idrac_port = Column(Integer, default=443, nullable=True)
+    idrac_username = Column(String(100), nullable=True)
+    idrac_password = Column(String(255), nullable=True)  # Encrypted
+    idrac_type = Column(String(20), nullable=True)  # "idrac", "ilo", or None
+    idrac_use_ssh = Column(Boolean, default=False, nullable=True)
+
     # Relationships
     host = relationship("ProxmoxHost", back_populates="nodes")
     vms = relationship("VirtualMachine", back_populates="node")

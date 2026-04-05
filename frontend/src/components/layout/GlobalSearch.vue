@@ -331,7 +331,7 @@ export default {
 }
 
 .search-icon {
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(255, 255, 255, 0.65);
   flex-shrink: 0;
 }
 
@@ -347,7 +347,7 @@ export default {
 }
 
 .search-input::placeholder {
-  color: rgba(255, 255, 255, 0.4);
+  color: rgba(255, 255, 255, 0.55);
 }
 
 .clear-btn {
@@ -355,7 +355,7 @@ export default {
   border: none;
   cursor: pointer;
   padding: 2px;
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(255, 255, 255, 0.65);
   display: flex;
   align-items: center;
   border-radius: 4px;
@@ -399,7 +399,7 @@ export default {
 
 .no-results {
   padding: 1rem 1.25rem;
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(255, 255, 255, 0.65);
   font-size: 0.875rem;
   text-align: center;
 }
@@ -466,15 +466,15 @@ export default {
 
 .meta-chip {
   font-size: 0.7rem;
-  color: rgba(255, 255, 255, 0.5);
-  background: rgba(255, 255, 255, 0.07);
+  color: rgba(255, 255, 255, 0.65);
+  background: rgba(255, 255, 255, 0.09);
   border-radius: 4px;
   padding: 0 5px;
   line-height: 1.6;
 }
 
 .host-chip {
-  color: rgba(147, 197, 253, 0.75);
+  color: rgba(147, 197, 253, 0.9);
 }
 
 /* ── Status badge ── */
@@ -504,8 +504,8 @@ export default {
 }
 
 .status--unknown {
-  background: rgba(255, 255, 255, 0.07);
-  color: rgba(255, 255, 255, 0.4);
+  background: rgba(255, 255, 255, 0.09);
+  color: rgba(255, 255, 255, 0.65);
 }
 
 /* ── Responsive ── */

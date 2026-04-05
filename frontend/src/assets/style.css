@@ -14,7 +14,8 @@
   --background: #f8fafc;
   --surface: #ffffff;
   --text-primary: #0f172a;
-  --text-secondary: #64748b;
+  --text-secondary: #576070;
+  --text-muted: #5f6b7a;
   --border-color: #e2e8f0;
   --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1);
   --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1);
@@ -276,6 +277,14 @@ select.form-control {
 
 .text-muted {
   color: var(--text-secondary);
+}
+
+.text-success {
+  color: #059669;
+}
+
+.text-danger {
+  color: #dc2626;
 }
 
 .loading-spinner {

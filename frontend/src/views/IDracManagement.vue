@@ -105,7 +105,10 @@
               <tr v-for="srv in allServers" :key="srv._key"
                   :class="{ 'row-critical': alertLevel(srv) === 'crit', 'row-warning': alertLevel(srv) === 'warn' }">
                 <td class="text-xs font-bold">{{ srv.name }}</td>
-                <td class="text-xs"><span :class="['type-pill', `type-pill--${srv._stype}`]">{{ typeLabel(srv._stype) }}</span></td>
+                <td class="text-xs">
+                  <span :class="['type-pill', `type-pill--${srv._stype}`]">{{ typeLabel(srv._stype) }}</span>
+                  <span v-if="srv._isNode" class="type-pill type-pill--node ml-1">Node</span>
+                </td>
                 <td class="text-xs">
                   <span v-if="srv._status?.power_state" :class="['power-badge', srv._status.power_state === 'On' ? 'power-on' : 'power-off']">{{ srv._status.power_state }}</span>
                   <span v-else class="text-muted">—</span>
@@ -145,6 +148,7 @@
             <div class="status-left">
               <span class="srv-name">{{ srv.name }}</span>
               <span :class="['type-pill', `type-pill--${srv._stype}`]">{{ typeLabel(srv._stype) }}</span>
+              <span v-if="srv._isNode" class="type-pill type-pill--node">Node</span>
               <span v-if="srv._status" :class="['health-badge', `health-${(srv._status.health || 'unknown').toLowerCase()}`]">
                 {{ srv._status.health || 'Unknown' }}
               </span>
@@ -772,6 +776,7 @@ export default {
     const polling = ref(false)
 
     const allProxmox = ref([])
+    const allPveNodes = ref([])
     const allPBS = ref([])
     const allStandalone = ref([])
     let _pollInterval = null
@@ -802,8 +807,38 @@ export default {
       _sshHardware: null,
     })
 
+    // ── Node wrapping (per-node entries from Proxmox cluster nodes) ──
+    const wrapNode = (node, parentHost) => ({
+      ...node,
+      _key: `pve-node:${node.id}`,
+      _stype: 'pve',
+      _isNode: true,
+      _hostId: parentHost.id,
+      hostname: parentHost.hostname,
+      name: node.node_name,
+      _status: null,
+      _info: null,
+      _thermal: null,
+      _powerUsage: null,
+      _logs: null,
+      _loading: false,
+      _actioning: false,
+      _expanded: false,
+      _error: null,
+      _activeTab: 'overview',
+      _hardware: null,
+      _network: null,
+      _firmware: null,
+      _hwLoading: false,
+      _netLoading: false,
+      _fwLoading: false,
+      _useSSH: node.idrac_use_ssh || false,
+      _redfishOK: false,
+      _sshHardware: null,
+    })
+
     const allServers = computed(() => [
-      ...allProxmox.value,
+      ...allPveNodes.value,
       ...allPBS.value,
       ...allStandalone.value,
     ])
@@ -1003,6 +1038,22 @@ export default {
         allProxmox.value = pveRes.data.map(h => wrapServer(h, 'pve'))
         allPBS.value = pbsRes.data.map(s => wrapServer(s, 'pbs'))
         allStandalone.value = saRes.data.map(b => wrapServer(b, 'standalone'))
+
+        // Fetch cluster nodes for each PVE host and create per-node entries
+        const nodeResults = await Promise.allSettled(
+          pveRes.data.map(host => api.proxmox.listNodes(host.id).then(r => ({ host, nodes: r.data })))
+        )
+        const nodeEntries = []
+        for (const result of nodeResults) {
+          if (result.status === 'fulfilled') {
+            const { host, nodes } = result.value
+            for (const node of nodes) {
+              nodeEntries.push(wrapNode(node, host))
+            }
+          }
+        }
+        allPveNodes.value = nodeEntries
+
         applyStatusCache(statusRes.data)
       } catch (e) {
         toast.error('Failed to load server list')
@@ -1013,7 +1064,8 @@ export default {
 
     const applyStatusCache = (cache) => {
       for (const srv of allServers.value) {
-        const key = `${srv._stype}:${srv.id}`
+        // Node entries: status is keyed by the parent host id (iDRAC polling is per-host BMC)
+        const key = srv._isNode ? `pve:${srv._hostId}` : `${srv._stype}:${srv.id}`
         if (cache[key]) srv._status = cache[key]
       }
     }
@@ -1318,6 +1370,31 @@ export default {
 
     // ── API call dispatch by server type ──
     const _apiFns = (srv) => {
+      // Node entries: iDRAC polling uses the parent host id (BMC is shared per host)
+      if (srv._isNode) {
+        const hostId = srv._hostId
+        return {
+          getInfo: () => api.idrac.getInfo(hostId),
+          getThermal: () => api.idrac.getThermal(hostId),
+          getPowerUsage: () => api.idrac.getPowerUsage(hostId),
+          getLogs: () => api.idrac.getLogs(hostId),
+          test: () => api.idrac.testConnection(hostId),
+          testSsh: () => api.idrac.testSsh(hostId),
+          powerAction: (action) => api.idrac.powerAction(hostId, action),
+          getManager: () => api.idrac.getManager(hostId),
+          getNetwork: () => api.idrac.getNetwork(hostId),
+          patchNetwork: (ifaceId, config) => api.idrac.patchNetwork(hostId, ifaceId, config),
+          getProcessors: () => api.idrac.getProcessors(hostId),
+          getMemory: () => api.idrac.getMemory(hostId),
+          getStorage: () => api.idrac.getStorage(hostId),
+          getFirmware: () => api.idrac.getFirmware(hostId),
+          getSshHardware: () => api.idrac.getSshHardware(hostId),
+          getSshNetwork: () => api.idrac.getSshNetwork(hostId),
+          getSshFirmware: () => api.idrac.getSshFirmware(hostId),
+          getSshLogs: () => api.idrac.getSshLogs(hostId),
+          runSshUpdate: () => api.idrac.runSshUpdate(hostId),
+        }
+      }
       if (srv._stype === 'pbs') return {
         getInfo: () => api.pbs.getIdracInfo(srv.id),
         getThermal: () => api.pbs.getIdracThermal(srv.id),
@@ -1496,6 +1573,14 @@ export default {
         if (_bmcTarget._stype === 'pbs') {
           const res = await api.pbs.update(_bmcTarget.id, payload)
           Object.assign(_bmcTarget, res.data)
+        } else if (_bmcTarget._isNode) {
+          const res = await api.proxmox.updateNodeIdrac(_bmcTarget.id, payload)
+          const updated = res.data
+          _bmcTarget.idrac_hostname = updated.idrac_hostname
+          _bmcTarget.idrac_port = updated.idrac_port
+          _bmcTarget.idrac_username = updated.idrac_username
+          _bmcTarget.idrac_type = updated.idrac_type
+          _bmcTarget.idrac_use_ssh = updated.idrac_use_ssh
         } else {
           const res = await api.proxmox.updateHost(_bmcTarget.id, payload)
           Object.assign(_bmcTarget, res.data)
@@ -1530,6 +1615,14 @@ export default {
         if (_bmcTarget._stype === 'pbs') {
           const res = await api.pbs.update(_bmcTarget.id, payload)
           Object.assign(_bmcTarget, res.data)
+        } else if (_bmcTarget._isNode) {
+          const res = await api.proxmox.updateNodeIdrac(_bmcTarget.id, payload)
+          const updated = res.data
+          _bmcTarget.idrac_hostname = updated.idrac_hostname
+          _bmcTarget.idrac_port = updated.idrac_port
+          _bmcTarget.idrac_username = updated.idrac_username
+          _bmcTarget.idrac_type = updated.idrac_type
+          _bmcTarget.idrac_use_ssh = updated.idrac_use_ssh
         } else {
           const res = await api.proxmox.updateHost(_bmcTarget.id, payload)
           Object.assign(_bmcTarget, res.data)
@@ -1605,10 +1698,16 @@ export default {
 
     const deleteNode = async (srv) => {
       const label = srv.name || srv.hostname || srv.address || `#${srv.id}`
+      if (srv._isNode) {
+        // Node entries cannot be independently deleted — they are discovered from the host
+        toast.warning('Node entries are auto-discovered from the Proxmox host. To remove, delete the parent Proxmox host.')
+        return
+      }
       if (!confirm(`Delete "${label}" from tracking? This removes it from Depl0y but does not affect the actual host.`)) return
       try {
         await api.proxmox.deleteHost(srv.id)
         allProxmox.value = allProxmox.value.filter(s => s.id !== srv.id)
+        allPveNodes.value = allPveNodes.value.filter(s => s._hostId !== srv.id)
         toast.success('Removed')
       } catch (e) {
         toast.error(e.response?.data?.detail || 'Failed to delete')
@@ -1848,6 +1947,7 @@ export default {
 .type-pill--pve { background: #dbeafe; color: #1e40af; }
 .type-pill--pbs { background: #fef3c7; color: #92400e; }
 .type-pill--standalone { background: #f3e8ff; color: #6b21a8; }
+.type-pill--node { background: #dcfce7; color: #15803d; }
 
 .power-badge, .health-badge {
   display: inline-block;

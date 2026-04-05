@@ -385,7 +385,7 @@ onBeforeUnmount(() => {
   transition: opacity 0.15s;
 }
 
-.btn-toolbar:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-toolbar:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .btn-connect    { background: #238636; color: #fff; }
 .btn-connect:hover:not(:disabled)    { background: #2ea043; }
@@ -526,5 +526,5 @@ onBeforeUnmount(() => {
 }
 
 .btn-primary-lg:hover:not(:disabled) { background: #2ea043; }
-.btn-primary-lg:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-primary-lg:disabled { opacity: 0.5; cursor: not-allowed; }
 </style>

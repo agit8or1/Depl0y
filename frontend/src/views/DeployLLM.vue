@@ -1928,7 +1928,7 @@ export default {
 .model-pick-name { font-weight: 600; font-size: 0.9rem; }
 .model-pick-size { margin-left: auto; font-size: 0.75rem; color: var(--text-secondary); font-family: monospace; }
 .model-pick-desc { font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 0.3rem; line-height: 1.35; }
-.model-pick-meta { font-size: 0.72rem; color: #9ca3af; }
+.model-pick-meta { font-size: 0.72rem; color: #6b7280; }
 
 .simple-card {
   border: 2px solid #e5e7eb;
@@ -2354,7 +2354,7 @@ code {
 
 .stage-content { padding-top: 0.3rem; }
 .stage-label { font-size: 0.9rem; font-weight: 500; color: #374151; }
-.stage-pending .stage-label { color: #9ca3af; }
+.stage-pending .stage-label { color: #6b7280; }
 .stage-hint { display: block; font-size: 0.78rem; color: #6b7280; margin-top: 0.1rem; }
 
 @media (max-width: 640px) {

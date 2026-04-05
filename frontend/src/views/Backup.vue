@@ -882,7 +882,7 @@ export default {
   white-space: pre-wrap;
 }
 
-.text-success { color: #10b981; }
+.text-success { color: #059669; }
 .text-danger { color: #ef4444; }
 
 /* PBS Servers */

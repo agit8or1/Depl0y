@@ -42,6 +42,12 @@ def init_db():
     new_columns = [
         ("vm_count", "INTEGER DEFAULT 0"),
         ("lxc_count", "INTEGER DEFAULT 0"),
+        ("idrac_hostname", "VARCHAR(255)"),
+        ("idrac_port", "INTEGER DEFAULT 443"),
+        ("idrac_username", "VARCHAR(100)"),
+        ("idrac_password", "VARCHAR(255)"),
+        ("idrac_type", "VARCHAR(20)"),
+        ("idrac_use_ssh", "BOOLEAN DEFAULT 0"),
     ]
     with engine.connect() as conn:
         for col_name, col_def in new_columns:

@@ -353,7 +353,7 @@ export default {
   border: none;
   cursor: pointer;
   font-size: 0.75rem;
-  color: rgba(255, 255, 255, 0.45);
+  color: rgba(255, 255, 255, 0.65);
   padding: 0;
   transition: color 0.15s;
 }
@@ -374,7 +374,7 @@ export default {
   align-items: center;
   justify-content: center;
   padding: 2rem 1rem;
-  color: rgba(255, 255, 255, 0.4);
+  color: rgba(255, 255, 255, 0.6);
   font-size: 0.8rem;
   gap: 0.25rem;
   text-align: center;
@@ -424,7 +424,7 @@ export default {
 
 .notif-meta {
   font-size: 0.7rem;
-  color: rgba(255, 255, 255, 0.4);
+  color: rgba(255, 255, 255, 0.6);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

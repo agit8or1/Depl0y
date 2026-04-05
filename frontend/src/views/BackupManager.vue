@@ -923,20 +923,20 @@ onUnmounted(() => {
 }
 
 .task-status-badge--running {
-  background: rgba(245, 158, 11, 0.15);
-  color: #f59e0b;
-  border: 1px solid #f59e0b;
+  background: rgba(180, 83, 9, 0.1);
+  color: #b45309;
+  border: 1px solid #d97706;
 }
 
 .task-status-badge--stopped {
-  background: rgba(16, 185, 129, 0.15);
-  color: #10b981;
-  border: 1px solid #10b981;
+  background: rgba(5, 150, 105, 0.12);
+  color: #059669;
+  border: 1px solid #059669;
 }
 
 .task-status-badge--unknown {
-  background: rgba(156, 163, 175, 0.15);
-  color: #9ca3af;
+  background: rgba(107, 114, 128, 0.12);
+  color: #4b5563;
   border: 1px solid #9ca3af;
 }
 
@@ -963,7 +963,7 @@ onUnmounted(() => {
 }
 
 .text-danger { color: #ef4444; }
-.text-success { color: #10b981; }
+.text-success { color: #059669; }
 
 .form-group--center {
   display: flex;

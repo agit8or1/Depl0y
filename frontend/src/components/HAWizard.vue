@@ -674,7 +674,7 @@ export default {
   background: none;
   border: none;
   font-size: 2rem;
-  color: #9ca3af;
+  color: #6b7280;
   cursor: pointer;
   padding: 0;
   width: 2rem;
@@ -739,7 +739,7 @@ export default {
 }
 
 .step.completed .step-number {
-  background: #10b981;
+  background: #059669;
   color: white;
 }
 
@@ -825,15 +825,15 @@ export default {
 }
 
 .check-item.success .icon {
-  color: #10b981;
+  color: #059669;
 }
 
 .check-item.warning .icon {
-  color: #f59e0b;
+  color: #b45309;
 }
 
 .check-item.error .icon {
-  color: #ef4444;
+  color: #dc2626;
 }
 
 .check-item strong {

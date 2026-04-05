@@ -628,7 +628,7 @@ onUnmounted(() => {
 }
 
 .countdown-urgent {
-  color: #f59e0b;
+  color: #b45309;
   border-color: #f59e0b;
 }
 

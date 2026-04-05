@@ -1120,7 +1120,7 @@ export default {
 }
 
 .success-text {
-  color: #10b981;
+  color: #059669;
   font-weight: 600;
 }
 

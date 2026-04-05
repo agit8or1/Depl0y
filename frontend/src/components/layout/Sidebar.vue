@@ -236,7 +236,7 @@ export default {
 
 .tagline {
   font-size: 0.75rem;
-  opacity: 0.8;
+  color: rgba(255, 255, 255, 0.7);
   margin-top: 0.25rem;
 }
 
@@ -283,7 +283,7 @@ export default {
   padding: 1rem 1.5rem;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
   font-size: 0.75rem;
-  opacity: 0.6;
+  color: rgba(255, 255, 255, 0.55);
 }
 
 .version,

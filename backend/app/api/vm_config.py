@@ -7,6 +7,7 @@ from app.core.database import get_db
 from app.models import ProxmoxHost
 from app.api.auth import get_current_user, require_operator
 from app.services.proxmox import ProxmoxService
+from app.core.cache import pve_cache
 import logging
 
 logger = logging.getLogger(__name__)
@@ -98,8 +99,13 @@ class FirewallRule(BaseModel):
 def get_vm_config(host_id: int, node: str, vmid: int, db: Session = Depends(get_db),
                   current_user=Depends(get_current_user)):
     host = _get_host(host_id, db)
+    cache_key = f"pve:{host_id}:{node}/{vmid}/config"
+    cached = pve_cache.get(cache_key)
+    if cached is not None:
+        return cached
     try:
         cfg = _pve(_svc(host)).nodes(node).qemu(vmid).config.get()
+        pve_cache.set(cache_key, cfg, ttl=30)
         return cfg
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -114,6 +120,7 @@ def update_vm_config(host_id: int, node: str, vmid: int, update: ConfigUpdate,
         raise HTTPException(status_code=400, detail="Nothing to update")
     try:
         _pve(_svc(host)).nodes(node).qemu(vmid).config.put(**payload)
+        pve_cache.clear_prefix(f"pve:{host_id}:")
         return {"success": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -123,8 +130,13 @@ def update_vm_config(host_id: int, node: str, vmid: int, update: ConfigUpdate,
 def get_vm_status(host_id: int, node: str, vmid: int, db: Session = Depends(get_db),
                   current_user=Depends(get_current_user)):
     host = _get_host(host_id, db)
+    cache_key = f"pve:{host_id}:{node}/{vmid}/status"
+    cached = pve_cache.get(cache_key)
+    if cached is not None:
+        return cached
     try:
         st = _pve(_svc(host)).nodes(node).qemu(vmid).status.current.get()
+        pve_cache.set(cache_key, st, ttl=10)
         return st
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -138,6 +150,7 @@ def start_vm(host_id: int, node: str, vmid: int, db: Session = Depends(get_db),
     host = _get_host(host_id, db)
     try:
         upid = _pve(_svc(host)).nodes(node).qemu(vmid).status.start.post()
+        pve_cache.clear_prefix(f"pve:{host_id}:")
         return {"upid": upid}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -149,6 +162,7 @@ def stop_vm(host_id: int, node: str, vmid: int, db: Session = Depends(get_db),
     host = _get_host(host_id, db)
     try:
         upid = _pve(_svc(host)).nodes(node).qemu(vmid).status.stop.post()
+        pve_cache.clear_prefix(f"pve:{host_id}:")
         return {"upid": upid}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -160,6 +174,7 @@ def shutdown_vm(host_id: int, node: str, vmid: int, db: Session = Depends(get_db
     host = _get_host(host_id, db)
     try:
         upid = _pve(_svc(host)).nodes(node).qemu(vmid).status.shutdown.post()
+        pve_cache.clear_prefix(f"pve:{host_id}:")
         return {"upid": upid}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -171,6 +186,7 @@ def reboot_vm(host_id: int, node: str, vmid: int, db: Session = Depends(get_db),
     host = _get_host(host_id, db)
     try:
         upid = _pve(_svc(host)).nodes(node).qemu(vmid).status.reboot.post()
+        pve_cache.clear_prefix(f"pve:{host_id}:")
         return {"upid": upid}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -182,6 +198,7 @@ def reset_vm(host_id: int, node: str, vmid: int, db: Session = Depends(get_db),
     host = _get_host(host_id, db)
     try:
         upid = _pve(_svc(host)).nodes(node).qemu(vmid).status.reset.post()
+        pve_cache.clear_prefix(f"pve:{host_id}:")
         return {"upid": upid}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -193,6 +210,7 @@ def suspend_vm(host_id: int, node: str, vmid: int, db: Session = Depends(get_db)
     host = _get_host(host_id, db)
     try:
         upid = _pve(_svc(host)).nodes(node).qemu(vmid).status.suspend.post()
+        pve_cache.clear_prefix(f"pve:{host_id}:")
         return {"upid": upid}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -204,6 +222,7 @@ def resume_vm(host_id: int, node: str, vmid: int, db: Session = Depends(get_db),
     host = _get_host(host_id, db)
     try:
         upid = _pve(_svc(host)).nodes(node).qemu(vmid).status.resume.post()
+        pve_cache.clear_prefix(f"pve:{host_id}:")
         return {"upid": upid}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -215,8 +234,13 @@ def resume_vm(host_id: int, node: str, vmid: int, db: Session = Depends(get_db),
 def list_snapshots(host_id: int, node: str, vmid: int, db: Session = Depends(get_db),
                    current_user=Depends(get_current_user)):
     host = _get_host(host_id, db)
+    cache_key = f"pve:{host_id}:{node}/{vmid}/snapshots"
+    cached = pve_cache.get(cache_key)
+    if cached is not None:
+        return cached
     try:
         snaps = _pve(_svc(host)).nodes(node).qemu(vmid).snapshot.get()
+        pve_cache.set(cache_key, snaps, ttl=30)
         return snaps
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -232,6 +256,7 @@ def create_snapshot(host_id: int, node: str, vmid: int, snap: SnapshotCreate,
             description=snap.description,
             vmstate=int(snap.vmstate),
         )
+        pve_cache.clear_prefix(f"pve:{host_id}:")
         return {"upid": upid}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -243,6 +268,7 @@ def delete_snapshot(host_id: int, node: str, vmid: int, snapname: str,
     host = _get_host(host_id, db)
     try:
         upid = _pve(_svc(host)).nodes(node).qemu(vmid).snapshot(snapname).delete()
+        pve_cache.clear_prefix(f"pve:{host_id}:")
         return {"upid": upid}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -254,6 +280,7 @@ def rollback_snapshot(host_id: int, node: str, vmid: int, snapname: str,
     host = _get_host(host_id, db)
     try:
         upid = _pve(_svc(host)).nodes(node).qemu(vmid).snapshot(snapname).rollback.post()
+        pve_cache.clear_prefix(f"pve:{host_id}:")
         return {"upid": upid}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -272,6 +299,7 @@ def clone_vm(host_id: int, node: str, vmid: int, req: CloneRequest,
         params["target"] = req.target
     try:
         upid = _pve(_svc(host)).nodes(node).qemu(vmid).clone.post(**params)
+        pve_cache.clear_prefix(f"pve:{host_id}:")
         return {"upid": upid}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -289,6 +317,7 @@ def migrate_vm(host_id: int, node: str, vmid: int, req: MigrateRequest,
             online=int(req.online),
             with_local_disks=int(req.with_local_disks),
         )
+        pve_cache.clear_prefix(f"pve:{host_id}:")
         return {"upid": upid}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -302,6 +331,7 @@ def convert_to_template(host_id: int, node: str, vmid: int, db: Session = Depend
     host = _get_host(host_id, db)
     try:
         _pve(_svc(host)).nodes(node).qemu(vmid).template.post()
+        pve_cache.clear_prefix(f"pve:{host_id}:")
         return {"success": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -321,6 +351,7 @@ def delete_vm(host_id: int, node: str, vmid: int,
         if destroy_unreferenced_disks:
             params["destroy-unreferenced-disks"] = 1
         upid = _pve(_svc(host)).nodes(node).qemu(vmid).delete(**params)
+        pve_cache.clear_prefix(f"pve:{host_id}:")
         return {"upid": upid}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -346,6 +377,7 @@ def add_disk(host_id: int, node: str, vmid: int, req: DiskAdd,
         if req.ssd:
             disk_val += ",ssd=1"
         pve.nodes(node).qemu(vmid).config.post(**{disk_key: disk_val})
+        pve_cache.clear_prefix(f"pve:{host_id}:")
         return {"success": True, "disk": disk_key}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -357,6 +389,7 @@ def resize_disk(host_id: int, node: str, vmid: int, disk_key: str, req: DiskResi
     host = _get_host(host_id, db)
     try:
         _pve(_svc(host)).nodes(node).qemu(vmid).resize.put(disk=disk_key, size=req.size)
+        pve_cache.clear_prefix(f"pve:{host_id}:")
         return {"success": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -382,6 +415,7 @@ def detach_disk(host_id: int, node: str, vmid: int, disk_key: str,
                 pve.nodes(node).qemu(vmid).unlink.put(idlist=volid, force=1)
             except Exception:
                 pass
+        pve_cache.clear_prefix(f"pve:{host_id}:")
         return {"success": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -408,6 +442,7 @@ def add_nic(host_id: int, node: str, vmid: int, req: NICAdd,
         if req.firewall:
             net_val += ",firewall=1"
         pve.nodes(node).qemu(vmid).config.put(**{net_key: net_val})
+        pve_cache.clear_prefix(f"pve:{host_id}:")
         return {"success": True, "interface": net_key}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -419,6 +454,7 @@ def remove_nic(host_id: int, node: str, vmid: int, net_key: str,
     host = _get_host(host_id, db)
     try:
         _pve(_svc(host)).nodes(node).qemu(vmid).config.put(**{net_key: None})
+        pve_cache.clear_prefix(f"pve:{host_id}:")
         return {"success": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -430,8 +466,14 @@ def remove_nic(host_id: int, node: str, vmid: int, net_key: str,
 def get_vm_firewall_rules(host_id: int, node: str, vmid: int, db: Session = Depends(get_db),
                           current_user=Depends(get_current_user)):
     host = _get_host(host_id, db)
+    cache_key = f"pve:{host_id}:{node}/{vmid}/firewall/rules"
+    cached = pve_cache.get(cache_key)
+    if cached is not None:
+        return cached
     try:
-        return _pve(_svc(host)).nodes(node).qemu(vmid).firewall.rules.get()
+        result = _pve(_svc(host)).nodes(node).qemu(vmid).firewall.rules.get()
+        pve_cache.set(cache_key, result, ttl=30)
+        return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -443,6 +485,7 @@ def add_vm_firewall_rule(host_id: int, node: str, vmid: int, rule: FirewallRule,
     params = {k: v for k, v in rule.model_dump().items() if v is not None}
     try:
         _pve(_svc(host)).nodes(node).qemu(vmid).firewall.rules.post(**params)
+        pve_cache.clear_prefix(f"pve:{host_id}:")
         return {"success": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -455,6 +498,7 @@ def update_vm_firewall_rule(host_id: int, node: str, vmid: int, pos: int, rule: 
     params = {k: v for k, v in rule.model_dump().items() if v is not None}
     try:
         _pve(_svc(host)).nodes(node).qemu(vmid).firewall.rules(pos).put(**params)
+        pve_cache.clear_prefix(f"pve:{host_id}:")
         return {"success": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -466,6 +510,7 @@ def delete_vm_firewall_rule(host_id: int, node: str, vmid: int, pos: int,
     host = _get_host(host_id, db)
     try:
         _pve(_svc(host)).nodes(node).qemu(vmid).firewall.rules(pos).delete()
+        pve_cache.clear_prefix(f"pve:{host_id}:")
         return {"success": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -487,6 +532,7 @@ def set_vm_firewall_options(host_id: int, node: str, vmid: int, options: dict,
     host = _get_host(host_id, db)
     try:
         _pve(_svc(host)).nodes(node).qemu(vmid).firewall.options.put(**options)
+        pve_cache.clear_prefix(f"pve:{host_id}:")
         return {"success": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -517,8 +563,13 @@ def get_vm_rrddata(host_id: int, node: str, vmid: int,
                    timeframe: str = "hour", cf: str = "AVERAGE",
                    db: Session = Depends(get_db), current_user=Depends(get_current_user)):
     host = _get_host(host_id, db)
+    cache_key = f"pve:{host_id}:{node}/{vmid}/rrddata:{timeframe}:{cf}"
+    cached = pve_cache.get(cache_key)
+    if cached is not None:
+        return cached
     try:
         data = _pve(_svc(host)).nodes(node).qemu(vmid).rrddata.get(timeframe=timeframe, cf=cf)
+        pve_cache.set(cache_key, data, ttl=60)
         return data
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

@@ -671,6 +671,7 @@ def ct_action(host_id: int, node: str, vmid: int, action: str,
     host = _get_host(host_id, db)
     try:
         upid = getattr(_pve(host).nodes(node).lxc(vmid).status, action).post()
+        pve_cache.clear_prefix(f"pve:{host_id}:")
         return {"upid": upid}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -725,6 +726,7 @@ def delete_ct(host_id: int, node: str, vmid: int,
     host = _get_host(host_id, db)
     try:
         upid = _pve(host).nodes(node).lxc(vmid).delete()
+        pve_cache.clear_prefix(f"pve:{host_id}:")
         return {"upid": upid}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -738,6 +740,7 @@ def restore_vm_backup(host_id: int, node: str, vmid: int, restore: dict,
     host = _get_host(host_id, db)
     try:
         upid = _pve(host).nodes(node).qemu.post(**{"vmid": vmid, **restore})
+        pve_cache.clear_prefix(f"pve:{host_id}:")
         return {"upid": upid}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

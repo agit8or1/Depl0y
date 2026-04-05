@@ -709,6 +709,61 @@
       </div>
     </div>
 
+    <!-- ── ALL PROXMOX VMs (UNMANAGED) SECTION ── -->
+    <div class="card unmanaged-section">
+      <div class="card-header unmanaged-header" @click="unmanagedExpanded = !unmanagedExpanded" style="cursor:pointer">
+        <div>
+          <h3 style="margin:0">All Proxmox VMs <span class="text-muted" style="font-weight:400;font-size:0.9rem">(unmanaged)</span></h3>
+          <span class="text-sm text-muted">VMs present in Proxmox but not tracked by Depl0y</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:0.75rem">
+          <span v-if="unmanagedVMs.length" class="badge badge-secondary">{{ unmanagedVMs.length }}</span>
+          <button
+            @click.stop="loadUnmanagedVMs"
+            class="btn btn-outline btn-sm"
+            :disabled="loadingUnmanaged"
+          >{{ loadingUnmanaged ? 'Loading...' : 'Refresh' }}</button>
+          <span class="unmanaged-chevron" :class="{ rotated: unmanagedExpanded }">▾</span>
+        </div>
+      </div>
+
+      <div v-if="unmanagedExpanded">
+        <div v-if="loadingUnmanaged" class="loading-row">
+          <div class="loading-spinner"></div>
+          <span>Loading Proxmox cluster resources...</span>
+        </div>
+        <div v-else-if="unmanagedVMs.length === 0" class="empty-state">
+          <p>All Proxmox VMs are already tracked by Depl0y, or no Proxmox hosts are configured.</p>
+        </div>
+        <div v-else class="table-wrapper">
+          <table class="mgmt-table">
+            <thead>
+              <tr>
+                <th>VMID</th>
+                <th>Name</th>
+                <th>Status</th>
+                <th>Node</th>
+                <th>Host</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="vm in unmanagedVMs" :key="`${vm.hostId}-${vm.vmid}`">
+                <td class="mono text-sm">{{ vm.vmid }}</td>
+                <td><strong>{{ vm.name || '—' }}</strong></td>
+                <td>
+                  <span :class="['badge', vm.status === 'running' ? 'badge-success' : 'badge-secondary']">
+                    {{ vm.status || 'unknown' }}
+                  </span>
+                </td>
+                <td class="text-sm mono">{{ vm.node || '—' }}</td>
+                <td class="text-sm text-muted">{{ vm.hostName || vm.hostId }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
     <!-- ── AI TUNING TAB ── -->
     <div v-if="activeTab === 'ai-tuning'">
       <div class="card">
@@ -952,6 +1007,43 @@ export default {
     const ragInstallJobs = ref({})      // vmid → jobId
     const ragInstallPollers = ref({})
     const ragSelectedEmbed = ref('nomic-embed-text')
+
+    // Unmanaged VMs (Proxmox VMs not tracked by Depl0y)
+    const unmanagedVMs = ref([])
+    const loadingUnmanaged = ref(false)
+    const unmanagedExpanded = ref(false)
+
+    const loadUnmanagedVMs = async () => {
+      loadingUnmanaged.value = true
+      try {
+        const hostsRes = await api.proxmox.listHosts().catch(() => ({ data: [] }))
+        const hosts = hostsRes.data || []
+        const allPveVMs = []
+        await Promise.all(hosts.map(async (host) => {
+          try {
+            const res = await api.pveNode.clusterResources(host.id, 'vm')
+            const items = res.data || []
+            items.forEach(item => {
+              allPveVMs.push({
+                vmid: item.vmid,
+                name: item.name,
+                status: item.status,
+                node: item.node,
+                hostId: host.id,
+                hostName: host.name || host.host,
+              })
+            })
+          } catch { /* skip unreachable hosts */ }
+        }))
+        // Filter out VMs already managed by Depl0y (match by vmid)
+        const managedVmids = new Set(managedVMs.value.map(m => Number(m.vmid)))
+        unmanagedVMs.value = allPveVMs.filter(vm => !managedVmids.has(Number(vm.vmid)))
+      } catch {
+        toast.error('Failed to load Proxmox VMs')
+      } finally {
+        loadingUnmanaged.value = false
+      }
+    }
 
     const schedule = ref({
       auto_update_check_enabled: false,
@@ -1697,6 +1789,13 @@ export default {
       })
     }, { deep: true })
 
+    // Lazy-load unmanaged VMs when section is first expanded
+    watch(unmanagedExpanded, (val) => {
+      if (val && unmanagedVMs.value.length === 0 && !loadingUnmanaged.value) {
+        loadUnmanagedVMs()
+      }
+    })
+
     onUnmounted(() => {
       Object.values(liveLogPollers.value).forEach(id => clearInterval(id))
       Object.values(tuneApplyPollers.value).forEach(id => clearInterval(id))
@@ -1732,6 +1831,8 @@ export default {
       ragVM, ragStatus, ragDocs, ragLoading, ragIngestText, ragIngestSource,
       ragQueryText, ragQueryResults, ragSelectedEmbed,
       selectRagVM, installRag, loadRagDocs, ragIngestDoc, ragDoQuery, ragDeleteDoc,
+      // Unmanaged VMs
+      unmanagedVMs, loadingUnmanaged, unmanagedExpanded, loadUnmanagedVMs,
     }
   }
 }
@@ -2477,6 +2578,22 @@ export default {
   border-radius: 6px;
   font-size: 0.875rem;
 }
+
+/* Unmanaged VMs section */
+.unmanaged-section { overflow: hidden; }
+.unmanaged-header {
+  padding: 0.85rem 1.25rem;
+  border-bottom: 1px solid var(--border-color);
+  transition: background 0.15s;
+}
+.unmanaged-header:hover { background: var(--background); }
+.unmanaged-chevron {
+  font-size: 1.1rem;
+  color: var(--text-secondary);
+  transition: transform 0.2s;
+  display: inline-block;
+}
+.unmanaged-chevron.rotated { transform: rotate(180deg); }
 
 /* Shared */
 .loading-row { display: flex; align-items: center; gap: 0.75rem; padding: 1.5rem; }

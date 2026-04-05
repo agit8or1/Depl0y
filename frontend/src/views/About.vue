@@ -55,6 +55,16 @@
     </div>
 
     <div class="card">
+      <h3 class="section-title">What's New in v1.7.0</h3>
+      <div class="changelog-list">
+        <div class="changelog-item" v-for="item in changelog" :key="item">
+          <span class="changelog-icon">&#x2713;</span>
+          <span>{{ item }}</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
       <h3 class="section-title">Features</h3>
       <div class="features-grid">
         <div class="feature-item" v-for="feature in features" :key="feature">
@@ -74,6 +84,17 @@ export default {
   name: 'About',
   setup() {
     const version = ref('...')
+
+    const changelog = [
+      'Full Proxmox VE Management — VM, LXC, Node, Cluster, Backup, and Access Control',
+      'VNC Console via noVNC; Node and LXC terminal via xterm.js',
+      'Global search across all Proxmox hosts',
+      'Live node stats (CPU, RAM, VM/LXC counts) on Proxmox Hosts page',
+      'Auto-refresh on Dashboard and VM list',
+      'Proxmox Integration settings — default host, console preferences, refresh interval',
+      'iDRAC view: Delete button for all server types',
+      '73 new API endpoints, 20+ new views',
+    ]
 
     const features = [
       'Automated VM Deployment',
@@ -99,7 +120,7 @@ export default {
       }
     })
 
-    return { version, features }
+    return { version, changelog, features }
   }
 }
 </script>
@@ -283,6 +304,38 @@ export default {
   font-weight: 600;
   padding-bottom: 0.75rem;
   border-bottom: 2px solid var(--border-color);
+}
+
+.changelog-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.changelog-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  padding: 0.6rem 0.75rem;
+  background: var(--background);
+  border-radius: 0.375rem;
+  border: 1px solid var(--border-color);
+  font-size: 0.875rem;
+}
+
+.changelog-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  background: #3b82f6;
+  color: white;
+  border-radius: 50%;
+  font-size: 0.75rem;
+  font-weight: bold;
+  flex-shrink: 0;
+  margin-top: 0.05rem;
 }
 
 .features-grid {

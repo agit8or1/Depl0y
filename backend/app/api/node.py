@@ -7,6 +7,7 @@ from app.core.database import get_db
 from app.models import ProxmoxHost
 from app.api.auth import get_current_user, require_operator, require_admin
 from app.services.proxmox import ProxmoxService
+from app.core.cache import pve_cache
 import logging
 
 logger = logging.getLogger(__name__)
@@ -30,8 +31,14 @@ def _pve(host: ProxmoxHost):
 def cluster_status(host_id: int, db: Session = Depends(get_db),
                    current_user=Depends(get_current_user)):
     host = _get_host(host_id, db)
+    cache_key = f"pve:{host_id}:cluster/status"
+    cached = pve_cache.get(cache_key)
+    if cached is not None:
+        return cached
     try:
-        return _pve(host).cluster.status.get()
+        result = _pve(host).cluster.status.get()
+        pve_cache.set(cache_key, result, ttl=30)
+        return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -40,11 +47,17 @@ def cluster_status(host_id: int, db: Session = Depends(get_db),
 def cluster_resources(host_id: int, type: Optional[str] = None,
                       db: Session = Depends(get_db), current_user=Depends(get_current_user)):
     host = _get_host(host_id, db)
+    cache_key = f"pve:{host_id}:cluster/resources:{type or ''}"
+    cached = pve_cache.get(cache_key)
+    if cached is not None:
+        return cached
     try:
         params = {}
         if type:
             params["type"] = type
-        return _pve(host).cluster.resources.get(**params)
+        result = _pve(host).cluster.resources.get(**params)
+        pve_cache.set(cache_key, result, ttl=15)
+        return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -316,8 +329,14 @@ def delete_pool(host_id: int, poolid: str, db: Session = Depends(get_db),
 def node_status(host_id: int, node: str, db: Session = Depends(get_db),
                 current_user=Depends(get_current_user)):
     host = _get_host(host_id, db)
+    cache_key = f"pve:{host_id}:nodes/{node}/status"
+    cached = pve_cache.get(cache_key)
+    if cached is not None:
+        return cached
     try:
-        return _pve(host).nodes(node).status.get()
+        result = _pve(host).nodes(node).status.get()
+        pve_cache.set(cache_key, result, ttl=20)
+        return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -326,8 +345,14 @@ def node_status(host_id: int, node: str, db: Session = Depends(get_db),
 def node_rrddata(host_id: int, node: str, timeframe: str = "hour", cf: str = "AVERAGE",
                  db: Session = Depends(get_db), current_user=Depends(get_current_user)):
     host = _get_host(host_id, db)
+    cache_key = f"pve:{host_id}:nodes/{node}/rrddata:{timeframe}:{cf}"
+    cached = pve_cache.get(cache_key)
+    if cached is not None:
+        return cached
     try:
-        return _pve(host).nodes(node).rrddata.get(timeframe=timeframe, cf=cf)
+        result = _pve(host).nodes(node).rrddata.get(timeframe=timeframe, cf=cf)
+        pve_cache.set(cache_key, result, ttl=60)
+        return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -337,6 +362,10 @@ def node_vms(host_id: int, node: str, db: Session = Depends(get_db),
              current_user=Depends(get_current_user)):
     """List all VMs on a specific node."""
     host = _get_host(host_id, db)
+    cache_key = f"pve:{host_id}:nodes/{node}/vms"
+    cached = pve_cache.get(cache_key)
+    if cached is not None:
+        return cached
     try:
         vms = _pve(host).nodes(node).qemu.get()
         cts = []
@@ -348,7 +377,9 @@ def node_vms(host_id: int, node: str, db: Session = Depends(get_db),
             pass
         for v in vms:
             v["type"] = "qemu"
-        return {"vms": vms, "containers": cts}
+        result = {"vms": vms, "containers": cts}
+        pve_cache.set(cache_key, result, ttl=15)
+        return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -409,8 +440,14 @@ def stop_task(host_id: int, node: str, upid: str, db: Session = Depends(get_db),
 def node_storage(host_id: int, node: str, db: Session = Depends(get_db),
                  current_user=Depends(get_current_user)):
     host = _get_host(host_id, db)
+    cache_key = f"pve:{host_id}:nodes/{node}/storage"
+    cached = pve_cache.get(cache_key)
+    if cached is not None:
+        return cached
     try:
-        return _pve(host).nodes(node).storage.get()
+        result = _pve(host).nodes(node).storage.get()
+        pve_cache.set(cache_key, result, ttl=60)
+        return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -446,8 +483,14 @@ def node_network(host_id: int, node: str, db: Session = Depends(get_db),
                  current_user=Depends(get_current_user)):
     """All network interfaces on a node (all types)."""
     host = _get_host(host_id, db)
+    cache_key = f"pve:{host_id}:nodes/{node}/network"
+    cached = pve_cache.get(cache_key)
+    if cached is not None:
+        return cached
     try:
-        return _pve(host).nodes(node).network.get()
+        result = _pve(host).nodes(node).network.get()
+        pve_cache.set(cache_key, result, ttl=60)
+        return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -458,6 +501,7 @@ def create_network_iface(host_id: int, node: str, iface: dict,
     host = _get_host(host_id, db)
     try:
         _pve(host).nodes(node).network.post(**iface)
+        pve_cache.clear_prefix(f"pve:{host_id}:")
         return {"success": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -469,6 +513,7 @@ def update_network_iface(host_id: int, node: str, iface: str, config: dict,
     host = _get_host(host_id, db)
     try:
         _pve(host).nodes(node).network(iface).put(**config)
+        pve_cache.clear_prefix(f"pve:{host_id}:")
         return {"success": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -480,6 +525,7 @@ def delete_network_iface(host_id: int, node: str, iface: str,
     host = _get_host(host_id, db)
     try:
         _pve(host).nodes(node).network(iface).delete()
+        pve_cache.clear_prefix(f"pve:{host_id}:")
         return {"success": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -492,6 +538,7 @@ def apply_network_config(host_id: int, node: str, db: Session = Depends(get_db),
     host = _get_host(host_id, db)
     try:
         _pve(host).nodes(node).network.put()
+        pve_cache.clear_prefix(f"pve:{host_id}:")
         return {"success": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -572,8 +619,14 @@ def delete_backup_schedule(host_id: int, id: str, db: Session = Depends(get_db),
 def list_containers(host_id: int, node: str, db: Session = Depends(get_db),
                     current_user=Depends(get_current_user)):
     host = _get_host(host_id, db)
+    cache_key = f"pve:{host_id}:nodes/{node}/lxc"
+    cached = pve_cache.get(cache_key)
+    if cached is not None:
+        return cached
     try:
-        return _pve(host).nodes(node).lxc.get()
+        result = _pve(host).nodes(node).lxc.get()
+        pve_cache.set(cache_key, result, ttl=15)
+        return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

@@ -1,6 +1,11 @@
 <template>
   <header class="header">
     <div class="header-left">
+      <button class="hamburger" @click="$emit('toggle-sidebar')" aria-label="Toggle navigation">
+        <span></span>
+        <span></span>
+        <span></span>
+      </button>
       <h2 class="page-title">{{ pageTitle }}</h2>
     </div>
 
@@ -32,6 +37,7 @@ export default {
   components: {
     GlobalSearch
   },
+  emits: ['toggle-sidebar'],
   setup() {
     const router = useRouter()
     const route = useRoute()
@@ -86,6 +92,37 @@ export default {
 .header-left {
   flex: 1;
   min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.hamburger {
+  display: none;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 5px;
+  width: 36px;
+  height: 36px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  flex-shrink: 0;
+}
+
+.hamburger span {
+  display: block;
+  width: 22px;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.85);
+  border-radius: 2px;
+  transition: background 0.2s;
+}
+
+.hamburger:hover span {
+  background: #fff;
 }
 
 .page-title {
@@ -148,6 +185,10 @@ export default {
 @media (max-width: 768px) {
   .header {
     padding: 0.75rem 1rem;
+  }
+
+  .hamburger {
+    display: flex;
   }
 
   .page-title {

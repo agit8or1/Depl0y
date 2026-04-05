@@ -1,5 +1,5 @@
 <template>
-  <aside class="sidebar">
+  <aside class="sidebar" :class="{ 'sidebar-open': isOpen }">
     <div class="sidebar-header">
       <h1 class="logo">Depl<span class="logo-zero">0</span>y</h1>
       <p class="tagline">VM Deployment Panel</p>
@@ -127,6 +127,13 @@ import api from '@/services/api'
 
 export default {
   name: 'Sidebar',
+  props: {
+    isOpen: {
+      type: Boolean,
+      default: true
+    }
+  },
+  emits: ['close'],
   setup() {
     const authStore = useAuthStore()
     const isAdmin = computed(() => authStore.isAdmin)
@@ -262,6 +269,11 @@ export default {
 @media (max-width: 768px) {
   .sidebar {
     transform: translateX(-100%);
+    transition: transform 0.3s ease;
+  }
+
+  .sidebar.sidebar-open {
+    transform: translateX(0);
   }
 }
 </style>

@@ -14,6 +14,12 @@
       >
         ☁️ Cloud Images
       </button>
+      <button
+        :class="['images-tab-btn', { active: activeTab === 'proxmox-storage' }]"
+        @click="activeTab = 'proxmox-storage'; initProxmoxStorage()"
+      >
+        🗄️ Proxmox Storage
+      </button>
     </div>
 
     <!-- ===== ISO Images Tab ===== -->
@@ -658,6 +664,107 @@
         </div>
       </div>
     </div>
+
+    <!-- ===== Proxmox Storage Tab ===== -->
+    <div v-if="activeTab === 'proxmox-storage'">
+      <div class="card">
+        <div class="card-header">
+          <h3>Proxmox Storage Browser</h3>
+          <button @click="refreshProxmoxStorage" class="btn btn-outline" :disabled="pxStorageLoading">
+            {{ pxStorageLoading ? '🔄 Loading...' : '🔄 Refresh' }}
+          </button>
+        </div>
+
+        <!-- Selectors row -->
+        <div class="px-storage-selectors">
+          <!-- Host selector -->
+          <div class="form-group">
+            <label class="form-label">Host</label>
+            <select v-model="pxSelectedHostId" class="form-control" @change="onPxHostChange">
+              <option value="">Select host...</option>
+              <option v-for="host in pxHosts" :key="host.id" :value="host.id">
+                {{ host.name }}
+              </option>
+            </select>
+          </div>
+
+          <!-- Node selector -->
+          <div class="form-group">
+            <label class="form-label">Node</label>
+            <select v-model="pxSelectedNode" class="form-control" @change="onPxNodeChange" :disabled="!pxSelectedHostId || pxNodesLoading">
+              <option value="">{{ pxNodesLoading ? 'Loading...' : 'Select node...' }}</option>
+              <option v-for="node in pxNodes" :key="node.node" :value="node.node">
+                {{ node.node }}
+              </option>
+            </select>
+          </div>
+
+          <!-- Storage selector -->
+          <div class="form-group">
+            <label class="form-label">Storage</label>
+            <select v-model="pxSelectedStorage" class="form-control" @change="onPxStorageChange" :disabled="!pxSelectedNode || pxStoragesLoading">
+              <option value="">{{ pxStoragesLoading ? 'Loading...' : 'Select storage...' }}</option>
+              <option v-for="stor in pxStorages" :key="stor.storage" :value="stor.storage">
+                {{ stor.storage }} ({{ stor.type }})
+              </option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Content type filter -->
+        <div v-if="pxSelectedStorage" class="px-content-filter">
+          <span class="filter-label">Content type:</span>
+          <div class="filter-btns">
+            <button
+              v-for="ft in ['All', 'ISO', 'Images']"
+              :key="ft"
+              :class="['btn btn-sm', pxContentFilter === ft ? 'btn-primary' : 'btn-outline']"
+              @click="pxContentFilter = ft"
+            >
+              {{ ft }}
+            </button>
+          </div>
+        </div>
+
+        <!-- Loading spinner -->
+        <div v-if="pxStorageLoading" class="loading-spinner"></div>
+
+        <!-- Empty states -->
+        <div v-else-if="!pxSelectedStorage" class="text-center text-muted px-empty-state">
+          <p>Select a host, node, and storage to browse files.</p>
+        </div>
+
+        <div v-else-if="pxFilteredContent.length === 0" class="text-center text-muted px-empty-state">
+          <p>No files found in this storage for the selected content type.</p>
+        </div>
+
+        <!-- Content table -->
+        <div v-else class="table-container">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Filename</th>
+                <th>Type</th>
+                <th>Size</th>
+                <th>Full Path (volid)</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="item in pxFilteredContent" :key="item.volid">
+                <td class="px-filename">{{ pxBasename(item.volid) }}</td>
+                <td>
+                  <span :class="['badge', pxFormatBadgeClass(item.format || item.content)]">
+                    {{ item.format || item.content || 'unknown' }}
+                  </span>
+                </td>
+                <td>{{ item.size ? formatBytes(item.size) : '—' }}</td>
+                <td class="text-xs text-muted px-volid">{{ item.volid }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -1171,6 +1278,131 @@ export default {
       }
     }
 
+    // ===== Proxmox Storage State =====
+    const pxHosts = ref([])
+    const pxNodes = ref([])
+    const pxStorages = ref([])
+    const pxContent = ref([])
+    const pxSelectedHostId = ref('')
+    const pxSelectedNode = ref('')
+    const pxSelectedStorage = ref('')
+    const pxContentFilter = ref('All')
+    const pxStorageLoading = ref(false)
+    const pxNodesLoading = ref(false)
+    const pxStoragesLoading = ref(false)
+
+    const pxFilteredContent = computed(() => {
+      if (pxContentFilter.value === 'ISO') return pxContent.value.filter(i => i.content === 'iso')
+      if (pxContentFilter.value === 'Images') return pxContent.value.filter(i => i.content === 'images')
+      return pxContent.value
+    })
+
+    const pxBasename = (volid) => {
+      if (!volid) return ''
+      const parts = volid.split('/')
+      return parts[parts.length - 1]
+    }
+
+    const pxFormatBadgeClass = (fmt) => {
+      const map = { iso: 'badge-info', raw: 'badge-secondary', qcow2: 'badge-success', vmdk: 'badge-warning', images: 'badge-secondary' }
+      return map[fmt] || 'badge-secondary'
+    }
+
+    const initProxmoxStorage = async () => {
+      if (pxHosts.value.length > 0) return
+      try {
+        const res = await api.proxmox.listHosts()
+        pxHosts.value = res.data
+      } catch (e) {
+        console.error('Failed to fetch Proxmox hosts:', e)
+        toast.error('Failed to load Proxmox hosts')
+      }
+    }
+
+    const onPxHostChange = async () => {
+      pxSelectedNode.value = ''
+      pxSelectedStorage.value = ''
+      pxNodes.value = []
+      pxStorages.value = []
+      pxContent.value = []
+      if (!pxSelectedHostId.value) return
+      pxNodesLoading.value = true
+      try {
+        const res = await api.proxmox.listNodes(pxSelectedHostId.value)
+        pxNodes.value = res.data
+      } catch (e) {
+        console.error('Failed to fetch nodes:', e)
+        toast.error('Failed to load nodes')
+      } finally {
+        pxNodesLoading.value = false
+      }
+    }
+
+    const onPxNodeChange = async () => {
+      pxSelectedStorage.value = ''
+      pxStorages.value = []
+      pxContent.value = []
+      if (!pxSelectedNode.value) return
+      pxStoragesLoading.value = true
+      try {
+        const res = await api.pveNode.listStorage(pxSelectedHostId.value, pxSelectedNode.value)
+        pxStorages.value = (res.data || []).filter(s => {
+          const c = s.content || ''
+          return c.includes('iso') || c.includes('images')
+        })
+      } catch (e) {
+        console.error('Failed to fetch storages:', e)
+        toast.error('Failed to load storages')
+      } finally {
+        pxStoragesLoading.value = false
+      }
+    }
+
+    const onPxStorageChange = async () => {
+      pxContent.value = []
+      if (!pxSelectedStorage.value) return
+      await loadPxContent()
+    }
+
+    const loadPxContent = async () => {
+      pxStorageLoading.value = true
+      pxContent.value = []
+      try {
+        const [isoRes, imgRes] = await Promise.allSettled([
+          api.pveNode.browseStorage(pxSelectedHostId.value, pxSelectedNode.value, pxSelectedStorage.value, { content: 'iso' }),
+          api.pveNode.browseStorage(pxSelectedHostId.value, pxSelectedNode.value, pxSelectedStorage.value, { content: 'images' })
+        ])
+        const combined = []
+        if (isoRes.status === 'fulfilled') combined.push(...(isoRes.value.data || []))
+        if (imgRes.status === 'fulfilled') combined.push(...(imgRes.value.data || []))
+        // deduplicate by volid
+        const seen = new Set()
+        pxContent.value = combined.filter(item => {
+          if (seen.has(item.volid)) return false
+          seen.add(item.volid)
+          return true
+        })
+      } catch (e) {
+        console.error('Failed to browse storage:', e)
+        toast.error('Failed to browse storage content')
+      } finally {
+        pxStorageLoading.value = false
+      }
+    }
+
+    const refreshProxmoxStorage = async () => {
+      if (pxSelectedStorage.value) {
+        await loadPxContent()
+      } else if (pxSelectedNode.value) {
+        await onPxNodeChange()
+      } else if (pxSelectedHostId.value) {
+        await onPxHostChange()
+      } else {
+        pxHosts.value = []
+        await initProxmoxStorage()
+      }
+    }
+
     // ===== Shared Helpers =====
     const formatBytes = (bytes) => {
       if (!bytes) return '0 B'
@@ -1219,6 +1451,12 @@ export default {
       editImage, deleteImage, closeCloudModal, setupTemplates, openSetupModal,
       checkAllTemplates, getTemplateCount, fetchLatestImages,
       toggleImageSelection, isImageSelected,
+      // Proxmox Storage
+      pxHosts, pxNodes, pxStorages, pxContent, pxFilteredContent,
+      pxSelectedHostId, pxSelectedNode, pxSelectedStorage,
+      pxContentFilter, pxStorageLoading, pxNodesLoading, pxStoragesLoading,
+      pxBasename, pxFormatBadgeClass,
+      initProxmoxStorage, onPxHostChange, onPxNodeChange, onPxStorageChange, refreshProxmoxStorage,
       // Shared
       formatBytes, formatOSType
     }
@@ -1839,5 +2077,55 @@ export default {
   background: rgba(239, 68, 68, 0.2);
   color: #f87171;
   border: 1px solid #ef4444;
+}
+
+/* ===== Proxmox Storage Tab ===== */
+.px-storage-selectors {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.px-content-filter {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1.5rem;
+  border-bottom: 1px solid var(--border-color);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.filter-label {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.filter-btns {
+  display: flex;
+  gap: 0.375rem;
+}
+
+.px-empty-state {
+  padding: 3rem 1.5rem;
+}
+
+.px-filename {
+  font-weight: 500;
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.px-volid {
+  max-width: 340px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: monospace;
 }
 </style>

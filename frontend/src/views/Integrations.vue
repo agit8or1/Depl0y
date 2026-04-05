@@ -55,11 +55,37 @@
 
         <div class="form-group">
           <label>Notify on events</label>
-          <div class="checkbox-grid">
-            <label v-for="ev in slackEventOptions" :key="ev.value" class="checkbox-item">
-              <input type="checkbox" :value="ev.value" v-model="slack.events" />
-              <span>{{ ev.label }}</span>
-            </label>
+          <p class="form-hint" style="margin-bottom: 0.5rem;">
+            Choose which events will post a message to Slack. Deselect events you don't need to reduce noise.
+          </p>
+          <div class="event-toggle-grid">
+            <div
+              v-for="group in slackEventGroups"
+              :key="group.label"
+              class="event-group"
+            >
+              <div class="event-group-label">{{ group.label }}</div>
+              <label
+                v-for="ev in group.events"
+                :key="ev.value"
+                class="event-toggle-item"
+              >
+                <div class="event-toggle-row">
+                  <span class="event-toggle-icon">{{ ev.icon }}</span>
+                  <span class="event-toggle-name">{{ ev.label }}</span>
+                  <span class="event-toggle-key">{{ ev.value }}</span>
+                  <div class="toggle-switch" :class="{ 'toggle-switch-on': slack.events.includes(ev.value) }">
+                    <input
+                      type="checkbox"
+                      :value="ev.value"
+                      v-model="slack.events"
+                      class="toggle-input"
+                    />
+                    <span class="toggle-thumb"></span>
+                  </div>
+                </div>
+              </label>
+            </div>
           </div>
         </div>
 
@@ -67,18 +93,24 @@
         <div class="preview-box">
           <div class="preview-label">Message format preview</div>
           <div class="preview-content">
-            <div class="slack-preview">
-              <span class="slack-icon">:arrow_forward:</span>
+            <div class="slack-preview slack-preview-green">
+              <span class="slack-bar"></span>
               <div class="slack-text">
-                <strong>VM <em>101</em> on <code>pve1</code> started</strong> by
-                <code>admin</code>
+                <strong>:arrow_forward: VM Started</strong>: <code>web-01</code> (VMID 101)<br/>
+                Node: <code>pve1</code> on <strong>prod-cluster</strong> · by <code>admin</code>
               </div>
             </div>
-            <div class="slack-preview">
-              <span class="slack-icon">:bust_in_silhouette:</span>
+            <div class="slack-preview slack-preview-red">
+              <span class="slack-bar"></span>
               <div class="slack-text">
-                <strong>User <em>admin</em> logged in</strong> from
-                <code>192.168.1.10</code>
+                <strong>:red_circle: [CRITICAL] High memory: pve2</strong><br/>
+                Node 'pve2' has memory usage at 96.1% (threshold: 95%). Threshold: <code>95</code>
+              </div>
+            </div>
+            <div class="slack-preview slack-preview-gray">
+              <span class="slack-bar"></span>
+              <div class="slack-text">
+                <strong>:bust_in_silhouette:</strong> User <code>admin</code> logged in from <code>192.168.1.10</code>
               </div>
             </div>
           </div>
@@ -102,10 +134,15 @@
       <div class="section-card">
         <div class="section-header">
           <h2>PagerDuty Integration</h2>
-          <span class="badge" :class="pagerduty.integration_key ? 'badge-green' : 'badge-gray'">
-            {{ pagerduty.integration_key ? 'Configured' : 'Not configured' }}
+          <span class="badge" :class="(pagerduty.integration_key || pagerduty.routing_key) ? 'badge-green' : 'badge-gray'">
+            {{ (pagerduty.integration_key || pagerduty.routing_key) ? 'Configured' : 'Not configured' }}
           </span>
         </div>
+
+        <p class="info-text">
+          Depl0y will trigger PagerDuty incidents for critical alerts and resolve them automatically
+          when the alert is acknowledged. Uses the <strong>Events API v2</strong>.
+        </p>
 
         <div class="form-grid">
           <div class="form-group">
@@ -123,14 +160,15 @@
             <input
               v-model="pagerduty.routing_key"
               type="password"
-              placeholder="Optional — for event orchestration"
+              placeholder="For event orchestration (optional)"
               class="form-input"
             />
+            <p class="form-hint">Use this instead of Integration Key for event orchestration rules.</p>
           </div>
         </div>
 
         <div class="form-group">
-          <label>Alert on</label>
+          <label>Trigger PagerDuty on</label>
           <div class="checkbox-grid">
             <label class="checkbox-item">
               <input type="checkbox" v-model="pagerduty.alert_node_offline" />
@@ -144,34 +182,75 @@
               <input type="checkbox" v-model="pagerduty.alert_backup_failure" />
               <span>Backup failure</span>
             </label>
+            <label class="checkbox-item">
+              <input type="checkbox" v-model="pagerduty.alert_high_memory" />
+              <span>High memory (&gt;95%)</span>
+            </label>
+            <label class="checkbox-item">
+              <input type="checkbox" v-model="pagerduty.alert_login_failures" />
+              <span>Brute-force login attempts</span>
+            </label>
           </div>
         </div>
 
         <div class="form-group">
           <label>Severity mapping</label>
+          <p class="form-hint" style="margin-bottom: 0.5rem;">
+            Map Depl0y alert categories to PagerDuty incident severity levels.
+          </p>
           <div class="severity-grid">
             <div class="severity-row">
-              <span class="severity-label">VM stopped</span>
-              <select v-model="pagerduty.severity_vm_stopped" class="form-select">
+              <span class="severity-label severity-badge-critical">Critical alerts</span>
+              <select v-model="pagerduty.severity_critical" class="form-select severity-select">
                 <option value="info">Info</option>
                 <option value="warning">Warning</option>
                 <option value="error">Error</option>
                 <option value="critical">Critical</option>
               </select>
+              <span class="severity-hint">→ PagerDuty severity</span>
+            </div>
+            <div class="severity-row">
+              <span class="severity-label severity-badge-warning">Warning alerts</span>
+              <select v-model="pagerduty.severity_warning" class="form-select severity-select">
+                <option value="info">Info</option>
+                <option value="warning">Warning</option>
+                <option value="error">Error</option>
+                <option value="critical">Critical</option>
+              </select>
+              <span class="severity-hint">→ PagerDuty severity</span>
+            </div>
+            <div class="severity-row">
+              <span class="severity-label">VM stopped (unexp.)</span>
+              <select v-model="pagerduty.severity_vm_stopped" class="form-select severity-select">
+                <option value="info">Info</option>
+                <option value="warning">Warning</option>
+                <option value="error">Error</option>
+                <option value="critical">Critical</option>
+              </select>
+              <span class="severity-hint">→ PagerDuty severity</span>
             </div>
             <div class="severity-row">
               <span class="severity-label">Node offline</span>
-              <select v-model="pagerduty.severity_node_offline" class="form-select">
+              <select v-model="pagerduty.severity_node_offline" class="form-select severity-select">
                 <option value="info">Info</option>
                 <option value="warning">Warning</option>
                 <option value="error">Error</option>
                 <option value="critical">Critical</option>
               </select>
+              <span class="severity-hint">→ PagerDuty severity</span>
             </div>
           </div>
         </div>
 
         <div class="action-row">
+          <button
+            class="btn btn-secondary"
+            :disabled="pdTesting"
+            @click="testPagerDuty"
+          >
+            <span v-if="pdTesting">Sending test...</span>
+            <span v-else>Send test alert</span>
+          </button>
           <button class="btn btn-primary" :disabled="pdSaving" @click="savePagerDuty">
             <span v-if="pdSaving">Saving...</span>
             <span v-else>Save settings</span>
@@ -268,6 +347,7 @@
         <p class="info-text">
           Webhooks let external services receive real-time event notifications.
           Each delivery is signed with HMAC-SHA256 if a secret is configured.
+          The event type is embedded in the signed payload body, so signatures cover the full envelope.
         </p>
 
         <!-- Webhook list table -->
@@ -371,7 +451,7 @@
     <!-- ── Create/Edit Webhook Modal ── -->
     <Teleport to="body">
       <div v-if="showWebhookModal" class="modal-overlay" @click.self="cancelWebhookForm">
-        <div class="modal-box">
+        <div class="modal-box modal-wide">
           <div class="modal-header">
             <h3>{{ editingWebhook ? 'Edit Webhook' : 'Create Webhook' }}</h3>
             <button class="modal-close" @click="cancelWebhookForm">✕</button>
@@ -411,17 +491,43 @@
 
             <div class="form-group">
               <label>Events to subscribe <span class="req">*</span></label>
-              <div class="event-checkbox-grid">
-                <label v-for="ev in webhookEventOptions" :key="ev.value" class="event-checkbox-item">
-                  <input type="checkbox" :value="ev.value" v-model="webhookForm.events" />
-                  <span class="ev-label">
-                    <span class="ev-name">{{ ev.label }}</span>
-                    <span class="ev-key">{{ ev.value }}</span>
-                  </span>
-                </label>
+              <div class="wh-event-filter">
+                <div
+                  v-for="group in webhookEventGroups"
+                  :key="group.label"
+                  class="wh-event-group"
+                >
+                  <div class="wh-event-group-header">
+                    <span class="wh-event-group-label">{{ group.label }}</span>
+                    <button
+                      type="button"
+                      class="wh-group-toggle-btn"
+                      @click="toggleEventGroup(group)"
+                    >
+                      {{ isGroupFullySelected(group) ? 'Deselect all' : 'Select all' }}
+                    </button>
+                  </div>
+                  <div class="event-checkbox-grid">
+                    <label
+                      v-for="ev in group.events"
+                      :key="ev.value"
+                      class="event-checkbox-item"
+                    >
+                      <input type="checkbox" :value="ev.value" v-model="webhookForm.events" />
+                      <span class="ev-label">
+                        <span class="ev-icon">{{ ev.icon }}</span>
+                        <span class="ev-name">{{ ev.label }}</span>
+                        <span class="ev-key">{{ ev.value }}</span>
+                      </span>
+                    </label>
+                  </div>
+                </div>
               </div>
               <p v-if="webhookForm.events.length === 0" class="form-hint warn-hint">
                 Select at least one event.
+              </p>
+              <p v-else class="form-hint">
+                {{ webhookForm.events.length }} event{{ webhookForm.events.length !== 1 ? 's' : '' }} selected
               </p>
             </div>
 
@@ -630,14 +736,48 @@ export default {
     const slackSaving = ref(false)
     const slackTesting = ref(false)
 
-    const slackEventOptions = [
-      { value: 'vm.started',      label: 'VM started' },
-      { value: 'vm.stopped',      label: 'VM stopped' },
-      { value: 'vm.shutdown',     label: 'VM shutdown' },
-      { value: 'backup.complete', label: 'Backup complete' },
-      { value: 'backup.failed',   label: 'Backup failed' },
-      { value: 'user.login',      label: 'User login' },
-      { value: 'task.failed',     label: 'Task failed' },
+    // Grouped event options for Slack — per-event toggles
+    const slackEventGroups = [
+      {
+        label: 'VM Lifecycle',
+        events: [
+          { value: 'vm.start',    label: 'VM started',   icon: '▶' },
+          { value: 'vm.stop',     label: 'VM stopped',   icon: '⏹' },
+          { value: 'vm.shutdown', label: 'VM shutdown',  icon: '💤' },
+          { value: 'vm.create',   label: 'VM created',   icon: '✨' },
+          { value: 'vm.delete',   label: 'VM deleted',   icon: '🗑' },
+          { value: 'vm.migrate',  label: 'VM migrated',  icon: '🚚' },
+        ],
+      },
+      {
+        label: 'Backups',
+        events: [
+          { value: 'backup.complete', label: 'Backup complete', icon: '✅' },
+          { value: 'backup.failed',   label: 'Backup failed',   icon: '❌' },
+        ],
+      },
+      {
+        label: 'Alerts',
+        events: [
+          { value: 'alert.fired',    label: 'Alert fired',    icon: '🔴' },
+          { value: 'alert.resolved', label: 'Alert resolved', icon: '🟢' },
+        ],
+      },
+      {
+        label: 'Authentication',
+        events: [
+          { value: 'user.login',        label: 'User login',        icon: '👤' },
+          { value: 'user.login_failed', label: 'Failed login attempt', icon: '⚠' },
+        ],
+      },
+      {
+        label: 'Infrastructure',
+        events: [
+          { value: 'task.failed',  label: 'Task failed',   icon: '❌' },
+          { value: 'node.offline', label: 'Node offline',  icon: '🔴' },
+          { value: 'node.online',  label: 'Node online',   icon: '🟢' },
+        ],
+      },
     ]
 
     const saveSlack = async () => {
@@ -677,10 +817,15 @@ export default {
       alert_node_offline: true,
       alert_storage_critical: true,
       alert_backup_failure: true,
+      alert_high_memory: true,
+      alert_login_failures: false,
+      severity_critical: 'critical',
+      severity_warning: 'warning',
       severity_vm_stopped: 'warning',
       severity_node_offline: 'critical',
     })
     const pdSaving = ref(false)
+    const pdTesting = ref(false)
 
     const savePagerDuty = async () => {
       pdSaving.value = true
@@ -691,6 +836,19 @@ export default {
         toast.error('Failed to save PagerDuty settings')
       } finally {
         pdSaving.value = false
+      }
+    }
+
+    const testPagerDuty = async () => {
+      pdTesting.value = true
+      try {
+        await api.integrations.testPagerDuty()
+        toast.success('Test PagerDuty alert sent!')
+      } catch (e) {
+        const msg = e.response?.data?.detail || 'Failed to send test alert'
+        toast.error(msg)
+      } finally {
+        pdTesting.value = false
       }
     }
 
@@ -754,18 +912,69 @@ export default {
     })
     const webhookForm = ref(webhookFormDefaults())
 
-    const webhookEventOptions = [
-      { value: 'vm.start',        label: 'VM started' },
-      { value: 'vm.stop',         label: 'VM stopped' },
-      { value: 'vm.create',       label: 'VM created' },
-      { value: 'vm.delete',       label: 'VM deleted' },
-      { value: 'vm.error',        label: 'VM error' },
-      { value: 'backup.complete', label: 'Backup complete' },
-      { value: 'backup.failed',   label: 'Backup failed' },
-      { value: 'alert.fired',     label: 'Alert fired' },
-      { value: 'user.login',      label: 'User login' },
-      { value: 'task.failed',     label: 'Task failed' },
+    // Grouped event options for webhook event filter (multi-select checkboxes)
+    const webhookEventGroups = [
+      {
+        label: 'VM Lifecycle',
+        events: [
+          { value: 'vm.start',    label: 'VM started',  icon: '▶' },
+          { value: 'vm.stop',     label: 'VM stopped',  icon: '⏹' },
+          { value: 'vm.create',   label: 'VM created',  icon: '✨' },
+          { value: 'vm.delete',   label: 'VM deleted',  icon: '🗑' },
+          { value: 'vm.migrate',  label: 'VM migrated', icon: '🚚' },
+          { value: 'vm.shutdown', label: 'VM shutdown', icon: '💤' },
+        ],
+      },
+      {
+        label: 'Backups',
+        events: [
+          { value: 'backup.complete', label: 'Backup complete', icon: '✅' },
+          { value: 'backup.failed',   label: 'Backup failed',   icon: '❌' },
+        ],
+      },
+      {
+        label: 'Alerts',
+        events: [
+          { value: 'alert.fired',    label: 'Alert fired',    icon: '🔴' },
+          { value: 'alert.resolved', label: 'Alert resolved', icon: '🟢' },
+        ],
+      },
+      {
+        label: 'Authentication',
+        events: [
+          { value: 'user.login',        label: 'User login',        icon: '👤' },
+          { value: 'user.login_failed', label: 'Login failed',      icon: '⚠' },
+        ],
+      },
+      {
+        label: 'Infrastructure',
+        events: [
+          { value: 'task.failed',  label: 'Task failed',  icon: '❌' },
+          { value: 'node.offline', label: 'Node offline', icon: '🔴' },
+          { value: 'node.online',  label: 'Node online',  icon: '🟢' },
+        ],
+      },
     ]
+
+    // Flat list for backwards compat (used nowhere now but kept for safety)
+    const webhookEventOptions = webhookEventGroups.flatMap(g => g.events)
+
+    const isGroupFullySelected = (group) => {
+      return group.events.every(ev => webhookForm.value.events.includes(ev.value))
+    }
+
+    const toggleEventGroup = (group) => {
+      if (isGroupFullySelected(group)) {
+        webhookForm.value.events = webhookForm.value.events.filter(
+          v => !group.events.some(ev => ev.value === v)
+        )
+      } else {
+        const toAdd = group.events.map(ev => ev.value).filter(
+          v => !webhookForm.value.events.includes(v)
+        )
+        webhookForm.value.events = [...webhookForm.value.events, ...toAdd]
+      }
+    }
 
     const maskUrl = (url) => {
       if (!url) return ''
@@ -981,14 +1190,15 @@ export default {
     return {
       activeTab, tabs,
       // Slack
-      slack, slackSaving, slackTesting, slackEventOptions, saveSlack, testSlack,
+      slack, slackSaving, slackTesting, slackEventGroups, saveSlack, testSlack,
       // PagerDuty
-      pagerduty, pdSaving, savePagerDuty,
+      pagerduty, pdSaving, pdTesting, savePagerDuty, testPagerDuty,
       // InfluxDB
       influxdb, influxSaving, saveInfluxDB, apiBase, metricsExample, copyMetricsUrl,
       // Webhooks
       webhooks, webhooksLoading, showWebhookModal, showWebhookForm, editingWebhook,
-      webhookForm, webhookSaving, webhookEventOptions, testingWebhookId,
+      webhookForm, webhookSaving, webhookEventOptions, webhookEventGroups, testingWebhookId,
+      isGroupFullySelected, toggleEventGroup,
       // Delivery log modal
       showDeliveryLogModal, deliveryLogHook, deliveryLog, deliveryLogLoading,
       // Test result modal
@@ -1176,18 +1386,157 @@ export default {
 .severity-grid {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.625rem;
 }
 
 .severity-row {
   display: flex;
   align-items: center;
-  gap: 1rem;
+  gap: 0.75rem;
+  flex-wrap: wrap;
 }
 
 .severity-label {
-  min-width: 130px;
+  min-width: 150px;
   font-size: 0.875rem;
+  color: var(--text-secondary, #374151);
+}
+
+.severity-badge-critical {
+  background: #fee2e2;
+  color: #b91c1c;
+  padding: 0.15rem 0.5rem;
+  border-radius: 0.375rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.severity-badge-warning {
+  background: #fef3c7;
+  color: #92400e;
+  padding: 0.15rem 0.5rem;
+  border-radius: 0.375rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.severity-hint {
+  font-size: 0.75rem;
+  color: var(--text-muted, #9ca3af);
+}
+
+.severity-select {
+  width: auto;
+  min-width: 110px;
+}
+
+/* ── Slack event toggles ── */
+.event-toggle-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-radius: 0.5rem;
+  padding: 0.875rem;
+}
+
+.event-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.event-group-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted, #9ca3af);
+  padding: 0 0 0.25rem;
+  border-bottom: 1px solid var(--border-color, #f3f4f6);
+  margin-bottom: 0.25rem;
+}
+
+.event-toggle-item {
+  cursor: pointer;
+}
+
+.event-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0.375rem;
+  border-radius: 0.375rem;
+  transition: background 0.1s;
+}
+
+.event-toggle-row:hover {
+  background: var(--hover-bg, #f9fafb);
+}
+
+.event-toggle-icon {
+  font-size: 0.875rem;
+  width: 1.25rem;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.event-toggle-name {
+  flex: 1;
+  font-size: 0.875rem;
+  color: var(--text-primary, #111827);
+}
+
+.event-toggle-key {
+  font-size: 0.7rem;
+  font-family: monospace;
+  color: var(--text-muted, #9ca3af);
+  background: var(--code-bg, #f3f4f6);
+  padding: 0.1rem 0.35rem;
+  border-radius: 0.25rem;
+}
+
+/* Toggle switch */
+.toggle-switch {
+  position: relative;
+  width: 2.25rem;
+  height: 1.25rem;
+  background: var(--border-color, #d1d5db);
+  border-radius: 999px;
+  flex-shrink: 0;
+  transition: background 0.2s;
+  cursor: pointer;
+}
+
+.toggle-switch-on {
+  background: #3b82f6;
+}
+
+.toggle-input {
+  position: absolute;
+  opacity: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  cursor: pointer;
+  z-index: 1;
+}
+
+.toggle-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 1rem;
+  height: 1rem;
+  background: white;
+  border-radius: 50%;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+  transition: left 0.2s;
+  pointer-events: none;
+}
+
+.toggle-switch-on .toggle-thumb {
+  left: calc(100% - 1.125rem);
 }
 
 /* Slack preview */
@@ -1210,18 +1559,29 @@ export default {
 
 .slack-preview {
   display: flex;
-  gap: 0.5rem;
+  gap: 0;
   align-items: flex-start;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.75rem;
+  border-radius: 0.375rem;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid #e5e7eb;
 }
 
-.slack-icon {
-  font-size: 1rem;
+.slack-bar {
+  width: 4px;
   flex-shrink: 0;
+  align-self: stretch;
 }
+
+.slack-preview-green .slack-bar  { background: #22c55e; }
+.slack-preview-red .slack-bar    { background: #ef4444; }
+.slack-preview-gray .slack-bar   { background: #9ca3af; }
 
 .slack-text {
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
+  padding: 0.5rem 0.75rem;
+  line-height: 1.5;
 }
 
 /* Buttons */
@@ -1321,91 +1681,10 @@ export default {
 }
 
 /* Webhooks */
-.webhook-form {
-  background: var(--form-bg, #f9fafb);
-  border: 1px solid var(--border-color, #e5e7eb);
-  border-radius: 0.5rem;
-  padding: 1rem;
-  margin-bottom: 1.25rem;
-}
-
-.webhook-form h3 {
-  font-size: 0.95rem;
-  font-weight: 600;
-  margin: 0 0 1rem;
-}
-
 .webhook-list {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
-}
-
-.webhook-item {
-  border: 1px solid var(--border-color, #e5e7eb);
-  border-radius: 0.5rem;
-  padding: 0.875rem;
-}
-
-.webhook-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 0.375rem;
-}
-
-.webhook-name {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.9rem;
-}
-
-.status-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.dot-green { background: #22c55e; }
-.dot-gray  { background: #9ca3af; }
-
-.webhook-actions {
-  display: flex;
-  gap: 0.25rem;
-}
-
-.btn-icon {
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 0.25rem 0.4rem;
-  border-radius: 0.375rem;
-  font-size: 0.85rem;
-  transition: background 0.15s;
-}
-
-.btn-icon:hover {
-  background: var(--btn-secondary-hover, #f3f4f6);
-}
-
-.btn-danger:hover {
-  background: #fee2e2;
-}
-
-.webhook-url {
-  font-size: 0.8rem;
-  color: var(--text-muted, #6b7280);
-  word-break: break-all;
-  margin-bottom: 0.375rem;
-}
-
-.webhook-events {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.3rem;
-  margin-bottom: 0.5rem;
 }
 
 .event-tag {
@@ -1416,37 +1695,6 @@ export default {
   font-weight: 500;
   padding: 0.1rem 0.5rem;
 }
-
-/* Delivery log */
-.delivery-log {
-  margin-top: 0.5rem;
-  border-top: 1px solid var(--border-color, #f3f4f6);
-  padding-top: 0.5rem;
-}
-
-.delivery-log-title {
-  font-size: 0.7rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--text-muted, #9ca3af);
-  margin-bottom: 0.35rem;
-}
-
-.delivery-row {
-  display: flex;
-  gap: 0.75rem;
-  font-size: 0.75rem;
-  padding: 0.15rem 0;
-  color: var(--text-secondary, #374151);
-}
-
-.delivery-ok   { color: #166534; }
-.delivery-fail { color: #b91c1c; }
-
-.delivery-event { flex: 1; }
-.delivery-code  { font-weight: 600; }
-.delivery-time  { color: var(--text-muted, #9ca3af); }
 
 /* Empty state */
 .empty-state {
@@ -1675,6 +1923,54 @@ export default {
   margin-bottom: 0.5rem;
 }
 
+/* ── Webhook event filter in modal ── */
+.wh-event-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-radius: 0.5rem;
+  padding: 0.875rem;
+  max-height: 380px;
+  overflow-y: auto;
+}
+
+.wh-event-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.wh-event-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 0.25rem;
+  border-bottom: 1px solid var(--border-color, #f3f4f6);
+  margin-bottom: 0.25rem;
+}
+
+.wh-event-group-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted, #9ca3af);
+}
+
+.wh-group-toggle-btn {
+  background: none;
+  border: none;
+  font-size: 0.7rem;
+  color: #3b82f6;
+  cursor: pointer;
+  padding: 0;
+}
+
+.wh-group-toggle-btn:hover {
+  text-decoration: underline;
+}
+
 /* ── Modals ── */
 .modal-overlay {
   position: fixed;
@@ -1753,11 +2049,8 @@ export default {
 /* Event checkbox grid in modal */
 .event-checkbox-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
-  gap: 0.4rem;
-  border: 1px solid var(--border-color, #e5e7eb);
-  border-radius: 0.5rem;
-  padding: 0.75rem;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 0.25rem;
 }
 
 .event-checkbox-item {
@@ -1778,13 +2071,19 @@ export default {
   width: 0.875rem;
   height: 0.875rem;
   flex-shrink: 0;
-  margin-top: 0.2rem;
+  margin-top: 0.25rem;
 }
 
 .ev-label {
   display: flex;
-  flex-direction: column;
-  gap: 0.1rem;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.ev-icon {
+  font-size: 0.8rem;
+  flex-shrink: 0;
 }
 
 .ev-name {

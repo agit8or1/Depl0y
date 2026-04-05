@@ -1773,6 +1773,50 @@ def ceph_pools(host_id: int, node: str, db: Session = Depends(get_db),
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/{host_id}/nodes/{node}/ceph/pools")
+def create_ceph_pool(host_id: int, node: str, data: dict = Body(default={}),
+                     db: Session = Depends(get_db),
+                     current_user=Depends(require_admin)):
+    """Create a new Ceph pool."""
+    host = _get_host(host_id, db)
+    if not data.get("name"):
+        raise HTTPException(status_code=400, detail="'name' is required")
+    try:
+        result = _pve(host).nodes(node).ceph.pools.post(**data)
+        return {"upid": result} if result else {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/{host_id}/nodes/{node}/ceph/pools/{pool}")
+def delete_ceph_pool(host_id: int, node: str, pool: str,
+                     db: Session = Depends(get_db),
+                     current_user=Depends(require_admin)):
+    """Delete a Ceph pool."""
+    host = _get_host(host_id, db)
+    try:
+        result = _pve(host).nodes(node).ceph.pools(pool).delete()
+        return {"upid": result} if result else {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{host_id}/nodes/{node}/ceph/osd/{osdid}/{action}")
+def ceph_osd_action(host_id: int, node: str, osdid: int, action: str,
+                    db: Session = Depends(get_db),
+                    current_user=Depends(require_admin)):
+    """Perform an action on a Ceph OSD: in, out, up, down."""
+    allowed = {"in", "out", "up", "down"}
+    if action not in allowed:
+        raise HTTPException(status_code=400, detail=f"Invalid action. Allowed: {allowed}")
+    host = _get_host(host_id, db)
+    try:
+        result = getattr(_pve(host).nodes(node).ceph.osd(osdid), action).post()
+        return {"upid": result} if result else {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ── APT / Package updates ──────────────────────────────────────────────────────
 
 @router.get("/{host_id}/nodes/{node}/apt/update")

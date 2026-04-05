@@ -74,7 +74,7 @@ class AlertEngine:
 
     def _fire_builtin(self, db, rule_key: str, severity: str, title: str, message: str,
                       cooldown_minutes: int = 60):
-        """Create an AlertEvent and broadcast an in-app notification for a built-in rule."""
+        """Create an AlertEvent, broadcast in-app notifications, dispatch webhooks/Slack/PagerDuty."""
         if not self._should_fire(rule_key, cooldown_minutes):
             return
 
@@ -113,6 +113,13 @@ class AlertEngine:
             db.commit()
             self._record_fire(rule_key)
             logger.info(f"Alert fired [{severity}] {rule_key}: {title}")
+
+            # Webhook + Slack + PagerDuty dispatch (fire-and-forget thread)
+            threading.Thread(
+                target=self._dispatch_alert_fired,
+                args=(rule_key, severity, title, message),
+                daemon=True,
+            ).start()
         except Exception as exc:
             db.rollback()
             logger.error(f"Failed to fire alert {rule_key}: {exc}")
@@ -489,19 +496,11 @@ class AlertEngine:
         db.commit()
         self._record_fire(rule_key)
 
-        # Webhook dispatch (fire-and-forget thread)
-        if rule.notify_webhook:
+        # Webhook + Slack + PagerDuty dispatch (fire-and-forget thread)
+        if rule.notify_webhook or rule.notify_slack:
             threading.Thread(
-                target=self._dispatch_webhook,
-                args=(rule, title, message, severity),
-                daemon=True,
-            ).start()
-
-        # Slack dispatch
-        if rule.notify_slack:
-            threading.Thread(
-                target=self._dispatch_slack,
-                args=(rule, title, message, severity),
+                target=self._dispatch_alert_fired,
+                args=(f"user_rule:{rule.id}", severity, title, message, rule.id, rule.name),
                 daemon=True,
             ).start()
 
@@ -594,75 +593,103 @@ class AlertEngine:
                 f"{cnt} failed login attempts from {ip} in last 10 min (threshold {threshold})."
         return False, "", ""
 
-    # ── Webhook / Slack dispatch ──────────────────────────────────────────────
+    # ── Webhook / Slack / PagerDuty dispatch ─────────────────────────────────
 
-    def _dispatch_webhook(self, rule, title: str, message: str, severity: str):
-        """Fire webhook for a user rule (runs in a separate thread)."""
+    def _dispatch_alert_fired(
+        self,
+        rule_key: str,
+        severity: str,
+        title: str,
+        message: str,
+        rule_id: Optional[int] = None,
+        rule_name: Optional[str] = None,
+    ):
+        """Dispatch alert.fired to webhooks, Slack, and PagerDuty (runs in a separate thread)."""
         try:
+            import asyncio
             from app.core.database import SessionLocal
-            import json, httpx
+            from app.services.webhook_dispatcher import dispatcher
+
             db = SessionLocal()
             try:
-                from app.models.database import SystemSettings
-                setting = db.query(SystemSettings).filter(
-                    SystemSettings.key == "webhooks"
-                ).first()
-                webhooks = json.loads(setting.value or "[]") if setting else []
-            finally:
-                db.close()
-
-            payload = {
-                "event": "alert.fired",
-                "rule_id": rule.id,
-                "rule_name": rule.name,
-                "severity": severity,
-                "title": title,
-                "message": message,
-                "fired_at": datetime.utcnow().isoformat(),
-            }
-            for hook in webhooks:
-                if not hook.get("enabled"):
-                    continue
-                if "alert.fired" not in hook.get("events", []):
-                    continue
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
                 try:
-                    import httpx as _httpx
-                    with _httpx.Client(timeout=10) as client:
-                        client.post(hook["url"], json=payload,
-                                    headers={"Content-Type": "application/json",
-                                             "X-Depl0y-Event": "alert.fired"})
-                except Exception as exc:
-                    logger.debug(f"Webhook dispatch failed for {hook.get('url')}: {exc}")
-        except Exception as exc:
-            logger.debug(f"_dispatch_webhook error: {exc}")
-
-    def _dispatch_slack(self, rule, title: str, message: str, severity: str):
-        """Post to Slack webhook URL stored in system settings."""
-        try:
-            from app.core.database import SessionLocal
-            import json
-            db = SessionLocal()
-            try:
-                from app.models.database import SystemSettings
-                setting = db.query(SystemSettings).filter(
-                    SystemSettings.key == "slack_webhook_url"
-                ).first()
-                slack_url = setting.value.strip() if setting else None
+                    loop.run_until_complete(
+                        dispatcher.dispatch_alert_event(
+                            db,
+                            event_type="alert.fired",
+                            title=title,
+                            message=message,
+                            severity=severity,
+                            rule_id=rule_id,
+                            rule_name=rule_name,
+                            dedup_key=rule_key,
+                        )
+                    )
+                finally:
+                    loop.close()
             finally:
                 db.close()
-
-            if not slack_url:
-                return
-
-            emoji = {"critical": ":red_circle:", "warning": ":warning:"}.get(severity, ":information_source:")
-            payload = {
-                "text": f"{emoji} *[{severity.upper()}] {title}*\n{message}"
-            }
-            import httpx as _httpx
-            with _httpx.Client(timeout=10) as client:
-                client.post(slack_url, json=payload)
         except Exception as exc:
-            logger.debug(f"_dispatch_slack error: {exc}")
+            logger.debug(f"_dispatch_alert_fired error: {exc}")
+
+    def dispatch_alert_resolved(
+        self,
+        rule_key: str,
+        title: str,
+        message: str,
+        rule_id: Optional[int] = None,
+        rule_name: Optional[str] = None,
+    ):
+        """
+        Public helper: dispatch alert.resolved to webhooks, Slack, and PagerDuty.
+        Intended to be called when an alert is acknowledged/resolved.
+        Runs in a background thread.
+        """
+        threading.Thread(
+            target=self._dispatch_alert_resolved_sync,
+            args=(rule_key, title, message, rule_id, rule_name),
+            daemon=True,
+        ).start()
+
+    def _dispatch_alert_resolved_sync(
+        self,
+        rule_key: str,
+        title: str,
+        message: str,
+        rule_id: Optional[int],
+        rule_name: Optional[str],
+    ):
+        """Synchronous worker for alert.resolved dispatch."""
+        try:
+            import asyncio
+            from app.core.database import SessionLocal
+            from app.services.webhook_dispatcher import dispatcher
+
+            db = SessionLocal()
+            try:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    loop.run_until_complete(
+                        dispatcher.dispatch_alert_event(
+                            db,
+                            event_type="alert.resolved",
+                            title=title,
+                            message=message,
+                            severity="info",
+                            rule_id=rule_id,
+                            rule_name=rule_name,
+                            dedup_key=rule_key,
+                        )
+                    )
+                finally:
+                    loop.close()
+            finally:
+                db.close()
+        except Exception as exc:
+            logger.debug(f"_dispatch_alert_resolved error: {exc}")
 
     # ── Public helper: manually trigger rule evaluation ───────────────────────
 

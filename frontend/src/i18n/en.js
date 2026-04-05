@@ -5,6 +5,7 @@ export default {
   'nav.section.infrastructure': 'Infrastructure',
   'nav.section.admin': 'Admin',
   'nav.section.account': 'Account',
+  'nav.section.favorites': 'Favorites',
 
   // Navigation — links
   'nav.dashboard': 'Dashboard',
@@ -29,6 +30,11 @@ export default {
   'nav.idrac': 'iDRAC / iLO',
   'nav.network': 'Network Management',
   'nav.sdn': 'SDN / VNets',
+  'nav.firewall': 'Firewall',
+  'nav.ceph': 'Ceph Storage',
+  'nav.pve_users': 'PVE Users',
+  'nav.vm_search': 'VM Search',
+  'nav.cluster': 'Cluster Overview',
   'nav.images': 'Images',
   'nav.proxmox_hosts': 'Proxmox Hosts',
   'nav.storage_management': 'Storage Management',

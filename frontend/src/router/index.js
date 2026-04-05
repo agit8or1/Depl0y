@@ -149,6 +149,12 @@ const router = createRouter({
       meta: { requiresAuth: true, requiresAdmin: true }
     },
     {
+      path: '/pve-users',
+      name: 'PVEUsers',
+      component: () => import('@/views/PVEUsers.vue'),
+      meta: { requiresAuth: true, requiresAdmin: true }
+    },
+    {
       path: '/proxmox/:hostId/pools',
       name: 'PvePools',
       component: () => import('@/views/PvePools.vue'),
@@ -388,6 +394,12 @@ const router = createRouter({
       path: '/storage-management',
       name: 'StorageManagement',
       component: () => import('@/views/StorageManagement.vue'),
+      meta: { requiresAuth: true, requiresAdmin: true }
+    },
+    {
+      path: '/ceph',
+      name: 'CephManager',
+      component: () => import('@/views/CephManager.vue'),
       meta: { requiresAuth: true, requiresAdmin: true }
     },
     {

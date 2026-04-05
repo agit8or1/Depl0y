@@ -13,191 +13,190 @@
       </div>
     </div>
 
-    <nav class="sidebar-nav">
+    <nav class="sidebar-nav" @keydown="onNavKeydown">
+
+      <!-- ── Favorites ── -->
+      <div
+        v-if="favorites.length > 0"
+        class="nav-section-header"
+        @click="toggleSection('favorites')"
+        :aria-expanded="!collapsedSections.has('favorites')"
+        role="button"
+        tabindex="0"
+        @keydown.enter.prevent="toggleSection('favorites')"
+        @keydown.space.prevent="toggleSection('favorites')"
+      >
+        <span class="nav-section-label-text">{{ t('nav.section.favorites') }}</span>
+        <span class="nav-section-arrow" :class="{ 'arrow-collapsed': collapsedSections.has('favorites') }">›</span>
+      </div>
+      <transition name="section-collapse">
+        <div v-if="favorites.length > 0 && !collapsedSections.has('favorites')" class="nav-section-items">
+          <div
+            v-for="fav in favorites"
+            :key="fav.path"
+            class="nav-item nav-item-fav"
+            :class="{ 'router-link-active': isActive(fav.path) }"
+            role="link"
+            tabindex="0"
+            @click="navigateTo(fav.path)"
+            @keydown.enter.prevent="navigateTo(fav.path)"
+          >
+            <span class="icon">{{ fav.icon }}</span>
+            <span class="nav-item-label">{{ fav.label }}</span>
+            <button
+              class="star-btn star-btn--active"
+              :title="'Remove from favorites'"
+              @click.stop="removeFavorite(fav.path)"
+              tabindex="-1"
+            >★</button>
+          </div>
+        </div>
+      </transition>
 
       <!-- ── Overview ── -->
-      <div class="nav-section-label">{{ t('nav.section.overview') }}</div>
-      <router-link to="/" class="nav-item" @click="handleNavClick">
-        <span class="icon">📊</span>
-        <span>{{ t('nav.dashboard') }}</span>
-      </router-link>
-      <router-link to="/federation" class="nav-item" @click="handleNavClick">
-        <span class="icon">🌍</span>
-        <span>{{ t('nav.federation') }}</span>
-      </router-link>
-      <router-link to="/datacenter" class="nav-item" @click="handleNavClick">
-        <span class="icon">🏢</span>
-        <span>{{ t('nav.datacenter') }}</span>
-      </router-link>
-      <router-link to="/tasks" class="nav-item" @click="handleNavClick">
-        <span class="icon">📋</span>
-        <span>{{ t('nav.tasklog') }}</span>
-      </router-link>
+      <div
+        class="nav-section-header"
+        :class="{ 'nav-section-header--active': activeSectionKey === 'overview' }"
+        @click="toggleSection('overview')"
+        :aria-expanded="!collapsedSections.has('overview')"
+        role="button"
+        tabindex="0"
+        @keydown.enter.prevent="toggleSection('overview')"
+        @keydown.space.prevent="toggleSection('overview')"
+      >
+        <span class="nav-section-label-text">{{ t('nav.section.overview') }}</span>
+        <span class="nav-section-arrow" :class="{ 'arrow-collapsed': collapsedSections.has('overview') }">›</span>
+      </div>
+      <transition name="section-collapse">
+        <div v-if="!collapsedSections.has('overview')" class="nav-section-items">
+          <NavItem :to="'/'" :icon="'📊'" :label="t('nav.dashboard')" :badge="unreadNotifications || null" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
+          <NavItem :to="'/federation'" :icon="'🌍'" :label="t('nav.federation')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
+          <NavItem :to="'/datacenter'" :icon="'🏢'" :label="t('nav.datacenter')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
+          <NavItem :to="'/tasks'" :icon="'📋'" :label="t('nav.tasklog')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
+        </div>
+      </transition>
 
       <!-- ── Compute ── -->
-      <div class="nav-section-label">{{ t('nav.section.compute') }}</div>
-      <router-link v-if="isOperator" to="/containers" class="nav-item" @click="handleNavClick">
-        <span class="icon">📦</span>
-        <span>{{ t('nav.containers') }}</span>
-      </router-link>
-      <router-link v-if="isOperator" to="/create-lxc" class="nav-item" @click="handleNavClick">
-        <span class="icon">➕</span>
-        <span>{{ t('nav.create_lxc') }}</span>
-      </router-link>
-      <router-link v-if="isOperator" to="/create-pve-vm" class="nav-item" @click="handleNavClick">
-        <span class="icon">➕</span>
-        <span>{{ t('nav.create_vm_pve') }}</span>
-      </router-link>
-      <router-link v-if="isOperator" to="/deploy" class="nav-item" @click="handleNavClick">
-        <span class="icon">🚀</span>
-        <span>{{ t('nav.deploy_vm') }}</span>
-      </router-link>
-      <router-link v-if="isOperator" to="/import-vm" class="nav-item" @click="handleNavClick">
-        <span class="icon">📥</span>
-        <span>{{ t('nav.import_vm') }}</span>
-      </router-link>
-      <router-link v-if="isOperator" to="/llm-deploy" class="nav-item" @click="handleNavClick">
-        <span class="icon">🤖</span>
-        <span>{{ t('nav.llm_deploy') }}</span>
-      </router-link>
-      <router-link to="/templates" class="nav-item" @click="handleNavClick">
-        <span class="icon">📄</span>
-        <span>{{ t('nav.templates') }}</span>
-      </router-link>
-      <router-link to="/vms" class="nav-item" @click="handleNavClick">
-        <span class="icon">🖥️</span>
-        <span>{{ t('nav.vms') }}</span>
-      </router-link>
-      <router-link v-if="isOperator" to="/vm-management" class="nav-item" @click="handleNavClick">
-        <span class="icon">🛠️</span>
-        <span>{{ t('nav.vm_management') }}</span>
-      </router-link>
-      <router-link v-if="isOperator" to="/vm-groups" class="nav-item" @click="handleNavClick">
-        <span class="icon">🗃️</span>
-        <span>{{ t('nav.vm_groups') }}</span>
-      </router-link>
-      <router-link v-if="isOperator" to="/bulk-ops" class="nav-item" @click="handleNavClick">
-        <span class="icon">⚡</span>
-        <span>{{ t('nav.bulk_ops') }}</span>
-      </router-link>
+      <div
+        class="nav-section-header"
+        :class="{ 'nav-section-header--active': activeSectionKey === 'compute' }"
+        @click="toggleSection('compute')"
+        :aria-expanded="!collapsedSections.has('compute')"
+        role="button"
+        tabindex="0"
+        @keydown.enter.prevent="toggleSection('compute')"
+        @keydown.space.prevent="toggleSection('compute')"
+      >
+        <span class="nav-section-label-text">{{ t('nav.section.compute') }}</span>
+        <span class="nav-section-arrow" :class="{ 'arrow-collapsed': collapsedSections.has('compute') }">›</span>
+      </div>
+      <transition name="section-collapse">
+        <div v-if="!collapsedSections.has('compute')" class="nav-section-items">
+          <NavItem v-if="isOperator" :to="'/containers'" :icon="'📦'" :label="t('nav.containers')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
+          <NavItem v-if="isOperator" :to="'/create-lxc'" :icon="'➕'" :label="t('nav.create_lxc')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
+          <NavItem v-if="isOperator" :to="'/create-pve-vm'" :icon="'➕'" :label="t('nav.create_vm_pve')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
+          <NavItem v-if="isOperator" :to="'/deploy'" :icon="'🚀'" :label="t('nav.deploy_vm')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
+          <NavItem v-if="isOperator" :to="'/import-vm'" :icon="'📥'" :label="t('nav.import_vm')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
+          <NavItem v-if="isOperator" :to="'/llm-deploy'" :icon="'🤖'" :label="t('nav.llm_deploy')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
+          <NavItem :to="'/templates'" :icon="'📄'" :label="t('nav.templates')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
+          <NavItem :to="'/vms'" :icon="'🖥️'" :label="t('nav.vms')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
+          <NavItem v-if="isOperator" :to="'/vm-management'" :icon="'🛠️'" :label="t('nav.vm_management')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
+          <NavItem v-if="isOperator" :to="'/vm-groups'" :icon="'🗃️'" :label="t('nav.vm_groups')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
+          <NavItem v-if="isOperator" :to="'/bulk-ops'" :icon="'⚡'" :label="t('nav.bulk_ops')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
+        </div>
+      </transition>
 
       <!-- ── Infrastructure ── -->
-      <div class="nav-section-label">{{ t('nav.section.infrastructure') }}</div>
-      <router-link to="/backup" class="nav-item" @click="handleNavClick">
-        <span class="icon">💾</span>
-        <span>{{ t('nav.backup') }}</span>
-      </router-link>
-      <router-link to="/snapshots" class="nav-item" @click="handleNavClick">
-        <span class="icon">📷</span>
-        <span>{{ t('nav.snapshots') }}</span>
-      </router-link>
-      <router-link v-if="isAdmin" to="/ha-management" class="nav-item" @click="handleNavClick">
-        <span class="icon">🔄</span>
-        <span>{{ t('nav.ha_management') }}</span>
-      </router-link>
-      <router-link v-if="isOperator" to="/replication" class="nav-item" @click="handleNavClick">
-        <span class="icon">🔁</span>
-        <span>{{ t('nav.replication') }}</span>
-      </router-link>
-      <router-link v-if="isOperator" to="/idrac" class="nav-item" @click="handleNavClick">
-        <span class="icon">🖧</span>
-        <span>{{ t('nav.idrac') }}</span>
-      </router-link>
-      <router-link v-if="isOperator" to="/network" class="nav-item" @click="handleNavClick">
-        <span class="icon">🔌</span>
-        <span>{{ t('nav.network') }}</span>
-      </router-link>
-      <router-link v-if="isAdmin" to="/sdn" class="nav-item" @click="handleNavClick">
-        <span class="icon">🕸️</span>
-        <span>{{ t('nav.sdn') }}</span>
-      </router-link>
-      <router-link v-if="isOperator" to="/firewall-manager" class="nav-item" @click="handleNavClick">
-        <span class="icon">🛡️</span>
-        <span>Firewall</span>
-      </router-link>
-      <router-link to="/images" class="nav-item" @click="handleNavClick">
-        <span class="icon">💿</span>
-        <span>{{ t('nav.images') }}</span>
-      </router-link>
-      <router-link to="/proxmox" class="nav-item" @click="handleNavClick">
-        <span class="icon">🌐</span>
-        <span>{{ t('nav.proxmox_hosts') }}</span>
-      </router-link>
-      <router-link v-if="isAdmin" to="/storage-management" class="nav-item" @click="handleNavClick">
-        <span class="icon">🗄️</span>
-        <span>{{ t('nav.storage_management') }}</span>
-      </router-link>
-      <router-link v-if="isAdmin" to="/pools" class="nav-item" @click="handleNavClick">
-        <span class="icon">🗂️</span>
-        <span>{{ t('nav.resource_pools') }}</span>
-      </router-link>
+      <div
+        class="nav-section-header"
+        :class="{ 'nav-section-header--active': activeSectionKey === 'infrastructure' }"
+        @click="toggleSection('infrastructure')"
+        :aria-expanded="!collapsedSections.has('infrastructure')"
+        role="button"
+        tabindex="0"
+        @keydown.enter.prevent="toggleSection('infrastructure')"
+        @keydown.space.prevent="toggleSection('infrastructure')"
+      >
+        <span class="nav-section-label-text">{{ t('nav.section.infrastructure') }}</span>
+        <span class="nav-section-arrow" :class="{ 'arrow-collapsed': collapsedSections.has('infrastructure') }">›</span>
+      </div>
+      <transition name="section-collapse">
+        <div v-if="!collapsedSections.has('infrastructure')" class="nav-section-items">
+          <NavItem :to="'/backup'" :icon="'💾'" :label="t('nav.backup')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
+          <NavItem :to="'/snapshots'" :icon="'📷'" :label="t('nav.snapshots')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
+          <NavItem v-if="isAdmin" :to="'/ha-management'" :icon="'🔄'" :label="t('nav.ha_management')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
+          <NavItem v-if="isOperator" :to="'/replication'" :icon="'🔁'" :label="t('nav.replication')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
+          <NavItem v-if="isOperator" :to="'/idrac'" :icon="'🖧'" :label="t('nav.idrac')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
+          <NavItem v-if="isOperator" :to="'/network'" :icon="'🔌'" :label="t('nav.network')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
+          <NavItem v-if="isAdmin" :to="'/sdn'" :icon="'🕸️'" :label="t('nav.sdn')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
+          <NavItem v-if="isOperator" :to="'/firewall-manager'" :icon="'🛡️'" :label="t('nav.firewall')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
+          <NavItem v-if="isAdmin" :to="'/ceph'" :icon="'🪨'" :label="t('nav.ceph')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
+          <NavItem v-if="isAdmin" :to="'/pve-users'" :icon="'👤'" :label="t('nav.pve_users')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
+          <NavItem :to="'/images'" :icon="'💿'" :label="t('nav.images')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
+          <NavItem :to="'/proxmox'" :icon="'🌐'" :label="t('nav.proxmox_hosts')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
+          <NavItem v-if="isAdmin" :to="'/storage-management'" :icon="'🗄️'" :label="t('nav.storage_management')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
+          <NavItem v-if="isAdmin" :to="'/pools'" :icon="'🗂️'" :label="t('nav.resource_pools')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
+        </div>
+      </transition>
 
       <!-- ── Admin ── -->
-      <div v-if="isAdmin" class="nav-section-label">{{ t('nav.section.admin') }}</div>
-      <router-link v-if="isAdmin" to="/audit-log" class="nav-item" @click="handleNavClick">
-        <span class="icon">🔍</span>
-        <span>{{ t('nav.audit_log') }}</span>
-      </router-link>
-      <router-link v-if="isAdmin && linuxAgentEnabled" to="/linux-vms" class="nav-item" @click="handleNavClick">
-        <span class="icon">🛡️</span>
-        <span>{{ t('nav.linux_vm_security') }}</span>
-      </router-link>
-      <router-link v-if="isAdmin" to="/security" class="nav-item" @click="handleNavClick">
-        <span class="icon">🔒</span>
-        <span>{{ t('nav.security') }}</span>
-      </router-link>
-      <router-link v-if="isAdmin" to="/alerts" class="nav-item" @click="handleNavClick">
-        <span class="icon">🚨</span>
-        <span>{{ t('nav.alert_rules') }}</span>
-      </router-link>
-      <router-link v-if="isAdmin" to="/system-health" class="nav-item" @click="handleNavClick">
-        <span class="icon">💚</span>
-        <span>{{ t('nav.system_health') }}</span>
-      </router-link>
-      <router-link v-if="isAdmin" to="/system-logs" class="nav-item" @click="handleNavClick">
-        <span class="icon">📜</span>
-        <span>{{ t('nav.system_logs') }}</span>
-      </router-link>
-      <router-link v-if="isAdmin" to="/users" class="nav-item" @click="handleNavClick">
-        <span class="icon">👥</span>
-        <span>{{ t('nav.users') }}</span>
-      </router-link>
-      <router-link v-if="isAdmin" to="/integrations" class="nav-item" @click="handleNavClick">
-        <span class="icon">🔗</span>
-        <span>{{ t('nav.integrations') }}</span>
-      </router-link>
-      <router-link v-if="isAdmin" to="/api-explorer" class="nav-item" @click="handleNavClick">
-        <span class="icon">⚡</span>
-        <span>{{ t('nav.api_explorer') }}</span>
-      </router-link>
+      <template v-if="isAdmin">
+        <div
+          class="nav-section-header"
+          :class="{ 'nav-section-header--active': activeSectionKey === 'admin' }"
+          @click="toggleSection('admin')"
+          :aria-expanded="!collapsedSections.has('admin')"
+          role="button"
+          tabindex="0"
+          @keydown.enter.prevent="toggleSection('admin')"
+          @keydown.space.prevent="toggleSection('admin')"
+        >
+          <span class="nav-section-label-text">{{ t('nav.section.admin') }}</span>
+          <span class="nav-section-arrow" :class="{ 'arrow-collapsed': collapsedSections.has('admin') }">›</span>
+        </div>
+        <transition name="section-collapse">
+          <div v-if="!collapsedSections.has('admin')" class="nav-section-items">
+            <NavItem :to="'/audit-log'" :icon="'🔍'" :label="t('nav.audit_log')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
+            <NavItem v-if="linuxAgentEnabled" :to="'/linux-vms'" :icon="'🛡️'" :label="t('nav.linux_vm_security')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
+            <NavItem :to="'/security'" :icon="'🔒'" :label="t('nav.security')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
+            <NavItem :to="'/alerts'" :icon="'🚨'" :label="t('nav.alert_rules')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
+            <NavItem :to="'/system-health'" :icon="'💚'" :label="t('nav.system_health')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
+            <NavItem :to="'/system-logs'" :icon="'📜'" :label="t('nav.system_logs')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
+            <NavItem :to="'/users'" :icon="'👥'" :label="t('nav.users')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
+            <NavItem :to="'/integrations'" :icon="'🔗'" :label="t('nav.integrations')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
+            <NavItem :to="'/api-explorer'" :icon="'⚡'" :label="t('nav.api_explorer')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
+          </div>
+        </transition>
+      </template>
 
       <!-- ── Account ── -->
-      <div class="nav-section-label">{{ t('nav.section.account') }}</div>
-      <router-link to="/about" class="nav-item" @click="handleNavClick">
-        <span class="icon">ℹ️</span>
-        <span>{{ t('nav.about') }}</span>
-      </router-link>
-      <router-link to="/documentation" class="nav-item" @click="handleNavClick">
-        <span class="icon">📖</span>
-        <span>{{ t('nav.documentation') }}</span>
-      </router-link>
-      <router-link to="/profile" class="nav-item" @click="handleNavClick">
-        <span class="icon">👤</span>
-        <span>{{ t('nav.my_profile') }}</span>
-      </router-link>
-      <router-link to="/settings" class="nav-item" @click="handleNavClick">
-        <span class="icon">⚙️</span>
-        <span>{{ t('nav.settings') }}</span>
-      </router-link>
-      <router-link to="/support" class="nav-item nav-item-heart" @click="handleNavClick">
-        <span class="icon">❤️</span>
-        <span>{{ t('nav.support') }}</span>
-      </router-link>
+      <div
+        class="nav-section-header"
+        :class="{ 'nav-section-header--active': activeSectionKey === 'account' }"
+        @click="toggleSection('account')"
+        :aria-expanded="!collapsedSections.has('account')"
+        role="button"
+        tabindex="0"
+        @keydown.enter.prevent="toggleSection('account')"
+        @keydown.space.prevent="toggleSection('account')"
+      >
+        <span class="nav-section-label-text">{{ t('nav.section.account') }}</span>
+        <span class="nav-section-arrow" :class="{ 'arrow-collapsed': collapsedSections.has('account') }">›</span>
+      </div>
+      <transition name="section-collapse">
+        <div v-if="!collapsedSections.has('account')" class="nav-section-items">
+          <NavItem :to="'/about'" :icon="'ℹ️'" :label="t('nav.about')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
+          <NavItem :to="'/documentation'" :icon="'📖'" :label="t('nav.documentation')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
+          <NavItem :to="'/profile'" :icon="'👤'" :label="t('nav.my_profile')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
+          <NavItem :to="'/settings'" :icon="'⚙️'" :label="t('nav.settings')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
+          <NavItem :to="'/support'" :icon="'❤️'" :label="t('nav.support')" :extra-class="'nav-item-heart'" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
+          <a href="https://github.com/agit8or1/Depl0y/issues" target="_blank" rel="noopener noreferrer" class="nav-item">
+            <span class="icon">🐛</span>
+            <span class="nav-item-label">{{ t('nav.report_bug') }}</span>
+          </a>
+        </div>
+      </transition>
 
-      <a href="https://github.com/agit8or1/Depl0y/issues" target="_blank" rel="noopener noreferrer" class="nav-item">
-        <span class="icon">🐛</span>
-        <span>{{ t('nav.report_bug') }}</span>
-      </a>
     </nav>
 
     <div class="sidebar-footer">
@@ -208,13 +207,82 @@
 </template>
 
 <script>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, defineComponent } from 'vue'
 import { useAuthStore } from '@/store/auth'
+import { useRoute, useRouter } from 'vue-router'
 import api from '@/services/api'
 import { useI18n } from '@/i18n/index.js'
 
+const COLLAPSED_KEY = 'sidebar_collapsed_sections'
+const FAVORITES_KEY = 'sidebar_favorites'
+
+// Maps route paths to which section they belong
+const SECTION_ROUTES = {
+  overview: ['/', '/federation', '/datacenter', '/tasks'],
+  compute: ['/containers', '/create-lxc', '/create-pve-vm', '/deploy', '/import-vm', '/llm-deploy', '/templates', '/vms', '/vm-management', '/vm-groups', '/bulk-ops'],
+  infrastructure: ['/backup', '/snapshots', '/ha-management', '/replication', '/idrac', '/network', '/sdn', '/firewall-manager', '/ceph', '/pve-users', '/images', '/proxmox', '/storage-management', '/pools'],
+  admin: ['/audit-log', '/linux-vms', '/security', '/alerts', '/system-health', '/system-logs', '/users', '/integrations', '/api-explorer'],
+  account: ['/about', '/documentation', '/profile', '/settings', '/support'],
+}
+
+// NavItem sub-component
+const NavItem = defineComponent({
+  name: 'NavItem',
+  props: {
+    to: { type: String, required: true },
+    icon: { type: String, required: true },
+    label: { type: String, required: true },
+    badge: { type: Number, default: null },
+    favorites: { type: Array, default: () => [] },
+    extraClass: { type: String, default: '' },
+  },
+  emits: ['click', 'toggle-fav'],
+  setup(props, { emit }) {
+    const route = useRoute()
+    const router = useRouter()
+    const isFav = computed(() => props.favorites.some(f => f.path === props.to))
+    const isActive = computed(() => {
+      if (props.to === '/') return route.path === '/'
+      return route.path.startsWith(props.to)
+    })
+
+    const navigate = () => {
+      router.push(props.to)
+      emit('click')
+    }
+
+    const toggleFav = (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      emit('toggle-fav', { path: props.to, icon: props.icon, label: props.label })
+    }
+
+    return { isFav, isActive, navigate, toggleFav }
+  },
+  template: `
+    <div
+      :class="['nav-item', extraClass, isActive ? 'router-link-active' : '']"
+      role="link"
+      tabindex="0"
+      @click="navigate"
+      @keydown.enter.prevent="navigate"
+    >
+      <span class="icon">{{ icon }}</span>
+      <span class="nav-item-label">{{ label }}</span>
+      <span v-if="badge && badge > 0" class="nav-badge">{{ badge > 99 ? '99+' : badge }}</span>
+      <button
+        :class="['star-btn', isFav ? 'star-btn--active' : '']"
+        :title="isFav ? 'Remove from favorites' : 'Add to favorites'"
+        @click="toggleFav"
+        tabindex="-1"
+      >{{ isFav ? '★' : '☆' }}</button>
+    </div>
+  `
+})
+
 export default {
   name: 'Sidebar',
+  components: { NavItem },
   props: {
     isOpen: {
       type: Boolean,
@@ -225,19 +293,115 @@ export default {
   setup(props, { emit }) {
     const authStore = useAuthStore()
     const { t } = useI18n()
+    const route = useRoute()
+    const router = useRouter()
     const isAdmin = computed(() => authStore.isAdmin)
     const isOperator = computed(() => authStore.isOperator || authStore.isAdmin)
-    const appVersion = ref('1.8.0') // Fallback version
+    const appVersion = ref('1.8.0')
     const linuxAgentEnabled = ref(false)
+    const unreadNotifications = ref(0)
 
-    // Close sidebar on mobile when navigating
+    // ── Collapsed sections (persisted) ──────────────────────────────────────
+    const collapsedSections = ref(new Set())
+
+    const loadCollapsed = () => {
+      try {
+        const stored = localStorage.getItem(COLLAPSED_KEY)
+        if (stored) collapsedSections.value = new Set(JSON.parse(stored))
+      } catch (e) {}
+    }
+
+    const saveCollapsed = () => {
+      try {
+        localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...collapsedSections.value]))
+      } catch (e) {}
+    }
+
+    const toggleSection = (key) => {
+      if (collapsedSections.value.has(key)) {
+        collapsedSections.value.delete(key)
+      } else {
+        collapsedSections.value.add(key)
+      }
+      collapsedSections.value = new Set(collapsedSections.value)
+      saveCollapsed()
+    }
+
+    // ── Active section highlight ──────────────────────────────────────────
+    const activeSectionKey = computed(() => {
+      const path = route.path
+      for (const [key, paths] of Object.entries(SECTION_ROUTES)) {
+        if (paths.some(p => p === '/' ? path === '/' : path.startsWith(p))) {
+          return key
+        }
+      }
+      return null
+    })
+
+    const isActive = (path) => {
+      if (path === '/') return route.path === '/'
+      return route.path.startsWith(path)
+    }
+
+    // ── Favorites (persisted) ────────────────────────────────────────────
+    const favorites = ref([])
+
+    const loadFavorites = () => {
+      try {
+        const stored = localStorage.getItem(FAVORITES_KEY)
+        if (stored) favorites.value = JSON.parse(stored)
+      } catch (e) {}
+    }
+
+    const saveFavorites = () => {
+      try {
+        localStorage.setItem(FAVORITES_KEY, JSON.stringify(favorites.value))
+      } catch (e) {}
+    }
+
+    const toggleFavorite = ({ path, icon, label }) => {
+      const idx = favorites.value.findIndex(f => f.path === path)
+      if (idx === -1) {
+        favorites.value.push({ path, icon, label })
+      } else {
+        favorites.value.splice(idx, 1)
+      }
+      saveFavorites()
+    }
+
+    const removeFavorite = (path) => {
+      const idx = favorites.value.findIndex(f => f.path === path)
+      if (idx !== -1) favorites.value.splice(idx, 1)
+      saveFavorites()
+    }
+
+    // ── Navigation ────────────────────────────────────────────────────────
+    const navigateTo = (path) => {
+      router.push(path)
+      handleNavClick()
+    }
+
     const handleNavClick = () => {
       if (window.innerWidth <= 768) {
         emit('close')
       }
     }
 
-    // Fetch version from API
+    // ── Keyboard navigation within nav ───────────────────────────────────
+    const onNavKeydown = (e) => {
+      if (!['ArrowDown', 'ArrowUp'].includes(e.key)) return
+      const items = Array.from(e.currentTarget.querySelectorAll('[tabindex="0"]'))
+      const idx = items.indexOf(document.activeElement)
+      if (idx === -1) return
+      e.preventDefault()
+      if (e.key === 'ArrowDown' && idx < items.length - 1) {
+        items[idx + 1].focus()
+      } else if (e.key === 'ArrowUp' && idx > 0) {
+        items[idx - 1].focus()
+      }
+    }
+
+    // ── API fetches ───────────────────────────────────────────────────────
     const fetchVersion = async () => {
       try {
         const response = await api.system.getInfo()
@@ -259,9 +423,22 @@ export default {
       }
     }
 
+    const fetchUnreadNotifications = async () => {
+      try {
+        const res = await api.dashboard.getAlerts()
+        const alerts = res.data?.alerts || []
+        unreadNotifications.value = alerts.filter(a => !a.acknowledged).length
+      } catch {
+        // non-blocking
+      }
+    }
+
     onMounted(() => {
+      loadCollapsed()
+      loadFavorites()
       fetchVersion()
       fetchLinuxAgentEnabled()
+      fetchUnreadNotifications()
     })
 
     return {
@@ -270,7 +447,17 @@ export default {
       isOperator,
       appVersion,
       linuxAgentEnabled,
-      handleNavClick
+      unreadNotifications,
+      handleNavClick,
+      navigateTo,
+      collapsedSections,
+      toggleSection,
+      activeSectionKey,
+      isActive,
+      favorites,
+      toggleFavorite,
+      removeFavorite,
+      onNavKeydown,
     }
   }
 }
@@ -343,24 +530,100 @@ export default {
 
 .sidebar-nav {
   flex: 1;
-  padding: 1rem 0;
+  padding: 0.5rem 0;
   overflow-y: auto;
   overflow-x: hidden;
 }
 
+/* ── Section headers (collapsible) ── */
+.nav-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.55rem 1.1rem 0.25rem 1.5rem;
+  margin-top: 0.5rem;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  border-radius: 0.25rem 0.25rem 0 0;
+  transition: background 0.15s;
+}
+
+.nav-section-header:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.nav-section-header:focus-visible {
+  outline: 2px solid rgba(59, 130, 246, 0.6);
+  outline-offset: -2px;
+}
+
+/* When the active route is inside this section, tint the label */
+.nav-section-header--active .nav-section-label-text {
+  color: #93c5fd;
+}
+
+.nav-section-label-text {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #7a8fa8;
+  transition: color 0.2s;
+}
+
+.nav-section-arrow {
+  font-size: 0.85rem;
+  color: #7a8fa8;
+  line-height: 1;
+  transition: transform 0.2s, color 0.2s;
+  transform: rotate(90deg);
+}
+
+.arrow-collapsed {
+  transform: rotate(0deg);
+}
+
+.nav-section-items {
+  overflow: hidden;
+}
+
+/* ── Section collapse transition ── */
+.section-collapse-enter-active,
+.section-collapse-leave-active {
+  transition: max-height 0.22s ease, opacity 0.18s ease;
+  max-height: 2000px;
+  opacity: 1;
+}
+
+.section-collapse-enter-from,
+.section-collapse-leave-to {
+  max-height: 0;
+  opacity: 0;
+}
+
+/* ── Nav items ── */
 .nav-item {
   display: flex;
   align-items: center;
-  padding: 0.75rem 1.5rem;
+  padding: 0.65rem 0.75rem 0.65rem 1.5rem;
   color: #d1d9e6;
   text-decoration: none;
-  transition: all 0.2s;
-  gap: 0.75rem;
+  transition: background 0.15s, color 0.15s;
+  gap: 0.65rem;
+  cursor: pointer;
+  position: relative;
+  outline: none;
 }
 
 .nav-item:hover {
-  background-color: rgba(255, 255, 255, 0.12);
+  background-color: rgba(255, 255, 255, 0.1);
   color: #ffffff;
+}
+
+.nav-item:focus-visible {
+  outline: 2px solid rgba(59, 130, 246, 0.6);
+  outline-offset: -2px;
 }
 
 .nav-item.router-link-active {
@@ -368,23 +631,73 @@ export default {
   color: #ffffff;
   border-left: 3px solid #60a5fa;
   font-weight: 500;
+  padding-left: calc(1.5rem - 3px);
+}
+
+.nav-item-fav {
+  background: rgba(59, 130, 246, 0.04);
+}
+
+.nav-item-label {
+  flex: 1;
+  font-size: 0.875rem;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .icon {
-  font-size: 1.25rem;
+  font-size: 1.1rem;
   flex-shrink: 0;
+  width: 1.35rem;
+  text-align: center;
 }
 
-.nav-section-label {
-  padding: 0.6rem 1.5rem 0.25rem;
-  font-size: 0.65rem;
+/* ── Notification badge ── */
+.nav-badge {
+  font-size: 0.6rem;
   font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: #7a8fa8;
-  margin-top: 0.5rem;
+  background: #ef4444;
+  color: #fff;
+  border-radius: 9999px;
+  padding: 0.1rem 0.35rem;
+  min-width: 1.1rem;
+  text-align: center;
+  flex-shrink: 0;
+  line-height: 1.4;
 }
 
+/* ── Star / favorite button ── */
+.star-btn {
+  background: none;
+  border: none;
+  color: #4a5568;
+  font-size: 0.85rem;
+  cursor: pointer;
+  padding: 0.1rem 0.2rem;
+  border-radius: 0.2rem;
+  line-height: 1;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s;
+}
+
+.nav-item:hover .star-btn,
+.nav-item:focus-within .star-btn {
+  opacity: 1;
+}
+
+.star-btn--active {
+  color: #f59e0b;
+  opacity: 1 !important;
+}
+
+.star-btn:hover {
+  color: #f59e0b;
+}
+
+/* ── Heart item ── */
 .nav-item-heart {
   color: #f9b8b8;
 }
@@ -393,6 +706,7 @@ export default {
   color: #fca5a5;
 }
 
+/* ── Footer ── */
 .sidebar-footer {
   padding: 1rem 1.5rem;
   border-top: 1px solid rgba(255, 255, 255, 0.12);

@@ -659,6 +659,34 @@ async def login(credentials: LoginRequest, request: Request, db: Session = Depen
             )
         except Exception:
             pass
+        # Webhook + Slack dispatch for login_failed (non-blocking)
+        try:
+            import asyncio
+            from app.services.webhook_dispatcher import dispatcher
+            from app.core.database import SessionLocal
+
+            async def _fire_login_failed_event():
+                _db = SessionLocal()
+                try:
+                    await dispatcher.dispatch_and_slack(
+                        _db,
+                        "user.login_failed",
+                        {
+                            "username": credentials.username,
+                            "ip_address": client_ip,
+                            "reason": "bad_password",
+                        },
+                        f":warning: Failed login attempt for `{credentials.username}` from `{client_ip}`",
+                    )
+                except Exception:
+                    pass
+                finally:
+                    _db.close()
+
+            loop = asyncio.get_event_loop()
+            loop.create_task(_fire_login_failed_event())
+        except Exception:
+            pass
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",

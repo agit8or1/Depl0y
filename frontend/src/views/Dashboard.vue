@@ -96,6 +96,26 @@
     <!-- QuickStatsBar — always full-width at top -->
     <QuickStatsBar />
 
+    <!-- ── No Hosts Configured State ── -->
+    <transition name="banner-fade">
+      <div v-if="noHostsConfigured && !initialLoading" class="no-hosts-state">
+        <div class="no-hosts-inner">
+          <div class="no-hosts-icon">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <ellipse cx="12" cy="5" rx="9" ry="3"/>
+              <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/>
+              <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>
+            </svg>
+          </div>
+          <div class="no-hosts-content">
+            <p class="no-hosts-title">No Proxmox Hosts Configured</p>
+            <p class="no-hosts-sub">Add a Proxmox host to start monitoring your infrastructure and deploying VMs.</p>
+          </div>
+          <router-link to="/proxmox" class="btn btn-primary btn-sm">Manage Hosts</router-link>
+        </div>
+      </div>
+    </transition>
+
     <!-- ── Quick Search Bar ── -->
     <div class="quick-search-wrap" ref="searchWrapEl">
       <div class="quick-search-input-row">
@@ -184,7 +204,15 @@
     <div class="dash-header">
       <h2 class="dash-title">Dashboard</h2>
       <div class="dash-actions">
-        <span class="last-updated">{{ lastUpdatedSeconds }}s ago</span>
+        <span class="last-updated" :title="lastUpdatedAt ? 'Last updated: ' + lastUpdatedAt : ''">
+          {{ lastUpdatedSeconds }}s ago
+        </span>
+        <button class="btn-icon" title="Refresh dashboard" @click="refreshAll" :class="{ 'btn-icon--spinning': globalRefreshing }">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="23 4 23 10 17 10"/>
+            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+          </svg>
+        </button>
         <button class="btn-icon" title="Customize Widgets" @click="showCustomize = !showCustomize">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/>
@@ -192,8 +220,41 @@
         </button>
         <button class="btn-icon" title="Add Widget" @click="showPicker = true">+</button>
         <button class="btn-icon" title="Reset Layout" @click="resetLayout">↺</button>
+        <button class="btn-icon" title="Keyboard shortcuts (?)" @click="showShortcutsHint = !showShortcutsHint">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/>
+            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
+            <line x1="12" y1="17" x2="12.01" y2="17"/>
+          </svg>
+        </button>
       </div>
     </div>
+
+    <!-- ── Keyboard Shortcuts Hint Overlay ── -->
+    <transition name="panel-slide">
+      <div v-if="showShortcutsHint" class="shortcuts-hint-panel">
+        <div class="shp-header">
+          <span class="shp-title">Dashboard Shortcuts</span>
+          <button class="shp-close" @click="showShortcutsHint = false">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
+        <div class="shp-grid">
+          <div class="shp-row"><kbd>/</kbd><span>Focus search</span></div>
+          <div class="shp-row"><kbd>?</kbd><span>All shortcuts</span></div>
+          <div class="shp-row"><kbd>Ctrl</kbd><span>+</span><kbd>K</kbd><span>Command palette</span></div>
+          <div class="shp-row"><kbd>g</kbd><span>+</span><kbd>d</kbd><span>Go to Dashboard</span></div>
+          <div class="shp-row"><kbd>g</kbd><span>+</span><kbd>v</kbd><span>Go to VMs</span></div>
+          <div class="shp-row"><kbd>g</kbd><span>+</span><kbd>n</kbd><span>Go to Nodes</span></div>
+          <div class="shp-row"><kbd>g</kbd><span>+</span><kbd>t</kbd><span>Go to Tasks</span></div>
+          <div class="shp-row"><kbd>g</kbd><span>+</span><kbd>b</kbd><span>Go to Backup</span></div>
+          <div class="shp-row"><kbd>g</kbd><span>+</span><kbd>s</kbd><span>Go to Settings</span></div>
+        </div>
+        <p class="shp-hint">Press <kbd>?</kbd> for the full shortcut reference.</p>
+      </div>
+    </transition>
 
     <!-- Customize panel -->
     <transition name="panel-slide">
@@ -248,13 +309,17 @@
         <span class="rt-value">{{ resourceStats.used_memory_gb.toFixed(1) }} / {{ resourceStats.total_memory_gb.toFixed(1) }} GB</span>
       </div>
     </div>
+    <!-- Loading skeleton for resource row -->
+    <div v-else-if="initialLoading" class="resource-trending-row">
+      <SkeletonLoader type="stat" :count="5" />
+    </div>
 
     <!-- Widget grid -->
     <div class="widget-grid" ref="gridEl">
       <div
         v-for="widget in visibleLayout"
         :key="widget.id"
-        :class="['widget-card', dragging && dragging.id === widget.id ? 'widget-dragging' : '']"
+        :class="['widget-card', dragging && dragging.id === widget.id ? 'widget-dragging' : '', widgetHasError(widget.id) ? 'widget-card--error' : '']"
         :data-widget-id="widget.id"
         :style="widgetStyle(widget)"
       >
@@ -267,6 +332,20 @@
           <span class="widget-grip">⠿</span>
           <span class="widget-title">{{ widgetMeta(widget.type).label }}</span>
           <div class="widget-controls">
+            <!-- Per-widget last-updated + refresh -->
+            <span v-if="widgetLastUpdated(widget.id)" class="widget-ts" :title="'Last updated: ' + widgetLastUpdated(widget.id)">
+              {{ widgetAgo(widget.id) }}
+            </span>
+            <button
+              class="wc-btn"
+              title="Refresh widget"
+              @click.stop="refreshWidget(widget)"
+              :class="{ 'wc-spinning': widgetRefreshing.has(widget.id) }"
+            >
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+              </svg>
+            </button>
             <button class="wc-btn" :title="widget.collapsed ? 'Expand' : 'Collapse'" @click.stop="toggleCollapse(widget)">
               {{ widget.collapsed ? '▲' : '▼' }}
             </button>
@@ -275,9 +354,45 @@
           </div>
         </div>
 
-        <!-- Widget body -->
-        <div v-if="!widget.collapsed" class="widget-body">
-          <component :is="widgetComponent(widget.type)" v-bind="widget.config || {}" />
+        <!-- Widget body: loading skeleton -->
+        <div v-if="!widget.collapsed && widgetLoading.has(widget.id)" class="widget-body">
+          <SkeletonLoader type="card" :count="2" />
+        </div>
+
+        <!-- Widget body: error state -->
+        <div v-else-if="!widget.collapsed && widgetHasError(widget.id)" class="widget-body widget-error-body">
+          <div class="widget-error-state">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="1.5">
+              <circle cx="12" cy="12" r="10"/>
+              <line x1="12" y1="8" x2="12" y2="12"/>
+              <line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+            <p class="widget-error-msg">{{ widgetErrorMsg(widget.id) }}</p>
+            <button class="btn btn-outline btn-sm" @click.stop="refreshWidget(widget)">Retry</button>
+          </div>
+        </div>
+
+        <!-- Widget body: normal -->
+        <div v-else-if="!widget.collapsed" class="widget-body">
+          <component
+            :is="widgetComponent(widget.type)"
+            v-bind="widget.config || {}"
+            @error="onWidgetError(widget.id, $event)"
+            @loaded="onWidgetLoaded(widget.id)"
+          />
+        </div>
+      </div>
+    </div>
+
+    <!-- Initial dashboard skeleton (before first load) -->
+    <div v-if="initialLoading && layout.length === 0" class="widget-grid">
+      <div v-for="i in 6" :key="i" class="widget-card" :style="{ gridColumn: 'span 1' }">
+        <div class="widget-bar">
+          <span class="widget-grip">⠿</span>
+          <div class="widget-title-skel"></div>
+        </div>
+        <div class="widget-body">
+          <SkeletonLoader type="card" :count="2" />
         </div>
       </div>
     </div>
@@ -286,10 +401,27 @@
     <div class="activity-feed-panel">
       <div class="afp-header">
         <span class="afp-title">Recent Activity</span>
-        <router-link to="/audit" class="afp-viewall">View All</router-link>
+        <div class="afp-header-right">
+          <span v-if="activityLastUpdated" class="afp-ts">{{ activityAgoText }}</span>
+          <button class="afp-refresh" @click="fetchActivity" :disabled="activityLoading" title="Refresh activity">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" :class="{ 'spinning': activityLoading }">
+              <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+            </svg>
+          </button>
+          <router-link to="/audit" class="afp-viewall">View All</router-link>
+        </div>
       </div>
-      <div v-if="activityLoading" class="afp-loading">
-        <span class="loading-dot"></span><span class="loading-dot"></span><span class="loading-dot"></span>
+      <div v-if="activityLoading && activityFeed.length === 0" class="afp-loading">
+        <SkeletonLoader type="table" :count="5" />
+      </div>
+      <div v-else-if="activityError" class="afp-error-state">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="1.5">
+          <circle cx="12" cy="12" r="10"/>
+          <line x1="12" y1="8" x2="12" y2="12"/>
+          <line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>
+        <span>Failed to load activity</span>
+        <button class="btn btn-outline btn-sm" @click="fetchActivity">Retry</button>
       </div>
       <div v-else-if="activityFeed.length === 0" class="afp-empty">No recent activity.</div>
       <div v-else class="afp-list">
@@ -308,7 +440,7 @@
     </div>
 
     <!-- Empty state -->
-    <div v-if="layout.length === 0" class="dash-empty">
+    <div v-if="layout.length === 0 && !initialLoading" class="dash-empty">
       <p>No widgets on your dashboard.</p>
       <button class="btn btn-primary" @click="showPicker = true">+ Add Widget</button>
     </div>
@@ -378,6 +510,7 @@ import { useAuthStore } from '@/store/auth'
 import { useRouter } from 'vue-router'
 import api from '@/services/api'
 import AddHostWizard from '@/components/AddHostWizard.vue'
+import SkeletonLoader from '@/components/SkeletonLoader.vue'
 
 // Original widget imports
 import ClusterStatsWidget    from '@/components/widgets/ClusterStatsWidget.vue'
@@ -465,6 +598,7 @@ export default {
     NodeStatusGrid,
     QuickStatsBar,
     AddHostWizard,
+    SkeletonLoader,
   },
   setup() {
     const authStore = useAuthStore()
@@ -472,12 +606,99 @@ export default {
     const layout   = ref([])
     const showPicker     = ref(false)
     const showCustomize  = ref(false)
+    const showShortcutsHint = ref(false)
     const settingsWidget = ref(null)
     const gridEl   = ref(null)
     const dragging = ref(null)
     const lastUpdatedSeconds = ref(0)
+    const lastUpdatedAt = ref(null)
+    const initialLoading = ref(true)
+    const globalRefreshing = ref(false)
     let tickInterval = null
     let resourceInterval = null
+
+    // ── Per-widget state (loading, error, last-updated timestamps) ────────────
+    const widgetLoading    = ref(new Set())
+    const widgetErrors     = ref(new Map())  // id -> error message
+    const widgetTimestamps = ref(new Map())  // id -> Date
+    const widgetRefreshing = ref(new Set())
+
+    const widgetHasError  = (id) => widgetErrors.value.has(id)
+    const widgetErrorMsg  = (id) => widgetErrors.value.get(id) || 'Unknown error'
+    const widgetLastUpdated = (id) => widgetTimestamps.value.get(id) || null
+
+    const widgetAgo = (id) => {
+      const ts = widgetTimestamps.value.get(id)
+      if (!ts) return ''
+      const diff = Math.floor((Date.now() - ts.getTime()) / 1000)
+      if (diff < 10) return 'just now'
+      if (diff < 60) return `${diff}s ago`
+      if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
+      return `${Math.floor(diff / 3600)}h ago`
+    }
+
+    const onWidgetError = (id, err) => {
+      const msg = err?.message || (typeof err === 'string' ? err : 'Widget failed to load')
+      widgetErrors.value = new Map(widgetErrors.value).set(id, msg)
+      widgetLoading.value.delete(id)
+      widgetLoading.value = new Set(widgetLoading.value)
+    }
+
+    const onWidgetLoaded = (id) => {
+      widgetErrors.value.delete(id)
+      widgetErrors.value = new Map(widgetErrors.value)
+      widgetLoading.value.delete(id)
+      widgetLoading.value = new Set(widgetLoading.value)
+      widgetTimestamps.value = new Map(widgetTimestamps.value).set(id, new Date())
+    }
+
+    const refreshWidget = (widget) => {
+      // Clear error and mark as loading — the component will re-mount via key trick
+      widgetErrors.value.delete(widget.id)
+      widgetErrors.value = new Map(widgetErrors.value)
+      widgetRefreshing.value.add(widget.id)
+      widgetRefreshing.value = new Set(widgetRefreshing.value)
+      // Force re-mount by temporarily toggling collapsed
+      widget.collapsed = true
+      nextTick(() => {
+        widget.collapsed = false
+        setTimeout(() => {
+          widgetRefreshing.value.delete(widget.id)
+          widgetRefreshing.value = new Set(widgetRefreshing.value)
+          widgetTimestamps.value = new Map(widgetTimestamps.value).set(widget.id, new Date())
+        }, 800)
+      })
+    }
+
+    // ── Global refresh ─────────────────────────────────────────────────────
+    const refreshAll = async () => {
+      globalRefreshing.value = true
+      await Promise.all([
+        fetchAlerts(),
+        fetchActivity(),
+        fetchResources(),
+      ])
+      lastUpdatedSeconds.value = 0
+      lastUpdatedAt.value = new Date().toLocaleTimeString()
+      // Refresh all widgets
+      layout.value.forEach(w => {
+        if (!w.collapsed) refreshWidget(w)
+      })
+      globalRefreshing.value = false
+    }
+
+    // ── No hosts state ────────────────────────────────────────────────────
+    const noHostsConfigured = ref(false)
+
+    const checkHosts = async () => {
+      try {
+        const res = await api.proxmox.listHosts()
+        const hosts = res.data || []
+        noHostsConfigured.value = hosts.length === 0
+      } catch (e) {
+        // non-blocking
+      }
+    }
 
     // ── Welcome Banner ─────────────────────────────────────────────────────────
     const showWelcomeBanner = ref(false)
@@ -520,16 +741,29 @@ export default {
     }
 
     // ── Recent Activity Feed ───────────────────────────────────────────────────
-    const activityFeed = ref([])
+    const activityFeed    = ref([])
     const activityLoading = ref(false)
+    const activityError   = ref(false)
+    const activityLastUpdated = ref(null)
+
+    const activityAgoText = computed(() => {
+      if (!activityLastUpdated.value) return ''
+      const diff = Math.floor((Date.now() - activityLastUpdated.value.getTime()) / 1000)
+      if (diff < 10) return 'just now'
+      if (diff < 60) return `${diff}s ago`
+      if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
+      return `${Math.floor(diff / 3600)}h ago`
+    })
 
     const fetchActivity = async () => {
       activityLoading.value = true
+      activityError.value = false
       try {
         const res = await api.dashboard.getRecentActivity({ limit: 10 })
         activityFeed.value = Array.isArray(res.data) ? res.data : []
+        activityLastUpdated.value = new Date()
       } catch (e) {
-        // Non-blocking
+        activityError.value = true
       } finally {
         activityLoading.value = false
       }
@@ -591,7 +825,6 @@ export default {
       return Math.round((used_disk_gb / total_disk_gb) * 100)
     })
 
-    // trend: 'up' | 'down' | 'stable' | null
     const calcTrend = (curr, prev) => {
       if (prev === null || curr === null) return null
       const delta = curr - prev
@@ -630,6 +863,7 @@ export default {
         const res = await api.dashboard.getResources()
         prevResourceStats.value = resourceStats.value
         resourceStats.value = res.data
+        lastUpdatedAt.value = new Date().toLocaleTimeString()
       } catch (e) {
         // Non-blocking
       }
@@ -662,7 +896,6 @@ export default {
       const results = []
 
       try {
-        // Search VMs across all hosts
         const vmRes = await api.pveVm.search({ q, limit: 10 }).catch(() => null)
         if (vmRes && Array.isArray(vmRes.data)) {
           for (const vm of vmRes.data) {
@@ -679,7 +912,6 @@ export default {
       } catch (e) { /* search may not be available */ }
 
       try {
-        // Search hosts
         const hostRes = await api.proxmox.listHosts().catch(() => null)
         if (hostRes && Array.isArray(hostRes.data)) {
           for (const host of hostRes.data) {
@@ -693,7 +925,6 @@ export default {
                 _nav: { type: 'host', hostId: host.id },
               })
             }
-            // Search nodes
             if (Array.isArray(host.nodes)) {
               for (const node of host.nodes) {
                 const nodeName = node.node_name || node.name || ''
@@ -758,14 +989,12 @@ export default {
       }
     }
 
-    // Close search dropdown on outside click
     const onDocClick = (e) => {
       if (searchWrapEl.value && !searchWrapEl.value.contains(e.target)) {
         closeSearch()
       }
     }
 
-    // Keyboard shortcut: / to focus search
     const onDocKeydown = (e) => {
       if (e.key === '/' && document.activeElement !== searchInputEl.value &&
           !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) {
@@ -817,6 +1046,7 @@ export default {
 
     const onFirstHostAdded = () => {
       firstHostAdded.value = true
+      noHostsConfigured.value = false
     }
 
     const skipOnboarding = () => {
@@ -974,17 +1204,22 @@ export default {
     }
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
-    onMounted(() => {
+    onMounted(async () => {
       loadLayout()
       loadVisibility()
       checkWelcomeBanner()
       tickInterval = setInterval(() => lastUpdatedSeconds.value++, 1000)
       checkOnboarding()
 
-      // Fetch data for new features
-      fetchAlerts()
-      fetchActivity()
-      fetchResources()
+      // Kick off all initial fetches
+      await Promise.all([
+        fetchAlerts(),
+        fetchActivity(),
+        fetchResources(),
+        checkHosts(),
+      ])
+      initialLoading.value = false
+      lastUpdatedAt.value = new Date().toLocaleTimeString()
 
       // Refresh resources every 30s to track trends
       resourceInterval = setInterval(() => {
@@ -992,7 +1227,6 @@ export default {
         lastUpdatedSeconds.value = 0
       }, 30000)
 
-      // Global keyboard / click listeners
       document.addEventListener('keydown', onDocKeydown)
       document.addEventListener('mousedown', onDocClick)
     })
@@ -1009,10 +1243,14 @@ export default {
       visibleLayout,
       showPicker,
       showCustomize,
+      showShortcutsHint,
       settingsWidget,
       gridEl,
       dragging,
       lastUpdatedSeconds,
+      lastUpdatedAt,
+      initialLoading,
+      globalRefreshing,
       allWidgetTypes,
       widgetMeta,
       widgetComponent,
@@ -1028,6 +1266,19 @@ export default {
       resetLayout,
       startDrag,
       startDragTouch,
+      // Per-widget state
+      widgetLoading,
+      widgetRefreshing,
+      widgetHasError,
+      widgetErrorMsg,
+      widgetLastUpdated,
+      widgetAgo,
+      onWidgetError,
+      onWidgetLoaded,
+      refreshWidget,
+      refreshAll,
+      // No hosts
+      noHostsConfigured,
       // Onboarding
       showOnboarding,
       showWizard,
@@ -1045,6 +1296,10 @@ export default {
       // Activity feed
       activityFeed,
       activityLoading,
+      activityError,
+      activityLastUpdated,
+      activityAgoText,
+      fetchActivity,
       formatRelTime,
       // Resource trending
       resourceStats,
@@ -1172,6 +1427,52 @@ export default {
 .banner-fade-leave-from {
   opacity: 1;
   max-height: 100px;
+}
+
+/* ── No Hosts Configured ─────────────────────────────────────────────────── */
+.no-hosts-state {
+  border: 1.5px dashed var(--border-color);
+  border-radius: 0.75rem;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.no-hosts-inner {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.25rem 1.5rem;
+  flex-wrap: wrap;
+}
+
+.no-hosts-icon {
+  width: 52px;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(59, 130, 246, 0.07);
+  border-radius: 0.75rem;
+  color: var(--primary-color);
+  flex-shrink: 0;
+}
+
+.no-hosts-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.no-hosts-title {
+  font-weight: 700;
+  font-size: 1rem;
+  color: var(--text-primary);
+  margin: 0 0 0.25rem;
+}
+
+.no-hosts-sub {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  margin: 0;
 }
 
 /* ── Alerts Summary Bar ───────────────────────────────────────────────────── */
@@ -1500,6 +1801,33 @@ export default {
   color: var(--text-primary);
 }
 
+.afp-header-right {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.afp-ts {
+  font-size: 0.68rem;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.afp-refresh {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 0.15rem;
+  border-radius: 0.2rem;
+  display: flex;
+  align-items: center;
+  transition: color 0.12s;
+}
+
+.afp-refresh:hover { color: var(--primary-color); }
+.afp-refresh:disabled { opacity: 0.4; cursor: not-allowed; }
+
 .afp-viewall {
   font-size: 0.72rem;
   color: var(--primary-color);
@@ -1511,27 +1839,17 @@ export default {
 .afp-viewall:hover { opacity: 0.75; }
 
 .afp-loading {
+  padding: 0.5rem 0.85rem;
+}
+
+.afp-error-state {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 0.3rem;
+  gap: 0.6rem;
   padding: 1.25rem;
-}
-
-.loading-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--primary-color);
-  animation: loading-bounce 1.2s infinite both;
-}
-
-.loading-dot:nth-child(2) { animation-delay: 0.16s; }
-.loading-dot:nth-child(3) { animation-delay: 0.32s; }
-
-@keyframes loading-bounce {
-  0%, 80%, 100% { transform: scale(0.6); opacity: 0.5; }
-  40%            { transform: scale(1);   opacity: 1; }
+  font-size: 0.82rem;
+  color: var(--text-secondary);
 }
 
 .afp-empty {
@@ -1651,6 +1969,90 @@ export default {
   border-color: var(--primary-color);
 }
 
+.btn-icon--spinning svg {
+  animation: spin 0.8s linear infinite;
+}
+
+/* ── Keyboard shortcuts hint panel ─────────────────────────────────────── */
+.shortcuts-hint-panel {
+  background: var(--surface);
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.shp-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.25rem;
+}
+
+.shp-title {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.shp-close {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 0.15rem;
+  border-radius: 0.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.12s;
+}
+
+.shp-close:hover { color: var(--text-primary); }
+
+.shp-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 0.35rem 1.5rem;
+}
+
+.shp-row {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.shp-row kbd {
+  font-size: 0.68rem;
+  background: var(--background);
+  border: 1px solid var(--border-color);
+  border-radius: 0.2rem;
+  padding: 0.05rem 0.35rem;
+  color: var(--text-primary);
+  font-family: monospace;
+  flex-shrink: 0;
+}
+
+.shp-hint {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  margin: 0.25rem 0 0;
+}
+
+.shp-hint kbd {
+  font-size: 0.65rem;
+  background: var(--background);
+  border: 1px solid var(--border-color);
+  border-radius: 0.2rem;
+  padding: 0.05rem 0.3rem;
+  color: var(--text-primary);
+  font-family: monospace;
+}
+
 /* ── Customize Panel ──────────────────────────────────────────────────────── */
 .customize-panel {
   background: var(--surface);
@@ -1741,7 +2143,7 @@ export default {
 .panel-slide-leave-from {
   opacity: 1;
   transform: translateY(0);
-  max-height: 300px;
+  max-height: 400px;
 }
 
 /* ── Widget Grid ──────────────────────────────────────────────────────────── */
@@ -1762,6 +2164,10 @@ export default {
 
 .widget-card:hover {
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+}
+
+.widget-card--error {
+  border-color: rgba(239, 68, 68, 0.35);
 }
 
 .widget-dragging {
@@ -1804,11 +2210,36 @@ export default {
   text-overflow: ellipsis;
 }
 
+/* Skeleton title placeholder */
+.widget-title-skel {
+  height: 12px;
+  width: 100px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--border-color) 25%, var(--background) 50%, var(--border-color) 75%);
+  background-size: 200% auto;
+  animation: shimmer 1.5s linear infinite;
+  flex: 1;
+}
+
+@keyframes shimmer {
+  0%   { background-position: 200% center; }
+  100% { background-position: -200% center; }
+}
+
 .widget-controls {
   display: flex;
   align-items: center;
   gap: 0.1rem;
   flex-shrink: 0;
+}
+
+/* Per-widget timestamp */
+.widget-ts {
+  font-size: 0.6rem;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  padding: 0 0.2rem;
+  white-space: nowrap;
 }
 
 .wc-btn {
@@ -1837,8 +2268,31 @@ export default {
   color: #ef4444;
 }
 
-/* ── Widget Body ─────────────────────────────────────────────────────────── */
+.wc-spinning svg {
+  animation: spin 0.8s linear infinite;
+}
+
+/* ── Widget Body ─────────────────────────────────────────────────────── */
 .widget-body { padding: 0.75rem; }
+
+.widget-error-body { padding: 0; }
+
+.widget-error-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  padding: 1.5rem 1rem;
+  text-align: center;
+}
+
+.widget-error-msg {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin: 0;
+  max-width: 200px;
+}
 
 /* ── Empty State ─────────────────────────────────────────────────────────── */
 .dash-empty {
@@ -1980,6 +2434,11 @@ export default {
 .modal-fade-enter-from,
 .modal-fade-leave-to { opacity: 0; }
 
+/* ── Spinning animation ─────────────────────────────────────────────────── */
+.spinning {
+  animation: spin 0.8s linear infinite;
+}
+
 /* ── Responsive ──────────────────────────────────────────────────────────── */
 @media (max-width: 1024px) {
   .widget-grid { grid-template-columns: repeat(2, 1fr); }
@@ -1992,6 +2451,7 @@ export default {
   .customize-grid { flex-direction: column; }
   .resource-trending-row { flex-direction: column; }
   .rt-card { width: 100%; }
+  .shp-grid { grid-template-columns: 1fr; }
 }
 
 /* ── Onboarding screen ──────────────────────────────────────────────────── */

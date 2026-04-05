@@ -8,6 +8,7 @@ from app.core.database import init_db
 from app.api import auth, users, proxmox, vms, isos, cloud_images, updates, dashboard, bug_report, logs, docs, setup, system_updates, ha, system, llm, vm_agent, security, idrac, pbs, audit, notifications
 from app.api import vm_config, node as pve_node, console as pve_console, pbs_mgmt, pve_firewall, cluster as pve_cluster, sdn
 from app.api import vm_groups, vm_import
+from app.api import pve_access
 from app.api import tasks as task_api
 from app.api import bulk_ops
 from app.api import integrations
@@ -340,6 +341,7 @@ app.include_router(task_api.router, prefix=f"{settings.API_V1_PREFIX}/tasks", ta
 app.include_router(bulk_ops.router, prefix=f"{settings.API_V1_PREFIX}/pve-vm", tags=["Bulk Operations"])
 app.include_router(integrations.router, prefix=f"{settings.API_V1_PREFIX}/integrations", tags=["Integrations"])
 app.include_router(alerts_api.router, prefix=f"{settings.API_V1_PREFIX}/alerts", tags=["Alerts"])
+app.include_router(pve_access.router, prefix=f"{settings.API_V1_PREFIX}/pve-access", tags=["PVE Access Control"])
 
 
 if __name__ == "__main__":

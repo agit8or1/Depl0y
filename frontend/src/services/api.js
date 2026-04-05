@@ -898,10 +898,18 @@ export default {
     getCephOsds: (hostId, node) => api.get(`/pve-node/${hostId}/nodes/${node}/ceph/osd`),
     getCephMons: (hostId, node) => api.get(`/pve-node/${hostId}/nodes/${node}/ceph/mon`),
     getCephPools: (hostId, node) => api.get(`/pve-node/${hostId}/nodes/${node}/ceph/pools`),
+    createCephPool: (hostId, node, data) => api.post(`/pve-node/${hostId}/nodes/${node}/ceph/pools`, data),
+    deleteCephPool: (hostId, node, pool) => api.delete(`/pve-node/${hostId}/nodes/${node}/ceph/pools/${encodeURIComponent(pool)}`),
+    cephOsdAction: (hostId, node, osdId, action) => api.post(`/pve-node/${hostId}/nodes/${node}/ceph/osd/${osdId}/${action}`),
   },
 
   // VM Tags — Proxmox native tags (semicolon-separated in VM config)
   vmTags: {
+    // Cross-host tag listing (optionally filtered to one host)
+    listAllCrossHost: (hostId) => api.get('/pve-vm/tags', { params: hostId ? { host_id: hostId } : {} }),
+    // Bulk add/remove tags across multiple VMs
+    bulkTag: (data) => api.post('/pve-vm/bulk-tag', data),
+    // Per-host tag listing (legacy, host-scoped)
     listAll: (hostId) => api.get(`/pve-vm/${hostId}/tags`),
     getByTag: (hostId, tag) => api.get(`/pve-vm/${hostId}/tags/${encodeURIComponent(tag)}/vms`),
     addTag: (hostId, node, vmid, tag) => api.post(`/pve-vm/${hostId}/${node}/${vmid}/tags`, { tag }),
@@ -979,6 +987,33 @@ export default {
     deleteRule: (id) => api.delete(`/alerts/rules/${id}`),
     toggleRule: (id) => api.post(`/alerts/rules/${id}/toggle`),
     evaluate: () => api.post('/alerts/evaluate'),
+  },
+
+  // PVE Access Control — dedicated /pve-access router (users, groups, roles, ACL)
+  pveAccess: {
+    // Users
+    listUsers:  (h, params) => api.get(`/pve-access/${h}/users`, { params }),
+    createUser: (h, data)   => api.post(`/pve-access/${h}/users`, data),
+    updateUser: (h, uid, data) => api.put(`/pve-access/${h}/users/${encodeURIComponent(uid)}`, data),
+    deleteUser: (h, uid)    => api.delete(`/pve-access/${h}/users/${encodeURIComponent(uid)}`),
+    // User tokens
+    listTokens:  (h, uid)            => api.get(`/pve-access/${h}/users/${encodeURIComponent(uid)}/tokens`),
+    createToken: (h, uid, tid, data) => api.post(`/pve-access/${h}/users/${encodeURIComponent(uid)}/tokens/${tid}`, data),
+    deleteToken: (h, uid, tid)       => api.delete(`/pve-access/${h}/users/${encodeURIComponent(uid)}/tokens/${tid}`),
+    // Groups
+    listGroups:  (h)           => api.get(`/pve-access/${h}/groups`),
+    getGroup:    (h, gid)      => api.get(`/pve-access/${h}/groups/${encodeURIComponent(gid)}`),
+    createGroup: (h, data)     => api.post(`/pve-access/${h}/groups`, data),
+    updateGroup: (h, gid, data) => api.put(`/pve-access/${h}/groups/${encodeURIComponent(gid)}`, data),
+    deleteGroup: (h, gid)      => api.delete(`/pve-access/${h}/groups/${encodeURIComponent(gid)}`),
+    // Roles
+    listRoles:  (h)           => api.get(`/pve-access/${h}/roles`),
+    createRole: (h, data)     => api.post(`/pve-access/${h}/roles`, data),
+    updateRole: (h, rid, data) => api.put(`/pve-access/${h}/roles/${encodeURIComponent(rid)}`, data),
+    deleteRole: (h, rid)      => api.delete(`/pve-access/${h}/roles/${encodeURIComponent(rid)}`),
+    // ACL
+    listAcl:   (h)       => api.get(`/pve-access/${h}/acl`),
+    updateAcl: (h, data) => api.put(`/pve-access/${h}/acl`, data),
   },
 
   // SDN — Software-Defined Networking

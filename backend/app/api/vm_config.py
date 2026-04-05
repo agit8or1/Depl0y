@@ -202,11 +202,11 @@ def _register_vm_task(upid, host_id, node, vmid, action, current_user):
     )
 
 
-def _fire_vm_webhook(db, event_type, host, node, vmid, current_user, host_id):
+def _fire_vm_webhook(db, event_type, host, node, vmid, current_user, host_id, extra: dict = None):
     """Fire webhook + Slack for a VM lifecycle event (non-blocking background task)."""
     import asyncio
     from app.services.webhook_dispatcher import dispatcher
-    payload = {
+    vm_data = {
         "vm_id": vmid,
         "node": node,
         "host": host.hostname,
@@ -214,21 +214,12 @@ def _fire_vm_webhook(db, event_type, host, node, vmid, current_user, host_id):
         "action": event_type.split(".")[-1],
         "user": getattr(current_user, "username", ""),
     }
-    emoji_map = {
-        "vm.started": ":arrow_forward:",
-        "vm.stopped": ":stop_sign:",
-        "vm.shutdown": ":zzz:",
-    }
-    emoji = emoji_map.get(event_type, ":gear:")
-    slack_msg = (
-        f"{emoji} VM *{vmid}* on `{node}` "
-        f"{event_type.split('.')[-1]} by {getattr(current_user, 'username', '')}"
-    )
+    if extra:
+        vm_data.update(extra)
+    host_name = getattr(host, "name", None) or getattr(host, "hostname", f"host-{host_id}")
     try:
         loop = asyncio.get_event_loop()
-        loop.create_task(
-            dispatcher.dispatch_and_slack(db, event_type, payload, slack_msg, host_id=host_id)
-        )
+        loop.create_task(dispatcher.dispatch_vm_event(db, event_type, vm_data, host_name))
     except Exception:
         pass
 
@@ -241,7 +232,7 @@ def start_vm(host_id: int, node: str, vmid: int, db: Session = Depends(get_db),
         upid = _pve(_svc(host)).nodes(node).qemu(vmid).status.start.post()
         pve_cache.clear_prefix(f"pve:{host_id}:")
         _register_vm_task(upid, host_id, node, vmid, "start", current_user)
-        _fire_vm_webhook(db, "vm.started", host, node, vmid, current_user, host_id)
+        _fire_vm_webhook(db, "vm.start", host, node, vmid, current_user, host_id)
         return {"upid": upid}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -255,7 +246,7 @@ def stop_vm(host_id: int, node: str, vmid: int, db: Session = Depends(get_db),
         upid = _pve(_svc(host)).nodes(node).qemu(vmid).status.stop.post()
         pve_cache.clear_prefix(f"pve:{host_id}:")
         _register_vm_task(upid, host_id, node, vmid, "stop", current_user)
-        _fire_vm_webhook(db, "vm.stopped", host, node, vmid, current_user, host_id)
+        _fire_vm_webhook(db, "vm.stop", host, node, vmid, current_user, host_id)
         return {"upid": upid}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -270,6 +261,7 @@ def shutdown_vm(host_id: int, node: str, vmid: int, db: Session = Depends(get_db
         pve_cache.clear_prefix(f"pve:{host_id}:")
         _register_vm_task(upid, host_id, node, vmid, "shutdown", current_user)
         _fire_vm_webhook(db, "vm.shutdown", host, node, vmid, current_user, host_id)
+
         return {"upid": upid}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -439,6 +431,8 @@ def clone_vm(host_id: int, node: str, vmid: int, req: CloneRequest,
             vmid=vmid,
             task_type="qmclone",
         )
+        _fire_vm_webhook(db, "vm.create", host, node, req.newid, current_user, host_id,
+                         extra={"name": req.name, "cloned_from": vmid})
         return {"upid": upid}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -464,6 +458,8 @@ def migrate_vm(host_id: int, node: str, vmid: int, req: MigrateRequest,
             vmid=vmid,
             task_type="qmmigrate",
         )
+        _fire_vm_webhook(db, "vm.migrate", host, node, vmid, current_user, host_id,
+                         extra={"target_node": req.target, "online": req.online})
         return {"upid": upid}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -505,6 +501,7 @@ def delete_vm(host_id: int, node: str, vmid: int,
             vmid=vmid,
             task_type="qmdestroy",
         )
+        _fire_vm_webhook(db, "vm.delete", host, node, vmid, current_user, host_id)
         return {"upid": upid}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -1021,6 +1018,91 @@ def search_vms(
     paginated = matched[skip: skip + limit]
 
     return {"total": total, "vms": paginated}
+
+
+@router.get("/tags")
+def list_all_tags_cross_host(
+    host_id: Optional[int] = Query(None, description="Limit to a specific host"),
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Return all unique tags used across all VMs on every active host (or a single host), with VM counts."""
+    if host_id is not None:
+        hosts = db.query(ProxmoxHost).filter(ProxmoxHost.id == host_id, ProxmoxHost.is_active == True).all()
+    else:
+        hosts = db.query(ProxmoxHost).filter(ProxmoxHost.is_active == True).all()
+
+    tag_counts: Dict[str, int] = {}
+    for host in hosts:
+        try:
+            pve = _pve(_svc(host))
+            resources = pve.cluster.resources.get(type="vm")
+        except Exception:
+            continue
+        for item in resources:
+            raw_tags = item.get("tags", "")
+            for tag in _parse_tags(raw_tags):
+                tag_counts[tag] = tag_counts.get(tag, 0) + 1
+
+    return [{"tag": tag, "count": count} for tag, count in sorted(tag_counts.items())]
+
+
+class BulkTagRequest(BaseModel):
+    vmids: List[Dict[str, Any]]  # [{host_id, node, vmid}]
+    tags_add: List[str] = []
+    tags_remove: List[str] = []
+
+
+@router.post("/bulk-tag")
+def bulk_tag_vms(
+    req: BulkTagRequest,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_operator),
+):
+    """Add and/or remove tags from multiple VMs in a single call.
+
+    Each entry in ``vmids`` must have keys ``host_id``, ``node``, and ``vmid``.
+    Returns a per-VM result list with success/error status.
+    """
+    tags_add = [t.strip().lower() for t in req.tags_add if t.strip()]
+    tags_remove = [t.strip().lower() for t in req.tags_remove if t.strip()]
+
+    if not tags_add and not tags_remove:
+        raise HTTPException(status_code=400, detail="At least one tag to add or remove is required")
+
+    results: List[Dict[str, Any]] = []
+
+    for entry in req.vmids:
+        h_id = entry.get("host_id")
+        node = entry.get("node")
+        vmid = entry.get("vmid")
+
+        if not all([h_id, node, vmid]):
+            results.append({"host_id": h_id, "node": node, "vmid": vmid,
+                             "success": False, "error": "Missing host_id/node/vmid"})
+            continue
+
+        try:
+            host = _get_host(int(h_id), db)
+            pve = _pve(_svc(host))
+            cfg = pve.nodes(node).qemu(vmid).config.get()
+            current_tags = _parse_tags(cfg.get("tags", ""))
+            for t in tags_add:
+                if t not in current_tags:
+                    current_tags.append(t)
+            current_tags = [t for t in current_tags if t not in tags_remove]
+            pve.nodes(node).qemu(vmid).config.put(tags=_tags_to_str(current_tags))
+            pve_cache.clear_prefix(f"pve:{h_id}:")
+            results.append({"host_id": h_id, "node": node, "vmid": vmid,
+                             "success": True, "tags": current_tags})
+        except HTTPException as e:
+            results.append({"host_id": h_id, "node": node, "vmid": vmid,
+                             "success": False, "error": e.detail})
+        except Exception as e:
+            results.append({"host_id": h_id, "node": node, "vmid": vmid,
+                             "success": False, "error": str(e)})
+
+    return {"results": results}
 
 
 @router.get("/{host_id}/tags")

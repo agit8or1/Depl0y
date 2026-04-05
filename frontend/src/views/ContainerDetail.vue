@@ -589,6 +589,17 @@
         </div>
       </div>
     </div>
+
+    <!-- Task Progress Modal -->
+    <TaskProgressModal
+      :visible="showTaskProgress"
+      :upid="taskUpid"
+      :host-id="hostId"
+      :node="taskProgressNode"
+      @close="showTaskProgress = false"
+      @success="onTaskSuccess"
+      @error="onTaskError"
+    />
   </div>
 </template>
 
@@ -598,6 +609,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useToast } from 'vue-toastification'
 import api from '@/services/api'
 import { formatBytes, formatUptime } from '@/utils/proxmox'
+import TaskProgressModal from '@/components/TaskProgressModal.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -646,6 +658,11 @@ const savingLimit = ref({ cpuunits: false, cpulimit: false, swap: false, quota: 
 const showResizeModal = ref(false)
 const resizeAmount = ref('')
 const resizing = ref(false)
+
+// Task progress modal
+const showTaskProgress = ref(false)
+const taskUpid = ref('')
+const taskProgressNode = ref('')
 
 let pollInterval = null
 
@@ -779,9 +796,16 @@ const startPolling = () => {
 const action = async (act) => {
   actioning.value = true
   try {
-    await api.pveNode.containerAction(hostId.value, node.value, vmid.value, act)
-    toast.success(`Container ${act} initiated`)
-    setTimeout(() => fetchStatus(), 2000)
+    const res = await api.pveNode.containerAction(hostId.value, node.value, vmid.value, act)
+    const upid = res.data?.upid || res.data
+    if (upid && typeof upid === 'string' && upid.startsWith('UPID')) {
+      taskUpid.value = upid
+      taskProgressNode.value = node.value
+      showTaskProgress.value = true
+    } else {
+      toast.success(`Container ${act} initiated`)
+      setTimeout(() => fetchStatus(), 2000)
+    }
   } catch (error) {
     console.error(`Failed to ${act} container:`, error)
     toast.error(`Failed to ${act} container`)
@@ -1009,15 +1033,33 @@ const submitClone = async () => {
     if (cloneForm.value.hostname) payload.hostname = cloneForm.value.hostname
     if (cloneForm.value.target) payload.target = cloneForm.value.target
     if (cloneForm.value.storage) payload.storage = cloneForm.value.storage
-    await api.pveNode.cloneLxc(hostId.value, node.value, vmid.value, payload)
-    toast.success(`Clone task started — new CT ${cloneForm.value.newid}`)
+    const res = await api.pveNode.cloneLxc(hostId.value, node.value, vmid.value, payload)
     showCloneModal.value = false
+    const upid = res.data?.upid || res.data
+    if (upid && typeof upid === 'string' && upid.startsWith('UPID')) {
+      taskUpid.value = upid
+      taskProgressNode.value = node.value
+      showTaskProgress.value = true
+    } else {
+      toast.success(`Clone task started — new CT ${cloneForm.value.newid}`)
+    }
   } catch (e) {
     console.error('Failed to clone container:', e)
     toast.error('Failed to clone container')
   } finally {
     cloningLxc.value = false
   }
+}
+
+const onTaskSuccess = () => {
+  toast.success('Task completed successfully')
+  showTaskProgress.value = false
+  fetchStatus()
+}
+
+const onTaskError = (msg) => {
+  toast.error(`Task failed: ${msg}`)
+  fetchStatus()
 }
 
 const openTerminal = () => {

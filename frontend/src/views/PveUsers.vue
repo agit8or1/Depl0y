@@ -70,6 +70,7 @@
               </td>
               <td>
                 <div class="flex gap-1">
+                  <button @click="openPermissions(user)" class="btn btn-outline btn-sm">Permissions</button>
                   <button @click="deleteUser(user.userid)" class="btn btn-danger btn-sm">Delete</button>
                 </div>
               </td>
@@ -78,8 +79,6 @@
         </table>
       </div>
     </div>
-
-    <!-- Tokens Tab (placeholder — opened via Users modal) -->
 
     <!-- Access Control Tab -->
     <div v-if="activeTab === 'acl'" class="card">
@@ -122,6 +121,47 @@
               </td>
               <td>
                 <button @click="deleteAclEntry(entry)" class="btn btn-danger btn-sm">Delete</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Groups Tab -->
+    <div v-if="activeTab === 'groups'" class="card">
+      <div class="card-header">
+        <h3>Groups</h3>
+        <button @click="showCreateGroupModal = true" class="btn btn-primary">+ Create Group</button>
+      </div>
+
+      <div v-if="loadingGroups" class="loading-spinner"></div>
+
+      <div v-else-if="groups.length === 0" class="text-center text-muted" style="padding: 2rem;">
+        <p>No groups found.</p>
+      </div>
+
+      <div v-else class="table-container">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Group ID</th>
+              <th>Comment</th>
+              <th>Members</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="group in groups" :key="group.groupid">
+              <td><strong>{{ group.groupid }}</strong></td>
+              <td>{{ group.comment || '—' }}</td>
+              <td>
+                <span class="badge badge-secondary">
+                  {{ group.members ? group.members.length : 0 }}
+                </span>
+              </td>
+              <td>
+                <button @click="deleteGroup(group.groupid)" class="btn btn-danger btn-sm">Delete</button>
               </td>
             </tr>
           </tbody>
@@ -202,15 +242,21 @@
                   <th>Comment</th>
                   <th>Expires</th>
                   <th>Priv Sep</th>
+                  <th>Created</th>
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 <tr v-for="token in tokens" :key="token.tokenid">
-                  <td><code>{{ token.tokenid }}</code></td>
+                  <td>
+                    <code>{{ formatTokenId(selectedUser?.userid, token.tokenid) }}</code>
+                  </td>
                   <td>{{ token.comment || '—' }}</td>
                   <td class="text-sm">
-                    <span v-if="token.expire && token.expire > 0">{{ formatExpiry(token.expire) }}</span>
+                    <span v-if="token.expire && token.expire > 0"
+                          :class="['expiry-badge', expiryClass(token.expire)]">
+                      {{ formatExpiry(token.expire) }}
+                    </span>
                     <span v-else class="text-muted">Never</span>
                   </td>
                   <td>
@@ -218,8 +264,20 @@
                       {{ token.privsep !== 0 ? 'Yes' : 'No' }}
                     </span>
                   </td>
+                  <td class="text-sm text-muted">
+                    {{ token.ctime ? formatDate(token.ctime) : '—' }}
+                  </td>
                   <td>
-                    <button @click="revokeToken(token.tokenid)" class="btn btn-danger btn-sm">Revoke</button>
+                    <div class="flex gap-1">
+                      <button
+                        @click="copyToClipboard(formatTokenId(selectedUser?.userid, token.tokenid))"
+                        class="btn btn-outline btn-sm"
+                        title="Copy Token ID"
+                      >
+                        Copy ID
+                      </button>
+                      <button @click="revokeToken(token.tokenid)" class="btn btn-danger btn-sm">Delete</button>
+                    </div>
                   </td>
                 </tr>
               </tbody>
@@ -249,12 +307,31 @@
               {{ savingToken ? 'Creating...' : 'Create Token' }}
             </button>
           </form>
+        </div>
+      </div>
+    </div>
 
-          <!-- Token Value Display -->
-          <div v-if="createdTokenValue" class="token-value-box">
-            <h5>Token Created Successfully!</h5>
-            <p class="text-sm text-muted">Copy this token value — it will not be shown again:</p>
-            <code class="token-value">{{ createdTokenValue }}</code>
+    <!-- Token Secret Modal (shown once after creation) -->
+    <div v-if="showTokenSecretModal" class="modal" @click.self="showTokenSecretModal = false">
+      <div class="modal-content" @click.stop>
+        <div class="modal-header">
+          <h3>Token Created!</h3>
+          <button @click="showTokenSecretModal = false" class="btn-close">×</button>
+        </div>
+        <div class="modal-body">
+          <div class="token-secret-alert">
+            <p class="text-sm" style="margin-bottom: 1rem;">
+              Copy your token secret — it will <strong>not</strong> be shown again:
+            </p>
+            <div class="token-secret-block">
+              <code class="token-secret-value">{{ createdTokenValue }}</code>
+              <button @click="copyToClipboard(createdTokenValue)" class="btn btn-outline btn-sm copy-secret-btn">
+                Copy
+              </button>
+            </div>
+          </div>
+          <div class="flex gap-1 mt-2" style="justify-content: flex-end;">
+            <button @click="showTokenSecretModal = false" class="btn btn-primary">Done</button>
           </div>
         </div>
       </div>
@@ -317,6 +394,70 @@
         </form>
       </div>
     </div>
+
+    <!-- User Permissions Modal -->
+    <div v-if="showPermissionsModal" class="modal" @click="showPermissionsModal = false">
+      <div class="modal-content modal-large" @click.stop>
+        <div class="modal-header">
+          <h3>Permissions — {{ permissionsUser?.userid }}</h3>
+          <button @click="showPermissionsModal = false" class="btn-close">×</button>
+        </div>
+        <div class="modal-body">
+          <div v-if="loadingPermissions" class="loading-spinner"></div>
+          <div v-else-if="userPermissions.length === 0" class="text-muted text-sm" style="padding: 1rem 0;">
+            No explicit permissions (inherits from group)
+          </div>
+          <div v-else class="table-container">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Path</th>
+                  <th>Role</th>
+                  <th>Propagate</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(entry, idx) in userPermissions" :key="idx">
+                  <td><code>{{ entry.path }}</code></td>
+                  <td><span class="badge badge-info">{{ entry.roleid }}</span></td>
+                  <td>
+                    <span :class="['badge', entry.propagate ? 'badge-success' : 'badge-secondary']">
+                      {{ entry.propagate ? 'Yes' : 'No' }}
+                    </span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Create Group Modal -->
+    <div v-if="showCreateGroupModal" class="modal" @click="showCreateGroupModal = false">
+      <div class="modal-content" @click.stop>
+        <div class="modal-header">
+          <h3>Create Group</h3>
+          <button @click="showCreateGroupModal = false" class="btn-close">×</button>
+        </div>
+        <form @submit.prevent="createGroup" class="modal-body">
+          <div class="form-group">
+            <label class="form-label">Group ID</label>
+            <input v-model="newGroup.groupid" class="form-control" placeholder="admins" required />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Comment</label>
+            <input v-model="newGroup.comment" class="form-control" placeholder="Optional description" />
+          </div>
+          <div class="flex gap-1 mt-2">
+            <button type="submit" class="btn btn-primary" :disabled="savingGroup">
+              {{ savingGroup ? 'Creating...' : 'Create Group' }}
+            </button>
+            <button type="button" @click="showCreateGroupModal = false" class="btn btn-outline">Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -335,7 +476,8 @@ export default {
 
     const tabs = [
       { id: 'users', label: 'Users' },
-      { id: 'acl', label: 'Access Control' }
+      { id: 'acl', label: 'Access Control' },
+      { id: 'groups', label: 'Groups' }
     ]
     const activeTab = ref('users')
 
@@ -345,6 +487,7 @@ export default {
     const saving = ref(false)
     const showAddModal = ref(false)
     const showTokensModal = ref(false)
+    const showTokenSecretModal = ref(false)
     const selectedUser = ref(null)
     const tokens = ref([])
     const loadingTokens = ref(false)
@@ -431,15 +574,29 @@ export default {
       savingToken.value = true
       createdTokenValue.value = null
       try {
+        const payload = {}
+        if (newToken.value.comment) payload.comment = newToken.value.comment
+        if (newToken.value.privsep !== undefined) payload.privsep = newToken.value.privsep
         const response = await api.pveNode.createUserToken(
           hostId.value,
           encodeURIComponent(selectedUser.value.userid),
-          newToken.value.tokenid
+          newToken.value.tokenid,
+          payload
         )
-        toast.success('Token created')
-        createdTokenValue.value = response.data?.value || response.data?.full_tokenid || JSON.stringify(response.data)
+        // PVE returns the secret inside response.data.value or response.data
+        const secret = response.data?.value || response.data?.full_tokenid || JSON.stringify(response.data)
+        createdTokenValue.value = secret
         newToken.value = { tokenid: '', comment: '', privsep: 0 }
-        await openTokens(selectedUser.value)
+        // Refresh token list (without closing tokens modal)
+        loadingTokens.value = true
+        try {
+          const r2 = await api.pveNode.listUserTokens(hostId.value, encodeURIComponent(selectedUser.value.userid))
+          tokens.value = r2.data || []
+        } finally {
+          loadingTokens.value = false
+        }
+        // Show secret modal on top
+        showTokenSecretModal.value = true
       } catch (error) {
         console.error('Failed to create token:', error)
         toast.error('Failed to create token')
@@ -450,18 +607,44 @@ export default {
 
     const revokeToken = async (tokenid) => {
       if (!selectedUser.value) return
-      if (!confirm(`Revoke token "${tokenid}"?`)) return
+      if (!confirm(`Delete token "${tokenid}"?`)) return
       try {
         await api.pveNode.deleteUserToken(
           hostId.value,
           encodeURIComponent(selectedUser.value.userid),
           tokenid
         )
-        toast.success('Token revoked')
+        toast.success('Token deleted')
         await openTokens(selectedUser.value)
       } catch (error) {
         console.error('Failed to revoke token:', error)
-        toast.error('Failed to revoke token')
+        toast.error('Failed to delete token')
+      }
+    }
+
+    // ── User Permissions ───────────────────────────────────────────────────
+    const showPermissionsModal = ref(false)
+    const permissionsUser = ref(null)
+    const userPermissions = ref([])
+    const loadingPermissions = ref(false)
+
+    const openPermissions = async (user) => {
+      permissionsUser.value = user
+      userPermissions.value = []
+      showPermissionsModal.value = true
+      loadingPermissions.value = true
+      try {
+        const response = await api.pveNode.listAcl(hostId.value)
+        const all = response.data || []
+        // Match entries where ugid equals this user's userid (user type entries)
+        userPermissions.value = all.filter(
+          e => e.type === 'user' && e.ugid === user.userid
+        )
+      } catch (error) {
+        console.error('Failed to fetch ACL for user:', error)
+        toast.error('Failed to load user permissions')
+      } finally {
+        loadingPermissions.value = false
       }
     }
 
@@ -552,12 +735,65 @@ export default {
       }
     }
 
+    // ── Groups ─────────────────────────────────────────────────────────────
+    const groups = ref([])
+    const loadingGroups = ref(false)
+    const showCreateGroupModal = ref(false)
+    const savingGroup = ref(false)
+
+    const newGroup = ref({ groupid: '', comment: '' })
+
+    const fetchGroups = async () => {
+      loadingGroups.value = true
+      try {
+        const response = await api.pveNode.listGroups(hostId.value)
+        groups.value = response.data || []
+      } catch (error) {
+        console.error('Failed to fetch groups:', error)
+        toast.error('Failed to load groups')
+      } finally {
+        loadingGroups.value = false
+      }
+    }
+
+    const createGroup = async () => {
+      savingGroup.value = true
+      try {
+        const payload = { groupid: newGroup.value.groupid }
+        if (newGroup.value.comment) payload.comment = newGroup.value.comment
+        await api.pveNode.createGroup(hostId.value, payload)
+        toast.success('Group created')
+        showCreateGroupModal.value = false
+        newGroup.value = { groupid: '', comment: '' }
+        await fetchGroups()
+      } catch (error) {
+        console.error('Failed to create group:', error)
+        toast.error(error.response?.data?.detail || 'Failed to create group')
+      } finally {
+        savingGroup.value = false
+      }
+    }
+
+    const deleteGroup = async (groupid) => {
+      if (!confirm(`Delete group "${groupid}"? This cannot be undone.`)) return
+      try {
+        await api.pveNode.deleteGroup(hostId.value, groupid)
+        toast.success('Group deleted')
+        await fetchGroups()
+      } catch (error) {
+        console.error('Failed to delete group:', error)
+        toast.error('Failed to delete group')
+      }
+    }
+
     // ── Tab switching ──────────────────────────────────────────────────────
     const switchTab = (tabId) => {
       activeTab.value = tabId
       if (tabId === 'acl') {
         fetchAcl()
         fetchRoles()
+      } else if (tabId === 'groups') {
+        fetchGroups()
       }
     }
 
@@ -568,9 +804,37 @@ export default {
       return parts.length > 1 ? parts[parts.length - 1] : 'unknown'
     }
 
+    const formatTokenId = (userid, tokenid) => {
+      if (!userid || !tokenid) return tokenid || ''
+      return `${userid}!${tokenid}`
+    }
+
     const formatExpiry = (epoch) => {
       if (!epoch) return 'Never'
       return new Date(epoch * 1000).toLocaleDateString()
+    }
+
+    const formatDate = (epoch) => {
+      if (!epoch) return '—'
+      return new Date(epoch * 1000).toLocaleDateString()
+    }
+
+    const expiryClass = (epoch) => {
+      if (!epoch || epoch === 0) return 'expiry-never'
+      const now = Math.floor(Date.now() / 1000)
+      const diff = epoch - now
+      if (diff < 0) return 'expiry-expired'
+      if (diff < 30 * 24 * 3600) return 'expiry-soon'
+      return 'expiry-ok'
+    }
+
+    const copyToClipboard = async (text) => {
+      try {
+        await navigator.clipboard.writeText(text)
+        toast.success('Copied to clipboard')
+      } catch {
+        toast.error('Failed to copy')
+      }
     }
 
     onMounted(() => {
@@ -588,6 +852,7 @@ export default {
       saving,
       showAddModal,
       showTokensModal,
+      showTokenSecretModal,
       selectedUser,
       tokens,
       loadingTokens,
@@ -600,6 +865,12 @@ export default {
       openTokens,
       createToken,
       revokeToken,
+      // permissions
+      showPermissionsModal,
+      permissionsUser,
+      userPermissions,
+      loadingPermissions,
+      openPermissions,
       // acl
       aclEntries,
       loadingAcl,
@@ -611,9 +882,21 @@ export default {
       openGrantModal,
       grantAcl,
       deleteAclEntry,
+      // groups
+      groups,
+      loadingGroups,
+      showCreateGroupModal,
+      savingGroup,
+      newGroup,
+      createGroup,
+      deleteGroup,
       // helpers
       extractRealm,
-      formatExpiry
+      formatTokenId,
+      formatExpiry,
+      formatDate,
+      expiryClass,
+      copyToClipboard
     }
   }
 }
@@ -719,28 +1002,61 @@ export default {
   padding: 1.5rem;
 }
 
-.token-value-box {
-  margin-top: 1.5rem;
+/* Token secret modal */
+.token-secret-alert {
   padding: 1rem;
-  background: #d1fae5;
-  border: 1px solid #10b981;
+  background: #fef3c7;
+  border: 1px solid #f59e0b;
   border-radius: 0.5rem;
-  color: #065f46;
+  color: #78350f;
 }
 
-.token-value-box h5 {
-  margin: 0 0 0.5rem 0;
-}
-
-.token-value {
-  display: block;
+.token-secret-block {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
   margin-top: 0.5rem;
-  padding: 0.5rem;
-  background: #065f46;
-  color: #d1fae5;
+}
+
+.token-secret-value {
+  display: block;
+  flex: 1;
+  padding: 0.5rem 0.75rem;
+  background: #1c1917;
+  color: #fef3c7;
   border-radius: 0.375rem;
   font-size: 0.875rem;
   word-break: break-all;
+  white-space: pre-wrap;
+}
+
+.copy-secret-btn {
+  flex-shrink: 0;
+  align-self: center;
+}
+
+/* Expiry color coding */
+.expiry-badge {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 0.25rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+.expiry-expired {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.expiry-soon {
+  background: #fef9c3;
+  color: #854d0e;
+}
+
+.expiry-ok {
+  background: #dcfce7;
+  color: #166534;
 }
 
 .badge-secondary {

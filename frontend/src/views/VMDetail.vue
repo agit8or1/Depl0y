@@ -750,40 +750,97 @@
 
     <!-- Migrate Modal -->
     <div v-if="showMigrateModal" class="modal" @click.self="showMigrateModal = false">
-      <div class="modal-content" @click.stop>
+      <div class="modal-content modal-content--wide" @click.stop>
         <div class="modal-header">
           <h3>Migrate VM {{ vmid }}</h3>
           <button @click="showMigrateModal = false" class="btn-close">×</button>
         </div>
         <div class="modal-body">
+
+          <!-- Target node -->
           <div class="form-group">
             <label class="form-label">Target Node</label>
-            <select v-model="migrateForm.target" class="form-control">
+            <select v-model="migrateForm.target" class="form-control" @change="onMigrateTargetChange">
               <option value="" disabled>Select target node</option>
               <option v-for="n in clusterNodes" :key="n.node" :value="n.node">{{ n.node }}</option>
             </select>
           </div>
+
+          <!-- Online migration -->
           <div class="form-group">
             <label class="form-label checkbox-label">
               <input v-model="migrateForm.online" type="checkbox" />
               Online Migration (live, VM stays running)
             </label>
+            <div class="form-hint" v-if="migrateForm.online">VM will remain running during migration.</div>
+            <div class="form-hint" v-else>VM will be stopped before migration.</div>
           </div>
+
+          <!-- With local disks -->
           <div class="form-group">
             <label class="form-label checkbox-label">
               <input v-model="migrateForm.with_local_disks" type="checkbox" />
-              Migrate local disks with VM
+              Migrate with local disks
             </label>
+            <div class="form-hint">Required when VM has disks on local (non-shared) storage.</div>
           </div>
+
+          <!-- Target storage selector -->
+          <div v-if="migrateForm.target" class="form-group">
+            <label class="form-label">
+              Target Storage
+              <span v-if="loadingTargetStorage" class="text-muted text-sm ml-1">(loading…)</span>
+            </label>
+            <div v-if="!loadingTargetStorage && targetStorageList.length === 0" class="text-muted text-sm">
+              No storage available on {{ migrateForm.target }}.
+            </div>
+            <div v-else-if="!loadingTargetStorage">
+              <!-- Per-disk storage mapping -->
+              <div v-if="parsedDisks.length > 0" class="migrate-storage-table">
+                <div class="migrate-storage-header">
+                  <span>Disk</span>
+                  <span>Source Storage</span>
+                  <span>Target Storage</span>
+                </div>
+                <div v-for="disk in parsedDisks" :key="disk.key" class="migrate-storage-row">
+                  <span class="migrate-disk-key"><code>{{ disk.key }}</code></span>
+                  <span class="migrate-storage-src text-sm text-muted">{{ disk.parsed?.storage || '—' }}</span>
+                  <select
+                    v-model="migrateStorageMap[disk.key]"
+                    class="form-control form-control-sm"
+                  >
+                    <option value="">Same as source / auto</option>
+                    <option v-for="s in targetStorageList" :key="s.storage" :value="s.storage">
+                      {{ s.storage }} ({{ s.type }})
+                    </option>
+                  </select>
+                </div>
+              </div>
+              <div v-else class="text-muted text-sm">No disk mappings required (no detected disks).</div>
+            </div>
+          </div>
+
           <div class="flex gap-1 mt-2">
-            <button @click="doMigrate" class="btn btn-primary" :disabled="actioning || !migrateForm.target">
-              {{ actioning ? 'Migrating...' : 'Migrate' }}
+            <button @click="doMigrate" class="btn btn-primary"
+              :disabled="migrateSubmitting || !migrateForm.target">
+              {{ migrateSubmitting ? 'Starting…' : 'Migrate' }}
             </button>
             <button @click="showMigrateModal = false" class="btn btn-outline">Cancel</button>
           </div>
         </div>
       </div>
     </div>
+
+    <!-- Migration Task Progress Modal -->
+    <TaskProgressModal
+      :visible="showMigrateProgress"
+      :upid="migrateUpid"
+      :host-id="hostId"
+      :node="node"
+      @close="showMigrateProgress = false"
+      @success="onMigrateSuccess"
+      @error="onMigrateError"
+    />
 
     <!-- Add Disk Modal -->
     <div v-if="showAddDiskModal" class="modal" @click.self="showAddDiskModal = false">
@@ -1054,9 +1111,10 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Line } from 'vue-chartjs'
+import TaskProgressModal from '@/components/TaskProgressModal.vue'
 import {
   Chart as ChartJS,
   CategoryScale, LinearScale, PointElement, LineElement,
@@ -1229,7 +1287,17 @@ const saveInlineField = async (field, value) => {
 
 // Modal forms
 const cloneForm = ref({ newid: null, name: '', full: true, storage: '', target: '' })
-const migrateForm = ref({ target: '', online: true, with_local_disks: false })
+const migrateForm = ref({ target: '', online: true, with_local_disks: true })
+
+// Migrate — target storage
+const targetStorageList = ref([])
+const loadingTargetStorage = ref(false)
+const migrateStorageMap = ref({})   // { diskKey: targetStorageName }
+
+// Migrate — task progress
+const showMigrateProgress = ref(false)
+const migrateSubmitting = ref(false)
+const migrateUpid = ref('')
 const addDiskForm = ref({ storage: '', size: 32, bus: 'scsi', format: 'qcow2' })
 const addNicForm = ref({ bridge: 'vmbr0', model: 'virtio', tag: null })
 const snapshotForm = ref({ snapname: '', description: '', vmstate: false })
@@ -1908,10 +1976,40 @@ const openCloneModal = async () => {
 
 const openMigrateModal = async () => {
   await loadClusterNodes()
-  if (clusterNodes.value.length > 0 && !migrateForm.value.target) {
+  // Default online=true if running, false if stopped
+  const isRunning = vmStatus.value?.status === 'running'
+  migrateForm.value.online = isRunning
+  migrateForm.value.with_local_disks = true
+  migrateForm.value.target = ''
+  targetStorageList.value = []
+  migrateStorageMap.value = {}
+  if (clusterNodes.value.length > 0) {
     migrateForm.value.target = clusterNodes.value[0].node
+    await loadTargetStorage(clusterNodes.value[0].node)
   }
   showMigrateModal.value = true
+}
+
+const loadTargetStorage = async (targetNode) => {
+  if (!targetNode) return
+  loadingTargetStorage.value = true
+  try {
+    const res = await api.pveNode.listStorage(hostId.value, targetNode)
+    targetStorageList.value = res.data || []
+    // Reset storage map
+    migrateStorageMap.value = {}
+  } catch (e) {
+    console.warn('Failed to load target storage', e)
+    targetStorageList.value = []
+  } finally {
+    loadingTargetStorage.value = false
+  }
+}
+
+const onMigrateTargetChange = async () => {
+  if (migrateForm.value.target) {
+    await loadTargetStorage(migrateForm.value.target)
+  }
 }
 
 const doClone = async () => {
@@ -1940,16 +2038,57 @@ const doMigrate = async () => {
     toast.error('Select a target node')
     return
   }
-  actioning.value = true
+  migrateSubmitting.value = true
   try {
-    await api.pveVm.migrate(hostId.value, node.value, vmid.value, migrateForm.value)
-    toast.success('Migration started')
-    showMigrateModal.value = false
+    // Build payload
+    const payload = {
+      target: migrateForm.value.target,
+      online: migrateForm.value.online ? 1 : 0,
+      with_local_disks: migrateForm.value.with_local_disks ? 1 : 0,
+    }
+    // Append target storage mappings (targetstorage or per-disk)
+    // Collect non-empty mappings: if all disks map to same storage use targetstorage,
+    // otherwise pass individual disk:storage pairs in targetstorage field (PVE syntax)
+    const mappings = Object.entries(migrateStorageMap.value)
+      .filter(([, v]) => v)
+    if (mappings.length > 0) {
+      // Build PVE targetstorage string: "storage1,scsi0=storage2,..."
+      const unique = [...new Set(mappings.map(([, v]) => v))]
+      if (unique.length === 1 && mappings.length === parsedDisks.value.length) {
+        // All disks → same storage, use simple form
+        payload.targetstorage = unique[0]
+      } else {
+        // Mixed: comma-separated diskkey=storage pairs
+        payload.targetstorage = mappings.map(([k, v]) => `${k}=${v}`).join(',')
+      }
+    }
+
+    const res = await api.pveVm.migrate(hostId.value, node.value, vmid.value, payload)
+    const upid = res.data?.upid || res.data
+    if (upid && typeof upid === 'string' && upid.startsWith('UPID')) {
+      migrateUpid.value = upid
+      showMigrateModal.value = false
+      showMigrateProgress.value = true
+    } else {
+      toast.success('Migration started')
+      showMigrateModal.value = false
+    }
   } catch (e) {
     console.error(e)
   } finally {
-    actioning.value = false
+    migrateSubmitting.value = false
   }
+}
+
+const onMigrateSuccess = () => {
+  toast.success('Migration completed successfully')
+  showMigrateProgress.value = false
+  // Reload VM status
+  loadAll()
+}
+
+const onMigrateError = (msg) => {
+  toast.error(`Migration failed: ${msg}`)
 }
 
 // ── Console ────────────────────────────────────────────────────────────────────
@@ -2187,6 +2326,61 @@ onUnmounted(() => {
 
 .modal-content.modal-sm {
   max-width: 440px;
+}
+
+.modal-content--wide {
+  max-width: 720px;
+}
+
+/* Migrate storage mapping table */
+.migrate-storage-table {
+  border: 1px solid var(--border-color);
+  border-radius: 0.375rem;
+  overflow: hidden;
+  margin-top: 0.5rem;
+}
+
+.migrate-storage-header {
+  display: grid;
+  grid-template-columns: 80px 1fr 1fr;
+  gap: 0.5rem;
+  padding: 0.4rem 0.75rem;
+  background: var(--bg-tertiary, rgba(255,255,255,0.04));
+  border-bottom: 1px solid var(--border-color);
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.migrate-storage-row {
+  display: grid;
+  grid-template-columns: 80px 1fr 1fr;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  align-items: center;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.migrate-storage-row:last-child {
+  border-bottom: none;
+}
+
+.migrate-disk-key {
+  font-size: 0.82rem;
+}
+
+.migrate-storage-src {
+  font-family: monospace;
+  font-size: 0.8rem;
+}
+
+/* Form hints */
+.form-hint {
+  margin-top: 0.3rem;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
 }
 
 .modal-header {

@@ -155,6 +155,28 @@ def ha_groups(host_id: int, db: Session = Depends(get_db), current_user=Depends(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/{host_id}/cluster/ha/groups")
+def create_ha_group(host_id: int, data: dict = {}, db: Session = Depends(get_db),
+                    current_user=Depends(require_admin)):
+    host = _get_host(host_id, db)
+    try:
+        _pve(host).cluster.ha.groups.post(**data)
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/{host_id}/cluster/ha/groups/{groupid}")
+def delete_ha_group(host_id: int, groupid: str, db: Session = Depends(get_db),
+                    current_user=Depends(require_admin)):
+    host = _get_host(host_id, db)
+    try:
+        _pve(host).cluster.ha.groups(groupid).delete()
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/{host_id}/cluster/ha/status")
 def ha_status(host_id: int, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
     host = _get_host(host_id, db)
@@ -264,6 +286,50 @@ def update_acl(host_id: int, acl: dict, db: Session = Depends(get_db),
     host = _get_host(host_id, db)
     try:
         _pve(host).access.acl.put(**acl)
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Access groups ─────────────────────────────────────────────────────────────
+
+@router.get("/{host_id}/access/groups")
+def list_groups(host_id: int, db: Session = Depends(get_db), current_user=Depends(require_admin)):
+    host = _get_host(host_id, db)
+    try:
+        return _pve(host).access.groups.get()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{host_id}/access/groups")
+def create_group(host_id: int, data: dict, db: Session = Depends(get_db),
+                 current_user=Depends(require_admin)):
+    host = _get_host(host_id, db)
+    try:
+        _pve(host).access.groups.post(**data)
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/{host_id}/access/groups/{groupid}")
+def update_group(host_id: int, groupid: str, data: dict, db: Session = Depends(get_db),
+                 current_user=Depends(require_admin)):
+    host = _get_host(host_id, db)
+    try:
+        _pve(host).access.groups(groupid).put(**data)
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/{host_id}/access/groups/{groupid}")
+def delete_group(host_id: int, groupid: str, db: Session = Depends(get_db),
+                 current_user=Depends(require_admin)):
+    host = _get_host(host_id, db)
+    try:
+        _pve(host).access.groups(groupid).delete()
         return {"success": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

@@ -308,8 +308,25 @@ async def login(credentials: LoginRequest, request: Request, db: Session = Depen
     _clear_failed_attempts(db, credentials.username)
     _record_login_attempt(db, user.id, credentials.username, client_ip, user_agent, True, None)
 
+    is_first_login = user.last_login is None
     user.last_login = datetime.utcnow()
     db.commit()
+
+    # Create welcome notification on first login
+    if is_first_login:
+        try:
+            from app.models.database import Notification
+            welcome = Notification(
+                user_id=user.id,
+                title=f"Welcome to Depl0y, {user.username}!",
+                message="Your account is ready. Explore the dashboard to manage your Proxmox infrastructure.",
+                type="success",
+                action_url="/dashboard",
+            )
+            db.add(welcome)
+            db.commit()
+        except Exception:
+            pass
 
     token_version = getattr(user, "token_version", 0) or 0
     access_token = create_access_token(data={"sub": user.username, "tv": token_version})

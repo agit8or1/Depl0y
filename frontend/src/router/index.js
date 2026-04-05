@@ -289,6 +289,12 @@ const router = createRouter({
       meta: { requiresAuth: true }
     },
     {
+      path: '/replication',
+      name: 'ReplicationManager',
+      component: () => import('@/views/ReplicationManager.vue'),
+      meta: { requiresAuth: true, requiresOperator: true }
+    },
+    {
       path: '/containers',
       name: 'Containers',
       component: () => import('@/views/Containers.vue'),
@@ -299,6 +305,12 @@ const router = createRouter({
       name: 'Templates',
       component: () => import('@/views/Templates.vue'),
       meta: { requiresAuth: true }
+    },
+    {
+      path: '/cloud-init',
+      name: 'CloudInitEditor',
+      component: () => import('@/views/CloudInitEditor.vue'),
+      meta: { requiresAuth: true, requiresOperator: true }
     },
     {
       path: '/create-pve-vm',
@@ -323,6 +335,12 @@ const router = createRouter({
       name: 'NetworkManagement',
       component: () => import('@/views/NetworkManagement.vue'),
       meta: { requiresAuth: true, requiresOperator: true }
+    },
+    {
+      path: '/pools',
+      name: 'ResourcePools',
+      component: () => import('@/views/ResourcePools.vue'),
+      meta: { requiresAuth: true, requiresAdmin: true }
     },
     {
       path: '/:pathMatch(.*)*',

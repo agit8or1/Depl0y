@@ -483,6 +483,10 @@ export default {
     removeNIC: (h, node, vmid, nic) => api.delete(`/pve-vm/${h}/${node}/${vmid}/network/${nic}`),
     template: (h, node, vmid) => api.post(`/pve-vm/${h}/${node}/${vmid}/template`),
     delete: (h, node, vmid) => api.delete(`/pve-vm/${h}/${node}/${vmid}`),
+    // Cloud-init
+    getCloudInit: (h, node, vmid) => api.get(`/pve-vm/${h}/${node}/${vmid}/config`),
+    updateCloudInit: (h, node, vmid, data) => api.put(`/pve-vm/${h}/${node}/${vmid}/cloudinit`, data),
+    regenerateCloudinit: (h, node, vmid) => api.post(`/pve-vm/${h}/${node}/${vmid}/cloudinit/regenerate`),
   },
 
   // PVE Node/Cluster Control (/pve-node/{host_id}/...)
@@ -615,8 +619,11 @@ export default {
     listDatastores: (id) => api.get(`/pbs-mgmt/${id}/datastores`),
     listGroups: (id, ds) => api.get(`/pbs-mgmt/${id}/datastores/${ds}/groups`),
     listSnapshots: (id, ds, params) => api.get(`/pbs-mgmt/${id}/datastores/${ds}/snapshots`, { params }),
-    verifySnapshot: (id, ds, params) => api.post(`/pbs-mgmt/${id}/datastores/${ds}/verify`, params),
-    pruneDatastore: (id, ds, params) => api.post(`/pbs-mgmt/${id}/datastores/${ds}/prune`, params),
+    verifySnapshot: (id, ds, data) => api.post(`/pbs-mgmt/${id}/datastores/${ds}/verify`, data),
+    forgetSnapshot: (id, ds, params) => api.delete(`/pbs-mgmt/${id}/datastores/${ds}/snapshots`, { params }),
+    pruneGroup: (id, ds, data) => api.post(`/pbs-mgmt/${id}/datastores/${ds}/prune`, data),
+    listTasks: (id, params) => api.get(`/pbs-mgmt/${id}/tasks`, { params }),
+    getTaskLog: (id, upid) => api.get(`/pbs-mgmt/${id}/tasks/${encodeURIComponent(upid)}/log`),
   },
 
   // PVE Firewall — IPSets, Aliases, rule updates
@@ -639,16 +646,52 @@ export default {
 
   // Notifications / Webhooks
   notifications: {
+    // In-app notifications
+    list: () => api.get('/notifications/in-app'),
+    markRead: (data) => api.post('/notifications/in-app/mark-read', data),
+    delete: (id) => api.delete(`/notifications/in-app/${id}`),
+    deleteAll: () => api.delete('/notifications/in-app'),
+    sendTest: () => api.post('/notifications/in-app/test'),
+    // Notification settings
+    getSettings: () => api.get('/notifications/settings'),
+    updateSettings: (data) => api.put('/notifications/settings', data),
+    // Webhooks
     listWebhooks: () => api.get('/notifications/webhooks'),
     createWebhook: (data) => api.post('/notifications/webhooks', data),
     updateWebhook: (id, data) => api.put(`/notifications/webhooks/${id}`, data),
     deleteWebhook: (id) => api.delete(`/notifications/webhooks/${id}`),
     testWebhook: (id) => api.post(`/notifications/webhooks/${id}/test`),
+    getWebhookDeliveries: (id) => api.get(`/notifications/webhooks/${id}/deliveries`),
+  },
+
+  // Cluster Operations (/cluster/{host_id}/...)
+  cluster: {
+    // Tasks (cluster-wide, across all nodes)
+    listTasks: (hostId, params) => api.get(`/cluster/${hostId}/tasks`, { params }),
+    // Replication jobs
+    listReplication: (hostId) => api.get(`/cluster/${hostId}/replication`),
+    createReplication: (hostId, data) => api.post(`/cluster/${hostId}/replication`, data),
+    updateReplication: (hostId, jobId, data) => api.put(`/cluster/${hostId}/replication/${encodeURIComponent(jobId)}`, data),
+    deleteReplication: (hostId, jobId) => api.delete(`/cluster/${hostId}/replication/${encodeURIComponent(jobId)}`),
+    forceReplication: (hostId, jobId) => api.post(`/cluster/${hostId}/replication/${encodeURIComponent(jobId)}/schedule_now`),
+    // Node evacuation (migrate all VMs off node)
+    evacuateNode: (hostId, node, data) => api.post(`/cluster/${hostId}/nodes/${node}/evacuate`, data || {}),
+    // Cluster-wide event log
+    getLog: (hostId, max) => api.get(`/cluster/${hostId}/log`, { params: { max } }),
   },
 
   // PVE Console — ticket endpoints (/pve-console/...)
   pveConsole: {
     getVmTicket: (hostId, node, vmid) => api.get(`/pve-console/ticket/${hostId}/${node}/${vmid}`),
     getLxcTicket: (hostId, node, ctid) => api.get(`/pve-console/lxc-ticket/${hostId}/${node}/${ctid}`),
+  },
+
+  // Resource Pools (convenience namespace — delegates to pve-node pool endpoints)
+  pools: {
+    list: (hostId) => api.get(`/pve-node/${hostId}/pools`),
+    get: (hostId, poolid) => api.get(`/pve-node/${hostId}/pools/${encodeURIComponent(poolid)}`),
+    create: (hostId, data) => api.post(`/pve-node/${hostId}/pools`, data),
+    update: (hostId, poolid, data) => api.put(`/pve-node/${hostId}/pools/${encodeURIComponent(poolid)}`, data),
+    delete: (hostId, poolid) => api.delete(`/pve-node/${hostId}/pools/${encodeURIComponent(poolid)}`),
   },
 }

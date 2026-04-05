@@ -71,6 +71,10 @@
         <span class="icon">🔄</span>
         <span>HA Management</span>
       </router-link>
+      <router-link v-if="isOperator" to="/replication" class="nav-item">
+        <span class="icon">🔁</span>
+        <span>Replication</span>
+      </router-link>
       <router-link v-if="isOperator" to="/idrac" class="nav-item">
         <span class="icon">🖧</span>
         <span>iDRAC / iLO</span>
@@ -86,6 +90,10 @@
       <router-link to="/proxmox" class="nav-item">
         <span class="icon">🌐</span>
         <span>Proxmox Hosts</span>
+      </router-link>
+      <router-link v-if="isAdmin" to="/pools" class="nav-item">
+        <span class="icon">🗂️</span>
+        <span>Resource Pools</span>
       </router-link>
 
       <!-- ── Admin ── -->

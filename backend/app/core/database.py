@@ -100,3 +100,38 @@ def init_db():
             conn.commit()
         except Exception:
             pass
+
+        # Create notifications table for in-app notification center
+        try:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS notifications (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL REFERENCES users(id),
+                    title VARCHAR(255) NOT NULL,
+                    message TEXT NOT NULL,
+                    type VARCHAR(20) NOT NULL DEFAULT 'info',
+                    read BOOLEAN NOT NULL DEFAULT 0,
+                    action_url VARCHAR(500),
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+            """))
+            conn.commit()
+        except Exception:
+            pass
+
+        # Create webhook_deliveries table for delivery log
+        try:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS webhook_deliveries (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    webhook_id VARCHAR(36) NOT NULL,
+                    event VARCHAR(100) NOT NULL,
+                    status_code INTEGER,
+                    success BOOLEAN NOT NULL DEFAULT 0,
+                    response_body TEXT,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+            """))
+            conn.commit()
+        except Exception:
+            pass

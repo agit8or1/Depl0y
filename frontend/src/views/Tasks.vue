@@ -5,6 +5,19 @@
         <h2>Task Log</h2>
         <p class="text-muted">Proxmox task history across nodes</p>
       </div>
+      <div class="header-actions">
+        <button
+          v-if="notifPermission !== 'granted'"
+          @click="requestNotifPermission"
+          class="btn btn-outline btn-sm"
+        >
+          Enable Notifications
+        </button>
+        <span v-else class="text-xs text-muted">Notifications On</span>
+        <button @click="exportLog" class="btn btn-outline btn-sm" :disabled="tasks.length === 0">
+          Export .txt
+        </button>
+      </div>
     </div>
 
     <!-- Filters -->
@@ -22,12 +35,35 @@
             <label class="form-label">Node</label>
             <select v-model="selectedNode" @change="onFilterChange" class="form-control" :disabled="!selectedHostId">
               <option value="">All Nodes</option>
-              <option v-for="n in nodes" :key="n.node" :value="n.node">{{ n.node }}</option>
+              <option v-for="n in nodes" :key="n.node_name || n.node" :value="n.node_name || n.node">{{ n.node_name || n.node }}</option>
             </select>
           </div>
           <div class="form-group">
             <label class="form-label">Type</label>
-            <input v-model="filterType" @input="onFilterChange" class="form-control" placeholder="qmstart, qmstop..." />
+            <select v-model="filterType" @change="onFilterChange" class="form-control">
+              <option value="">All Types</option>
+              <option value="qmigrate">Migration</option>
+              <option value="vzdump">Backup</option>
+              <option value="qmcreate">Create VM</option>
+              <option value="qmdestroy">Delete VM</option>
+              <option value="qmstart">Start VM</option>
+              <option value="qmstop">Stop VM</option>
+              <option value="replicate">Replication</option>
+              <option value="custom">Custom...</option>
+            </select>
+          </div>
+          <div v-if="filterType === 'custom'" class="form-group">
+            <label class="form-label">Custom Type</label>
+            <input v-model="customType" @input="onFilterChange" class="form-control" placeholder="qmstart, vzdump..." />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Status</label>
+            <select v-model="filterStatus" @change="onLocalFilter" class="form-control">
+              <option value="">All</option>
+              <option value="running">Running</option>
+              <option value="OK">OK</option>
+              <option value="error">Error</option>
+            </select>
           </div>
           <div class="form-group">
             <label class="form-label">VMID</label>
@@ -36,24 +72,66 @@
           <div class="form-group form-group--btn">
             <button @click="loadTasks(true)" class="btn btn-outline btn-sm">Refresh</button>
           </div>
-          <div class="form-group form-group--btn">
-            <button
-              v-if="notifPermission !== 'granted'"
-              @click="requestNotifPermission"
-              class="btn btn-outline btn-sm"
-            >
-              Enable Notifications
-            </button>
-            <button v-else class="btn btn-outline btn-sm" disabled>
-              Notifications On
-            </button>
-          </div>
         </div>
       </div>
     </div>
 
-    <!-- Table -->
+    <!-- Running Tasks (top section, auto-refresh 3s) -->
+    <div v-if="runningTasks.length" class="card mb-2">
+      <div class="card-header">
+        <h3>
+          Running Tasks
+          <span class="badge badge-warning ml-1">{{ runningTasks.length }}</span>
+        </h3>
+        <span class="text-xs text-muted">Auto-refresh every 3s</span>
+      </div>
+      <div class="table-container">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Started</th>
+              <th>Node</th>
+              <th>VMID</th>
+              <th>Type</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="task in runningTasks"
+              :key="task._key"
+              class="clickable-row"
+              @click="openTaskDetail(task)"
+            >
+              <td class="text-sm">{{ task.starttime ? new Date(task.starttime * 1000).toLocaleString() : '—' }}</td>
+              <td class="text-sm">{{ task.node || task._node }}</td>
+              <td class="text-sm">{{ task.id || '—' }}</td>
+              <td class="text-sm">{{ task.type }}</td>
+              <td>
+                <span class="badge badge-warning anim-pulse">running</span>
+              </td>
+              <td @click.stop>
+                <button
+                  class="btn btn-danger btn-xs"
+                  :disabled="stoppingTask[task._key]"
+                  @click.stop="stopTask(task)"
+                  title="Stop this task"
+                >
+                  {{ stoppingTask[task._key] ? '...' : 'Stop' }}
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Main Tasks Table -->
     <div class="card">
+      <div class="card-header">
+        <h3>Task History</h3>
+      </div>
       <div v-if="loading" class="loading-spinner"></div>
       <div v-else class="table-container">
         <table class="table">
@@ -64,31 +142,28 @@
               <th>VMID</th>
               <th>Type</th>
               <th>Status</th>
-              <th>Description</th>
+              <th>UPID</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-if="tasks.length === 0">
+            <tr v-if="displayedTasks.length === 0">
               <td colspan="6" class="text-muted text-center">No tasks found</td>
             </tr>
-            <template v-for="task in tasks" :key="task._key">
-              <tr class="clickable-row" @click="toggleLog(task)">
-                <td class="text-sm">{{ task.starttime ? new Date(task.starttime * 1000).toLocaleString() : '—' }}</td>
-                <td class="text-sm">{{ task.node }}</td>
-                <td class="text-sm">{{ task.id || '—' }}</td>
-                <td class="text-sm">{{ task.type }}</td>
-                <td>
-                  <span :class="statusBadgeClass(task.status)">{{ task.status || 'running' }}</span>
-                </td>
-                <td class="text-sm text-muted">{{ task.upid }}</td>
-              </tr>
-              <tr v-if="task._expanded" :key="task._key + '-log'">
-                <td colspan="6" class="task-log-cell">
-                  <div v-if="task._loadingLog" class="text-muted text-sm" style="padding:0.5rem 1rem">Loading log...</div>
-                  <pre v-else class="task-log">{{ (task._log || []).map(l => l.t).join('\n') || 'No log output' }}</pre>
-                </td>
-              </tr>
-            </template>
+            <tr
+              v-for="task in displayedTasks"
+              :key="task._key"
+              class="clickable-row"
+              @click="openTaskDetail(task)"
+            >
+              <td class="text-sm">{{ task.starttime ? new Date(task.starttime * 1000).toLocaleString() : '—' }}</td>
+              <td class="text-sm">{{ task.node || task._node }}</td>
+              <td class="text-sm">{{ task.id || '—' }}</td>
+              <td class="text-sm">{{ task.type }}</td>
+              <td>
+                <span :class="statusBadgeClass(task.status)">{{ task.status || 'running' }}</span>
+              </td>
+              <td class="text-sm text-muted upid-cell">{{ task.upid }}</td>
+            </tr>
           </tbody>
         </table>
       </div>
@@ -99,12 +174,59 @@
         </button>
       </div>
     </div>
+
+    <!-- Task Detail Modal -->
+    <div v-if="detailTask" class="modal-backdrop" @click.self="detailTask = null">
+      <div class="modal-box">
+        <div class="modal-header">
+          <h3>Task Detail</h3>
+          <button @click="detailTask = null" class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="detail-meta text-sm mb-2">
+            <div><strong>Type:</strong> {{ detailTask.type }}</div>
+            <div><strong>Node:</strong> {{ detailTask.node || detailTask._node }}</div>
+            <div v-if="detailTask.id"><strong>VMID:</strong> {{ detailTask.id }}</div>
+            <div><strong>Status:</strong>
+              <span :class="statusBadgeClass(detailTask.status)" style="margin-left:0.25rem">{{ detailTask.status || 'running' }}</span>
+            </div>
+            <div><strong>Started:</strong> {{ detailTask.starttime ? new Date(detailTask.starttime * 1000).toLocaleString() : '—' }}</div>
+            <div v-if="detailTask.endtime"><strong>Ended:</strong> {{ new Date(detailTask.endtime * 1000).toLocaleString() }}</div>
+            <div class="upid-line"><strong>UPID:</strong> <code>{{ detailTask.upid }}</code></div>
+          </div>
+
+          <div class="log-header">
+            <strong class="text-sm">Log Output</strong>
+            <button class="btn btn-outline btn-xs" @click="exportTaskLog">Export Log</button>
+          </div>
+
+          <div v-if="detailLoading" class="text-muted text-sm mt-1">Loading log...</div>
+          <pre v-else class="task-log">{{ detailLog || 'No log output.' }}</pre>
+
+          <div v-if="detailTaskRunning" class="text-sm text-muted mt-1">
+            <span class="anim-pulse">Live — refreshing every 3s...</span>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button
+            v-if="!detailTask.status || detailTask.status === 'running'"
+            class="btn btn-danger"
+            :disabled="stoppingTask[detailTask._key]"
+            @click="stopTask(detailTask)"
+          >
+            {{ stoppingTask[detailTask._key] ? 'Stopping...' : 'Stop Task' }}
+          </button>
+          <button @click="detailTask = null" class="btn btn-outline">Close</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import { useToast } from 'vue-toastification'
 import api from '@/services/api'
 
 const PAGE_SIZE = 50
@@ -113,6 +235,7 @@ export default {
   name: 'Tasks',
   setup() {
     const route = useRoute()
+    const toast = useToast()
 
     const hosts = ref([])
     const nodes = ref([])
@@ -125,7 +248,23 @@ export default {
     const selectedHostId = ref(route.params.hostId || '')
     const selectedNode = ref('')
     const filterType = ref('')
+    const customType = ref('')
     const filterVmid = ref(null)
+    const filterStatus = ref('')
+
+    // Running tasks section (auto-refresh 3s)
+    let runningPollTimer = null
+    const RUNNING_POLL_INTERVAL = 3000
+
+    // Stop task
+    const stoppingTask = ref({})
+
+    // Task detail modal
+    const detailTask = ref(null)
+    const detailLog = ref('')
+    const detailLoading = ref(false)
+    const detailTaskRunning = ref(false)
+    let detailPollTimer = null
 
     // ===== Browser Notifications =====
     const notifPermission = ref(typeof Notification !== 'undefined' ? Notification.permission : 'denied')
@@ -150,7 +289,6 @@ export default {
       new Notification(title, { body, icon: '/favicon.ico' })
     }
 
-    // Track running tasks by upid to detect transitions
     const runningTaskKeys = new Set()
     let pollInterval = null
 
@@ -160,11 +298,8 @@ export default {
         if (Notification.permission !== 'granted') return
         const running = tasks.value.filter(t => !t.status || t.status === 'running')
         for (const task of running) {
-          if (!runningTaskKeys.has(task._key)) {
-            runningTaskKeys.add(task._key)
-          }
+          if (!runningTaskKeys.has(task._key)) runningTaskKeys.add(task._key)
         }
-        // Poll status of tracked running tasks
         for (const task of running) {
           try {
             const res = await api.pveNode.taskStatus(task._hostId, task._node || task.node, encodeURIComponent(task.upid))
@@ -174,9 +309,7 @@ export default {
               runningTaskKeys.delete(task._key)
               sendTaskNotification(task)
             }
-          } catch (e) {
-            // ignore poll errors
-          }
+          } catch (e) { /* ignore */ }
         }
         if (running.length === 0) {
           clearInterval(pollInterval)
@@ -185,13 +318,65 @@ export default {
       }, 5000)
     }
 
+    // ─── Running tasks section ────────────────────────────────────────────────
+
+    const runningTasks = computed(() => {
+      return tasks.value.filter(t => !t.status || t.status === 'running')
+    })
+
+    async function pollRunningTasks() {
+      const running = tasks.value.filter(t => !t.status || t.status === 'running')
+      for (const task of running) {
+        try {
+          const res = await api.pveNode.taskStatus(task._hostId, task._node || task.node, encodeURIComponent(task.upid))
+          const status = res.data?.status
+          if (status && status !== 'running') {
+            task.status = status
+            if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+              sendTaskNotification(task)
+            }
+          }
+        } catch { /* ignore */ }
+      }
+    }
+
+    function startRunningPoll() {
+      if (runningPollTimer) return
+      runningPollTimer = setInterval(pollRunningTasks, RUNNING_POLL_INTERVAL)
+    }
+
+    function stopRunningPoll() {
+      if (runningPollTimer) { clearInterval(runningPollTimer); runningPollTimer = null }
+    }
+
+    // ─── Filters ──────────────────────────────────────────────────────────────
+
+    const effectiveType = computed(() => {
+      if (filterType.value === 'custom') return customType.value
+      return filterType.value
+    })
+
+    const displayedTasks = computed(() => {
+      let list = tasks.value.filter(t => t.status || t.status === undefined) // exclude pure running (shown above)
+      if (filterStatus.value === 'running') {
+        list = tasks.value.filter(t => !t.status || t.status === 'running')
+      } else if (filterStatus.value === 'OK') {
+        list = tasks.value.filter(t => t.status === 'OK')
+      } else if (filterStatus.value === 'error') {
+        list = tasks.value.filter(t => t.status && t.status !== 'OK' && t.status !== 'running')
+      } else {
+        list = tasks.value.filter(t => t.status && t.status !== 'running')
+      }
+      return list
+    })
+
+    // ─── Data loading ─────────────────────────────────────────────────────────
+
     const loadHosts = async () => {
       try {
         const res = await api.proxmox.listHosts()
         hosts.value = res.data || []
-      } catch (e) {
-        console.warn('Failed to load hosts', e)
-      }
+      } catch (e) { console.warn('Failed to load hosts', e) }
     }
 
     const loadNodes = async () => {
@@ -200,14 +385,12 @@ export default {
       try {
         const res = await api.proxmox.listNodes(selectedHostId.value)
         nodes.value = res.data || []
-      } catch (e) {
-        console.warn('Failed to load nodes', e)
-      }
+      } catch (e) { console.warn('Failed to load nodes', e) }
     }
 
     const buildParams = (start = 0) => {
       const p = { limit: PAGE_SIZE, start }
-      if (filterType.value) p.typefilter = filterType.value
+      if (effectiveType.value) p.typefilter = effectiveType.value
       if (filterVmid.value) p.vmid = filterVmid.value
       return p
     }
@@ -226,10 +409,7 @@ export default {
     }
 
     const loadTasks = async (reset = true) => {
-      if (reset) {
-        page.value = 0
-        tasks.value = []
-      }
+      if (reset) { page.value = 0; tasks.value = [] }
       loading.value = true
       try {
         let collected = []
@@ -239,7 +419,7 @@ export default {
         } else if (selectedHostId.value) {
           const nodeList = nodes.value.length ? nodes.value : await api.proxmox.listNodes(selectedHostId.value).then(r => r.data || [])
           const results = await Promise.all(
-            nodeList.map(n => loadTasksForHostNode(selectedHostId.value, n.node, 0).catch(() => []))
+            nodeList.map(n => loadTasksForHostNode(selectedHostId.value, n.node_name || n.node, 0).catch(() => []))
           )
           collected = results.flat().sort((a, b) => (b.starttime || 0) - (a.starttime || 0)).slice(0, PAGE_SIZE)
         } else {
@@ -249,7 +429,7 @@ export default {
                 const nRes = await api.proxmox.listNodes(h.id)
                 const nodeList = nRes.data || []
                 const taskResults = await Promise.all(
-                  nodeList.map(n => loadTasksForHostNode(h.id, n.node, 0).catch(() => []))
+                  nodeList.map(n => loadTasksForHostNode(h.id, n.node_name || n.node, 0).catch(() => []))
                 )
                 return taskResults.flat()
               } catch { return [] }
@@ -258,18 +438,14 @@ export default {
           collected = results.flat().sort((a, b) => (b.starttime || 0) - (a.starttime || 0)).slice(0, PAGE_SIZE)
         }
 
-        if (reset) {
-          tasks.value = collected
-        } else {
-          tasks.value = [...tasks.value, ...collected]
-        }
+        if (reset) { tasks.value = collected } else { tasks.value = [...tasks.value, ...collected] }
         hasMore.value = collected.length === PAGE_SIZE
       } catch (e) {
         console.error('Failed to load tasks', e)
       } finally {
         loading.value = false
       }
-      // Start polling if notifications are enabled and there are running tasks
+
       if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
         const hasRunning = tasks.value.some(t => !t.status || t.status === 'running')
         if (hasRunning) startTaskPolling()
@@ -285,11 +461,7 @@ export default {
           tasks.value = [...tasks.value, ...more]
           hasMore.value = more.length === PAGE_SIZE
         }
-      } catch (e) {
-        console.error(e)
-      } finally {
-        loadingMore.value = false
-      }
+      } catch (e) { console.error(e) } finally { loadingMore.value = false }
     }
 
     const onHostChange = async () => {
@@ -298,23 +470,97 @@ export default {
       await loadTasks(true)
     }
 
-    const onFilterChange = () => {
-      loadTasks(true)
+    const onFilterChange = () => { loadTasks(true) }
+    const onLocalFilter = () => { /* computed filter — no reload needed */ }
+
+    // ─── Stop task ────────────────────────────────────────────────────────────
+
+    async function stopTask(task) {
+      stoppingTask.value = { ...stoppingTask.value, [task._key]: true }
+      try {
+        await api.pveNode.stopTask(task._hostId, task._node || task.node, encodeURIComponent(task.upid))
+        toast.success(`Task ${task.type} stop requested`)
+        // Mark as stopped locally
+        task.status = 'stopped'
+        if (detailTask.value?._key === task._key) detailTask.value.status = 'stopped'
+      } catch (err) {
+        toast.error('Stop failed: ' + (err?.response?.data?.detail || err?.message))
+      } finally {
+        stoppingTask.value = { ...stoppingTask.value, [task._key]: false }
+      }
     }
 
-    const toggleLog = async (task) => {
-      task._expanded = !task._expanded
-      if (task._expanded && !task._log) {
-        task._loadingLog = true
-        try {
-          const res = await api.pveNode.taskLog(task._hostId, task._node || task.node, encodeURIComponent(task.upid))
-          task._log = res.data || []
-        } catch (e) {
-          task._log = [{ t: 'Failed to load log' }]
-        } finally {
-          task._loadingLog = false
-        }
+    // ─── Task detail modal ────────────────────────────────────────────────────
+
+    async function openTaskDetail(task) {
+      detailTask.value = task
+      detailLog.value = ''
+      detailLoading.value = true
+      detailTaskRunning.value = !task.status || task.status === 'running'
+
+      if (detailPollTimer) { clearInterval(detailPollTimer); detailPollTimer = null }
+
+      await fetchDetailLog(task)
+
+      if (detailTaskRunning.value) {
+        detailPollTimer = setInterval(async () => {
+          if (!detailTask.value) { clearInterval(detailPollTimer); return }
+          await fetchDetailLog(detailTask.value)
+          // Check if still running
+          try {
+            const res = await api.pveNode.taskStatus(
+              detailTask.value._hostId,
+              detailTask.value._node || detailTask.value.node,
+              encodeURIComponent(detailTask.value.upid)
+            )
+            const s = res.data?.status
+            if (s && s !== 'running') {
+              detailTask.value.status = s
+              detailTaskRunning.value = false
+              clearInterval(detailPollTimer)
+              detailPollTimer = null
+            }
+          } catch { /* ignore */ }
+        }, 3000)
       }
+    }
+
+    async function fetchDetailLog(task) {
+      try {
+        const res = await api.pveNode.taskLog(task._hostId, task._node || task.node, encodeURIComponent(task.upid))
+        detailLog.value = (res.data?.lines || res.data || []).join('\n')
+      } catch (e) {
+        detailLog.value = 'Failed to load log'
+      } finally {
+        detailLoading.value = false
+      }
+    }
+
+    // ─── Export ───────────────────────────────────────────────────────────────
+
+    function exportLog() {
+      const lines = tasks.value.map(t => {
+        const time = t.starttime ? new Date(t.starttime * 1000).toISOString() : 'unknown'
+        return `[${time}] node=${t.node || t._node} type=${t.type} vmid=${t.id || ''} status=${t.status || 'running'} upid=${t.upid}`
+      })
+      const blob = new Blob([lines.join('\n')], { type: 'text/plain' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `depl0y-tasks-${Date.now()}.txt`
+      a.click()
+      URL.revokeObjectURL(url)
+    }
+
+    function exportTaskLog() {
+      if (!detailLog.value) return
+      const blob = new Blob([detailLog.value], { type: 'text/plain' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `task-${detailTask.value?.type || 'log'}-${Date.now()}.txt`
+      a.click()
+      URL.revokeObjectURL(url)
     }
 
     const statusBadgeClass = (status) => {
@@ -327,6 +573,7 @@ export default {
       await loadHosts()
       if (selectedHostId.value) await loadNodes()
       await loadTasks(true)
+      startRunningPoll()
       if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
         startTaskPolling()
       }
@@ -334,14 +581,19 @@ export default {
 
     onUnmounted(() => {
       if (pollInterval) { clearInterval(pollInterval); pollInterval = null }
+      stopRunningPoll()
+      if (detailPollTimer) { clearInterval(detailPollTimer); detailPollTimer = null }
     })
 
     return {
       hosts, nodes, tasks, loading, loadingMore, hasMore,
-      selectedHostId, selectedNode, filterType, filterVmid,
-      loadTasks, loadMore, onHostChange, onFilterChange,
-      toggleLog, statusBadgeClass,
+      selectedHostId, selectedNode, filterType, customType, filterVmid, filterStatus,
+      runningTasks, displayedTasks, stoppingTask,
+      detailTask, detailLog, detailLoading, detailTaskRunning,
+      loadTasks, loadMore, onHostChange, onFilterChange, onLocalFilter,
+      statusBadgeClass,
       notifPermission, requestNotifPermission,
+      openTaskDetail, stopTask, exportLog, exportTaskLog,
     }
   }
 }
@@ -354,6 +606,11 @@ export default {
 
 .page-header {
   margin-bottom: 1.5rem;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
 }
 
 .page-header h2 {
@@ -361,6 +618,25 @@ export default {
   font-size: 1.75rem;
   font-weight: 600;
   color: var(--text-primary);
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.card-body {
+  padding: 1rem;
 }
 
 .filters-row {
@@ -372,7 +648,7 @@ export default {
 
 .filters-row .form-group {
   flex: 1;
-  min-width: 150px;
+  min-width: 140px;
   margin-bottom: 0;
 }
 
@@ -380,8 +656,27 @@ export default {
   flex: 0 0 auto;
 }
 
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.form-label {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
 .table-container {
   overflow-x: auto;
+}
+
+.upid-cell {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .clickable-row {
@@ -392,9 +687,116 @@ export default {
   background: var(--bg-secondary);
 }
 
-.task-log-cell {
+/* Animated badge for running */
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.anim-pulse {
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+/* Stop button */
+.btn-danger {
+  background: #ef4444;
+  color: white;
+  border: none;
+  border-radius: 0.25rem;
+  cursor: pointer;
+  font-weight: 500;
+  padding: 0.25rem 0.6rem;
+}
+.btn-danger:hover { background: #dc2626; }
+.btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-xs {
+  padding: 0.15rem 0.4rem;
+  font-size: 0.75rem;
+}
+
+.btn-sm {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.875rem;
+}
+
+/* Task detail modal */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal-box {
+  background: var(--bg-primary, #1a2332);
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+  width: 680px;
+  max-width: 95vw;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  color: var(--text-muted, #888);
+  font-size: 1.5rem;
+  cursor: pointer;
+  line-height: 1;
   padding: 0;
-  background: #0f1419;
+}
+
+.modal-body {
+  padding: 1.25rem;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.modal-footer {
+  padding: 1rem 1.25rem;
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.detail-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.upid-line code {
+  font-size: 0.75rem;
+  word-break: break-all;
+}
+
+.log-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
 }
 
 .task-log {
@@ -402,20 +804,24 @@ export default {
   padding: 0.75rem 1rem;
   font-size: 0.8rem;
   color: #9ca3af;
+  background: #0f1419;
+  border-radius: 0.375rem;
   white-space: pre-wrap;
   word-break: break-all;
-  max-height: 300px;
+  max-height: 380px;
   overflow-y: auto;
 }
 
-.card-body {
-  padding: 1rem;
-}
-
 .mb-2 { margin-bottom: 1rem; }
+.mt-1 { margin-top: 0.25rem; }
+.mt-2 { margin-top: 0.75rem; }
+.ml-1 { margin-left: 0.5rem; }
 .text-sm { font-size: 0.875rem; }
-.text-muted { color: var(--text-muted); }
+.text-xs { font-size: 0.75rem; }
+.text-muted { color: var(--text-muted, #888); }
 .text-center { text-align: center; }
+.text-danger { color: #ef4444; }
+.text-success { color: #10b981; }
 
 .badge-warning {
   background-color: #d97706;

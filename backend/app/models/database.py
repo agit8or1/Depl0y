@@ -473,3 +473,33 @@ class LLMDeployment(Base):
 
     # Relationships
     vm = relationship("VirtualMachine")
+
+
+class Notification(Base):
+    """In-app notification for a user"""
+    __tablename__ = "notifications"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    title = Column(String(255), nullable=False)
+    message = Column(Text, nullable=False)
+    type = Column(String(20), default="info", nullable=False)  # info/success/warning/error
+    read = Column(Boolean, default=False, nullable=False)
+    action_url = Column(String(500), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relationships
+    user = relationship("User", backref="notifications")
+
+
+class WebhookDelivery(Base):
+    """Delivery log for webhook calls"""
+    __tablename__ = "webhook_deliveries"
+
+    id = Column(Integer, primary_key=True, index=True)
+    webhook_id = Column(String(36), nullable=False, index=True)  # UUID string from SystemSettings JSON
+    event = Column(String(100), nullable=False)
+    status_code = Column(Integer, nullable=True)
+    success = Column(Boolean, default=False, nullable=False)
+    response_body = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

@@ -130,19 +130,25 @@ def list_snapshots(
     server_id: int,
     datastore: str,
     vmid: Optional[int] = Query(default=None, description="Filter by VM/CT ID"),
+    backup_type: Optional[str] = Query(default=None, alias="backup-type"),
+    backup_id: Optional[str] = Query(default=None, alias="backup-id"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> List[Dict[str, Any]]:
     """
     List backup snapshots in the specified datastore.
 
-    Optionally filter by vmid to retrieve only snapshots for a particular
-    VM or container.
+    Optionally filter by vmid, backup-type, or backup-id.
     """
     server = _get_pbs_server(db, server_id)
     try:
         svc = _make_service(server)
-        return svc.get_snapshots(datastore, vmid=vmid)
+        return svc.get_snapshots(
+            datastore,
+            vmid=vmid,
+            backup_type=backup_type,
+            backup_id=backup_id,
+        )
     except HTTPException:
         raise
     except Exception as exc:
@@ -154,3 +160,141 @@ def list_snapshots(
             status_code=502,
             detail=f"PBS API error: {exc}",
         )
+
+
+@router.post("/{server_id}/datastores/{datastore}/verify")
+def verify_snapshot(
+    server_id: int,
+    datastore: str,
+    payload: Dict[str, Any],
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Any:
+    """
+    Start a verify job for a specific snapshot.
+
+    Body must contain backup-type, backup-id, and backup-time.
+    Returns the UPID of the started task.
+    """
+    server = _get_pbs_server(db, server_id)
+    try:
+        svc = _make_service(server)
+        return svc.verify_snapshot(
+            datastore,
+            backup_type=payload["backup-type"],
+            backup_id=payload["backup-id"],
+            backup_time=int(payload["backup-time"]),
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=400, detail=f"Missing field: {exc}")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error(
+            "Failed to verify snapshot for PBS server %s datastore %s: %s",
+            server_id, datastore, exc,
+        )
+        raise HTTPException(status_code=502, detail=f"PBS API error: {exc}")
+
+
+@router.delete("/{server_id}/datastores/{datastore}/snapshots")
+def forget_snapshot(
+    server_id: int,
+    datastore: str,
+    backup_type: str = Query(..., alias="backup-type"),
+    backup_id: str = Query(..., alias="backup-id"),
+    backup_time: int = Query(..., alias="backup-time"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Any:
+    """
+    Permanently delete (forget) a specific snapshot.
+
+    All three of backup-type, backup-id, and backup-time are required.
+    """
+    server = _get_pbs_server(db, server_id)
+    try:
+        svc = _make_service(server)
+        return svc.forget_snapshot(datastore, backup_type, backup_id, backup_time)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error(
+            "Failed to forget snapshot for PBS server %s datastore %s: %s",
+            server_id, datastore, exc,
+        )
+        raise HTTPException(status_code=502, detail=f"PBS API error: {exc}")
+
+
+@router.post("/{server_id}/datastores/{datastore}/prune")
+def prune_group(
+    server_id: int,
+    datastore: str,
+    payload: Dict[str, Any],
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Any:
+    """
+    Prune old snapshots for a backup group according to keep-* retention rules.
+
+    Body must contain backup-type and backup-id; optional keep-last,
+    keep-daily, keep-weekly, keep-monthly, keep-yearly, keep-hourly.
+    """
+    server = _get_pbs_server(db, server_id)
+    try:
+        backup_type = payload.pop("backup-type")
+        backup_id = payload.pop("backup-id")
+    except KeyError as exc:
+        raise HTTPException(status_code=400, detail=f"Missing field: {exc}")
+    try:
+        svc = _make_service(server)
+        return svc.prune(datastore, backup_type, backup_id, prune_options=payload)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error(
+            "Failed to prune group for PBS server %s datastore %s: %s",
+            server_id, datastore, exc,
+        )
+        raise HTTPException(status_code=502, detail=f"PBS API error: {exc}")
+
+
+@router.get("/{server_id}/tasks")
+def list_tasks(
+    server_id: int,
+    datastore: Optional[str] = Query(default=None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> List[Dict[str, Any]]:
+    """List tasks on the PBS server, optionally filtered by datastore."""
+    server = _get_pbs_server(db, server_id)
+    try:
+        svc = _make_service(server)
+        return svc.list_tasks(datastore=datastore)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Failed to list tasks for PBS server %s: %s", server_id, exc)
+        raise HTTPException(status_code=502, detail=f"PBS API error: {exc}")
+
+
+@router.get("/{server_id}/tasks/{upid}/log")
+def get_task_log(
+    server_id: int,
+    upid: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> List[str]:
+    """Return the log lines for a PBS task by UPID."""
+    server = _get_pbs_server(db, server_id)
+    try:
+        svc = _make_service(server)
+        return svc.get_task_log(upid)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error(
+            "Failed to get task log for PBS server %s task %s: %s",
+            server_id, upid, exc,
+        )
+        raise HTTPException(status_code=502, detail=f"PBS API error: {exc}")

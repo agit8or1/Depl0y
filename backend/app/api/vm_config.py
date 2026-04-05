@@ -64,6 +64,17 @@ class MigrateRequest(BaseModel):
     online: bool = True
     with_local_disks: bool = False
 
+class CloudInitConfig(BaseModel):
+    ciuser: Optional[str] = None
+    cipassword: Optional[str] = None
+    sshkeys: Optional[str] = None
+    ipconfig0: Optional[str] = None
+    ipconfig1: Optional[str] = None
+    nameserver: Optional[str] = None
+    searchdomain: Optional[str] = None
+    cicustom: Optional[str] = None
+    ciupgrade: Optional[bool] = None
+
 class DiskAdd(BaseModel):
     storage: str
     size: int  # GB
@@ -568,6 +579,61 @@ def get_vnc_ticket(host_id: int, node: str, vmid: int, db: Session = Depends(get
 
 
 # ── RRD data for VM charts ────────────────────────────────────────────────────
+
+@router.post("/{host_id}/{node}/{vmid}/cloudinit/regenerate")
+def regenerate_cloudinit(host_id: int, node: str, vmid: int,
+                         db: Session = Depends(get_db),
+                         current_user=Depends(require_operator)):
+    """Regenerate the cloud-init drive for a VM."""
+    host = _get_host(host_id, db)
+    pve = _pve(_svc(host))
+    try:
+        # Proxmox API: PUT /nodes/{node}/qemu/{vmid}/cloudinit regenerates the drive
+        pve.nodes(node).qemu(vmid).cloudinit.put()
+        pve_cache.clear_prefix(f"pve:{host_id}:")
+        return {"success": True, "message": "Cloud-init drive regenerated"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/{host_id}/{node}/{vmid}/cloudinit")
+def update_cloudinit_config(host_id: int, node: str, vmid: int,
+                            cfg: CloudInitConfig,
+                            db: Session = Depends(get_db),
+                            current_user=Depends(require_operator)):
+    """Apply cloud-init settings to a VM config."""
+    host = _get_host(host_id, db)
+    pve = _pve(_svc(host))
+    payload: Dict[str, Any] = {}
+    if cfg.ciuser is not None:
+        payload["ciuser"] = cfg.ciuser
+    if cfg.cipassword is not None:
+        payload["cipassword"] = cfg.cipassword
+    if cfg.sshkeys is not None:
+        # Proxmox expects URL-encoded newlines in sshkeys
+        import urllib.parse
+        payload["sshkeys"] = urllib.parse.quote(cfg.sshkeys, safe="")
+    if cfg.ipconfig0 is not None:
+        payload["ipconfig0"] = cfg.ipconfig0
+    if cfg.ipconfig1 is not None:
+        payload["ipconfig1"] = cfg.ipconfig1
+    if cfg.nameserver is not None:
+        payload["nameserver"] = cfg.nameserver
+    if cfg.searchdomain is not None:
+        payload["searchdomain"] = cfg.searchdomain
+    if cfg.cicustom is not None:
+        payload["cicustom"] = cfg.cicustom
+    if cfg.ciupgrade is not None:
+        payload["ciupgrade"] = int(cfg.ciupgrade)
+    if not payload:
+        raise HTTPException(status_code=400, detail="Nothing to update")
+    try:
+        pve.nodes(node).qemu(vmid).config.put(**payload)
+        pve_cache.clear_prefix(f"pve:{host_id}:")
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.get("/{host_id}/{node}/{vmid}/rrddata")
 def get_vm_rrddata(host_id: int, node: str, vmid: int,

@@ -28,6 +28,7 @@
               <div class="node-card-header">
                 <span class="node-name">{{ item.name }}</span>
                 <div class="node-card-actions">
+                  <span v-if="maintenanceNodes.has(item.name)" class="badge badge-warning">Maintenance</span>
                   <span :class="['badge', item.online ? 'badge-success' : 'badge-danger']">
                     {{ item.online ? 'Online' : 'Offline' }}
                   </span>
@@ -36,7 +37,16 @@
                     @click.stop="navigateToNode(item.name)"
                     title="View node details"
                   >
-                    View Details
+                    View
+                  </button>
+                  <button
+                    v-if="item.online"
+                    class="btn btn-xs"
+                    :class="maintenanceNodes.has(item.name) ? 'btn-success' : 'btn-warning'"
+                    @click.stop="toggleMaintenance(item.name)"
+                    title="Toggle maintenance mode"
+                  >
+                    {{ maintenanceNodes.has(item.name) ? 'Exit Maint.' : 'Maintenance' }}
                   </button>
                 </div>
               </div>
@@ -136,10 +146,143 @@
       </div>
     </div>
 
-    <!-- Live Migration panel -->
+    <!-- Node Balance Chart -->
+    <div class="card mb-2">
+      <div class="card-header" @click="balanceExpanded = !balanceExpanded" style="cursor:pointer;">
+        <h3>Node Balance</h3>
+        <div class="flex gap-1 align-center">
+          <button
+            v-if="balanceExpanded"
+            class="btn btn-outline btn-sm"
+            @click.stop="suggestRebalance"
+            :disabled="rebalancing"
+          >
+            Suggest Rebalance
+          </button>
+          <span class="toggle-icon">{{ balanceExpanded ? '▲' : '▼' }}</span>
+        </div>
+      </div>
+      <div v-if="balanceExpanded" class="card-body">
+        <!-- Bar chart per node -->
+        <div class="balance-chart">
+          <div v-for="(nstat, nname) in nodeStats" :key="nname" class="balance-node-col">
+            <div class="balance-bars">
+              <div class="balance-bar-group">
+                <div class="balance-bar-label text-xs text-muted">CPU</div>
+                <div class="balance-bar-track">
+                  <div
+                    class="balance-bar-fill"
+                    :class="barClass(nstat.cpuRatio)"
+                    :style="{ height: Math.round(nstat.cpuRatio * 100) + '%' }"
+                  ></div>
+                </div>
+                <div class="balance-bar-pct text-xs">{{ Math.round(nstat.cpuRatio * 100) }}%</div>
+              </div>
+              <div class="balance-bar-group">
+                <div class="balance-bar-label text-xs text-muted">MEM</div>
+                <div class="balance-bar-track">
+                  <div
+                    class="balance-bar-fill"
+                    :class="barClass(nstat.memRatio)"
+                    :style="{ height: Math.round(nstat.memRatio * 100) + '%' }"
+                  ></div>
+                </div>
+                <div class="balance-bar-pct text-xs">{{ Math.round(nstat.memRatio * 100) }}%</div>
+              </div>
+            </div>
+            <div class="balance-node-name text-sm">{{ nname }}</div>
+          </div>
+        </div>
+
+        <!-- Rebalance suggestion -->
+        <div v-if="rebalanceSuggestions.length" class="rebalance-panel mt-2">
+          <div class="rebalance-header">
+            <strong class="text-sm">Suggested Migrations</strong>
+            <button
+              class="btn btn-primary btn-sm"
+              @click="applyRebalance"
+              :disabled="applyingRebalance"
+            >
+              {{ applyingRebalance ? 'Applying...' : 'Apply All' }}
+            </button>
+          </div>
+          <div v-for="(sug, i) in rebalanceSuggestions" :key="i" class="rebalance-item text-sm">
+            <span class="text-muted">VM {{ sug.vmid }}</span>
+            <span class="rebalance-arrow">{{ sug.from }} &rarr; {{ sug.to }}</span>
+            <button class="btn btn-outline btn-xs" @click="applySingleMigration(sug)">Migrate</button>
+          </div>
+          <div v-if="rebalanceMsg" class="text-sm mt-1" :class="rebalanceErr ? 'text-danger' : 'text-success'">
+            {{ rebalanceMsg }}
+          </div>
+        </div>
+        <div v-else-if="rebalanceAnalyzed" class="text-muted text-sm mt-1">
+          Cluster is balanced — no migrations recommended.
+        </div>
+      </div>
+    </div>
+
+    <!-- Live Migrations panel -->
+    <div class="card mb-2">
+      <div class="card-header" @click="liveMigrationsExpanded = !liveMigrationsExpanded" style="cursor:pointer;">
+        <h3>
+          Live Migrations
+          <span v-if="runningMigrations.length" class="badge badge-warning ml-1">{{ runningMigrations.length }} running</span>
+        </h3>
+        <span class="toggle-icon">{{ liveMigrationsExpanded ? '▲' : '▼' }}</span>
+      </div>
+      <div v-if="liveMigrationsExpanded" class="card-body">
+        <!-- Running migrations -->
+        <div v-if="runningMigrations.length" class="mb-2">
+          <div class="text-sm font-semibold mb-1">Currently Running</div>
+          <div v-for="m in runningMigrations" :key="m.upid" class="migration-running-item">
+            <div class="migration-info">
+              <strong>VM {{ m.id || m.vmid }}</strong>
+              <span class="text-muted text-sm ml-1">{{ m._node }} &rarr; {{ extractTarget(m.upid) }}</span>
+            </div>
+            <div class="migration-progress-wrap">
+              <div class="migration-progress-bar">
+                <div class="migration-progress-fill anim-pulse" style="width: 100%"></div>
+              </div>
+              <span class="text-xs text-muted">Running</span>
+            </div>
+          </div>
+        </div>
+        <div v-else class="text-muted text-sm mb-2">No migrations currently running.</div>
+
+        <!-- Recent migration history -->
+        <div class="text-sm font-semibold mb-1">Recent Migrations (last 10)</div>
+        <div v-if="recentMigrations.length === 0" class="text-muted text-sm">No recent migrations.</div>
+        <div v-else class="table-container">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>VMID</th>
+                <th>Node</th>
+                <th>Started</th>
+                <th>Status</th>
+                <th>UPID</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="m in recentMigrations" :key="m.upid">
+                <td>{{ m.id || m.vmid || '—' }}</td>
+                <td class="text-sm text-muted">{{ m._node }}</td>
+                <td class="text-sm text-muted">{{ m.starttime ? new Date(m.starttime * 1000).toLocaleString() : '—' }}</td>
+                <td>
+                  <span :class="migrationBadge(m.status)">{{ m.status || 'running' }}</span>
+                </td>
+                <td class="text-xs text-muted" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;">{{ m.upid }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Migrate VM panel -->
     <div class="card mb-2">
       <div class="card-header" @click="migrationExpanded = !migrationExpanded" style="cursor:pointer;">
-        <h3>Live Migration</h3>
+        <h3>Migrate VM</h3>
         <span class="toggle-icon">{{ migrationExpanded ? '▲' : '▼' }}</span>
       </div>
       <div v-if="migrationExpanded" class="card-body">
@@ -193,6 +336,114 @@
               <span v-if="migrateError" class="migrate-error text-sm ml-1">{{ migrateError }}</span>
               <span v-if="migrateSuccess" class="migrate-success text-sm ml-1">{{ migrateSuccess }}</span>
             </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Maintenance Mode / Node Evacuation -->
+    <div v-if="evacuationNode" class="card mb-2">
+      <div class="card-header">
+        <h3>Evacuate Node: {{ evacuationNode }}</h3>
+      </div>
+      <div class="card-body">
+        <p class="text-sm text-muted mb-2">
+          This will migrate all VMs off <strong>{{ evacuationNode }}</strong> to other online nodes.
+        </p>
+        <div class="flex gap-1 align-center mb-2">
+          <div class="form-group" style="min-width:200px;margin-bottom:0;">
+            <label class="form-label">Target Node (optional)</label>
+            <select v-model="evacuateTarget" class="form-control">
+              <option value="">Auto (round-robin)</option>
+              <option v-for="n in evacuationTargets" :key="n.name" :value="n.name">{{ n.name }}</option>
+            </select>
+          </div>
+          <button
+            class="btn btn-danger"
+            :disabled="evacuating"
+            @click="doEvacuate"
+          >
+            {{ evacuating ? 'Evacuating...' : 'Start Evacuation' }}
+          </button>
+          <button class="btn btn-outline" @click="evacuationNode = null">Cancel</button>
+        </div>
+        <div v-if="evacuationResult" class="evacuation-result text-sm">
+          <div v-if="evacuationResult.queued && evacuationResult.queued.length">
+            <strong>Queued {{ evacuationResult.queued.length }} migrations:</strong>
+            <div v-for="q in evacuationResult.queued" :key="q.vmid" class="text-muted">
+              VM {{ q.vmid }} → {{ q.target }}
+            </div>
+          </div>
+          <div v-if="evacuationResult.errors && evacuationResult.errors.length" class="text-danger mt-1">
+            <strong>Errors:</strong>
+            <div v-for="e in evacuationResult.errors" :key="e.vmid">
+              VM {{ e.vmid }}: {{ e.error }}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Cluster Join Wizard (admin only) -->
+    <div v-if="isAdmin" class="card mb-2">
+      <div class="card-header" @click="joinWizardExpanded = !joinWizardExpanded" style="cursor:pointer;">
+        <h3>Cluster Join Wizard</h3>
+        <span class="toggle-icon">{{ joinWizardExpanded ? '▲' : '▼' }}</span>
+      </div>
+      <div v-if="joinWizardExpanded" class="card-body">
+        <!-- Step 1 -->
+        <div v-if="joinStep === 1">
+          <p class="text-sm text-muted mb-2">
+            Step 1: Enter the new node's hostname/IP and root password to generate the join command.
+          </p>
+          <div class="migration-form">
+            <div class="form-group">
+              <label class="form-label">New Node IP / Hostname</label>
+              <input v-model="joinNodeIp" class="form-control" placeholder="192.168.1.50" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Cluster Password</label>
+              <input v-model="joinPassword" type="password" class="form-control" placeholder="Proxmox cluster password" />
+            </div>
+            <div class="form-group">
+              <button class="btn btn-primary" :disabled="!joinNodeIp || !joinPassword" @click="generateJoinCommand">
+                Generate Join Command
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 2 -->
+        <div v-if="joinStep === 2">
+          <p class="text-sm text-muted mb-2">
+            Step 2: Run this command on the new node (<strong>{{ joinNodeIp }}</strong>) as root:
+          </p>
+          <pre class="join-command">{{ joinCommand }}</pre>
+          <div class="flex gap-1 mt-2">
+            <button class="btn btn-primary" @click="joinStep = 3; startJoinVerification()">
+              Node is joined — Verify
+            </button>
+            <button class="btn btn-outline" @click="joinStep = 1">Back</button>
+          </div>
+        </div>
+
+        <!-- Step 3 -->
+        <div v-if="joinStep === 3">
+          <p class="text-sm text-muted mb-2">
+            Step 3: Verifying that <strong>{{ joinNodeIp }}</strong> appears in the cluster...
+          </p>
+          <div v-if="joinVerifying" class="flex align-center gap-1">
+            <div class="loading-spinner-sm"></div>
+            <span class="text-sm text-muted">Polling cluster nodes...</span>
+          </div>
+          <div v-if="joinVerified" class="text-success text-sm">
+            Node joined successfully! The new node is now visible in the cluster.
+          </div>
+          <div v-if="joinVerifyFail" class="text-danger text-sm">
+            Node not yet visible. Check if the join command was run correctly.
+          </div>
+          <div class="flex gap-1 mt-2">
+            <button class="btn btn-outline" @click="resetJoinWizard">Start Over</button>
           </div>
         </div>
       </div>
@@ -321,14 +572,17 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useToast } from 'vue-toastification'
+import { useAuthStore } from '@/store/auth'
 import api from '@/services/api'
 import { formatBytes } from '@/utils/proxmox'
 
 const route = useRoute()
 const router = useRouter()
 const toast = useToast()
+const authStore = useAuthStore()
 
 const hostId = ref(route.params.hostId)
+const isAdmin = computed(() => authStore.isAdmin)
 
 const clusterNodes = ref([])
 const loadingStatus = ref(false)
@@ -340,11 +594,32 @@ const resourceSearch = ref('')
 const firewallRules = ref([])
 const loadingFirewall = ref(false)
 
+// Maintenance mode state (client-side toggle — tracks which nodes are in maintenance)
+const maintenanceNodes = ref(new Set())
+
 // Auto-refresh
 const REFRESH_INTERVAL = 30
 const refreshCountdown = ref(REFRESH_INTERVAL)
 let countdownTimer = null
 let refreshTimer = null
+
+// Migration poll (every 5s)
+let migrationPollTimer = null
+const MIGRATION_POLL_INTERVAL = 5000
+
+// Live migrations from task log
+const runningMigrations = ref([])
+const recentMigrations = ref([])
+const liveMigrationsExpanded = ref(true)
+
+// Balance
+const balanceExpanded = ref(false)
+const rebalancing = ref(false)
+const rebalanceSuggestions = ref([])
+const rebalanceAnalyzed = ref(false)
+const applyingRebalance = ref(false)
+const rebalanceMsg = ref('')
+const rebalanceErr = ref(false)
 
 // Migration panel
 const migrationExpanded = ref(false)
@@ -354,6 +629,23 @@ const migrateOnline = ref(true)
 const migrating = ref(false)
 const migrateError = ref('')
 const migrateSuccess = ref('')
+
+// Evacuation
+const evacuationNode = ref(null)
+const evacuateTarget = ref('')
+const evacuating = ref(false)
+const evacuationResult = ref(null)
+
+// Join wizard
+const joinWizardExpanded = ref(false)
+const joinStep = ref(1)
+const joinNodeIp = ref('')
+const joinPassword = ref('')
+const joinCommand = ref('')
+const joinVerifying = ref(false)
+const joinVerified = ref(false)
+const joinVerifyFail = ref(false)
+let joinPollTimer = null
 
 const summary = ref({
   vmsTotal: 0,
@@ -416,6 +708,10 @@ const migrateTargetNodes = computed(() => {
   return clusterNodes.value.filter(n => n.name !== selectedVmNode.value)
 })
 
+const evacuationTargets = computed(() => {
+  return clusterNodes.value.filter(n => n.online && n.name !== evacuationNode.value)
+})
+
 function barClass(ratio) {
   if (ratio >= 0.9) return 'fill--danger'
   if (ratio >= 0.75) return 'fill--warning'
@@ -425,6 +721,20 @@ function barClass(ratio) {
 function actionBadge(action) {
   const map = { ACCEPT: 'badge-success', DROP: 'badge-danger', REJECT: 'badge-warning' }
   return map[action] || 'badge-info'
+}
+
+function migrationBadge(status) {
+  if (status === 'OK') return 'badge badge-success'
+  if (!status || status === 'running') return 'badge badge-warning'
+  return 'badge badge-danger'
+}
+
+function extractTarget(upid) {
+  // UPID format: UPID:node:pid:pstart:starttime:type:id:user@realm
+  // For migration tasks the type contains target info — we just show what we can
+  if (!upid) return '?'
+  const parts = upid.split(':')
+  return parts.length > 6 ? parts[6] || '?' : '?'
 }
 
 function navigateToResource(r) {
@@ -439,6 +749,52 @@ function navigateToResource(r) {
 function navigateToNode(nodeName) {
   router.push(`/proxmox/${hostId.value}/nodes/${nodeName}`)
 }
+
+// ── Maintenance Mode ──────────────────────────────────────────────────────────
+
+function toggleMaintenance(nodeName) {
+  const inMaintenance = maintenanceNodes.value.has(nodeName)
+  if (!inMaintenance) {
+    // Enter maintenance — prompt evacuation
+    if (!confirm(`Put ${nodeName} into maintenance mode?\n\nThis will mark the node as under maintenance. You can then evacuate all VMs off the node.`)) return
+    maintenanceNodes.value = new Set([...maintenanceNodes.value, nodeName])
+    toast.info(`${nodeName} is now in maintenance mode`)
+    // Prompt evacuation
+    evacuationNode.value = nodeName
+    evacuateTarget.value = ''
+    evacuationResult.value = null
+  } else {
+    maintenanceNodes.value = new Set([...maintenanceNodes.value].filter(n => n !== nodeName))
+    toast.success(`${nodeName} exited maintenance mode`)
+    if (evacuationNode.value === nodeName) evacuationNode.value = null
+  }
+}
+
+// ── Node Evacuation ───────────────────────────────────────────────────────────
+
+async function doEvacuate() {
+  if (!evacuationNode.value) return
+  evacuating.value = true
+  evacuationResult.value = null
+  try {
+    const body = evacuateTarget.value ? { target: evacuateTarget.value } : {}
+    const res = await api.cluster.evacuateNode(hostId.value, evacuationNode.value, body)
+    evacuationResult.value = res.data
+    const queued = res.data?.queued?.length || 0
+    const errs = res.data?.errors?.length || 0
+    if (queued > 0) toast.success(`Queued ${queued} VM migrations from ${evacuationNode.value}`)
+    if (errs > 0) toast.warning(`${errs} migrations failed to queue`)
+    // Refresh migration list after a moment
+    setTimeout(fetchMigrationTasks, 2000)
+  } catch (err) {
+    const msg = err?.response?.data?.detail || err?.message || 'Evacuation failed'
+    toast.error('Evacuation failed: ' + msg)
+  } finally {
+    evacuating.value = false
+  }
+}
+
+// ── Migration ─────────────────────────────────────────────────────────────────
 
 async function doMigrate() {
   migrateError.value = ''
@@ -459,9 +815,9 @@ async function doMigrate() {
     })
     migrateSuccess.value = `Migration of VM ${vm.vmid} to ${migrateTarget.value} initiated.`
     toast.success(migrateSuccess.value)
-    // Reset selectors
     migrateVmid.value = ''
     migrateTarget.value = ''
+    setTimeout(fetchMigrationTasks, 2000)
   } catch (err) {
     const msg = err?.response?.data?.detail || err?.message || 'Migration failed.'
     migrateError.value = msg
@@ -470,6 +826,187 @@ async function doMigrate() {
     migrating.value = false
   }
 }
+
+// ── Live migration task polling ───────────────────────────────────────────────
+
+async function fetchMigrationTasks() {
+  try {
+    const res = await api.cluster.listTasks(hostId.value, { typefilter: 'qmigrate', limit: 50 })
+    const tasks = res.data || []
+    runningMigrations.value = tasks.filter(t => !t.status || t.status === 'running')
+    recentMigrations.value = tasks
+      .filter(t => t.status && t.status !== 'running')
+      .slice(0, 10)
+  } catch (e) {
+    // silent — not critical
+  }
+}
+
+function startMigrationPoll() {
+  if (migrationPollTimer) return
+  migrationPollTimer = setInterval(fetchMigrationTasks, MIGRATION_POLL_INTERVAL)
+}
+
+function stopMigrationPoll() {
+  if (migrationPollTimer) { clearInterval(migrationPollTimer); migrationPollTimer = null }
+}
+
+// ── Rebalance ─────────────────────────────────────────────────────────────────
+
+async function suggestRebalance() {
+  rebalancing.value = true
+  rebalanceSuggestions.value = []
+  rebalanceAnalyzed.value = false
+  rebalanceMsg.value = ''
+  rebalanceErr.value = false
+
+  try {
+    // Analyse node loads
+    const stats = nodeStats.value
+    const nodeNames = Object.keys(stats)
+    if (nodeNames.length < 2) {
+      rebalanceAnalyzed.value = true
+      return
+    }
+
+    // Find overloaded and underloaded nodes (by mem ratio)
+    const sorted = nodeNames.map(n => ({ name: n, ...stats[n] }))
+      .sort((a, b) => b.memRatio - a.memRatio)
+
+    const overloaded = sorted[0]
+    const underloaded = sorted[sorted.length - 1]
+    const diff = overloaded.memRatio - underloaded.memRatio
+
+    if (diff < 0.15) {
+      // Balanced enough
+      rebalanceAnalyzed.value = true
+      return
+    }
+
+    // Find VMs on overloaded node that could move
+    const vmsOnOverloaded = allResources.value.filter(
+      r => r.type === 'qemu' && r.node === overloaded.name && r.status === 'running'
+    )
+
+    // Suggest up to 3 migrations
+    const suggestions = []
+    for (const vm of vmsOnOverloaded.slice(0, 3)) {
+      suggestions.push({
+        vmid: vm.vmid,
+        name: vm.name,
+        from: overloaded.name,
+        to: underloaded.name,
+      })
+    }
+    rebalanceSuggestions.value = suggestions
+    rebalanceAnalyzed.value = true
+  } finally {
+    rebalancing.value = false
+  }
+}
+
+async function applySingleMigration(sug) {
+  try {
+    await api.pveVm.migrate(hostId.value, sug.from, sug.vmid, { target: sug.to, online: 1 })
+    toast.success(`VM ${sug.vmid} migration to ${sug.to} queued`)
+    rebalanceSuggestions.value = rebalanceSuggestions.value.filter(s => s.vmid !== sug.vmid)
+    setTimeout(fetchMigrationTasks, 2000)
+  } catch (err) {
+    toast.error(`Migration failed: ${err?.response?.data?.detail || err?.message}`)
+  }
+}
+
+async function applyRebalance() {
+  applyingRebalance.value = true
+  rebalanceMsg.value = ''
+  rebalanceErr.value = false
+  let ok = 0
+  let fail = 0
+  for (const sug of rebalanceSuggestions.value) {
+    try {
+      await api.pveVm.migrate(hostId.value, sug.from, sug.vmid, { target: sug.to, online: 1 })
+      ok++
+    } catch {
+      fail++
+    }
+  }
+  applyingRebalance.value = false
+  rebalanceSuggestions.value = []
+  if (fail === 0) {
+    rebalanceMsg.value = `Queued ${ok} migration(s) successfully.`
+    rebalanceErr.value = false
+  } else {
+    rebalanceMsg.value = `${ok} queued, ${fail} failed.`
+    rebalanceErr.value = true
+  }
+  setTimeout(fetchMigrationTasks, 2000)
+}
+
+// ── Cluster Join Wizard ───────────────────────────────────────────────────────
+
+async function generateJoinCommand() {
+  // Fetch the cluster's join info from the Proxmox API (cluster/config/join)
+  try {
+    const res = await api.pveNode.clusterStatus(hostId.value)
+    const items = res.data || []
+    const clusterItem = items.find(i => i.type === 'cluster')
+    const clusterName = clusterItem?.name || 'cluster'
+    // Get current host's hostname
+    const hostRes = await api.proxmox.getHost(hostId.value)
+    const masterHostname = hostRes.data?.hostname || 'proxmox-master'
+    // Build the join command
+    joinCommand.value = `pvecm add ${masterHostname} --password '${joinPassword.value}' --force`
+    joinStep.value = 2
+  } catch (err) {
+    toast.error('Failed to get cluster info: ' + (err?.response?.data?.detail || err?.message))
+  }
+}
+
+function startJoinVerification() {
+  joinVerifying.value = true
+  joinVerified.value = false
+  joinVerifyFail.value = false
+  let attempts = 0
+  const MAX_ATTEMPTS = 20
+
+  joinPollTimer = setInterval(async () => {
+    attempts++
+    try {
+      const res = await api.pveNode.clusterStatus(hostId.value)
+      const items = res.data || []
+      const nodes = items.filter(i => i.type === 'node')
+      const found = nodes.some(n =>
+        n.name?.includes(joinNodeIp.value) || n.ip === joinNodeIp.value
+      )
+      if (found) {
+        joinVerified.value = true
+        joinVerifying.value = false
+        clearInterval(joinPollTimer)
+        joinPollTimer = null
+        toast.success('New node joined the cluster successfully!')
+        await fetchClusterStatus()
+      } else if (attempts >= MAX_ATTEMPTS) {
+        joinVerifyFail.value = true
+        joinVerifying.value = false
+        clearInterval(joinPollTimer)
+        joinPollTimer = null
+      }
+    } catch { /* ignore */ }
+  }, 5000)
+}
+
+function resetJoinWizard() {
+  joinStep.value = 1
+  joinNodeIp.value = ''
+  joinPassword.value = ''
+  joinCommand.value = ''
+  joinVerifying.value = false
+  joinVerified.value = false
+  joinVerifyFail.value = false
+  if (joinPollTimer) { clearInterval(joinPollTimer); joinPollTimer = null }
+}
+
+// ── Data fetch ────────────────────────────────────────────────────────────────
 
 async function fetchClusterStatus() {
   loadingStatus.value = true
@@ -492,7 +1029,6 @@ async function fetchResources() {
     const resources = res.data || []
     allResources.value = resources
 
-    // Build summary from qemu/lxc entries
     let vmsTotal = 0, vmsRunning = 0, ctsTotal = 0, ctsRunning = 0
     let cpuUsed = 0, cpuTotal = 0, memUsed = 0, memTotal = 0
 
@@ -545,19 +1081,11 @@ async function refresh() {
 
 function startAutoRefresh() {
   refreshCountdown.value = REFRESH_INTERVAL
-
-  // Countdown ticker — fires every second
   countdownTimer = setInterval(() => {
     refreshCountdown.value--
-    if (refreshCountdown.value <= 0) {
-      refreshCountdown.value = REFRESH_INTERVAL
-    }
+    if (refreshCountdown.value <= 0) refreshCountdown.value = REFRESH_INTERVAL
   }, 1000)
-
-  // Actual refresh timer — fires every 30 seconds
-  refreshTimer = setInterval(() => {
-    refresh()
-  }, REFRESH_INTERVAL * 1000)
+  refreshTimer = setInterval(() => { refresh() }, REFRESH_INTERVAL * 1000)
 }
 
 function stopAutoRefresh() {
@@ -566,7 +1094,6 @@ function stopAutoRefresh() {
 }
 
 async function manualRefresh() {
-  // Reset the countdown so the next auto-refresh is 30s from now
   stopAutoRefresh()
   await refresh()
   startAutoRefresh()
@@ -574,11 +1101,15 @@ async function manualRefresh() {
 
 onMounted(async () => {
   await refresh()
+  await fetchMigrationTasks()
   startAutoRefresh()
+  startMigrationPoll()
 })
 
 onUnmounted(() => {
   stopAutoRefresh()
+  stopMigrationPoll()
+  if (joinPollTimer) clearInterval(joinPollTimer)
 })
 </script>
 
@@ -667,6 +1198,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 0.4rem;
+  flex-wrap: wrap;
 }
 
 .node-name {
@@ -774,6 +1306,148 @@ onUnmounted(() => {
 .fill--warning { background: #f59e0b; }
 .fill--danger { background: #ef4444; }
 
+/* Balance chart */
+.balance-chart {
+  display: flex;
+  gap: 1.5rem;
+  align-items: flex-end;
+  padding: 1rem 0;
+  overflow-x: auto;
+}
+
+.balance-node-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 80px;
+}
+
+.balance-bars {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-end;
+  height: 120px;
+}
+
+.balance-bar-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  width: 28px;
+}
+
+.balance-bar-label {
+  font-weight: 500;
+}
+
+.balance-bar-track {
+  width: 28px;
+  height: 80px;
+  background: var(--border-color);
+  border-radius: 4px;
+  overflow: hidden;
+  display: flex;
+  align-items: flex-end;
+}
+
+.balance-bar-fill {
+  width: 100%;
+  border-radius: 4px;
+  min-height: 2px;
+  transition: height 0.3s;
+}
+
+.balance-bar-pct {
+  color: var(--text-muted, #888);
+}
+
+.balance-node-name {
+  font-weight: 600;
+  text-align: center;
+  color: var(--text-primary);
+}
+
+/* Rebalance panel */
+.rebalance-panel {
+  border: 1px solid var(--border-color);
+  border-radius: 0.375rem;
+  padding: 0.875rem;
+  background: var(--bg-secondary);
+}
+
+.rebalance-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+
+.rebalance-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.rebalance-item:last-child {
+  border-bottom: none;
+}
+
+.rebalance-arrow {
+  flex: 1;
+  color: var(--text-primary);
+}
+
+/* Live migration items */
+.migration-running-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 0.375rem;
+  background: var(--bg-secondary);
+  margin-bottom: 0.5rem;
+}
+
+.migration-info {
+  min-width: 180px;
+}
+
+.migration-progress-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1;
+}
+
+.migration-progress-bar {
+  flex: 1;
+  height: 6px;
+  background: var(--border-color);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.migration-progress-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: #3b82f6;
+}
+
+@keyframes pulse-bar {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.anim-pulse {
+  animation: pulse-bar 1.5s ease-in-out infinite;
+}
+
 /* Migration panel */
 .migration-form {
   display: flex;
@@ -810,12 +1484,28 @@ onUnmounted(() => {
   cursor: pointer;
 }
 
-.migrate-error {
-  color: #ef4444;
+.migrate-error { color: #ef4444; }
+.migrate-success { color: #10b981; }
+
+/* Evacuation result */
+.evacuation-result {
+  border: 1px solid var(--border-color);
+  border-radius: 0.375rem;
+  padding: 0.75rem;
+  background: var(--bg-secondary);
+  margin-top: 0.75rem;
 }
 
-.migrate-success {
-  color: #10b981;
+/* Join wizard */
+.join-command {
+  background: #0f1419;
+  color: #9ca3af;
+  padding: 0.875rem 1rem;
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  white-space: pre-wrap;
+  word-break: break-all;
+  border: 1px solid var(--border-color);
 }
 
 .toggle-icon {
@@ -838,6 +1528,18 @@ onUnmounted(() => {
   background: var(--bg-secondary);
 }
 
+.loading-spinner-sm {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--border-color);
+  border-top-color: #3b82f6;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Buttons */
 .btn-sm {
   padding: 0.25rem 0.5rem;
   font-size: 0.875rem;
@@ -848,9 +1550,48 @@ onUnmounted(() => {
   font-size: 0.75rem;
 }
 
+.btn-warning {
+  background: #f59e0b;
+  color: #1a1a1a;
+  border: none;
+  border-radius: 0.25rem;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.btn-warning:hover { background: #d97706; }
+
+.btn-danger {
+  background: #ef4444;
+  color: white;
+  border: none;
+  border-radius: 0.25rem;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.btn-danger:hover { background: #dc2626; }
+.btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-success {
+  background: #10b981;
+  color: white;
+  border: none;
+  border-radius: 0.25rem;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.btn-success:hover { background: #059669; }
+
+.font-semibold { font-weight: 600; }
+.text-danger { color: #ef4444; }
+.text-success { color: #10b981; }
+
 .mb-2 { margin-bottom: 1rem; }
-.ml-1 { margin-left: 0.5rem; }
 .mt-1 { margin-top: 0.25rem; }
+.mt-2 { margin-top: 0.75rem; }
+.ml-1 { margin-left: 0.5rem; }
 .p-3 { padding: 1.5rem; }
 .text-xs { font-size: 0.75rem; }
 .text-sm { font-size: 0.875rem; }
@@ -859,6 +1600,7 @@ onUnmounted(() => {
 .flex { display: flex; }
 .gap-1 { gap: 0.5rem; }
 .align-center { align-items: center; }
+.table-container { overflow-x: auto; }
 
 @media (max-width: 900px) {
   .summary-grid {

@@ -602,6 +602,81 @@
       </div>
     </div>
 
+    <!-- Notification Rules & In-App Test (Admin Only) -->
+    <div class="card" v-if="user && user.role === 'admin'">
+      <div class="card-header">
+        <h3>Notification Rules</h3>
+      </div>
+      <div class="card-body">
+        <p class="text-sm text-muted" style="margin-bottom: 1rem;">Choose which events create in-app notifications for all users.</p>
+
+        <div v-if="notifRulesLoading" class="loading-message">
+          <div class="loading-spinner"></div>
+          <p>Loading...</p>
+        </div>
+
+        <div v-else class="notif-rules-grid">
+          <div class="toggle-row">
+            <div>
+              <strong>VM Start</strong>
+              <p class="text-sm text-muted">Notify when a VM is started</p>
+            </div>
+            <label class="toggle-switch">
+              <input type="checkbox" v-model="notifRules.notify_vm_start" @change="saveNotifRules" />
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <div class="toggle-row">
+            <div>
+              <strong>VM Stop</strong>
+              <p class="text-sm text-muted">Notify when a VM is stopped</p>
+            </div>
+            <label class="toggle-switch">
+              <input type="checkbox" v-model="notifRules.notify_vm_stop" @change="saveNotifRules" />
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <div class="toggle-row">
+            <div>
+              <strong>Task Failure</strong>
+              <p class="text-sm text-muted">Notify when a background task fails</p>
+            </div>
+            <label class="toggle-switch">
+              <input type="checkbox" v-model="notifRules.notify_task_failure" @change="saveNotifRules" />
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <div class="toggle-row">
+            <div>
+              <strong>User Login</strong>
+              <p class="text-sm text-muted">Notify admins when any user logs in</p>
+            </div>
+            <label class="toggle-switch">
+              <input type="checkbox" v-model="notifRules.notify_user_login" @change="saveNotifRules" />
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+        </div>
+
+        <div style="margin-top: 1.5rem; padding-top: 1.25rem; border-top: 1px solid rgba(255,255,255,0.07);">
+          <h5 class="subsection-title">In-App Notification Test</h5>
+          <p class="text-sm text-muted" style="margin-bottom: 0.75rem;">Send yourself a test notification to verify the notification center is working.</p>
+          <div class="action-buttons">
+            <button
+              @click="sendTestNotification"
+              class="btn btn-primary"
+              :disabled="sendingTestNotif"
+            >
+              {{ sendingTestNotif ? 'Sending...' : 'Send Test Notification' }}
+            </button>
+          </div>
+          <div v-if="testNotifResult" class="info-box alert-success" style="margin-top: 0.75rem;">
+            {{ testNotifResult }}
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Email Notifications Section (Admin Only) -->
     <div class="card" v-if="user && user.role === 'admin'">
       <div class="card-header">
@@ -648,7 +723,7 @@
       <div class="card-body">
         <div class="info-box">
           <p><strong>What are webhooks?</strong> Webhooks send HTTP POST requests to external URLs when VM events occur, allowing integration with Slack, Teams, custom scripts, and more.</p>
-          <p class="text-sm text-muted">Supported events: VM Start, VM Stop, VM Create, VM Delete, VM Error</p>
+          <p class="text-sm text-muted">Supported events: vm.start, vm.stop, vm.create, vm.delete, vm.error, task.failed, user.login, backup.complete</p>
         </div>
 
         <div v-if="webhooksLoading" class="loading-message">
@@ -661,34 +736,66 @@
         </div>
 
         <div v-else class="webhooks-list">
-          <div v-for="hook in webhooks" :key="hook.id" class="webhook-row">
-            <div class="webhook-info">
-              <div class="webhook-header-row">
-                <strong class="webhook-name">{{ hook.name }}</strong>
-                <span :class="['badge', hook.enabled ? 'badge-success' : 'badge-secondary']">
-                  {{ hook.enabled ? 'Enabled' : 'Disabled' }}
-                </span>
+          <div v-for="hook in webhooks" :key="hook.id" class="webhook-card">
+            <!-- Webhook header -->
+            <div class="webhook-row">
+              <div class="webhook-info">
+                <div class="webhook-header-row">
+                  <strong class="webhook-name">{{ hook.name }}</strong>
+                  <span :class="['badge', hook.enabled ? 'badge-success' : 'badge-secondary']">
+                    {{ hook.enabled ? 'Enabled' : 'Disabled' }}
+                  </span>
+                </div>
+                <p class="webhook-url text-sm text-muted">{{ hook.url }}</p>
+                <div class="webhook-events">
+                  <span v-for="evt in hook.events" :key="evt" class="event-badge">{{ evt }}</span>
+                </div>
               </div>
-              <p class="webhook-url text-sm text-muted">{{ hook.url }}</p>
-              <div class="webhook-events">
-                <span v-for="evt in hook.events" :key="evt" class="event-badge">{{ evt }}</span>
+              <div class="webhook-actions">
+                <button
+                  @click="triggerTestWebhook(hook.id)"
+                  class="btn btn-sm btn-outline"
+                  :disabled="testingWebhook === hook.id"
+                >
+                  {{ testingWebhook === hook.id ? 'Sending...' : 'Test' }}
+                </button>
+                <button
+                  @click="deleteWebhookById(hook.id, hook.name)"
+                  class="btn btn-sm btn-danger"
+                  :disabled="deletingWebhook === hook.id"
+                >
+                  {{ deletingWebhook === hook.id ? 'Deleting...' : 'Delete' }}
+                </button>
               </div>
             </div>
-            <div class="webhook-actions">
-              <button
-                @click="triggerTestWebhook(hook.id)"
-                class="btn btn-sm btn-outline"
-                :disabled="testingWebhook === hook.id"
-              >
-                {{ testingWebhook === hook.id ? 'Sending...' : 'Test' }}
-              </button>
-              <button
-                @click="deleteWebhookById(hook.id, hook.name)"
-                class="btn btn-sm btn-danger"
-                :disabled="deletingWebhook === hook.id"
-              >
-                {{ deletingWebhook === hook.id ? 'Deleting...' : 'Delete' }}
-              </button>
+
+            <!-- Delivery Log -->
+            <div v-if="hook.delivery_log && hook.delivery_log.length > 0" class="webhook-delivery-log">
+              <p class="delivery-log-title">Last {{ hook.delivery_log.length }} deliveries</p>
+              <div class="delivery-log-table">
+                <div class="delivery-log-row delivery-log-header">
+                  <span>Event</span>
+                  <span>Status</span>
+                  <span>Time</span>
+                </div>
+                <div
+                  v-for="d in hook.delivery_log"
+                  :key="d.id"
+                  class="delivery-log-row"
+                  :class="d.success ? 'delivery-ok' : 'delivery-fail'"
+                >
+                  <span class="delivery-event">{{ d.event }}</span>
+                  <span class="delivery-status">
+                    <span :class="['delivery-badge', d.success ? 'badge-ok' : 'badge-fail']">
+                      {{ d.status_code || 'ERR' }}
+                    </span>
+                  </span>
+                  <span class="delivery-time">{{ deliveryTimeAgo(d.created_at) }}</span>
+                </div>
+              </div>
+            </div>
+            <div v-else-if="hook.delivery_log && hook.delivery_log.length === 0" class="webhook-delivery-log">
+              <p class="text-sm text-muted" style="margin: 0; padding: 0.35rem 0;">No delivery attempts yet — click "Test" to send one.</p>
             </div>
           </div>
         </div>
@@ -1137,6 +1244,53 @@ export default {
     const haError = ref(null)
     const showHAManagement = ref(false)
 
+    // Notification Rules (admin)
+    const notifRules = ref({
+      notify_vm_start: false,
+      notify_vm_stop: false,
+      notify_task_failure: true,
+      notify_user_login: false,
+    })
+    const notifRulesLoading = ref(false)
+    const sendingTestNotif = ref(false)
+    const testNotifResult = ref(null)
+
+    const fetchNotifRules = async () => {
+      notifRulesLoading.value = true
+      try {
+        const res = await api.notifications.getSettings()
+        notifRules.value = res.data
+      } catch {
+        // Non-admin or not configured — silently ignore
+      } finally {
+        notifRulesLoading.value = false
+      }
+    }
+
+    const saveNotifRules = async () => {
+      try {
+        await api.notifications.updateSettings(notifRules.value)
+        toast.success('Notification rules saved')
+      } catch (error) {
+        toast.error('Failed to save notification rules')
+      }
+    }
+
+    const sendTestNotification = async () => {
+      sendingTestNotif.value = true
+      testNotifResult.value = null
+      try {
+        await api.notifications.sendTest()
+        testNotifResult.value = 'Test notification created! Check the bell icon in the header.'
+        toast.success('Test notification sent!')
+        setTimeout(() => { testNotifResult.value = null }, 5000)
+      } catch (error) {
+        toast.error(error.response?.data?.detail || 'Failed to send test notification')
+      } finally {
+        sendingTestNotif.value = false
+      }
+    }
+
     // Email Notifications
     const testingEmail = ref(false)
     const testEmailResult = ref(null)
@@ -1181,7 +1335,19 @@ export default {
       { value: 'vm.create', label: 'VM Create' },
       { value: 'vm.delete', label: 'VM Delete' },
       { value: 'vm.error', label: 'VM Error' },
+      { value: 'task.failed', label: 'Task Failed' },
+      { value: 'user.login', label: 'User Login' },
+      { value: 'backup.complete', label: 'Backup Complete' },
     ]
+
+    const deliveryTimeAgo = (isoStr) => {
+      if (!isoStr) return ''
+      const diff = Math.floor((Date.now() - new Date(isoStr).getTime()) / 1000)
+      if (diff < 60) return 'just now'
+      if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
+      if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
+      return `${Math.floor(diff / 86400)}d ago`
+    }
 
     const fetchWebhooks = async () => {
       webhooksLoading.value = true
@@ -1748,6 +1914,7 @@ export default {
       checkHAStatus()
       fetchLinuxAgentSettings()
       fetchWebhooks()
+      fetchNotifRules()
     })
 
     return {
@@ -1835,6 +2002,13 @@ export default {
       saveDefaultHost,
       saveConsoleSetting,
       saveRefreshInterval,
+      // Notification Rules
+      notifRules,
+      notifRulesLoading,
+      sendingTestNotif,
+      testNotifResult,
+      saveNotifRules,
+      sendTestNotification,
       // Email
       testingEmail,
       testEmailResult,
@@ -1856,6 +2030,7 @@ export default {
       saveWebhook,
       triggerTestWebhook,
       deleteWebhookById,
+      deliveryTimeAgo,
     }
   }
 }
@@ -2691,5 +2866,99 @@ export default {
 
 .text-xs {
   font-size: 0.75rem;
+}
+
+/* ── Notification Rules ── */
+.notif-rules-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+/* ── Webhook card / delivery log ── */
+.webhook-card {
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 8px;
+  margin-bottom: 1rem;
+  overflow: hidden;
+}
+
+.webhook-card .webhook-row {
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.webhook-delivery-log {
+  padding: 0.6rem 1rem 0.75rem;
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.delivery-log-title {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.4);
+  margin: 0 0 0.4rem 0;
+}
+
+.delivery-log-table {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.delivery-log-row {
+  display: grid;
+  grid-template-columns: 1fr 80px 90px;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.73rem;
+  padding: 3px 0;
+}
+
+.delivery-log-header {
+  color: rgba(255, 255, 255, 0.35);
+  font-weight: 600;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  padding-bottom: 4px;
+  margin-bottom: 2px;
+}
+
+.delivery-event {
+  color: rgba(255, 255, 255, 0.7);
+  font-family: monospace;
+  font-size: 0.72rem;
+}
+
+.delivery-status {
+  display: flex;
+  align-items: center;
+}
+
+.delivery-badge {
+  font-size: 0.67rem;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 10px;
+}
+
+.badge-ok {
+  background: rgba(34, 197, 94, 0.15);
+  color: #4ade80;
+}
+
+.badge-fail {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+}
+
+.delivery-time {
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 0.68rem;
+  text-align: right;
 }
 </style>

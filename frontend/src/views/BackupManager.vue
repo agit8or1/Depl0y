@@ -20,9 +20,17 @@
         @click="activeTab = 'restore'; onRestoreTabOpen()"
       >Restore</button>
       <button
+        :class="['tab-btn', activeTab === 'pbs-servers' ? 'tab-btn--active' : '']"
+        @click="activeTab = 'pbs-servers'; onPbsServersTabOpen()"
+      >PBS Servers</button>
+      <button
         :class="['tab-btn', activeTab === 'pbs' ? 'tab-btn--active' : '']"
         @click="activeTab = 'pbs'; onPbsTabOpen()"
       >PBS Browser</button>
+      <button
+        :class="['tab-btn', activeTab === 'pbs-tasks' ? 'tab-btn--active' : '']"
+        @click="activeTab = 'pbs-tasks'; onPbsTasksTabOpen()"
+      >PBS Tasks</button>
       <button
         :class="['tab-btn', activeTab === 'notifications' ? 'tab-btn--active' : '']"
         @click="activeTab = 'notifications'"
@@ -216,6 +224,127 @@
       </div>
     </div>
 
+    <!-- PBS Servers tab -->
+    <div v-if="activeTab === 'pbs-servers'">
+      <div class="card">
+        <div class="card-header">
+          <h3>PBS Servers</h3>
+          <button @click="openAddPbsServerModal" class="btn btn-primary">+ Add Server</button>
+        </div>
+
+        <div v-if="loadingPbsServersCrud" class="loading-spinner"></div>
+
+        <div v-else-if="pbsServerList.length === 0" class="text-center text-muted p-3">
+          No PBS servers configured. Add one to get started.
+        </div>
+
+        <div v-else class="table-container">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Hostname</th>
+                <th>Port</th>
+                <th>Token ID</th>
+                <th>SSL</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="srv in pbsServerList" :key="srv.id">
+                <td><strong>{{ srv.name }}</strong></td>
+                <td>{{ srv.hostname }}</td>
+                <td>{{ srv.port }}</td>
+                <td class="text-sm text-muted">{{ srv.api_token_id || '—' }}</td>
+                <td>
+                  <span :class="['badge', srv.verify_ssl ? 'badge--ok' : 'badge--off']">
+                    {{ srv.verify_ssl ? 'Verified' : 'Skip' }}
+                  </span>
+                </td>
+                <td>
+                  <span v-if="pbsServerStatus[srv.id] === undefined" class="text-muted text-sm">—</span>
+                  <span v-else-if="pbsServerStatus[srv.id] === 'testing'" class="text-muted text-sm">Testing...</span>
+                  <span v-else-if="pbsServerStatus[srv.id] === true" class="badge badge--ok">Online</span>
+                  <span v-else class="badge badge--fail">Offline</span>
+                </td>
+                <td>
+                  <div class="flex gap-1">
+                    <button
+                      @click="testPbsServer(srv)"
+                      class="btn btn-outline btn-sm"
+                      :disabled="pbsServerStatus[srv.id] === 'testing'"
+                    >Test</button>
+                    <button @click="deletePbsServer(srv)" class="btn btn-danger btn-sm">Delete</button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- PBS Tasks tab -->
+    <div v-if="activeTab === 'pbs-tasks'">
+      <div class="card">
+        <div class="card-header">
+          <h3>PBS Tasks</h3>
+          <div class="flex gap-1 align-center">
+            <select v-model="pbsTasks.serverId" class="form-control form-control-sm" @change="fetchPbsTasks">
+              <option value="">Select PBS server...</option>
+              <option v-for="srv in pbsServerList" :key="srv.id" :value="srv.id">
+                {{ srv.name }} ({{ srv.hostname }})
+              </option>
+            </select>
+            <button
+              @click="fetchPbsTasks"
+              class="btn btn-outline btn-sm"
+              :disabled="!pbsTasks.serverId || loadingPbsTasks"
+            >Refresh</button>
+          </div>
+        </div>
+
+        <div v-if="!pbsTasks.serverId" class="text-center text-muted p-3">
+          Select a PBS server to view its task history.
+        </div>
+        <div v-else-if="loadingPbsTasks" class="loading-spinner"></div>
+        <div v-else-if="pbsTasks.items.length === 0" class="text-center text-muted p-3">
+          No tasks found.
+        </div>
+        <div v-else class="table-container">
+          <table class="table table-sm">
+            <thead>
+              <tr>
+                <th>Start Time</th>
+                <th>Task Type</th>
+                <th>User</th>
+                <th>Status</th>
+                <th>Duration</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="task in pbsTasks.items" :key="task.upid">
+                <td class="text-sm">{{ formatDate(task.starttime) }}</td>
+                <td class="text-sm"><code>{{ task.worker_type || task.type || '—' }}</code></td>
+                <td class="text-sm text-muted">{{ task.user || '—' }}</td>
+                <td>
+                  <span :class="['task-status-badge', taskStatusClass(task)]">
+                    {{ task.status || (task.endtime ? 'stopped' : 'running') }}
+                  </span>
+                </td>
+                <td class="text-sm text-muted">{{ formatDuration(task.starttime, task.endtime) }}</td>
+                <td>
+                  <button @click="openTaskLogModal(task)" class="btn btn-outline btn-sm">Log</button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
     <!-- PBS Browser tab -->
     <div v-if="activeTab === 'pbs'">
       <div class="card">
@@ -292,6 +421,11 @@
               <span class="pbs-group-meta text-sm text-muted">
                 {{ group['backup-count'] ?? '?' }} snapshot{{ (group['backup-count'] ?? 0) !== 1 ? 's' : '' }}
               </span>
+              <button
+                @click.stop="openPruneModal(group)"
+                class="btn btn-outline btn-sm pbs-group-action"
+                title="Prune old snapshots in this group"
+              >Prune</button>
             </div>
 
             <!-- Snapshots (expanded) -->
@@ -337,6 +471,14 @@
                           title="Verify this snapshot"
                         >
                           {{ verifyingSnapshot[pbsSnapshotKey(snap, group)] ? 'Verifying...' : 'Verify' }}
+                        </button>
+                        <button
+                          @click="forgetPbsSnapshot(snap, group)"
+                          class="btn btn-danger btn-sm"
+                          :disabled="forgettingSnapshot[pbsSnapshotKey(snap, group)]"
+                          title="Permanently delete this snapshot"
+                        >
+                          {{ forgettingSnapshot[pbsSnapshotKey(snap, group)] ? 'Deleting...' : 'Forget' }}
                         </button>
                       </div>
                     </td>
@@ -591,6 +733,165 @@
         </div>
       </div>
     </div>
+
+    <!-- Add PBS Server Modal -->
+    <div v-if="addPbsServerModal.show" class="modal" @click="closeAddPbsServerModal">
+      <div class="modal-content" @click.stop>
+        <div class="modal-header">
+          <h3>Add PBS Server</h3>
+          <button @click="closeAddPbsServerModal" class="btn-close">&#215;</button>
+        </div>
+        <form @submit.prevent="submitAddPbsServer" class="modal-body">
+          <div class="form-group">
+            <label class="form-label">Name <span class="required">*</span></label>
+            <input v-model="addPbsServerForm.name" class="form-control" placeholder="e.g. pbs-main" required />
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Hostname <span class="required">*</span></label>
+              <input v-model="addPbsServerForm.hostname" class="form-control" placeholder="pbs.example.com" required />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Port</label>
+              <input v-model.number="addPbsServerForm.port" type="number" class="form-control" min="1" max="65535" />
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Username</label>
+            <input v-model="addPbsServerForm.username" class="form-control" placeholder="root@pam" />
+            <div class="text-xs text-muted mt-1">Used for display purposes.</div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">API Token ID <span class="required">*</span></label>
+            <input
+              v-model="addPbsServerForm.api_token_id"
+              class="form-control"
+              placeholder="root@pam!mytoken"
+              required
+            />
+            <div class="text-xs text-muted mt-1">Format: user@realm!tokenname</div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">API Token Secret <span class="required">*</span></label>
+            <input
+              v-model="addPbsServerForm.api_token_secret"
+              class="form-control"
+              type="password"
+              placeholder="Token secret value"
+              required
+            />
+          </div>
+
+          <div class="form-group">
+            <label class="checkbox-label">
+              <input type="checkbox" v-model="addPbsServerForm.verify_ssl" />
+              <span>Verify SSL Certificate</span>
+            </label>
+            <div class="text-xs text-muted mt-1">Disable for self-signed certificates (typical for PBS).</div>
+          </div>
+
+          <div v-if="addPbsServerModal.error" class="error-banner mt-1">{{ addPbsServerModal.error }}</div>
+
+          <div class="flex gap-1 mt-2">
+            <button type="submit" class="btn btn-primary" :disabled="addPbsServerModal.saving">
+              {{ addPbsServerModal.saving ? 'Adding...' : 'Add Server' }}
+            </button>
+            <button type="button" @click="closeAddPbsServerModal" class="btn btn-outline">Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Prune Modal -->
+    <div v-if="pruneModal.show" class="modal" @click="closePruneModal">
+      <div class="modal-content" @click.stop>
+        <div class="modal-header">
+          <h3>Prune Backup Group</h3>
+          <button @click="closePruneModal" class="btn-close">&#215;</button>
+        </div>
+        <div class="modal-body">
+          <div class="restore-source-info mb-2">
+            <div class="text-sm text-muted">Group:</div>
+            <code class="upid-code">{{ pruneModal.group ? `${pruneModal.group['backup-type']}/${pruneModal.group['backup-id']}` : '' }}</code>
+          </div>
+
+          <p class="text-sm text-muted mb-2">
+            Configure how many snapshots to retain. Older snapshots will be permanently deleted.
+            Leave fields blank to use PBS defaults.
+          </p>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Keep Last</label>
+              <input v-model.number="pruneForm['keep-last']" type="number" min="0" class="form-control" placeholder="e.g. 5" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Keep Hourly</label>
+              <input v-model.number="pruneForm['keep-hourly']" type="number" min="0" class="form-control" placeholder="e.g. 0" />
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Keep Daily</label>
+              <input v-model.number="pruneForm['keep-daily']" type="number" min="0" class="form-control" placeholder="e.g. 7" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Keep Weekly</label>
+              <input v-model.number="pruneForm['keep-weekly']" type="number" min="0" class="form-control" placeholder="e.g. 4" />
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Keep Monthly</label>
+              <input v-model.number="pruneForm['keep-monthly']" type="number" min="0" class="form-control" placeholder="e.g. 12" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Keep Yearly</label>
+              <input v-model.number="pruneForm['keep-yearly']" type="number" min="0" class="form-control" placeholder="e.g. 0" />
+            </div>
+          </div>
+
+          <div v-if="pruneModal.result" :class="['notif-result', pruneModal.result.ok ? 'notif-result--ok' : 'notif-result--err']">
+            {{ pruneModal.result.message }}
+          </div>
+
+          <div class="flex gap-1 mt-2">
+            <button @click="submitPrune" class="btn btn-primary" :disabled="pruneModal.saving">
+              {{ pruneModal.saving ? 'Pruning...' : 'Prune Now' }}
+            </button>
+            <button @click="closePruneModal" class="btn btn-outline">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Task Log Modal -->
+    <div v-if="taskLogModal.show" class="modal" @click="closeTaskLogModal">
+      <div class="modal-content modal-content--wide" @click.stop>
+        <div class="modal-header">
+          <h3>Task Log</h3>
+          <button @click="closeTaskLogModal" class="btn-close">&#215;</button>
+        </div>
+        <div class="modal-body">
+          <div class="restore-source-info mb-2">
+            <div class="text-sm text-muted">UPID:</div>
+            <code class="upid-code">{{ taskLogModal.upid }}</code>
+          </div>
+          <div v-if="taskLogModal.loading" class="loading-spinner"></div>
+          <div v-else-if="taskLogModal.lines.length === 0" class="text-muted text-sm">No log output.</div>
+          <pre v-else class="task-log-pre">{{ taskLogModal.lines.join('\n') }}</pre>
+          <div class="flex gap-1 mt-2">
+            <button @click="closeTaskLogModal" class="btn btn-outline">Close</button>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -653,6 +954,265 @@ const loadingRestoreTargetStorages = ref(false)
 // Restore task polling
 const restoreTask = ref({ upid: null, status: null, exitstatus: null })
 let restoreTaskPollTimer = null
+
+// ── PBS Servers CRUD state ────────────────────────────────────────────────────
+
+const pbsServerList = ref([])
+const loadingPbsServersCrud = ref(false)
+const pbsServerStatus = ref({})  // id -> true | false | 'testing' | undefined
+
+const addPbsServerModal = ref({ show: false, saving: false, error: null })
+const emptyAddPbsServerForm = () => ({
+  name: '',
+  hostname: '',
+  port: 8007,
+  username: 'root@pam',
+  api_token_id: '',
+  api_token_secret: '',
+  verify_ssl: false,
+})
+const addPbsServerForm = ref(emptyAddPbsServerForm())
+
+async function fetchPbsServerListCrud() {
+  loadingPbsServersCrud.value = true
+  try {
+    const res = await api.pbs.list()
+    pbsServerList.value = res.data || []
+    pbsServers.value = pbsServerList.value
+  } catch (err) {
+    console.error('Failed to load PBS servers:', err)
+    toast.error('Failed to load PBS servers')
+  } finally {
+    loadingPbsServersCrud.value = false
+  }
+}
+
+function onPbsServersTabOpen() {
+  if (pbsServerList.value.length === 0) {
+    fetchPbsServerListCrud()
+  }
+}
+
+function openAddPbsServerModal() {
+  addPbsServerForm.value = emptyAddPbsServerForm()
+  addPbsServerModal.value = { show: true, saving: false, error: null }
+}
+
+function closeAddPbsServerModal() {
+  addPbsServerModal.value = { show: false, saving: false, error: null }
+}
+
+async function submitAddPbsServer() {
+  addPbsServerModal.value.saving = true
+  addPbsServerModal.value.error = null
+  try {
+    await api.pbs.create({ ...addPbsServerForm.value })
+    toast.success('PBS server added')
+    closeAddPbsServerModal()
+    await fetchPbsServerListCrud()
+    // Also refresh the pbsServers list used in PBS Browser
+    pbsServers.value = pbsServerList.value
+  } catch (err) {
+    console.error('Failed to add PBS server:', err)
+    addPbsServerModal.value.error = err.response?.data?.detail || 'Failed to add server'
+  } finally {
+    addPbsServerModal.value.saving = false
+  }
+}
+
+async function testPbsServer(srv) {
+  pbsServerStatus.value = { ...pbsServerStatus.value, [srv.id]: 'testing' }
+  try {
+    const res = await api.pbsMgmt.test(srv.id)
+    pbsServerStatus.value = {
+      ...pbsServerStatus.value,
+      [srv.id]: (res.data?.status === 'success'),
+    }
+  } catch (err) {
+    pbsServerStatus.value = { ...pbsServerStatus.value, [srv.id]: false }
+  }
+}
+
+async function deletePbsServer(srv) {
+  if (!confirm(`Delete PBS server "${srv.name}"? This cannot be undone.`)) return
+  try {
+    await api.pbs.delete(srv.id)
+    toast.success('PBS server deleted')
+    await fetchPbsServerListCrud()
+    pbsServers.value = pbsServerList.value
+  } catch (err) {
+    console.error('Failed to delete PBS server:', err)
+    toast.error('Failed to delete PBS server')
+  }
+}
+
+// ── PBS Tasks state ───────────────────────────────────────────────────────────
+
+const pbsTasks = ref({ serverId: '', items: [] })
+const loadingPbsTasks = ref(false)
+
+const taskLogModal = ref({ show: false, upid: '', loading: false, lines: [] })
+
+async function fetchPbsTasks() {
+  if (!pbsTasks.value.serverId) return
+  loadingPbsTasks.value = true
+  pbsTasks.value.items = []
+  try {
+    const res = await api.pbsMgmt.listTasks(pbsTasks.value.serverId)
+    pbsTasks.value.items = res.data || []
+  } catch (err) {
+    console.error('Failed to load PBS tasks:', err)
+    toast.error('Failed to load tasks')
+  } finally {
+    loadingPbsTasks.value = false
+  }
+}
+
+function onPbsTasksTabOpen() {
+  if (pbsServerList.value.length === 0) {
+    fetchPbsServerListCrud()
+  }
+}
+
+function taskStatusClass(task) {
+  const s = task.status || (task.endtime ? 'stopped' : 'running')
+  if (s === 'stopped' || s === 'OK') return 'task-status-badge--stopped'
+  if (s === 'running') return 'task-status-badge--running'
+  return 'task-status-badge--unknown'
+}
+
+function formatDuration(start, end) {
+  if (!start) return '—'
+  const s = (end || Math.floor(Date.now() / 1000)) - start
+  if (s < 60) return `${s}s`
+  if (s < 3600) return `${Math.floor(s / 60)}m ${s % 60}s`
+  return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`
+}
+
+async function openTaskLogModal(task) {
+  taskLogModal.value = { show: true, upid: task.upid, loading: true, lines: [] }
+  try {
+    const res = await api.pbsMgmt.getTaskLog(pbsTasks.value.serverId, task.upid)
+    taskLogModal.value.lines = res.data || []
+  } catch (err) {
+    console.error('Failed to load task log:', err)
+    taskLogModal.value.lines = ['Error loading log.']
+  } finally {
+    taskLogModal.value.loading = false
+  }
+}
+
+function closeTaskLogModal() {
+  taskLogModal.value = { show: false, upid: '', loading: false, lines: [] }
+}
+
+// ── PBS Prune state ───────────────────────────────────────────────────────────
+
+const pruneModal = ref({ show: false, group: null, saving: false, result: null })
+const pruneForm = ref({
+  'keep-last': null,
+  'keep-hourly': null,
+  'keep-daily': null,
+  'keep-weekly': null,
+  'keep-monthly': null,
+  'keep-yearly': null,
+})
+
+function openPruneModal(group) {
+  pruneForm.value = {
+    'keep-last': null,
+    'keep-hourly': null,
+    'keep-daily': null,
+    'keep-weekly': null,
+    'keep-monthly': null,
+    'keep-yearly': null,
+  }
+  pruneModal.value = { show: true, group, saving: false, result: null }
+}
+
+function closePruneModal() {
+  pruneModal.value = { show: false, group: null, saving: false, result: null }
+}
+
+async function submitPrune() {
+  if (!pruneModal.value.group) return
+  const group = pruneModal.value.group
+  pruneModal.value.saving = true
+  pruneModal.value.result = null
+
+  const payload = {
+    'backup-type': group['backup-type'],
+    'backup-id': group['backup-id'],
+  }
+  // Only include non-null / non-empty keep options
+  for (const [k, v] of Object.entries(pruneForm.value)) {
+    if (v !== null && v !== '' && v >= 0) {
+      payload[k] = v
+    }
+  }
+
+  try {
+    await api.pbsMgmt.pruneGroup(
+      pbsBrowser.value.selectedServerId,
+      pbsBrowser.value.selectedDatastore,
+      payload
+    )
+    pruneModal.value.result = { ok: true, message: 'Prune job started successfully.' }
+    toast.success('Prune job started')
+    // Reload group snapshots
+    const groupKey = pbsGroupKey(group)
+    delete pbsSnapshots.value[groupKey]
+    if (expandedPbsGroups.value[groupKey]) {
+      expandedPbsGroups.value = { ...expandedPbsGroups.value, [groupKey]: false }
+      await togglePbsGroup(group)
+    }
+    await fetchPbsGroups()
+  } catch (err) {
+    console.error('Failed to prune group:', err)
+    pruneModal.value.result = { ok: false, message: 'Prune failed. Check console for details.' }
+    toast.error('Failed to prune group')
+  } finally {
+    pruneModal.value.saving = false
+  }
+}
+
+// ── PBS Forget snapshot ───────────────────────────────────────────────────────
+
+// snapshot key -> bool (forgetting)
+const forgettingSnapshot = ref({})
+
+async function forgetPbsSnapshot(snap, group) {
+  const key = pbsSnapshotKey(snap, group)
+  const confirmMsg = `Permanently delete snapshot from ${formatDate(snap['backup-time'])} for ${group['backup-type']}/${group['backup-id']}? This cannot be undone.`
+  if (!confirm(confirmMsg)) return
+
+  forgettingSnapshot.value = { ...forgettingSnapshot.value, [key]: true }
+  try {
+    await api.pbsMgmt.forgetSnapshot(
+      pbsBrowser.value.selectedServerId,
+      pbsBrowser.value.selectedDatastore,
+      {
+        'backup-type': group['backup-type'],
+        'backup-id': group['backup-id'],
+        'backup-time': snap['backup-time'],
+      }
+    )
+    toast.success('Snapshot deleted')
+    // Reload snapshots for this group
+    const groupKey = pbsGroupKey(group)
+    delete pbsSnapshots.value[groupKey]
+    if (expandedPbsGroups.value[groupKey]) {
+      await togglePbsGroup(group)
+    }
+    // Refresh group list to update backup-count
+    await fetchPbsGroups()
+  } catch (err) {
+    console.error('Failed to forget snapshot:', err)
+    toast.error('Failed to delete snapshot')
+  } finally {
+    forgettingSnapshot.value = { ...forgettingSnapshot.value, [key]: false }
+  }
+}
 
 // ── PBS Browser state ─────────────────────────────────────────────────────────
 
@@ -1011,21 +1571,23 @@ async function pollTaskStatus(node, upid) {
 
 // ── PBS Browser ───────────────────────────────────────────────────────────────
 
+function onPbsTabOpen() {
+  if (pbsServers.value.length === 0) {
+    fetchPbsServerList()
+  }
+}
+
 async function fetchPbsServerList() {
   loadingPbsServers.value = true
   try {
     const res = await api.pbs.list()
     pbsServers.value = res.data || []
+    // Keep the CRUD list in sync too
+    pbsServerList.value = pbsServers.value
   } catch (err) {
     console.error('Failed to load PBS servers:', err)
   } finally {
     loadingPbsServers.value = false
-  }
-}
-
-function onPbsTabOpen() {
-  if (pbsServers.value.length === 0) {
-    fetchPbsServerList()
   }
 }
 
@@ -1589,6 +2151,66 @@ onUnmounted(() => {
 .modal-body {
   padding: 1.5rem;
   color: var(--text-primary);
+}
+
+/* Status badges */
+.badge {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.1rem 0.45rem;
+  border-radius: 0.25rem;
+  text-transform: uppercase;
+  border: 1px solid;
+}
+
+.badge--ok {
+  background: rgba(5, 150, 105, 0.1);
+  color: #059669;
+  border-color: #059669;
+}
+
+.badge--fail {
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+  border-color: #ef4444;
+}
+
+.badge--off {
+  background: rgba(107, 114, 128, 0.1);
+  color: #6b7280;
+  border-color: #9ca3af;
+}
+
+/* PBS group prune action button (right-aligned in group header) */
+.pbs-group-action {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+/* Task log pre block */
+.task-log-pre {
+  background: var(--bg-secondary, #111);
+  border: 1px solid var(--border-color);
+  border-radius: 0.375rem;
+  padding: 0.75rem 1rem;
+  font-size: 0.8rem;
+  color: var(--text-primary);
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+/* Error banner in modals */
+.error-banner {
+  padding: 0.65rem 1rem;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid #ef4444;
+  border-radius: 0.375rem;
+  color: #ef4444;
+  font-size: 0.875rem;
 }
 
 @media (max-width: 640px) {

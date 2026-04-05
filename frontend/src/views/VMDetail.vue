@@ -14,8 +14,10 @@
           <h2 class="vm-title">
             {{ config.name || `VM ${vmid}` }}
             <span class="badge badge-info ml-1">{{ vmid }}</span>
+            <button class="btn-copy" @click="copyVmId" title="Copy VM ID">⎘</button>
             <span :class="statusBadgeClass">{{ vmStatus?.status || 'unknown' }}</span>
             <span class="badge badge-info ml-1">QEMU</span>
+            <button class="btn-copy" @click="copySshCommand" title="Copy SSH command">SSH</button>
           </h2>
         </div>
         <div class="header-actions flex gap-1 flex-wrap">
@@ -1041,6 +1043,140 @@
         </div>
       </div>
 
+
+      <!-- ─── Hardware Tab ─── -->
+      <div v-if="activeTab === 'hardware'">
+        <PCIPassthrough
+          :host-id="hostId"
+          :node="node"
+          :vmid="vmid"
+          :vm-config="config"
+          :nodes="availableNodes"
+          @config-changed="loadConfig"
+        />
+
+        <!-- USB Passthrough -->
+        <div class="card mt-2">
+          <div class="card-header">
+            <h4>USB Passthrough</h4>
+            <button @click="showAddUsbModal = true" class="btn btn-primary btn-sm">+ Add USB Device</button>
+          </div>
+          <div v-if="!attachedUsbDevices.length" class="text-center text-muted" style="padding:1.2rem;">
+            No USB devices passed through.
+          </div>
+          <div v-else class="table-container">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Slot</th>
+                  <th>Host Device</th>
+                  <th>USB3</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="dev in attachedUsbDevices" :key="dev.key">
+                  <td><code>{{ dev.key }}</code></td>
+                  <td><code>{{ dev.host }}</code></td>
+                  <td>
+                    <span :class="['badge', dev.usb3 ? 'badge-info' : 'badge-secondary']">
+                      {{ dev.usb3 ? 'USB 3.0' : 'USB 2.0' }}
+                    </span>
+                  </td>
+                  <td>
+                    <button @click="removeUsb(dev)" class="btn btn-danger btn-sm"
+                            :disabled="removingUsb === dev.key">
+                      {{ removingUsb === dev.key ? '...' : 'Remove' }}
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Serial Ports -->
+        <div class="card mt-2">
+          <div class="card-header">
+            <h4>Serial Ports</h4>
+            <button @click="addSerialSocket" class="btn btn-primary btn-sm" :disabled="addingSerial">
+              {{ addingSerial ? '...' : '+ Add Serial Socket' }}
+            </button>
+          </div>
+          <div v-if="!attachedSerialPorts.length" class="text-center text-muted" style="padding:1.2rem;">
+            No serial ports configured.
+          </div>
+          <div v-else class="table-container">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Port</th>
+                  <th>Type</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="port in attachedSerialPorts" :key="port.key">
+                  <td><code>{{ port.key }}</code></td>
+                  <td><code>{{ port.type }}</code></td>
+                  <td>
+                    <button @click="removeSerial(port)" class="btn btn-danger btn-sm"
+                            :disabled="removingSerial === port.key">
+                      {{ removingSerial === port.key ? '...' : 'Remove' }}
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Add USB modal -->
+        <div v-if="showAddUsbModal" class="modal" @click.self="showAddUsbModal = false">
+          <div class="modal-content" @click.stop style="max-width:480px;">
+            <div class="modal-header">
+              <h3>Add USB Device to VM {{ vmid }}</h3>
+              <button @click="showAddUsbModal = false" class="btn-close">×</button>
+            </div>
+            <div class="modal-body">
+              <p class="text-sm text-muted mb-2">
+                Select from available USB devices on the node, or enter a vendor:product ID manually.
+              </p>
+              <div v-if="usbDevices.length > 0" class="form-group">
+                <label class="form-label">Available USB Devices on Node</label>
+                <select v-model="addUsbForm.host" class="form-control">
+                  <option value="">-- Select device --</option>
+                  <option v-for="u in usbDevices" :key="u.usbid || u.vendid+':'+u.prodid"
+                          :value="u.vendid + ':' + u.prodid">
+                    {{ u.vendid }}:{{ u.prodid }} — {{ u.product || u.manufacturer || '(unknown)' }}
+                  </option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Vendor:Product ID (manual)</label>
+                <input v-model="addUsbForm.host" class="form-control" placeholder="1234:abcd" />
+                <p class="text-xs text-muted mt-1">Format: vendorid:productid (hex)</p>
+              </div>
+              <div class="form-group">
+                <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;">
+                  <input type="checkbox" v-model="addUsbForm.usb3" />
+                  <span>USB 3.0</span>
+                </label>
+              </div>
+              <div class="alert alert-warning text-sm">
+                The VM should be <strong>powered off</strong> before making USB configuration changes.
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button @click="showAddUsbModal = false" class="btn btn-outline">Cancel</button>
+              <button @click="doAddUsb" class="btn btn-primary" :disabled="savingUsb || !addUsbForm.host">
+                {{ savingUsb ? 'Adding...' : 'Add USB Device' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
     <!-- ══════════════════════════════════════════════════════ MODALS ══ -->
 
     <!-- Grant VM Access Modal -->
@@ -1861,9 +1997,11 @@ import {
   CategoryScale, LinearScale, PointElement, LineElement,
   Tooltip, Legend, Title, Filler
 } from 'chart.js'
+import PCIPassthrough from '@/components/PCIPassthrough.vue'
 import api from '@/services/api'
 import { useToast } from 'vue-toastification'
 import { parseProxmoxDisk, parseProxmoxNIC, formatBytes, formatUptime, cpuPercent } from '@/utils/proxmox'
+import { copyToClipboard } from '@/utils/clipboard'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend, Title, Filler)
 
@@ -2273,6 +2411,48 @@ const compareRight = ref({})
 const loadingCompare = ref(false)
 const firewallForm = ref({ type: 'in', action: 'ACCEPT', proto: '', source: '', dest: '', dport: '', comment: '', enable: 1 })
 
+// ── Hardware tab state ────────────────────────────────────────────────────────
+const showAddUsbModal = ref(false)
+const savingUsb = ref(false)
+const removingUsb = ref(null)
+const removingSerial = ref(null)
+const addingSerial = ref(false)
+const usbDevices = ref([])
+const addUsbForm = ref({ host: '', usb3: false })
+
+const attachedUsbDevices = computed(() => {
+  const result = []
+  const cfg = config.value || {}
+  for (let i = 0; i < 8; i++) {
+    const key = `usb${i}`
+    if (cfg[key]) {
+      const val = cfg[key]
+      const parts = val.split(',')
+      const hostPart = parts.find(p => p.startsWith('host='))
+      const host = hostPart ? hostPart.replace('host=', '') : val
+      const usb3 = parts.some(p => p === 'usb3=1')
+      result.push({ key, index: i, host, usb3 })
+    }
+  }
+  return result
+})
+
+const attachedSerialPorts = computed(() => {
+  const result = []
+  const cfg = config.value || {}
+  for (let i = 0; i < 4; i++) {
+    const key = `serial${i}`
+    if (cfg[key]) {
+      result.push({ key, index: i, type: cfg[key] })
+    }
+  }
+  return result
+})
+
+const availableNodes = computed(() => {
+  return clusterNodes.value.map(n => n.node || n)
+})
+
 const tabs = [
   { id: 'overview', label: 'Overview' },
   { id: 'config', label: 'Config' },
@@ -2284,6 +2464,7 @@ const tabs = [
   { id: 'performance', label: 'Performance' },
   { id: 'console', label: 'Console' },
   { id: 'access', label: 'Access' },
+  { id: 'hardware', label: 'Hardware' },
 ]
 
 let pollInterval = null
@@ -2588,6 +2769,80 @@ const switchTab = (tab) => {
   if (tab === 'performance') loadPerfRrd()
   if (tab === 'disks') loadUnusedDisks()
   if (tab === 'access') { loadVmAcl(); loadVmRoles() }
+  if (tab === 'hardware') { loadUsbDevices() }
+}
+
+
+// ── Hardware tab — USB / Serial management ────────────────────────────────────
+
+const loadUsbDevices = async () => {
+  if (!node.value) return
+  try {
+    const res = await api.pveNode.listUsbDevices(hostId.value, node.value)
+    usbDevices.value = res.data || []
+  } catch {
+    usbDevices.value = []
+  }
+}
+
+const doAddUsb = async () => {
+  if (!addUsbForm.value.host) return
+  savingUsb.value = true
+  try {
+    await api.pveVm.addUsbDevice(hostId.value, node.value, vmid.value, {
+      host: addUsbForm.value.host,
+      usb3: addUsbForm.value.usb3,
+    })
+    toast.success('USB device added to VM config')
+    showAddUsbModal.value = false
+    addUsbForm.value = { host: '', usb3: false }
+    await loadConfig()
+  } catch (e) {
+    toast.error('Failed to add USB device: ' + (e.response?.data?.detail || e.message))
+  } finally {
+    savingUsb.value = false
+  }
+}
+
+const removeUsb = async (dev) => {
+  if (!confirm(`Remove ${dev.key} (${dev.host}) from VM config?`)) return
+  removingUsb.value = dev.key
+  try {
+    await api.pveVm.removeUsbDevice(hostId.value, node.value, vmid.value, dev.index)
+    toast.success(`${dev.key} removed from VM config`)
+    await loadConfig()
+  } catch (e) {
+    toast.error('Failed to remove USB device: ' + (e.response?.data?.detail || e.message))
+  } finally {
+    removingUsb.value = null
+  }
+}
+
+const addSerialSocket = async () => {
+  addingSerial.value = true
+  try {
+    await api.pveVm.addSerialPort(hostId.value, node.value, vmid.value, { type: 'socket' })
+    toast.success('Serial port (socket) added to VM config')
+    await loadConfig()
+  } catch (e) {
+    toast.error('Failed to add serial port: ' + (e.response?.data?.detail || e.message))
+  } finally {
+    addingSerial.value = false
+  }
+}
+
+const removeSerial = async (port) => {
+  if (!confirm(`Remove ${port.key} from VM config?`)) return
+  removingSerial.value = port.key
+  try {
+    await api.pveVm.removeSerialPort(hostId.value, node.value, vmid.value, port.index)
+    toast.success(`${port.key} removed from VM config`)
+    await loadConfig()
+  } catch (e) {
+    toast.error('Failed to remove serial port: ' + (e.response?.data?.detail || e.message))
+  } finally {
+    removingSerial.value = null
+  }
 }
 
 // ── Polling ────────────────────────────────────────────────────────────────────
@@ -3612,9 +3867,38 @@ onMounted(async () => {
 onUnmounted(() => {
   if (pollInterval) clearInterval(pollInterval)
 })
+
+// ── Copy helpers ──────────────────────────────────────────────────────────
+const copyVmId = () => copyToClipboard(String(vmid.value), { toast: true })
+const copySshCommand = () => {
+  const ip = vmStatus.value?.ip || vmStatus.value?.['ip-address']
+  if (ip) copyToClipboard(`ssh root@${ip}`, { toast: true })
+  else toast.warning('IP address not available')
+}
 </script>
 
 <style scoped>
+.btn-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.7rem;
+  padding: 1px 5px;
+  margin-left: 4px;
+  line-height: 1.4;
+  transition: background 0.15s, color 0.15s;
+  vertical-align: middle;
+}
+.btn-copy:hover {
+  background: var(--background);
+  color: var(--primary-color);
+}
+
 .vm-detail-page {
   padding: 0;
 }

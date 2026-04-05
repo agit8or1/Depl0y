@@ -1,9 +1,10 @@
 """Proxmox hosts API routes"""
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, validator
 from typing import List, Optional
 from datetime import datetime
+import re
 
 from app.core.database import get_db
 from app.core.security import encrypt_data, decrypt_data
@@ -20,30 +21,67 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+_TOKEN_FORMAT_RE = re.compile(r'^[^@]+@[^!]+![^\s]+$')  # user@realm!tokenname
+_HOSTNAME_RE = re.compile(
+    r'^(?:[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)*'
+    r'[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?$'
+)
+
+
 # Pydantic models
 class ProxmoxHostCreate(BaseModel):
-    name: str
-    hostname: str
-    port: int = 8006
-    username: str
+    name: str = Field(..., min_length=1, max_length=128)
+    hostname: str = Field(..., min_length=1, max_length=253)
+    port: int = Field(8006, ge=1, le=65535, description="TCP port (1–65535)")
+    username: str = Field(..., min_length=1, max_length=128)
     password: Optional[str] = None
     api_token_id: Optional[str] = None  # e.g., "mytoken" or "root@pam!mytoken"
     api_token_secret: Optional[str] = None
     verify_ssl: bool = False
     # iDRAC / iLO out-of-band management (optional)
     idrac_hostname: Optional[str] = None
-    idrac_port: Optional[int] = 443
+    idrac_port: Optional[int] = Field(443, ge=1, le=65535)
     idrac_username: Optional[str] = None
     idrac_password: Optional[str] = None
     idrac_type: Optional[str] = None  # "idrac", "ilo"
     idrac_use_ssh: Optional[bool] = False
 
+    @validator('hostname')
+    def hostname_valid(cls, v):
+        v = v.strip()
+        # Allow bare IPs too — only validate format for hostnames
+        ip_re = re.compile(r'^\d{1,3}(\.\d{1,3}){3}$')
+        if not ip_re.match(v) and not _HOSTNAME_RE.match(v):
+            raise ValueError(
+                'hostname must be a valid hostname or IP address'
+            )
+        return v
+
+    @validator('api_token_id')
+    def token_id_format(cls, v):
+        if v is None:
+            return v
+        v = v.strip()
+        # Accept bare token name OR "user@realm!tokenname" full form
+        if '!' in v and not _TOKEN_FORMAT_RE.match(v):
+            raise ValueError(
+                'api_token_id must be a plain token name or in '
+                '"user@realm!tokenname" format (e.g. root@pam!mytoken)'
+            )
+        return v
+
+    @validator('port')
+    def port_range(cls, v):
+        if v < 1 or v > 65535:
+            raise ValueError('port must be between 1 and 65535')
+        return v
+
 
 class ProxmoxHostUpdate(BaseModel):
-    name: Optional[str] = None
-    hostname: Optional[str] = None
-    port: Optional[int] = None
-    username: Optional[str] = None
+    name: Optional[str] = Field(None, min_length=1, max_length=128)
+    hostname: Optional[str] = Field(None, min_length=1, max_length=253)
+    port: Optional[int] = Field(None, ge=1, le=65535)
+    username: Optional[str] = Field(None, min_length=1, max_length=128)
     password: Optional[str] = None
     api_token_id: Optional[str] = None
     api_token_secret: Optional[str] = None
@@ -51,11 +89,23 @@ class ProxmoxHostUpdate(BaseModel):
     is_active: Optional[bool] = None
     # iDRAC / iLO fields
     idrac_hostname: Optional[str] = None
-    idrac_port: Optional[int] = None
+    idrac_port: Optional[int] = Field(None, ge=1, le=65535)
     idrac_username: Optional[str] = None
     idrac_password: Optional[str] = None
     idrac_type: Optional[str] = None
     idrac_use_ssh: Optional[bool] = None
+
+    @validator('api_token_id')
+    def token_id_format(cls, v):
+        if v is None:
+            return v
+        v = v.strip()
+        if '!' in v and not _TOKEN_FORMAT_RE.match(v):
+            raise ValueError(
+                'api_token_id must be in "user@realm!tokenname" format '
+                'when "!" is present (e.g. root@pam!mytoken)'
+            )
+        return v
 
 
 class ProxmoxHostResponse(BaseModel):

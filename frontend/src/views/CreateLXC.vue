@@ -57,16 +57,44 @@
             <div class="grid grid-cols-3 gap-2">
               <div class="form-group">
                 <label class="form-label">CT ID *</label>
-                <input v-model.number="formData.vmid" type="number" min="100" class="form-control" required placeholder="Auto-assigned" />
-                <small class="form-help">Container ID (min 100)</small>
+                <input
+                  v-model.number="formData.vmid"
+                  type="number"
+                  min="100"
+                  max="999999999"
+                  :class="['form-control', { 'input-error': fieldErrors.vmid }]"
+                  required
+                  placeholder="Auto-assigned"
+                  @blur="fieldErrors.vmid = validate(formData.vmid, [rules.required, rules.vmId]) === true ? '' : validate(formData.vmid, [rules.required, rules.vmId])"
+                />
+                <small v-if="fieldErrors.vmid" class="form-error-text">{{ fieldErrors.vmid }}</small>
+                <small v-else class="form-help">Container ID (100–999999999)</small>
               </div>
               <div class="form-group">
                 <label class="form-label">Hostname *</label>
-                <input v-model="formData.hostname" type="text" class="form-control" required placeholder="my-container" />
+                <input
+                  v-model="formData.hostname"
+                  type="text"
+                  :class="['form-control', { 'input-error': fieldErrors.hostname }]"
+                  required
+                  placeholder="my-container"
+                  @blur="fieldErrors.hostname = validate(formData.hostname, [rules.required, rules.hostname]) === true ? '' : validate(formData.hostname, [rules.required, rules.hostname])"
+                />
+                <small v-if="fieldErrors.hostname" class="form-error-text">{{ fieldErrors.hostname }}</small>
+                <small v-else class="form-help">Letters, numbers, hyphens only</small>
               </div>
               <div class="form-group">
                 <label class="form-label">Root Password *</label>
-                <input v-model="formData.password" type="password" class="form-control" required autocomplete="new-password" />
+                <input
+                  v-model="formData.password"
+                  type="password"
+                  :class="['form-control', { 'input-error': fieldErrors.password }]"
+                  required
+                  autocomplete="new-password"
+                  @blur="fieldErrors.password = validate(formData.password, [rules.required, rules.password(8)]) === true ? '' : validate(formData.password, [rules.required, rules.password(8)])"
+                />
+                <small v-if="fieldErrors.password" class="form-error-text">{{ fieldErrors.password }}</small>
+                <small v-else class="form-help">Minimum 8 characters</small>
               </div>
             </div>
 
@@ -108,66 +136,28 @@
           </div>
 
           <div v-else>
-            <!-- Source tabs -->
-            <div class="source-tabs">
-              <button
-                type="button"
-                :class="['source-tab', { active: templateSource === 'local' }]"
-                @click="templateSource = 'local'"
-              >Local Templates</button>
-              <button
-                type="button"
-                :class="['source-tab', { active: templateSource === 'library' }]"
-                @click="templateSource = 'library'"
-              >Template Library</button>
-            </div>
-
-            <!-- Local templates -->
-            <div v-if="templateSource === 'local'">
-              <div v-if="loadingTemplates" class="loading-message">
-                <div class="loading-spinner"></div><p>Loading templates...</p>
-              </div>
-              <div v-else-if="templates.length === 0" class="text-muted text-center">
-                <p>No LXC templates found. Upload a template to a storage with <code>vztmpl</code> content, or use the Template Library.</p>
-              </div>
-              <div v-else class="form-group">
-                <label class="form-label">OS Template *</label>
-                <select v-model="formData.ostemplate" class="form-control" required>
-                  <option value="">Select template...</option>
-                  <option v-for="t in templates" :key="t.volid" :value="t.volid">{{ t.volid }}</option>
-                </select>
-                <small class="form-help">Templates found on storages with vztmpl content</small>
-              </div>
-            </div>
-
-            <!-- Template library -->
-            <div v-if="templateSource === 'library'">
-              <p class="library-info">These are common LXC templates. Select one and it will be downloaded to your Proxmox storage automatically when the container is created.</p>
-
-              <div class="form-group">
-                <label class="form-label">Template Storage (for download)</label>
-                <select v-model="libraryTargetStorage" class="form-control">
-                  <option v-for="s in templateStorages" :key="s.storage" :value="s.storage">{{ s.storage }}</option>
-                </select>
-              </div>
-
-              <div class="template-library-grid">
-                <div
-                  v-for="tmpl in lxcLibraryTemplates"
-                  :key="tmpl.id"
-                  :class="['template-lib-card', { selected: selectedLibraryTemplate === tmpl.id }]"
-                  @click="selectLibraryTemplate(tmpl)"
-                >
-                  <div class="template-lib-icon">{{ tmpl.icon }}</div>
-                  <div class="template-lib-info">
-                    <h6>{{ tmpl.name }}</h6>
-                    <span class="template-lib-version">{{ tmpl.version }}</span>
-                    <p class="template-lib-desc">{{ tmpl.desc }}</p>
-                  </div>
-                  <span v-if="selectedLibraryTemplate === tmpl.id" class="template-selected-badge">Selected</span>
+            <!-- Selected template summary card -->
+            <div v-if="formData.ostemplate" class="selected-template-card">
+              <div class="selected-template-icon">{{ selectedTemplateOs.icon }}</div>
+              <div class="selected-template-info">
+                <div class="selected-template-label">Selected Template</div>
+                <div class="selected-template-name">{{ selectedTemplateDisplayName }}</div>
+                <div class="selected-template-os" :style="{ color: selectedTemplateOs.color }">
+                  {{ selectedTemplateOs.name }}
                 </div>
               </div>
+              <button type="button" class="btn btn-sm btn-outline" @click="formData.ostemplate = ''">
+                Change
+              </button>
             </div>
+
+            <!-- Template library component -->
+            <LXCTemplateLibrary
+              :host-id="selectedHostId"
+              :node="selectedNode"
+              :storages="templateStorages"
+              @select="onTemplateSelected"
+            />
           </div>
         </div>
 
@@ -265,7 +255,16 @@
             <div class="grid grid-cols-3 gap-2">
               <div class="form-group">
                 <label class="form-label">CPU Cores *</label>
-                <input v-model.number="formData.cores" type="number" min="1" max="128" class="form-control" required />
+                <input
+                  v-model.number="formData.cores"
+                  type="number"
+                  min="1"
+                  max="512"
+                  :class="['form-control', { 'input-error': fieldErrors.cores }]"
+                  required
+                  @blur="fieldErrors.cores = validate(formData.cores, [rules.required, rules.intRange(1, 512)]) === true ? '' : validate(formData.cores, [rules.required, rules.intRange(1, 512)])"
+                />
+                <small v-if="fieldErrors.cores" class="form-error-text">{{ fieldErrors.cores }}</small>
               </div>
               <div class="form-group">
                 <label class="form-label">CPU Limit (optional)</label>
@@ -285,8 +284,17 @@
             <div class="grid grid-cols-3 gap-2">
               <div class="form-group">
                 <label class="form-label">Memory (MB) *</label>
-                <input v-model.number="formData.memory" type="number" min="64" step="64" class="form-control" required />
-                <small class="form-help">{{ (formData.memory / 1024).toFixed(1) }} GB</small>
+                <input
+                  v-model.number="formData.memory"
+                  type="number"
+                  min="64"
+                  step="64"
+                  :class="['form-control', { 'input-error': fieldErrors.memory }]"
+                  required
+                  @blur="fieldErrors.memory = validate(formData.memory, [rules.required, rules.intRange(64, 4194304)]) === true ? '' : validate(formData.memory, [rules.required, rules.intRange(64, 4194304)])"
+                />
+                <small v-if="fieldErrors.memory" class="form-error-text">{{ fieldErrors.memory }}</small>
+                <small v-else class="form-help">{{ (formData.memory / 1024).toFixed(1) }} GB</small>
               </div>
               <div class="form-group">
                 <label class="form-label">Swap (MB)</label>
@@ -563,9 +571,14 @@
 import { useRouter } from 'vue-router'
 import { useToast } from 'vue-toastification'
 import api from '@/services/api'
+import { detectOs, templateDisplayName } from '@/utils/osIcons'
+import LXCTemplateLibrary from '@/components/LXCTemplateLibrary.vue'
+import { rules, validate } from '@/utils/formValidation'
 
 export default {
   name: 'CreateLXC',
+
+  components: { LXCTemplateLibrary },
 
   data() {
     return {
@@ -589,6 +602,16 @@ export default {
       networkList: [],
       selectedHostId: '',
       selectedNode: '',
+
+      // Validation rules and per-field errors
+      rules,
+      fieldErrors: {
+        vmid: '',
+        hostname: '',
+        password: '',
+        memory: '',
+        cores: '',
+      },
 
       // Template selection
       templateSource: 'local', // 'local' | 'library'
@@ -680,6 +703,16 @@ export default {
     tabIndex() {
       return this.tabs.findIndex(t => t.id === this.activeTab)
     },
+
+    selectedTemplateOs() {
+      if (!this.formData.ostemplate) return { icon: '📦', name: '', color: '#555' }
+      return detectOs(this.formData.ostemplate)
+    },
+
+    selectedTemplateDisplayName() {
+      if (!this.formData.ostemplate) return ''
+      return templateDisplayName(this.formData.ostemplate)
+    },
     diskStorageList() {
       return [...this.storageList]
         .filter(s => s.content && (s.content.includes('rootdir') || s.content.includes('images')))
@@ -703,6 +736,9 @@ export default {
   },
 
   methods: {
+    // Expose validate() to template inline expressions
+    validate,
+
     prevTab() {
       if (this.tabIndex > 0) this.activeTab = this.tabs[this.tabIndex - 1].id
     },
@@ -822,6 +858,15 @@ export default {
       this.formData.ostemplate = `${this.libraryTargetStorage || 'local'}:vztmpl/${tmpl.id}-amd64.tar.xz`
     },
 
+    onTemplateSelected(tmpl) {
+      if (!tmpl) {
+        this.formData.ostemplate = ''
+        return
+      }
+      this.formData.ostemplate = tmpl.volid
+      // Auto-detect OS type for informational display (no separate os-type field to fill here)
+    },
+
     addMountPoint() {
       this.mountPoints.push({ storage: this.formData.storage || '', size: 8, mountpoint: `/mnt/mp${this.mountPoints.length}` })
     },
@@ -847,20 +892,46 @@ export default {
 
     validateForm() {
       const errors = []
+
+      // Reset per-field errors
+      Object.keys(this.fieldErrors).forEach(k => { this.fieldErrors[k] = '' })
+
       if (!this.selectedHostId) errors.push('Proxmox host must be selected')
       if (!this.selectedNode) errors.push('Node must be selected')
-      if (!this.formData.vmid || this.formData.vmid < 100) errors.push('CT ID must be 100 or greater')
-      if (!this.formData.hostname.trim()) errors.push('Hostname is required')
-      if (!this.formData.password) errors.push('Root password is required')
+
+      // CT ID
+      const vmidErr = validate(this.formData.vmid, [rules.required, rules.vmId])
+      if (vmidErr !== true) { this.fieldErrors.vmid = vmidErr; errors.push(`CT ID: ${vmidErr}`) }
+
+      // Hostname
+      const hostnameErr = validate(this.formData.hostname, [rules.required, rules.hostname])
+      if (hostnameErr !== true) { this.fieldErrors.hostname = hostnameErr; errors.push(`Hostname: ${hostnameErr}`) }
+
+      // Password
+      const pwErr = validate(this.formData.password, [rules.required, rules.password(8)])
+      if (pwErr !== true) { this.fieldErrors.password = pwErr; errors.push(`Password: ${pwErr}`) }
+
+      // Memory
+      const memErr = validate(this.formData.memory, [rules.required, rules.intRange(64, 4194304)])
+      if (memErr !== true) { this.fieldErrors.memory = memErr; errors.push(`Memory: ${memErr}`) }
+
+      // Cores
+      const coresErr = validate(this.formData.cores, [rules.required, rules.intRange(1, 512)])
+      if (coresErr !== true) { this.fieldErrors.cores = coresErr; errors.push(`CPU cores: ${coresErr}`) }
+
       if (!this.formData.ostemplate) errors.push('OS template must be selected')
       if (!this.formData.storage) errors.push('Root disk storage must be selected')
+
       this.netInterfaces.forEach((iface, i) => {
         if (!iface.bridge) errors.push(`net${i}: bridge must be selected`)
         if (!iface.dhcp) {
-          if (!iface.ip_cidr?.trim()) errors.push(`net${i}: IP/CIDR is required when not using DHCP`)
-          if (!iface.gateway?.trim()) errors.push(`net${i}: gateway is required when not using DHCP`)
+          const ipErr = validate(iface.ip_cidr, [rules.required, rules.ipOrCidr])
+          if (ipErr !== true) errors.push(`net${i} IP/CIDR: ${ipErr}`)
+          const gwErr = validate(iface.gateway, [rules.required, rules.ipAddress])
+          if (gwErr !== true) errors.push(`net${i} Gateway: ${gwErr}`)
         }
       })
+
       return errors
     },
 
@@ -1018,13 +1089,24 @@ export default {
 /* Info banner */
 .info-banner { padding: 1rem 1.25rem; background: rgba(59,130,246,0.08); border: 1px solid rgba(59,130,246,0.2); border-radius: 0.5rem; color: var(--text-secondary); font-size: 0.9rem; }
 
-/* Template source tabs */
-.source-tabs { display: flex; gap: 0; margin-bottom: 1.25rem; border: 1px solid var(--border-color); border-radius: 0.5rem; overflow: hidden; width: fit-content; }
-.source-tab { padding: 0.5rem 1.25rem; border: none; background: none; cursor: pointer; color: var(--text-secondary); font-size: 0.875rem; font-weight: 500; transition: all 0.2s; }
-.source-tab.active { background: #14b8a6; color: white; }
-.source-tab:not(.active):hover { background: rgba(20,184,166,0.1); color: #14b8a6; }
+/* Selected template summary card */
+.selected-template-card {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.25rem;
+  border: 2px solid #14b8a6;
+  border-radius: 0.5rem;
+  background: rgba(20,184,166,0.06);
+}
+.selected-template-icon { font-size: 2rem; flex-shrink: 0; }
+.selected-template-info { flex: 1; }
+.selected-template-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-secondary); margin-bottom: 0.15rem; }
+.selected-template-name { font-size: 0.9rem; font-weight: 600; color: var(--text-primary); word-break: break-all; }
+.selected-template-os { font-size: 0.8rem; font-weight: 500; margin-top: 0.1rem; }
 
-/* Library templates */
+/* Library templates (legacy — still used by lxcLibraryTemplates fallback) */
 .library-info { font-size: 0.875rem; color: var(--text-secondary); margin-bottom: 1rem; }
 .template-library-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 0.875rem; }
 .template-lib-card {
@@ -1110,6 +1192,10 @@ export default {
 .btn-sm { padding: 0.3rem 0.75rem; font-size: 0.8rem; }
 .btn-spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.4); border-top-color: white; border-radius: 50%; animation: spin 0.8s linear infinite; vertical-align: middle; margin-right: 0.5rem; }
 .form-help { display: block; margin-top: 0.25rem; font-size: 0.8rem; color: var(--text-secondary); }
+.form-error-text { display: block; margin-top: 0.25rem; font-size: 0.78rem; color: #ef4444; }
+.form-error-text::before { content: '⚠ '; }
+.input-error { border-color: #ef4444 !important; box-shadow: 0 0 0 2px rgba(239,68,68,0.15) !important; }
+.input-error:focus { border-color: #ef4444 !important; box-shadow: 0 0 0 3px rgba(239,68,68,0.2) !important; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* Modal */

@@ -1,7 +1,8 @@
-"""Cluster operations API: tasks, replication, evacuation, event log"""
-from fastapi import APIRouter, Depends, HTTPException
+"""Cluster operations API: tasks, replication, evacuation, event log, cluster config/join"""
+from fastapi import APIRouter, Depends, HTTPException, Body
 from sqlalchemy.orm import Session
 from typing import Optional, List
+from pydantic import BaseModel
 from app.core.database import get_db
 from app.models import ProxmoxHost
 from app.api.auth import get_current_user, require_operator, require_admin
@@ -23,6 +24,126 @@ def _get_host(host_id: int, db: Session) -> ProxmoxHost:
 
 def _pve(host: ProxmoxHost):
     return ProxmoxService(host).proxmox
+
+
+# ── Pydantic models ────────────────────────────────────────────────────────────
+
+class CreateClusterRequest(BaseModel):
+    clustername: str
+
+
+class JoinClusterRequest(BaseModel):
+    hostname: str          # master node IP or hostname
+    password: str          # root password for the master node
+    fingerprint: Optional[str] = None    # TLS fingerprint (optional, auto-detected)
+    link0: Optional[str] = None          # corosync link address override
+
+
+# ── Cluster config / join endpoints ───────────────────────────────────────────
+
+@router.get("/{host_id}/status")
+def cluster_status(
+    host_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Get cluster status: name, nodes, quorum."""
+    host = _get_host(host_id, db)
+    try:
+        raw = _pve(host).cluster.status.get()
+        cluster_info = None
+        nodes = []
+        quorate = None
+        for item in raw:
+            if item.get("type") == "cluster":
+                cluster_info = item
+                quorate = bool(item.get("quorate", 0))
+            elif item.get("type") == "node":
+                nodes.append(item)
+        return {
+            "cluster": cluster_info,
+            "nodes": nodes,
+            "quorate": quorate,
+            "node_count": len(nodes),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{host_id}/config")
+def cluster_config(
+    host_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Get cluster configuration (nodes, corosync config)."""
+    host = _get_host(host_id, db)
+    try:
+        return _pve(host).cluster.config.get()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{host_id}/config/join")
+def cluster_config_join(
+    host_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Get join information for this cluster (addresses, fingerprint, totem key)."""
+    host = _get_host(host_id, db)
+    try:
+        result = _pve(host).cluster.config.join.get()
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{host_id}/config/join")
+def join_cluster(
+    host_id: int,
+    body: JoinClusterRequest,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_admin),
+):
+    """
+    Join this Proxmox node to an existing cluster.
+    Proxmox API: POST /cluster/config/join
+    Warning: this restarts pve-cluster service (~30s downtime on this node).
+    """
+    host = _get_host(host_id, db)
+    try:
+        params = {
+            "hostname": body.hostname,
+            "password": body.password,
+        }
+        if body.fingerprint:
+            params["fingerprint"] = body.fingerprint
+        if body.link0:
+            params["link0"] = body.link0
+        result = _pve(host).cluster.config.join.post(**params)
+        return {"success": True, "result": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{host_id}/config")
+def create_cluster(
+    host_id: int,
+    body: CreateClusterRequest,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_admin),
+):
+    """
+    Create a new Proxmox cluster from this standalone node.
+    Proxmox API: POST /cluster/config  (clustername=...)
+    """
+    host = _get_host(host_id, db)
+    try:
+        result = _pve(host).cluster.config.post(clustername=body.clustername)
+        return {"success": True, "result": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ── Cluster tasks ─────────────────────────────────────────────────────────────

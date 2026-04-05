@@ -1,6 +1,6 @@
 <template>
   <div class="cluster-stats">
-    <div v-if="loading" class="stats-loading">Loading...</div>
+    <SkeletonLoader v-if="loading" type="stat" :count="4" />
     <div v-else class="stats-grid">
       <router-link to="/vms" class="stat-tile">
         <span class="tile-icon">🖥️</span>
@@ -39,9 +39,11 @@
 <script>
 import { ref, onMounted, onUnmounted } from 'vue'
 import api from '@/services/api'
+import SkeletonLoader from '@/components/SkeletonLoader.vue'
 
 export default {
   name: 'ClusterStatsWidget',
+  components: { SkeletonLoader },
   setup() {
     const loading = ref(true)
     const data = ref({

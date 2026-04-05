@@ -1,6 +1,6 @@
 <template>
   <div class="node-detail-page">
-    <div v-if="loadingInit" class="loading-spinner"></div>
+    <SkeletonLoader v-if="loadingInit" type="stat" :count="4" />
     <div v-else-if="!nodeStatus" class="text-center text-muted mt-4">
       <p>Failed to load node information.</p>
       <button @click="loadAll" class="btn btn-outline mt-2">Retry</button>
@@ -13,6 +13,8 @@
           <router-link to="/proxmox" class="back-link">← Proxmox Hosts</router-link>
           <h2 class="node-title">
             {{ node }}
+            <button class="btn-copy" @click="copyNodeName" title="Copy node name">⎘</button>
+            <button class="btn-copy" @click="copySshCommand" title="Copy SSH command">SSH</button>
             <span :class="nodeStatus.status === 'online' ? 'badge badge-success ml-1' : 'badge badge-danger ml-1'">
               {{ nodeStatus.status || 'unknown' }}
             </span>
@@ -140,7 +142,7 @@
               {{ loadingGuests ? 'Loading...' : 'Refresh' }}
             </button>
           </div>
-          <div v-if="loadingGuests" class="loading-spinner"></div>
+          <SkeletonLoader v-if="loadingGuests" type="table" :count="5" />
           <div v-else class="table-container">
             <table class="table">
               <thead>
@@ -211,7 +213,7 @@
       <div v-if="activeTab === 'storage'">
         <div class="card">
           <div class="card-header"><h3>Storage Pools</h3></div>
-          <div v-if="loadingStorage" class="loading-spinner"></div>
+          <SkeletonLoader v-if="loadingStorage" type="table" :count="5" />
           <div v-else class="table-container">
             <table class="table">
               <thead>
@@ -273,7 +275,7 @@
               </button>
             </div>
           </div>
-          <div v-if="loadingNetwork" class="loading-spinner"></div>
+          <SkeletonLoader v-if="loadingNetwork" type="table" :count="5" />
           <div v-else class="table-container">
             <table class="table">
               <thead>
@@ -342,7 +344,7 @@
               {{ loadingAptVersions ? 'Loading...' : 'Refresh' }}
             </button>
           </div>
-          <div v-if="loadingAptVersions" class="loading-spinner"></div>
+          <SkeletonLoader v-if="loadingAptVersions" type="table" :count="5" />
           <div v-else-if="aptVersions.length === 0" class="text-muted text-center" style="padding:1.5rem">No version data available</div>
           <div v-else class="table-container">
             <table class="table">
@@ -401,7 +403,7 @@
             <button @click="upgradeTaskUpid = null" class="btn-inline-close">×</button>
           </div>
 
-          <div v-if="loadingAptUpdates" class="loading-spinner"></div>
+          <SkeletonLoader v-if="loadingAptUpdates" type="table" :count="5" />
           <div v-else-if="aptUpdates.length === 0" class="text-center" style="padding:2rem">
             <span class="badge badge-success" style="font-size:1rem;padding:0.5rem 1rem">System is up to date</span>
           </div>
@@ -446,7 +448,7 @@
               {{ loadingPci ? 'Loading...' : 'Refresh' }}
             </button>
           </div>
-          <div v-if="loadingPci" class="loading-spinner"></div>
+          <SkeletonLoader v-if="loadingPci" type="table" :count="4" />
           <div v-else-if="pciDevices.length === 0" class="text-muted text-center" style="padding:1.5rem">No PCI device data available</div>
           <div v-else class="table-container">
             <table class="table">
@@ -482,7 +484,7 @@
               {{ loadingUsb ? 'Loading...' : 'Refresh' }}
             </button>
           </div>
-          <div v-if="loadingUsb" class="loading-spinner"></div>
+          <SkeletonLoader v-if="loadingUsb" type="table" :count="4" />
           <div v-else-if="usbDevices.length === 0" class="text-muted text-center" style="padding:1.5rem">No USB device data available</div>
           <div v-else class="table-container">
             <table class="table">
@@ -527,7 +529,7 @@
               </button>
             </div>
           </div>
-          <div v-if="loadingBackups" class="loading-spinner"></div>
+          <SkeletonLoader v-if="loadingBackups" type="table" :count="5" />
           <div v-else class="table-container">
             <table class="table">
               <thead>
@@ -581,7 +583,7 @@
               {{ loadingTasks ? 'Loading...' : 'Refresh' }}
             </button>
           </div>
-          <div v-if="loadingTasks" class="loading-spinner"></div>
+          <SkeletonLoader v-if="loadingTasks" type="table" :count="5" />
           <div v-else class="table-container">
             <table class="table">
               <thead>
@@ -1042,6 +1044,8 @@ import {
 import api from '@/services/api'
 import { useToast } from 'vue-toastification'
 import { formatBytes, formatUptime } from '@/utils/proxmox'
+import SkeletonLoader from '@/components/SkeletonLoader.vue'
+import { copyToClipboard } from '@/utils/clipboard'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend, Title, Filler)
 
@@ -1888,9 +1892,34 @@ onMounted(async () => {
 onUnmounted(() => {
   if (pollInterval) clearInterval(pollInterval)
 })
+
+// ── Copy helpers ──────────────────────────────────────────────────────────
+const copyNodeName = () => copyToClipboard(node, { toast: true })
+const copySshCommand = () => copyToClipboard(`ssh root@${node}`, { toast: true })
 </script>
 
 <style scoped>
+.btn-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.7rem;
+  padding: 1px 5px;
+  margin-left: 4px;
+  line-height: 1.4;
+  transition: background 0.15s, color 0.15s;
+  vertical-align: middle;
+}
+.btn-copy:hover {
+  background: var(--background);
+  color: var(--primary-color);
+}
+
 .node-detail-page {
   padding: 0;
 }

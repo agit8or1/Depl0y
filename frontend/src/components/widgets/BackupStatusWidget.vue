@@ -1,6 +1,6 @@
 <template>
   <div class="backup-status">
-    <div v-if="loading" class="wl">Loading backup status...</div>
+    <SkeletonLoader v-if="loading" type="card" :count="2" />
     <div v-else-if="items.length === 0" class="we">No backup data found. Configure PBS or backup schedules.</div>
     <div v-else class="bk-list">
       <div v-for="item in items" :key="item.vm" class="bk-row">
@@ -20,9 +20,11 @@
 <script>
 import { ref, onMounted, onUnmounted } from 'vue'
 import api from '@/services/api'
+import SkeletonLoader from '@/components/SkeletonLoader.vue'
 
 export default {
   name: 'BackupStatusWidget',
+  components: { SkeletonLoader },
   setup() {
     const loading = ref(true)
     const items = ref([])

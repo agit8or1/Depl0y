@@ -568,6 +568,15 @@ export default {
     getCloudInit: (h, node, vmid) => api.get(`/pve-vm/${h}/${node}/${vmid}/config`),
     updateCloudInit: (h, node, vmid, data) => api.put(`/pve-vm/${h}/${node}/${vmid}/cloudinit`, data),
     regenerateCloudinit: (h, node, vmid) => api.post(`/pve-vm/${h}/${node}/${vmid}/cloudinit/regenerate`),
+    // PCI passthrough
+    addPciDevice: (h, node, vmid, data) => api.post(`/pve-vm/${h}/${node}/${vmid}/pci`, data),
+    removePciDevice: (h, node, vmid, index) => api.delete(`/pve-vm/${h}/${node}/${vmid}/pci/${index}`),
+    // USB passthrough
+    addUsbDevice: (h, node, vmid, data) => api.post(`/pve-vm/${h}/${node}/${vmid}/usb`, data),
+    removeUsbDevice: (h, node, vmid, index) => api.delete(`/pve-vm/${h}/${node}/${vmid}/usb/${index}`),
+    // Serial ports
+    addSerialPort: (h, node, vmid, data) => api.post(`/pve-vm/${h}/${node}/${vmid}/serial`, data),
+    removeSerialPort: (h, node, vmid, index) => api.delete(`/pve-vm/${h}/${node}/${vmid}/serial/${index}`),
   },
 
   // PVE Node/Cluster Control (/pve-node/{host_id}/...)
@@ -684,6 +693,10 @@ export default {
     createLxc: (h, node, data) => api.post(`/pve-node/${h}/nodes/${node}/lxc`, data),
     // Templates
     listLxcTemplates: (h, node, storage) => api.get(`/pve-node/${h}/nodes/${node}/lxc-templates`, { params: { storage } }),
+    listStorageTemplates: (h, node, storage) => api.get(`/pve-node/${h}/nodes/${node}/storage/${storage}/templates`),
+    listAvailableTemplates: (h, node, section) => api.get(`/pve-node/${h}/nodes/${node}/pveam/available`, { params: section ? { section } : {} }),
+    listAllAvailableTemplates: (h, section) => api.get(`/pve-node/${h}/pveam/available`, { params: section ? { section } : {} }),
+    downloadTemplate: (h, node, data) => api.post(`/pve-node/${h}/nodes/${node}/pveam/download`, data),
     listVmTemplates: (h, node) => api.get(`/pve-node/${h}/nodes/${node}/templates`),
     // Storage upload
     uploadToStorage: (h, node, storage, formData, onProgress) => api.post(`/pve-node/${h}/nodes/${node}/storage/${storage}/upload`, formData, {
@@ -709,6 +722,8 @@ export default {
     // Hardware
     listPciDevices: (h, node) => api.get(`/pve-node/${h}/nodes/${node}/hardware/pci`),
     listUsbDevices: (h, node) => api.get(`/pve-node/${h}/nodes/${node}/hardware/usb`),
+    getPciDeviceDetail: (h, node, pciid) => api.get(`/pve-node/${h}/nodes/${node}/hardware/pci/${encodeURIComponent(pciid)}`),
+    getPciMdevTypes: (h, node, pciid) => api.get(`/pve-node/${h}/nodes/${node}/hardware/pci/${encodeURIComponent(pciid)}/mdev`),
   },
 
   // Audit Log
@@ -801,6 +816,12 @@ export default {
     evacuateNode: (hostId, node, data) => api.post(`/cluster/${hostId}/nodes/${node}/evacuate`, data || {}),
     // Cluster-wide event log
     getLog: (hostId, max) => api.get(`/cluster/${hostId}/log`, { params: { max } }),
+    // Cluster config / join
+    getClusterStatus: (hostId) => api.get(`/cluster/${hostId}/status`),
+    getClusterConfig: (hostId) => api.get(`/cluster/${hostId}/config`),
+    getJoinInfo: (hostId) => api.get(`/cluster/${hostId}/config/join`),
+    joinCluster: (hostId, data) => api.post(`/cluster/${hostId}/config/join`, data),
+    createCluster: (hostId, data) => api.post(`/cluster/${hostId}/config`, data),
   },
 
   // PVE Console — ticket endpoints (/pve-console/...)

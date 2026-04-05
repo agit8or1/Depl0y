@@ -1,6 +1,6 @@
 <template>
   <div class="recent-tasks">
-    <div v-if="loading" class="wl">Loading tasks...</div>
+    <SkeletonLoader v-if="loading" type="table" :count="3" />
     <div v-else-if="tasks.length === 0" class="we">No recent tasks.</div>
     <div v-else class="task-list">
       <div v-for="task in tasks" :key="task.upid" class="task-row">
@@ -20,9 +20,11 @@
 <script>
 import { ref, onMounted, onUnmounted } from 'vue'
 import api from '@/services/api'
+import SkeletonLoader from '@/components/SkeletonLoader.vue'
 
 export default {
   name: 'RecentTasksWidget',
+  components: { SkeletonLoader },
   setup() {
     const loading = ref(true)
     const tasks = ref([])

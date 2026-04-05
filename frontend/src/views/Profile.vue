@@ -621,6 +621,7 @@ import { ref, computed, nextTick } from 'vue'
 import { useAuthStore } from '@/store/auth'
 import { useToast } from 'vue-toastification'
 import api from '@/services/api'
+import { copyToClipboard } from '@/utils/clipboard'
 
 export default {
   name: 'Profile',
@@ -659,7 +660,7 @@ export default {
         python: `import requests\n\nheaders = {"X-API-Key": "${keyHint}"}\nr = requests.get(\n    "${origin}/api/v1/cluster/resources",\n    headers=headers\n)\nprint(r.json())`,
         js: `const resp = await fetch('/api/v1/cluster/resources', {\n  headers: { 'X-API-Key': '${keyHint}' }\n})\nconst data = await resp.json()`,
       }
-      navigator.clipboard.writeText(samples[lang] || '').then(() => {
+      copyToClipboard(samples[lang] || '').then(() => {
         copiedLang.value = lang
         setTimeout(() => { copiedLang.value = '' }, 2000)
       })
@@ -850,14 +851,14 @@ export default {
     }
 
     const copySecret = () => {
-      navigator.clipboard.writeText(totpSetup.value.secret).then(() => {
+      copyToClipboard(totpSetup.value.secret).then(() => {
         secretCopied.value = true
         setTimeout(() => { secretCopied.value = false }, 2000)
       })
     }
 
     const copyBackupCodes = () => {
-      navigator.clipboard.writeText(backupCodes.value.join('\n')).then(() => {
+      copyToClipboard(backupCodes.value.join('\n')).then(() => {
         backupCodesCopied.value = true
         setTimeout(() => { backupCodesCopied.value = false }, 2000)
       })
@@ -935,7 +936,7 @@ export default {
     }
 
     const copyNewBackupCodes = () => {
-      navigator.clipboard.writeText(newBackupCodes.value.join('\n')).then(() => {
+      copyToClipboard(newBackupCodes.value.join('\n')).then(() => {
         newBackupCodesCopied.value = true
         setTimeout(() => { newBackupCodesCopied.value = false }, 2000)
       })
@@ -982,7 +983,7 @@ export default {
     }
 
     const copyKey = (key) => {
-      navigator.clipboard.writeText(key).then(() => {
+      copyToClipboard(key).then(() => {
         keyCopied.value = true
         setTimeout(() => { keyCopied.value = false }, 2000)
       })

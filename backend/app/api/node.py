@@ -1,7 +1,7 @@
 """Node-level Proxmox management: status, RRD charts, tasks, storage content, network"""
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Body
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, validator
 from typing import Optional, List, Any, Dict
 from app.core.database import get_db
 from app.models import ProxmoxHost
@@ -10,9 +10,64 @@ from app.services.proxmox import ProxmoxService
 from app.services.task_tracker import task_tracker
 from app.core.cache import pve_cache
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+# ── Validated create request models ──────────────────────────────────────────
+
+_VM_NAME_RE = re.compile(r'^[a-zA-Z0-9]([a-zA-Z0-9\-\.]*[a-zA-Z0-9])?$')
+_HOSTNAME_RE = re.compile(r'^[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?$')
+
+
+class VMCreateRequest(BaseModel):
+    """Strict validation model for QEMU VM creation parameters."""
+    vmid: int = Field(..., ge=100, le=999999999, description="VM ID (100-999999999)")
+    name: str = Field(..., min_length=1, max_length=63)
+    memory: int = Field(..., ge=512, le=4194304, description="Memory in MB (512 MB – 4 TB)")
+    cores: int = Field(..., ge=1, le=512)
+    sockets: int = Field(1, ge=1, le=16)
+
+    @validator('name')
+    def name_valid(cls, v):
+        v = v.strip()
+        if ' ' in v:
+            raise ValueError('VM name cannot contain spaces')
+        if not _VM_NAME_RE.match(v):
+            raise ValueError(
+                'VM name must start and end with alphanumeric characters '
+                'and contain only letters, numbers, hyphens, or dots'
+            )
+        return v
+
+
+class LXCCreateRequest(BaseModel):
+    """Strict validation model for LXC container creation parameters."""
+    vmid: int = Field(..., ge=100, le=999999999, description="CT ID (100-999999999)")
+    hostname: str = Field(..., min_length=1, max_length=63)
+    memory: int = Field(..., ge=64, le=4194304, description="Memory in MB (64 MB – 4 TB)")
+    cores: int = Field(..., ge=1, le=512)
+    password: str = Field(..., min_length=8, description="Root password (min 8 chars)")
+
+    @validator('hostname')
+    def hostname_valid(cls, v):
+        v = v.strip()
+        if ' ' in v:
+            raise ValueError('Hostname cannot contain spaces')
+        if not _HOSTNAME_RE.match(v):
+            raise ValueError(
+                'Hostname must start and end with alphanumeric characters '
+                'and contain only letters, numbers, or hyphens'
+            )
+        return v
+
+    @validator('password')
+    def password_not_trivial(cls, v):
+        if len(v) < 8:
+            raise ValueError('Password must be at least 8 characters')
+        return v
 
 
 def _get_host(host_id: int, db: Session) -> ProxmoxHost:
@@ -24,6 +79,133 @@ def _get_host(host_id: int, db: Session) -> ProxmoxHost:
 
 def _pve(host: ProxmoxHost):
     return ProxmoxService(host).proxmox
+
+
+# ── Field-level validation helpers ────────────────────────────────────────────
+
+def _validate_vm_create_fields(data: dict) -> None:
+    """Validate core VM creation fields. Raises ValueError with a descriptive message."""
+    errors = []
+
+    vmid = data.get("vmid")
+    if vmid is not None:
+        try:
+            vmid = int(vmid)
+        except (TypeError, ValueError):
+            errors.append("vmid must be an integer")
+        else:
+            if vmid < 100 or vmid > 999999999:
+                errors.append("vmid must be between 100 and 999999999")
+
+    name = data.get("name")
+    if name is not None:
+        name = str(name).strip()
+        if not name:
+            errors.append("name cannot be empty")
+        elif len(name) > 63:
+            errors.append("name must be 63 characters or fewer")
+        elif ' ' in name:
+            errors.append("name cannot contain spaces")
+        elif not _VM_NAME_RE.match(name):
+            errors.append(
+                "name must start and end with alphanumeric characters and "
+                "contain only letters, numbers, hyphens, or dots"
+            )
+
+    memory = data.get("memory")
+    if memory is not None:
+        try:
+            memory = int(memory)
+        except (TypeError, ValueError):
+            errors.append("memory must be an integer (MB)")
+        else:
+            if memory < 512:
+                errors.append("memory must be at least 512 MB")
+            elif memory > 4194304:
+                errors.append("memory must be at most 4194304 MB (4 TB)")
+
+    cores = data.get("cores")
+    if cores is not None:
+        try:
+            cores = int(cores)
+        except (TypeError, ValueError):
+            errors.append("cores must be an integer")
+        else:
+            if cores < 1 or cores > 512:
+                errors.append("cores must be between 1 and 512")
+
+    sockets = data.get("sockets")
+    if sockets is not None:
+        try:
+            sockets = int(sockets)
+        except (TypeError, ValueError):
+            errors.append("sockets must be an integer")
+        else:
+            if sockets < 1 or sockets > 16:
+                errors.append("sockets must be between 1 and 16")
+
+    if errors:
+        raise ValueError("; ".join(errors))
+
+
+def _validate_lxc_create_fields(data: dict) -> None:
+    """Validate core LXC container creation fields. Raises ValueError with a descriptive message."""
+    errors = []
+
+    vmid = data.get("vmid")
+    if vmid is not None:
+        try:
+            vmid = int(vmid)
+        except (TypeError, ValueError):
+            errors.append("vmid must be an integer")
+        else:
+            if vmid < 100 or vmid > 999999999:
+                errors.append("vmid must be between 100 and 999999999")
+
+    hostname = data.get("hostname")
+    if hostname is not None:
+        hostname = str(hostname).strip()
+        if not hostname:
+            errors.append("hostname cannot be empty")
+        elif len(hostname) > 63:
+            errors.append("hostname must be 63 characters or fewer")
+        elif ' ' in hostname:
+            errors.append("hostname cannot contain spaces")
+        elif not _HOSTNAME_RE.match(hostname):
+            errors.append(
+                "hostname must start and end with alphanumeric characters "
+                "and contain only letters, numbers, or hyphens"
+            )
+
+    memory = data.get("memory")
+    if memory is not None:
+        try:
+            memory = int(memory)
+        except (TypeError, ValueError):
+            errors.append("memory must be an integer (MB)")
+        else:
+            if memory < 64:
+                errors.append("memory must be at least 64 MB")
+            elif memory > 4194304:
+                errors.append("memory must be at most 4194304 MB (4 TB)")
+
+    cores = data.get("cores")
+    if cores is not None:
+        try:
+            cores = int(cores)
+        except (TypeError, ValueError):
+            errors.append("cores must be an integer")
+        else:
+            if cores < 1 or cores > 512:
+                errors.append("cores must be between 1 and 512")
+
+    password = data.get("password")
+    if password is not None:
+        if len(str(password)) < 8:
+            errors.append("password must be at least 8 characters")
+
+    if errors:
+        raise ValueError("; ".join(errors))
 
 
 # ── Cluster-level ─────────────────────────────────────────────────────────────
@@ -1117,8 +1299,23 @@ def restore_lxc_backup(host_id: int, node: str, vmid: int, restore: dict,
 @router.post("/{host_id}/nodes/{node}/qemu")
 def create_vm(host_id: int, node: str, data: dict,
               db: Session = Depends(get_db), current_user=Depends(require_operator)):
-    """Create a new QEMU VM on a Proxmox node."""
+    """Create a new QEMU VM on a Proxmox node.
+
+    Key fields are validated before forwarding to Proxmox:
+      - vmid: integer 100–999999999
+      - name: 1–63 chars, alphanumeric/hyphen/dot, no spaces
+      - memory: integer 512–4194304 MB
+      - cores: integer 1–512
+      - sockets: integer 1–16
+    """
     host = _get_host(host_id, db)
+
+    # Validate the core identity/resource fields if present in the payload.
+    try:
+        _validate_vm_create_fields(data)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
     try:
         upid = _pve(host).nodes(node).qemu.post(**data)
         pve_cache.clear_prefix(f"pve:{host_id}:")
@@ -1131,6 +1328,8 @@ def create_vm(host_id: int, node: str, data: dict,
             task_type="qmcreate",
         )
         return {"upid": upid}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1138,8 +1337,22 @@ def create_vm(host_id: int, node: str, data: dict,
 @router.post("/{host_id}/nodes/{node}/lxc")
 def create_lxc(host_id: int, node: str, data: dict,
                db: Session = Depends(get_db), current_user=Depends(require_operator)):
-    """Create a new LXC container on a Proxmox node."""
+    """Create a new LXC container on a Proxmox node.
+
+    Key fields are validated before forwarding to Proxmox:
+      - vmid: integer 100–999999999
+      - hostname: 1–63 chars, alphanumeric/hyphen, no spaces
+      - memory: integer 64–4194304 MB
+      - cores: integer 1–512
+      - password: min 8 chars
+    """
     host = _get_host(host_id, db)
+
+    try:
+        _validate_lxc_create_fields(data)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
     try:
         upid = _pve(host).nodes(node).lxc.post(**data)
         pve_cache.clear_prefix(f"pve:{host_id}:")
@@ -1152,6 +1365,8 @@ def create_lxc(host_id: int, node: str, data: dict,
             task_type="vzcreate",
         )
         return {"upid": upid}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1165,6 +1380,71 @@ def list_lxc_templates(host_id: int, node: str, storage: str,
     host = _get_host(host_id, db)
     try:
         return _pve(host).nodes(node).storage(storage).content.get(content="vztmpl")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{host_id}/nodes/{node}/storage/{storage}/templates")
+def list_storage_templates(host_id: int, node: str, storage: str,
+                           db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    """List LXC templates (vztmpl content) on a specific storage."""
+    host = _get_host(host_id, db)
+    try:
+        items = _pve(host).nodes(node).storage(storage).content.get(content="vztmpl")
+        return items if items else []
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{host_id}/nodes/{node}/pveam/available")
+def list_pveam_available(host_id: int, node: str, section: Optional[str] = None,
+                         db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    """List LXC templates available for download from Proxmox mirrors (pveam)."""
+    host = _get_host(host_id, db)
+    try:
+        params: Dict[str, Any] = {}
+        if section:
+            params["section"] = section
+        result = _pve(host).nodes(node).pveam.available.get(**params)
+        return result if result else []
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{host_id}/nodes/{node}/pveam/download")
+def download_pveam_template(host_id: int, node: str, data: dict = Body(default={}),
+                             db: Session = Depends(get_db), current_user=Depends(require_operator)):
+    """Download an LXC template from Proxmox mirrors to a local storage."""
+    host = _get_host(host_id, db)
+    storage = data.get("storage")
+    template = data.get("template")
+    if not storage or not template:
+        raise HTTPException(status_code=400, detail="'storage' and 'template' are required")
+    try:
+        result = _pve(host).nodes(node).pveam.post(storage=storage, template=template)
+        return {"task": result} if result else {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{host_id}/pveam/available")
+def list_all_pveam_available(host_id: int, section: Optional[str] = None,
+                              db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    """List all downloadable LXC templates across all sections (uses first available node)."""
+    host = _get_host(host_id, db)
+    try:
+        # Find first available node
+        nodes_list = _pve(host).cluster.resources.get(type="node")
+        if not nodes_list:
+            return []
+        node = nodes_list[0].get("node")
+        if not node:
+            return []
+        params: Dict[str, Any] = {}
+        if section:
+            params["section"] = section
+        result = _pve(host).nodes(node).pveam.available.get(**params)
+        return result if result else []
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1547,6 +1827,42 @@ def list_usb_devices(host_id: int, node: str, db: Session = Depends(get_db),
         return cached
     try:
         result = _pve(host).nodes(node).hardware.usb.get()
+        pve_cache.set(cache_key, result, ttl=300)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{host_id}/nodes/{node}/hardware/pci/{pciid}")
+def get_pci_device_detail(host_id: int, node: str, pciid: str,
+                          db: Session = Depends(get_db),
+                          current_user=Depends(get_current_user)):
+    """Get PCI device detail including IOMMU group members."""
+    host = _get_host(host_id, db)
+    cache_key = f"pve:{host_id}:nodes/{node}/hardware/pci/{pciid}"
+    cached = pve_cache.get(cache_key)
+    if cached is not None:
+        return cached
+    try:
+        result = _pve(host).nodes(node).hardware.pci(pciid).get()
+        pve_cache.set(cache_key, result, ttl=120)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{host_id}/nodes/{node}/hardware/pci/{pciid}/mdev")
+def list_pci_mdev_types(host_id: int, node: str, pciid: str,
+                        db: Session = Depends(get_db),
+                        current_user=Depends(get_current_user)):
+    """List mediated device (vGPU) types available for a PCI device."""
+    host = _get_host(host_id, db)
+    cache_key = f"pve:{host_id}:nodes/{node}/hardware/pci/{pciid}/mdev"
+    cached = pve_cache.get(cache_key)
+    if cached is not None:
+        return cached
+    try:
+        result = _pve(host).nodes(node).hardware.pci(pciid).mdev.get()
         pve_cache.set(cache_key, result, ttl=300)
         return result
     except Exception as e:

@@ -56,7 +56,11 @@
         @toggle-sidebar="sidebarOpen = !sidebarOpen"
       />
       <main :class="isFullscreen ? 'content-fullscreen' : 'content'">
-        <router-view />
+        <router-view v-slot="{ Component }">
+          <transition name="page" mode="out-in">
+            <component :is="Component" />
+          </transition>
+        </router-view>
       </main>
     </div>
 
@@ -501,6 +505,20 @@ export default {
   .shortcuts-keys {
     min-width: 110px;
   }
+}
+
+/* ── Page transitions ── */
+.page-enter-active,
+.page-leave-active {
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.page-enter-from {
+  opacity: 0;
+  transform: translateX(8px);
+}
+.page-leave-to {
+  opacity: 0;
+  transform: translateX(-8px);
 }
 
 /* ── Page loading bar ── */

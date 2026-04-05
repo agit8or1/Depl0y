@@ -1,11 +1,12 @@
 """Users API routes"""
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field, validator
 from typing import List, Optional
 from datetime import datetime
 import secrets
 import string
+import re
 
 from app.core.database import get_db
 from app.core.security import get_password_hash, verify_password
@@ -15,12 +16,32 @@ from app.api.auth import get_current_user, require_admin
 router = APIRouter()
 
 
+_USERNAME_RE = re.compile(r'^[a-zA-Z0-9_-]+$')
+
+
 # Pydantic models
 class UserCreate(BaseModel):
-    username: str
+    username: str = Field(..., min_length=3, max_length=50)
     email: EmailStr
-    password: str
+    password: str = Field(..., min_length=8)
     role: UserRole = UserRole.VIEWER
+
+    @validator('username')
+    def username_valid(cls, v):
+        v = v.strip()
+        if not v:
+            raise ValueError('Username cannot be empty')
+        if not _USERNAME_RE.match(v):
+            raise ValueError(
+                'Username may only contain letters, numbers, underscores, and hyphens'
+            )
+        return v
+
+    @validator('password')
+    def password_strength(cls, v):
+        if len(v) < 8:
+            raise ValueError('Password must be at least 8 characters')
+        return v
 
 
 class UserUpdate(BaseModel):

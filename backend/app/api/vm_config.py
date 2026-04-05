@@ -1054,3 +1054,163 @@ def remove_vm_tag(host_id: int, node: str, vmid: int, tag: str,
         return {"tags": tags}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── PCI passthrough management ────────────────────────────────────────────────
+
+class PCIAdd(BaseModel):
+    pciid: str                          # e.g. "0000:01:00.0"
+    pcie: bool = True
+    x_vga: bool = False
+    rombar: bool = True
+    mdev: Optional[str] = None          # mediated device type (vGPU)
+
+
+@router.post("/{host_id}/{node}/{vmid}/pci")
+def add_pci_device(host_id: int, node: str, vmid: int, req: PCIAdd,
+                   db: Session = Depends(get_db),
+                   current_user=Depends(require_operator)):
+    """Add a PCI passthrough device to a VM (hostpciN=...)."""
+    host = _get_host(host_id, db)
+    pve = _pve(_svc(host))
+    try:
+        cfg = pve.nodes(node).qemu(vmid).config.get()
+        # Find next free hostpci slot
+        idx = 0
+        while f"hostpci{idx}" in cfg:
+            idx += 1
+        hostpci_key = f"hostpci{idx}"
+        val = req.pciid
+        if req.mdev:
+            val += f",mdev={req.mdev}"
+        if req.pcie:
+            val += ",pcie=1"
+        if req.x_vga:
+            val += ",x-vga=1"
+        if not req.rombar:
+            val += ",rombar=0"
+        pve.nodes(node).qemu(vmid).config.put(**{hostpci_key: val})
+        pve_cache.clear_prefix(f"pve:{host_id}:")
+        return {"success": True, "key": hostpci_key, "value": val}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/{host_id}/{node}/{vmid}/pci/{index}")
+def remove_pci_device(host_id: int, node: str, vmid: int, index: int,
+                      db: Session = Depends(get_db),
+                      current_user=Depends(require_operator)):
+    """Remove a PCI passthrough device from a VM config (hostpciN)."""
+    host = _get_host(host_id, db)
+    pve = _pve(_svc(host))
+    hostpci_key = f"hostpci{index}"
+    try:
+        cfg = pve.nodes(node).qemu(vmid).config.get()
+        if hostpci_key not in cfg:
+            raise HTTPException(status_code=404, detail=f"{hostpci_key} not found in VM config")
+        # Set to None / delete the key — Proxmox API uses delete= parameter
+        pve.nodes(node).qemu(vmid).config.put(**{hostpci_key: None})
+        pve_cache.clear_prefix(f"pve:{host_id}:")
+        return {"success": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── USB passthrough management ────────────────────────────────────────────────
+
+class USBAdd(BaseModel):
+    host: str                           # "vendorid:productid" or "spice" or port number
+    usb3: bool = False
+
+
+@router.post("/{host_id}/{node}/{vmid}/usb")
+def add_usb_device(host_id: int, node: str, vmid: int, req: USBAdd,
+                   db: Session = Depends(get_db),
+                   current_user=Depends(require_operator)):
+    """Add a USB passthrough device to a VM (usbN=host:{vendor}:{product})."""
+    host = _get_host(host_id, db)
+    pve = _pve(_svc(host))
+    try:
+        cfg = pve.nodes(node).qemu(vmid).config.get()
+        idx = 0
+        while f"usb{idx}" in cfg:
+            idx += 1
+        usb_key = f"usb{idx}"
+        val = f"host={req.host}"
+        if req.usb3:
+            val += ",usb3=1"
+        pve.nodes(node).qemu(vmid).config.put(**{usb_key: val})
+        pve_cache.clear_prefix(f"pve:{host_id}:")
+        return {"success": True, "key": usb_key, "value": val}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/{host_id}/{node}/{vmid}/usb/{index}")
+def remove_usb_device(host_id: int, node: str, vmid: int, index: int,
+                      db: Session = Depends(get_db),
+                      current_user=Depends(require_operator)):
+    """Remove a USB passthrough device from a VM config (usbN)."""
+    host = _get_host(host_id, db)
+    pve = _pve(_svc(host))
+    usb_key = f"usb{index}"
+    try:
+        cfg = pve.nodes(node).qemu(vmid).config.get()
+        if usb_key not in cfg:
+            raise HTTPException(status_code=404, detail=f"{usb_key} not found in VM config")
+        pve.nodes(node).qemu(vmid).config.put(**{usb_key: None})
+        pve_cache.clear_prefix(f"pve:{host_id}:")
+        return {"success": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Serial port management ────────────────────────────────────────────────────
+
+class SerialAdd(BaseModel):
+    type: str = "socket"                # "socket" or a host device path e.g. /dev/ttyS0
+
+
+@router.post("/{host_id}/{node}/{vmid}/serial")
+def add_serial_port(host_id: int, node: str, vmid: int, req: SerialAdd,
+                    db: Session = Depends(get_db),
+                    current_user=Depends(require_operator)):
+    """Add a serial port to a VM (serialN=socket|device)."""
+    host = _get_host(host_id, db)
+    pve = _pve(_svc(host))
+    try:
+        cfg = pve.nodes(node).qemu(vmid).config.get()
+        idx = 0
+        while f"serial{idx}" in cfg:
+            idx += 1
+        serial_key = f"serial{idx}"
+        pve.nodes(node).qemu(vmid).config.put(**{serial_key: req.type})
+        pve_cache.clear_prefix(f"pve:{host_id}:")
+        return {"success": True, "key": serial_key}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/{host_id}/{node}/{vmid}/serial/{index}")
+def remove_serial_port(host_id: int, node: str, vmid: int, index: int,
+                       db: Session = Depends(get_db),
+                       current_user=Depends(require_operator)):
+    """Remove a serial port from a VM config (serialN)."""
+    host = _get_host(host_id, db)
+    pve = _pve(_svc(host))
+    serial_key = f"serial{index}"
+    try:
+        cfg = pve.nodes(node).qemu(vmid).config.get()
+        if serial_key not in cfg:
+            raise HTTPException(status_code=404, detail=f"{serial_key} not found in VM config")
+        pve.nodes(node).qemu(vmid).config.put(**{serial_key: None})
+        pve_cache.clear_prefix(f"pve:{host_id}:")
+        return {"success": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

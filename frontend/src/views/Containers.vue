@@ -87,8 +87,8 @@
       </div>
     </div>
 
-    <!-- Loading spinner -->
-    <div v-if="loading && containers.length === 0" class="loading-spinner"></div>
+    <!-- Loading skeleton -->
+    <SkeletonLoader v-if="loading && containers.length === 0" type="table" :count="8" />
 
     <!-- Empty state: no containers at all -->
     <div v-else-if="!loading && containers.length === 0" class="card empty-state">
@@ -124,6 +124,7 @@
               <th @click="toggleSort('name')" class="sortable-col">
                 Hostname <span class="sort-icon">{{ sortIcon('name') }}</span>
               </th>
+              <th class="text-sm">OS</th>
               <th @click="toggleSort('status')" class="sortable-col">
                 Status <span class="sort-icon">{{ sortIcon('status') }}</span>
               </th>
@@ -147,7 +148,7 @@
           </thead>
           <tbody>
             <tr v-if="sortedContainers.length === 0">
-              <td colspan="12" class="text-muted text-center empty-row">
+              <td colspan="13" class="text-muted text-center empty-row">
                 <template v-if="containers.length === 0">
                   No containers found. Make sure your Proxmox hosts are configured and reachable.
                 </template>
@@ -179,6 +180,14 @@
                 <span class="clickable-name" @click="openDetail(ct)">
                   {{ ct.name || `CT ${ct.vmid}` }}
                 </span>
+              </td>
+
+              <!-- OS -->
+              <td class="os-col">
+                <span
+                  class="os-icon-badge"
+                  :title="detectOs(ct.name || '').name"
+                >{{ detectOs(ct.name || '').icon }}</span>
               </td>
 
               <!-- Status badge -->
@@ -304,11 +313,14 @@ import { useRouter } from 'vue-router'
 import api from '@/services/api'
 import { useToast } from 'vue-toastification'
 import { formatBytes, formatUptime } from '@/utils/proxmox'
+import { detectOs } from '@/utils/osIcons'
+import SkeletonLoader from '@/components/SkeletonLoader.vue'
 
 const REFRESH_SECS = 30
 
 export default {
   name: 'Containers',
+  components: { SkeletonLoader },
   setup() {
     const toast = useToast()
     const router = useRouter()
@@ -637,6 +649,7 @@ export default {
       bulkAction,
       toggleSort,
       sortIcon,
+      detectOs,
     }
   }
 }
@@ -916,4 +929,8 @@ export default {
   margin: 0;
   max-width: 400px;
 }
+
+/* ── OS column ─────────────────────────────────────────────────────────── */
+.os-col { width: 36px; text-align: center; }
+.os-icon-badge { font-size: 1.1rem; cursor: default; }
 </style>

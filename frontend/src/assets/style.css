@@ -437,6 +437,83 @@ select.form-control {
   100% { transform: rotate(360deg); }
 }
 
+/* ── Button micro-interaction ── */
+.btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+/* ── Card hover lift ── */
+.card {
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+.card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+}
+
+/* ── Focus rings (keyboard accessibility) ── */
+:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+/* ── Themed scrollbars ── */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-color) transparent;
+}
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 3px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+/* ── Modal entrance animation ── */
+.modal-content {
+  animation: modal-in 0.2s ease;
+}
+
+@keyframes modal-in {
+  from { opacity: 0; transform: scale(0.96) translateY(-8px); }
+  to   { opacity: 1; transform: scale(1)    translateY(0);    }
+}
+
+.modal-backdrop {
+  animation: fade-in 0.15s ease;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* ── Running badge pulse ── */
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.5; transform: scale(1.4); }
+}
+
+.badge-running::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  margin-right: 4px;
+  animation: pulse 2s infinite;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   .grid-cols-2,

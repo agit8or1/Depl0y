@@ -44,23 +44,26 @@
               <label class="form-label">Host Name <span class="req">*</span></label>
               <input
                 v-model="form.name"
-                class="form-control"
+                :class="['form-control', { 'input-error': fieldErrors.name }]"
                 placeholder="e.g. Production Cluster"
                 autocomplete="off"
+                @blur="validateField('name', form.name, [rules.required, rules.maxLength(128)])"
               />
-              <p class="form-hint">A friendly label for this datacenter in Depl0y</p>
+              <p v-if="fieldErrors.name" class="form-error-text">{{ fieldErrors.name }}</p>
+              <p v-else class="form-hint">A friendly label for this datacenter in Depl0y</p>
             </div>
 
             <div class="form-group">
               <label class="form-label">API URL <span class="req">*</span></label>
               <input
                 v-model="form.api_url"
-                class="form-control"
+                :class="['form-control', { 'input-error': fieldErrors.api_url }]"
                 placeholder="pve.example.com  or  https://192.168.1.10:8006"
                 autocomplete="off"
-                @blur="normalizeUrl"
+                @blur="normalizeUrl(); validateField('api_url', form.api_url, [rules.required, rules.url])"
               />
-              <p class="form-hint">Auto-adds https:// prefix and :8006 port if omitted</p>
+              <p v-if="fieldErrors.api_url" class="form-error-text">{{ fieldErrors.api_url }}</p>
+              <p v-else class="form-hint">Auto-adds https:// prefix and :8006 port if omitted</p>
             </div>
 
             <!-- Auth method toggle -->
@@ -97,8 +100,15 @@
               </div>
               <div class="form-group">
                 <label class="form-label">Token ID <span class="req">*</span></label>
-                <input v-model="form.token_name" class="form-control" placeholder="depl0y  or  root@pam!depl0y" autocomplete="off" />
-                <p class="form-hint">Just the token name, or the full "user@realm!tokenname" format</p>
+                <input
+                  v-model="form.token_name"
+                  :class="['form-control', { 'input-error': fieldErrors.token_name }]"
+                  placeholder="depl0y  or  root@pam!depl0y"
+                  autocomplete="off"
+                  @blur="validateField('token_name', form.token_name, [rules.required, rules.proxmoxToken])"
+                />
+                <p v-if="fieldErrors.token_name" class="form-error-text">{{ fieldErrors.token_name }}</p>
+                <p v-else class="form-hint">Just the token name, or the full "user@realm!tokenname" format</p>
               </div>
               <div class="form-group">
                 <label class="form-label">Token Secret <span class="req">*</span></label>
@@ -297,7 +307,14 @@
                 <div class="form-row-2">
                   <div class="form-group">
                     <label class="form-label">BMC Port</label>
-                    <input v-model.number="form.idrac_port" type="number" class="form-control" placeholder="443" />
+                    <input
+                      v-model.number="form.idrac_port"
+                      type="number"
+                      :class="['form-control', { 'input-error': fieldErrors.idrac_port }]"
+                      placeholder="443"
+                      @blur="validateField('idrac_port', form.idrac_port, [rules.portRequired])"
+                    />
+                    <p v-if="fieldErrors.idrac_port" class="form-error-text">{{ fieldErrors.idrac_port }}</p>
                   </div>
                   <div class="form-group">
                     <label class="form-label">Interface</label>
@@ -436,6 +453,7 @@ import { ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/services/api'
 import { useToast } from 'vue-toastification'
+import { rules, validate } from '@/utils/formValidation'
 
 export default {
   name: 'AddHostWizard',
@@ -465,6 +483,13 @@ export default {
     const testResult = ref(null)
     const addError = ref(null)
     const addSuccess = ref(false)
+
+    const fieldErrors = ref({
+      name: '',
+      api_url: '',
+      token_name: '',
+      idrac_port: '',
+    })
 
     const pollOptions = [
       { value: 30, label: '30 seconds' },
@@ -517,6 +542,23 @@ export default {
       form.value.api_url = url
     }
 
+    // Field-level validation helpers
+    const validateField = (field, value, rulesArr) => {
+      const result = validate(value, rulesArr)
+      fieldErrors.value[field] = result === true ? '' : result
+    }
+
+    const validateStep0 = () => {
+      validateField('name', form.value.name, [rules.required, rules.maxLength(128)])
+      validateField('api_url', form.value.api_url, [rules.required, rules.url])
+      if (form.value.auth_method === 'token') {
+        validateField('token_name', form.value.token_name, [rules.required, rules.proxmoxToken])
+      } else {
+        fieldErrors.value.token_name = ''
+      }
+      return !fieldErrors.value.name && !fieldErrors.value.api_url && !fieldErrors.value.token_name
+    }
+
     // Storage / network helpers
     const vmStorages = computed(() => {
       if (!testResult.value || !testResult.value.storages) return []
@@ -555,7 +597,9 @@ export default {
 
     const canAdvance = computed(() => {
       if (currentStep.value === 0) {
-        return !!(form.value.name && form.value.api_url && testResult.value && testResult.value.success)
+        const hasRequiredFields = !!(form.value.name && form.value.api_url && testResult.value && testResult.value.success)
+        const hasNoErrors = !fieldErrors.value.name && !fieldErrors.value.api_url && !fieldErrors.value.token_name
+        return hasRequiredFields && hasNoErrors
       }
       return true
     })
@@ -576,7 +620,10 @@ export default {
     }
 
     const nextStep = () => {
-      if (currentStep.value < steps.length - 1) {
+      if (currentStep.value === 0) {
+        validateStep0()
+      }
+      if (currentStep.value < steps.length - 1 && canAdvance.value) {
         currentStep.value++
       }
     }
@@ -736,6 +783,7 @@ export default {
       testResult,
       addError,
       addSuccess,
+      fieldErrors,
       pollOptions,
       pollLabel,
       canTest,
@@ -746,6 +794,10 @@ export default {
       isoStorages,
       networkBridges,
       normalizeUrl,
+      validateField,
+      validateStep0,
+      rules,
+      validate,
       testConnection,
       submitHost,
       nextStep,
@@ -981,6 +1033,32 @@ export default {
   color: var(--text-secondary);
   margin-top: 0.25rem;
   margin-bottom: 0;
+}
+
+.form-error-text {
+  font-size: 0.72rem;
+  color: #ef4444;
+  margin-top: 0.25rem;
+  margin-bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.form-error-text::before {
+  content: '⚠';
+  font-size: 0.7rem;
+  flex-shrink: 0;
+}
+
+.input-error {
+  border-color: #ef4444 !important;
+  box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.15) !important;
+}
+
+.input-error:focus {
+  border-color: #ef4444 !important;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.2) !important;
 }
 
 .form-row-2 {

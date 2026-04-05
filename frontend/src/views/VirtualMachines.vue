@@ -46,7 +46,7 @@
         </div>
       </div>
 
-      <div v-if="loading" class="loading-spinner"></div>
+      <SkeletonLoader v-if="loading" type="table" :count="8" />
 
       <div v-else-if="filteredVMs.length === 0 && vms.length === 0" class="empty-state">
         <div class="empty-icon-wrap">
@@ -234,7 +234,7 @@
         <button v-if="activeTagFilters.size > 0" class="btn btn-sm btn-secondary" @click="activeTagFilters = new Set()">Clear tags</button>
       </div>
 
-      <div v-if="allLoading" class="loading-spinner"></div>
+      <SkeletonLoader v-if="allLoading" type="table" :count="8" />
 
       <div v-else-if="allError" class="text-center text-muted" style="padding: 2rem;">
         <p class="text-danger">{{ allError }}</p>
@@ -695,9 +695,11 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '@/services/api'
 import { useToast } from 'vue-toastification'
+import SkeletonLoader from '@/components/SkeletonLoader.vue'
 
 export default {
   name: 'VirtualMachines',
+  components: { SkeletonLoader },
   setup() {
     const route = useRoute()
     const router = useRouter()

@@ -146,6 +146,179 @@
       </div>
     </div>
 
+    <!-- Cluster Topology Visualization -->
+    <div class="card mb-2">
+      <div class="card-header" @click="topologyExpanded = !topologyExpanded" style="cursor:pointer;">
+        <h3>Cluster Topology</h3>
+        <span class="toggle-icon">{{ topologyExpanded ? '▲' : '▼' }}</span>
+      </div>
+      <div v-if="topologyExpanded" class="card-body topology-body">
+        <div v-if="clusterNodes.length === 0" class="text-muted text-sm">No cluster nodes to display.</div>
+        <div v-else class="topology-wrap">
+          <!-- SVG topology diagram -->
+          <svg
+            :width="topologySvgWidth"
+            :height="topologySvgHeight"
+            class="topology-svg"
+            @mousemove="onTopoMouseMove"
+            @mouseleave="hideTooltip"
+          >
+            <!-- Connection lines between all nodes (full mesh for cluster) -->
+            <g class="topo-links">
+              <line
+                v-for="link in topologyLinks"
+                :key="link.id"
+                :x1="link.x1" :y1="link.y1"
+                :x2="link.x2" :y2="link.y2"
+                class="topo-link"
+                :class="link.type"
+              />
+            </g>
+
+            <!-- Replication arrows -->
+            <defs>
+              <marker id="arrow-replicate" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+                <path d="M0,0 L0,6 L8,3 z" fill="#6366f1" />
+              </marker>
+              <marker id="arrow-migrate" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+                <path d="M0,0 L0,6 L8,3 z" fill="#f59e0b" />
+              </marker>
+            </defs>
+            <line
+              v-for="arrow in topologyArrows"
+              :key="arrow.id"
+              :x1="arrow.x1" :y1="arrow.y1"
+              :x2="arrow.x2" :y2="arrow.y2"
+              class="topo-arrow"
+              :class="arrow.type"
+              :marker-end="`url(#arrow-${arrow.type})`"
+            />
+
+            <!-- Node groups -->
+            <g
+              v-for="tnode in topologyNodes"
+              :key="tnode.name"
+              class="topo-node-group"
+              :transform="`translate(${tnode.x}, ${tnode.y})`"
+              @mouseenter="showNodeTooltip(tnode, $event)"
+              @mouseleave="hideTooltip"
+              @click="navigateToNode(tnode.name)"
+              style="cursor: pointer;"
+            >
+              <!-- Node circle / background box -->
+              <rect
+                :x="-topoNodeW / 2" :y="-topoNodeH / 2"
+                :width="topoNodeW" :height="topoNodeH"
+                rx="12" ry="12"
+                class="topo-node-rect"
+                :class="nodeHealthClass(tnode)"
+              />
+              <!-- Node name -->
+              <text
+                x="0" :y="-topoNodeH / 2 + 22"
+                text-anchor="middle"
+                class="topo-node-name"
+              >{{ tnode.name }}</text>
+              <!-- Status badge dot -->
+              <circle
+                :cx="topoNodeW / 2 - 10" :cy="-topoNodeH / 2 + 10"
+                r="6"
+                :class="['topo-status-dot', tnode.online ? 'dot-online' : 'dot-offline']"
+              />
+              <!-- VM icons row -->
+              <g :transform="`translate(0, ${-topoNodeH / 2 + 38})`">
+                <g v-for="(vm, vi) in tnode.vmsPreview" :key="vm.vmid" :transform="`translate(${(vi - (tnode.vmsPreview.length - 1) / 2) * 20}, 0)`">
+                  <!-- Small VM rectangle icon -->
+                  <rect x="-8" y="0" width="16" height="12" rx="2" ry="2"
+                    :class="['topo-vm-icon', vm.status === 'running' ? 'vm-running' : 'vm-stopped']"
+                  />
+                  <!-- VM label (vmid) -->
+                  <text x="0" y="10" text-anchor="middle" class="topo-vm-label">{{ vm.vmid }}</text>
+                </g>
+                <!-- "+N more" if overflow -->
+                <text
+                  v-if="tnode.vmsMore > 0"
+                  :x="(tnode.vmsPreview.length - (tnode.vmsPreview.length - 1) / 2) * 20 + 2"
+                  y="10"
+                  class="topo-vm-more"
+                >+{{ tnode.vmsMore }}</text>
+              </g>
+              <!-- Resource bars at bottom of node box -->
+              <g v-if="nodeStats[tnode.name]" :transform="`translate(${-topoNodeW / 2 + 10}, ${topoNodeH / 2 - 26})`">
+                <!-- CPU bar -->
+                <text x="0" y="5" class="topo-bar-label">CPU</text>
+                <rect x="24" y="0" :width="topoNodeW - 44" height="5" rx="2" fill="var(--border-color)" />
+                <rect
+                  x="24" y="0"
+                  :width="Math.max(2, (topoNodeW - 44) * nodeStats[tnode.name].cpuRatio)"
+                  height="5" rx="2"
+                  :class="['topo-bar-fill', barClass(nodeStats[tnode.name].cpuRatio)]"
+                />
+                <!-- MEM bar -->
+                <text x="0" y="18" class="topo-bar-label">MEM</text>
+                <rect x="24" y="13" :width="topoNodeW - 44" height="5" rx="2" fill="var(--border-color)" />
+                <rect
+                  x="24" y="13"
+                  :width="Math.max(2, (topoNodeW - 44) * nodeStats[tnode.name].memRatio)"
+                  height="5" rx="2"
+                  :class="['topo-bar-fill', barClass(nodeStats[tnode.name].memRatio)]"
+                />
+              </g>
+            </g>
+          </svg>
+
+          <!-- Tooltip -->
+          <div
+            v-if="topoTooltip.visible"
+            class="topo-tooltip"
+            :style="{ left: topoTooltip.x + 'px', top: topoTooltip.y + 'px' }"
+          >
+            <div class="topo-tooltip-name">{{ topoTooltip.nodeName }}</div>
+            <div class="topo-tooltip-row">
+              <span class="topo-tooltip-label">Status:</span>
+              <span :class="topoTooltip.online ? 'text-success' : 'text-danger'">
+                {{ topoTooltip.online ? 'Online' : 'Offline' }}
+              </span>
+            </div>
+            <div v-if="topoTooltip.cpu != null" class="topo-tooltip-row">
+              <span class="topo-tooltip-label">CPU:</span>
+              <span>{{ Math.round(topoTooltip.cpu * 100) }}%</span>
+            </div>
+            <div v-if="topoTooltip.mem != null" class="topo-tooltip-row">
+              <span class="topo-tooltip-label">RAM:</span>
+              <span>{{ Math.round(topoTooltip.mem * 100) }}%</span>
+            </div>
+            <div class="topo-tooltip-row">
+              <span class="topo-tooltip-label">VMs:</span>
+              <span>{{ topoTooltip.vmCount }} ({{ topoTooltip.vmRunning }} running)</span>
+            </div>
+          </div>
+
+          <!-- Legend -->
+          <div class="topo-legend">
+            <div class="topo-legend-item">
+              <span class="topo-legend-dot dot-online"></span> Online
+            </div>
+            <div class="topo-legend-item">
+              <span class="topo-legend-dot dot-offline"></span> Offline
+            </div>
+            <div class="topo-legend-item">
+              <span class="topo-legend-swatch vm-running"></span> VM running
+            </div>
+            <div class="topo-legend-item">
+              <span class="topo-legend-swatch vm-stopped"></span> VM stopped
+            </div>
+            <div v-if="topologyArrows.some(a => a.type === 'replicate')" class="topo-legend-item">
+              <span class="topo-legend-line replicate-line"></span> Replication
+            </div>
+            <div v-if="topologyArrows.some(a => a.type === 'migrate')" class="topo-legend-item">
+              <span class="topo-legend-line migrate-line"></span> Migration
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Node Balance Chart -->
     <div class="card mb-2">
       <div class="card-header" @click="balanceExpanded = !balanceExpanded" style="cursor:pointer;">
@@ -635,6 +808,147 @@ const evacuationNode = ref(null)
 const evacuateTarget = ref('')
 const evacuating = ref(false)
 const evacuationResult = ref(null)
+
+// ── Cluster Topology ──────────────────────────────────────────────────────────
+
+const topologyExpanded = ref(true)
+
+// Node box dimensions
+const topoNodeW = 140
+const topoNodeH = 120
+const topoPadX = 80   // horizontal padding between nodes
+const topoPadY = 60   // vertical padding from top
+
+// Topology SVG dimensions (computed from node count)
+const topologySvgWidth = computed(() => {
+  const n = clusterNodes.value.length
+  if (n === 0) return 400
+  const cols = Math.min(n, 4)
+  return cols * (topoNodeW + topoPadX) + topoPadX
+})
+
+const topologySvgHeight = computed(() => {
+  const n = clusterNodes.value.length
+  if (n === 0) return 200
+  const cols = Math.min(n, 4)
+  const rows = Math.ceil(n / cols)
+  return rows * (topoNodeH + topoPadY) + topoPadY
+})
+
+// Compute (x, y) position for each node (grid layout)
+const topologyNodes = computed(() => {
+  const nodes = clusterNodes.value
+  if (!nodes.length) return []
+  const cols = Math.min(nodes.length, 4)
+  return nodes.map((node, i) => {
+    const col = i % cols
+    const row = Math.floor(i / cols)
+    const x = topoPadX / 2 + topoNodeW / 2 + col * (topoNodeW + topoPadX)
+    const y = topoPadY / 2 + topoNodeH / 2 + row * (topoNodeH + topoPadY)
+    // Get VMs on this node
+    const vms = allResources.value.filter(
+      r => (r.type === 'qemu' || r.type === 'lxc') && r.node === node.name
+    )
+    const MAX_ICONS = 5
+    const vmsPreview = vms.slice(0, MAX_ICONS)
+    const vmsMore = Math.max(0, vms.length - MAX_ICONS)
+    return { ...node, x, y, vms, vmsPreview, vmsMore }
+  })
+})
+
+// Links: full mesh between all nodes (corosync ring)
+const topologyLinks = computed(() => {
+  const nodes = topologyNodes.value
+  const links = []
+  for (let i = 0; i < nodes.length; i++) {
+    for (let j = i + 1; j < nodes.length; j++) {
+      links.push({
+        id: `${nodes[i].name}-${nodes[j].name}`,
+        x1: nodes[i].x, y1: nodes[i].y,
+        x2: nodes[j].x, y2: nodes[j].y,
+        type: 'link-cluster',
+      })
+    }
+  }
+  return links
+})
+
+// Arrows: replication jobs and running migrations
+const topologyArrows = computed(() => {
+  const arrows = []
+  const nodeMap = {}
+  for (const n of topologyNodes.value) nodeMap[n.name] = n
+
+  // Running migrations from runningMigrations
+  for (const m of runningMigrations.value) {
+    const src = nodeMap[m._node]
+    const targetName = extractTarget(m.upid)
+    const dst = nodeMap[targetName]
+    if (src && dst && src.name !== dst.name) {
+      arrows.push({
+        id: `migrate-${m.upid}`,
+        x1: src.x, y1: src.y,
+        x2: dst.x, y2: dst.y,
+        type: 'migrate',
+      })
+    }
+  }
+
+  return arrows
+})
+
+function nodeHealthClass(tnode) {
+  if (!tnode.online) return 'node-offline'
+  const stats = nodeStats.value[tnode.name]
+  if (stats) {
+    if (stats.cpuRatio >= 0.9 || stats.memRatio >= 0.9) return 'node-danger'
+    if (stats.cpuRatio >= 0.75 || stats.memRatio >= 0.75) return 'node-warning'
+  }
+  return 'node-online'
+}
+
+// Tooltip state
+const topoTooltip = ref({
+  visible: false,
+  x: 0,
+  y: 0,
+  nodeName: '',
+  online: false,
+  cpu: null,
+  mem: null,
+  vmCount: 0,
+  vmRunning: 0,
+})
+
+function showNodeTooltip(tnode, event) {
+  const stats = nodeStats.value[tnode.name]
+  const vms = allResources.value.filter(
+    r => (r.type === 'qemu' || r.type === 'lxc') && r.node === tnode.name
+  )
+  const container = event.currentTarget.closest('.topology-wrap') || event.currentTarget
+  const rect = container.getBoundingClientRect
+    ? container.getBoundingClientRect()
+    : { left: 0, top: 0 }
+  topoTooltip.value = {
+    visible: true,
+    x: tnode.x + topoNodeW / 2 + 8,
+    y: tnode.y - topoNodeH / 2,
+    nodeName: tnode.name,
+    online: tnode.online,
+    cpu: stats ? stats.cpuRatio : null,
+    mem: stats ? stats.memRatio : null,
+    vmCount: vms.length,
+    vmRunning: vms.filter(v => v.status === 'running').length,
+  }
+}
+
+function onTopoMouseMove() {
+  // Keep tooltip visible while moving inside SVG
+}
+
+function hideTooltip() {
+  topoTooltip.value.visible = false
+}
 
 // Join wizard
 const joinWizardExpanded = ref(false)
@@ -1305,6 +1619,219 @@ onUnmounted(() => {
 .fill--ok { background: #10b981; }
 .fill--warning { background: #f59e0b; }
 .fill--danger { background: #ef4444; }
+
+/* ── Topology ── */
+.topology-body {
+  position: relative;
+  overflow: hidden;
+}
+
+.topology-wrap {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1rem;
+  overflow-x: auto;
+}
+
+.topology-svg {
+  display: block;
+  max-width: 100%;
+  overflow: visible;
+}
+
+/* Links (corosync connections) */
+.topo-link {
+  stroke: var(--border-color, #374151);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 3;
+  opacity: 0.6;
+}
+
+/* Arrow lines */
+.topo-arrow {
+  stroke-width: 2;
+  fill: none;
+}
+
+.topo-arrow.replicate {
+  stroke: #6366f1;
+}
+
+.topo-arrow.migrate {
+  stroke: #f59e0b;
+  stroke-dasharray: 6 3;
+}
+
+/* Node boxes */
+.topo-node-rect {
+  stroke-width: 2;
+  transition: filter 0.15s;
+}
+
+.topo-node-group:hover .topo-node-rect {
+  filter: brightness(1.15) drop-shadow(0 0 6px rgba(99,102,241,0.4));
+}
+
+.node-online {
+  fill: rgba(16, 185, 129, 0.12);
+  stroke: #10b981;
+}
+
+.node-warning {
+  fill: rgba(245, 158, 11, 0.12);
+  stroke: #f59e0b;
+}
+
+.node-danger {
+  fill: rgba(239, 68, 68, 0.12);
+  stroke: #ef4444;
+}
+
+.node-offline {
+  fill: rgba(107, 114, 128, 0.1);
+  stroke: #6b7280;
+}
+
+/* Node name text */
+.topo-node-name {
+  font-size: 12px;
+  font-weight: 600;
+  fill: var(--text-primary, #f3f4f6);
+  pointer-events: none;
+}
+
+/* Status dot */
+.topo-status-dot {
+  pointer-events: none;
+}
+
+.dot-online {
+  fill: #10b981;
+}
+
+.dot-offline {
+  fill: #6b7280;
+}
+
+/* VM icons */
+.topo-vm-icon {
+  pointer-events: none;
+}
+
+.vm-running {
+  fill: rgba(16, 185, 129, 0.25);
+  stroke: #10b981;
+  stroke-width: 1;
+}
+
+.vm-stopped {
+  fill: rgba(107, 114, 128, 0.2);
+  stroke: #6b7280;
+  stroke-width: 1;
+}
+
+.topo-vm-label {
+  font-size: 6px;
+  fill: var(--text-muted, #888);
+  pointer-events: none;
+}
+
+.topo-vm-more {
+  font-size: 9px;
+  fill: #6366f1;
+  font-weight: 600;
+  pointer-events: none;
+}
+
+/* Resource bars in node */
+.topo-bar-label {
+  font-size: 7px;
+  fill: var(--text-muted, #888);
+  pointer-events: none;
+}
+
+.topo-bar-fill {
+  pointer-events: none;
+}
+
+.topo-bar-fill.fill--ok { fill: #10b981; }
+.topo-bar-fill.fill--warning { fill: #f59e0b; }
+.topo-bar-fill.fill--danger { fill: #ef4444; }
+
+/* Tooltip */
+.topo-tooltip {
+  position: absolute;
+  background: var(--bg-card, #1e2433);
+  border: 1px solid var(--border-color, #374151);
+  border-radius: 0.5rem;
+  padding: 0.625rem 0.875rem;
+  pointer-events: none;
+  z-index: 100;
+  min-width: 160px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.35);
+}
+
+.topo-tooltip-name {
+  font-weight: 600;
+  font-size: 0.875rem;
+  color: var(--text-primary);
+  margin-bottom: 0.375rem;
+}
+
+.topo-tooltip-row {
+  display: flex;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+  color: var(--text-primary);
+  margin-bottom: 0.1rem;
+}
+
+.topo-tooltip-label {
+  color: var(--text-muted, #888);
+  min-width: 50px;
+}
+
+/* Legend */
+.topo-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  font-size: 0.8125rem;
+  color: var(--text-muted, #888);
+  padding: 0.25rem 0;
+}
+
+.topo-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.topo-legend-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.topo-legend-swatch {
+  display: inline-block;
+  width: 16px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.topo-legend-line {
+  display: inline-block;
+  width: 24px;
+  height: 2px;
+  border-radius: 1px;
+}
+
+.replicate-line { background: #6366f1; }
+.migrate-line { background: #f59e0b; }
 
 /* Balance chart */
 .balance-chart {

@@ -112,12 +112,27 @@
 
               <div class="form-group">
                 <label class="form-label">VM Name *</label>
-                <input v-model="formData.name" class="form-control" required placeholder="my-vm" />
+                <input
+                  v-model="formData.name"
+                  :class="['form-control', { 'input-error': fieldErrors.name }]"
+                  required
+                  placeholder="my-vm"
+                  @blur="validateField('name', formData.name, [rules.required, rules.vmName])"
+                />
+                <small v-if="fieldErrors.name" class="form-error-text">{{ fieldErrors.name }}</small>
+                <small v-else class="form-help">Letters, numbers, hyphens, dots. Max 63 chars.</small>
               </div>
 
               <div class="form-group">
                 <label class="form-label">Hostname *</label>
-                <input v-model="formData.hostname" class="form-control" required placeholder="my-vm" />
+                <input
+                  v-model="formData.hostname"
+                  :class="['form-control', { 'input-error': fieldErrors.hostname }]"
+                  required
+                  placeholder="my-vm"
+                  @blur="validateField('hostname', formData.hostname, [rules.required, rules.hostname])"
+                />
+                <small v-if="fieldErrors.hostname" class="form-error-text">{{ fieldErrors.hostname }}</small>
               </div>
             </div>
 
@@ -376,11 +391,29 @@
             <div class="grid grid-cols-3 gap-2">
               <div class="form-group">
                 <label class="form-label">CPU Sockets *</label>
-                <input v-model.number="formData.cpu_sockets" type="number" min="1" max="8" class="form-control" required />
+                <input
+                  v-model.number="formData.cpu_sockets"
+                  type="number"
+                  min="1"
+                  max="8"
+                  :class="['form-control', { 'input-error': fieldErrors.cpu_sockets }]"
+                  required
+                  @blur="validateField('cpu_sockets', formData.cpu_sockets, [rules.required, rules.intRange(1, 16)])"
+                />
+                <small v-if="fieldErrors.cpu_sockets" class="form-error-text">{{ fieldErrors.cpu_sockets }}</small>
               </div>
               <div class="form-group">
                 <label class="form-label">CPU Cores *</label>
-                <input v-model.number="formData.cpu_cores" type="number" min="1" max="64" class="form-control" required />
+                <input
+                  v-model.number="formData.cpu_cores"
+                  type="number"
+                  min="1"
+                  max="64"
+                  :class="['form-control', { 'input-error': fieldErrors.cpu_cores }]"
+                  required
+                  @blur="validateField('cpu_cores', formData.cpu_cores, [rules.required, rules.intRange(1, 512)])"
+                />
+                <small v-if="fieldErrors.cpu_cores" class="form-error-text">{{ fieldErrors.cpu_cores }}</small>
               </div>
               <div class="form-group">
                 <label class="form-label">Total vCPUs</label>
@@ -491,8 +524,18 @@
             <div class="grid grid-cols-2 gap-2">
               <div class="form-group">
                 <label class="form-label">Memory (MB) *</label>
-                <input v-model.number="formData.memory" type="number" min="512" step="512" class="form-control" required />
-                <small class="form-help">{{ (formData.memory / 1024).toFixed(1) }} GB</small>
+                <input
+                  v-model.number="formData.memory"
+                  type="number"
+                  min="512"
+                  max="4194304"
+                  step="512"
+                  :class="['form-control', { 'input-error': fieldErrors.memory }]"
+                  required
+                  @blur="validateField('memory', formData.memory, [rules.required, rules.intRange(512, 4194304)])"
+                />
+                <small v-if="fieldErrors.memory" class="form-error-text">{{ fieldErrors.memory }}</small>
+                <small v-else class="form-help">{{ (formData.memory / 1024).toFixed(1) }} GB (min 512 MB)</small>
               </div>
 
               <div class="form-group">
@@ -813,7 +856,14 @@
             <div v-if="!useDHCP" class="grid grid-cols-2 gap-2">
               <div class="form-group">
                 <label class="form-label">IP Address</label>
-                <input v-model="formData.ip_address" type="text" class="form-control" placeholder="192.168.1.100" />
+                <input
+                  v-model="formData.ip_address"
+                  type="text"
+                  :class="['form-control', { 'input-error': fieldErrors.ip_address }]"
+                  placeholder="192.168.1.100"
+                  @blur="validateField('ip_address', formData.ip_address, [rules.required, rules.ipAddress])"
+                />
+                <small v-if="fieldErrors.ip_address" class="form-error-text">{{ fieldErrors.ip_address }}</small>
               </div>
               <div class="form-group">
                 <label class="form-label">Netmask (CIDR prefix)</label>
@@ -1022,6 +1072,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/services/api'
 import { useToast } from 'vue-toastification'
+import { rules, validate } from '@/utils/formValidation'
 
 export default {
   name: 'CreateVM',
@@ -1398,24 +1449,81 @@ export default {
       return m ? parseInt(m[1]) : 0
     })
 
+    // ---------- Per-field validation errors ----------
+    const fieldErrors = ref({
+      vmid: '',
+      name: '',
+      hostname: '',
+      memory: '',
+      cpu_cores: '',
+      cpu_sockets: '',
+      disk_size: '',
+      ip_address: '',
+      password: '',
+    })
+
+    const validateField = (field, value, rulesArr) => {
+      const result = validate(value, rulesArr)
+      fieldErrors.value[field] = result === true ? '' : result
+      return result === true
+    }
+
     // ---------- Validate ----------
     const validateForm = () => {
       const errors = []
-      if (!formData.value.name?.trim()) errors.push('VM name is required')
-      if (!formData.value.hostname?.trim()) errors.push('Hostname is required')
+
+      // Reset field errors
+      Object.keys(fieldErrors.value).forEach(k => { fieldErrors.value[k] = '' })
+
+      // VMID (optional but if provided must be valid)
+      if (formData.value.vmid) {
+        const vmidErr = validate(formData.value.vmid, [rules.vmId])
+        if (vmidErr !== true) { fieldErrors.value.vmid = vmidErr; errors.push(`VM ID: ${vmidErr}`) }
+      }
+      if (vmIdStatus.value === 'taken') {
+        fieldErrors.value.vmid = `VM ID ${formData.value.vmid} is already in use`
+        errors.push(fieldErrors.value.vmid)
+      }
+
+      // Name
+      const nameErr = validate(formData.value.name, [rules.required, rules.vmName])
+      if (nameErr !== true) { fieldErrors.value.name = nameErr; errors.push(`VM Name: ${nameErr}`) }
+
+      // Hostname
+      const hostnameErr = validate(formData.value.hostname, [rules.required, rules.hostname])
+      if (hostnameErr !== true) { fieldErrors.value.hostname = hostnameErr; errors.push(`Hostname: ${hostnameErr}`) }
+
+      // Memory
+      const memErr = validate(formData.value.memory, [rules.required, rules.intRange(512, 4194304)])
+      if (memErr !== true) { fieldErrors.value.memory = memErr; errors.push(`Memory: ${memErr}`) }
+
+      // CPU cores
+      const coresErr = validate(formData.value.cpu_cores, [rules.required, rules.intRange(1, 512)])
+      if (coresErr !== true) { fieldErrors.value.cpu_cores = coresErr; errors.push(`CPU cores: ${coresErr}`) }
+
+      // CPU sockets
+      const socketsErr = validate(formData.value.cpu_sockets, [rules.required, rules.intRange(1, 16)])
+      if (socketsErr !== true) { fieldErrors.value.cpu_sockets = socketsErr; errors.push(`CPU sockets: ${socketsErr}`) }
+
+      // Disk size
+      const diskErr = validate(disks.value[0]?.size, [rules.required, rules.positiveInt])
+      if (diskErr !== true) { fieldErrors.value.disk_size = diskErr; errors.push(`Primary disk: ${diskErr}`) }
+
+      // IP address when not using DHCP
+      if (!useDHCP.value) {
+        const ipErr = validate(formData.value.ip_address, [rules.required, rules.ipOrCidr])
+        if (ipErr !== true) { fieldErrors.value.ip_address = ipErr; errors.push(`IP address: ${ipErr}`) }
+      }
+
       if (!formData.value.os_type) errors.push('Operating system must be selected')
       if (!formData.value.proxmox_host_id) errors.push('Proxmox datacenter must be selected')
       if (!formData.value.node_id) errors.push('Node must be selected')
       if (!selectedStorage.value) errors.push('Storage pool must be selected')
       if (!selectedBridge.value) errors.push('Network bridge must be selected')
       if (imageSource.value === 'cloud_image' && !formData.value.cloud_image_id) errors.push('Cloud image must be selected')
-      if (!formData.value.cpu_cores || formData.value.cpu_cores < 1) errors.push('CPU cores must be at least 1')
-      if (!formData.value.memory || formData.value.memory < 512) errors.push('Memory must be at least 512 MB')
-      if (!disks.value[0].size || disks.value[0].size < 1) errors.push('Primary disk size must be at least 1 GB')
       if (!formData.value.username?.trim()) errors.push('Username is required')
       if (!formData.value.password?.trim()) errors.push('Password is required')
-      if (!useDHCP.value && !formData.value.ip_address?.trim()) errors.push('IP address required when not using DHCP')
-      if (vmIdStatus.value === 'taken') errors.push(`VM ID ${formData.value.vmid} is already in use`)
+
       return errors
     }
 
@@ -1554,6 +1662,8 @@ export default {
       getStorageUsagePercent, formatBytes,
       createVM,
       generatedCliCommand, copyCliCommand,
+      // Validation
+      fieldErrors, validateField, rules, validate,
     }
   }
 }
@@ -1643,8 +1753,11 @@ export default {
 .status-icon.taken { color: #ef4444; }
 .status-icon.checking { color: var(--text-secondary); animation: spin 1s linear infinite; display: inline-block; }
 .input-ok { border-color: #10b981 !important; }
-.input-error { border-color: #ef4444 !important; }
+.input-error { border-color: #ef4444 !important; box-shadow: 0 0 0 2px rgba(239,68,68,0.15) !important; }
+.input-error:focus { border-color: #ef4444 !important; box-shadow: 0 0 0 3px rgba(239,68,68,0.2) !important; }
 .error-text { color: #ef4444; }
+.form-error-text { display: block; margin-top: 0.25rem; font-size: 0.78rem; color: #ef4444; }
+.form-error-text::before { content: '⚠ '; }
 
 /* ---- Tag input ---- */
 .tag-input-area {

@@ -1,6 +1,6 @@
 <template>
   <div class="resource-usage">
-    <div v-if="loading" class="wl">Loading resources...</div>
+    <SkeletonLoader v-if="loading" type="card" :count="2" />
     <div v-else>
       <div v-for="bar in bars" :key="bar.label" class="res-item">
         <div class="res-header">
@@ -23,9 +23,11 @@
 <script>
 import { ref, onMounted, onUnmounted } from 'vue'
 import api from '@/services/api'
+import SkeletonLoader from '@/components/SkeletonLoader.vue'
 
 export default {
   name: 'ResourceUsageWidget',
+  components: { SkeletonLoader },
   setup() {
     const loading = ref(true)
     const bars = ref([])

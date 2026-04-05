@@ -5,9 +5,11 @@
       <div class="header-left">
         <router-link :to="`/proxmox/${hostId}/nodes/${node}`" class="back-link">← {{ node }}</router-link>
         <h2 class="ct-title">
+          <span class="ct-os-icon" :title="detectOs(config.hostname || '').name">{{ detectOs(config.hostname || '').icon }}</span>
           {{ config.hostname || `CT ${vmid}` }}
           <span class="badge badge-info ml-1">{{ vmid }}</span>
           <span :class="['badge', 'ml-1', getStatusBadge(currentStats.status || status)]">{{ currentStats.status || status }}</span>
+          <span class="badge ml-1" :style="{ background: detectOs(config.hostname || '').color + '22', color: detectOs(config.hostname || '').color, border: '1px solid ' + detectOs(config.hostname || '').color }">{{ detectOs(config.hostname || '').name }}</span>
           <span class="badge badge-info ml-1">CT/LXC</span>
         </h2>
       </div>
@@ -973,6 +975,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useToast } from 'vue-toastification'
 import api from '@/services/api'
 import { formatBytes, formatUptime } from '@/utils/proxmox'
+import { detectOs } from '@/utils/osIcons'
 import TaskProgressModal from '@/components/TaskProgressModal.vue'
 import PerformanceCharts from '@/components/PerformanceCharts.vue'
 
@@ -1744,6 +1747,13 @@ onUnmounted(() => {
   font-size: 0.875rem;
 }
 .back-link:hover { color: var(--text-primary); }
+
+.ct-os-icon {
+  font-size: 1.2rem;
+  margin-right: 0.35rem;
+  vertical-align: middle;
+  cursor: default;
+}
 
 .ct-title {
   margin: 0;

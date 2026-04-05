@@ -47,7 +47,7 @@
           </button>
         </div>
 
-        <div v-if="loadingPbs" class="loading-spinner"></div>
+        <SkeletonLoader v-if="loadingPbs" type="table" :count="3" />
 
         <div v-else-if="pbsServers.length === 0" class="text-center text-muted" style="padding: 2rem;">
           <p>No PBS servers configured.</p>
@@ -158,7 +158,7 @@
             </div>
           </div>
 
-          <div v-if="loadingSchedules" class="loading-spinner"></div>
+          <SkeletonLoader v-if="loadingSchedules" type="table" :count="5" />
 
           <div v-else-if="schedules.length === 0" class="empty-state">
             <div class="empty-icon-wrap">
@@ -410,7 +410,7 @@
             </div>
           </div>
 
-          <div v-if="loadingHistory" class="loading-spinner" style="margin: 2rem 0;"></div>
+          <SkeletonLoader v-if="loadingHistory" type="table" :count="5" />
 
           <div v-else-if="filteredHistory.length === 0" class="text-center text-muted" style="padding: 2rem;">
             <p>No backup tasks found.</p>
@@ -761,10 +761,11 @@ import { ref, computed, onMounted } from 'vue'
 import api from '@/services/api'
 import { useToast } from 'vue-toastification'
 import RestoreWizard from '@/components/RestoreWizard.vue'
+import SkeletonLoader from '@/components/SkeletonLoader.vue'
 
 export default {
   name: 'Backup',
-  components: { RestoreWizard },
+  components: { RestoreWizard, SkeletonLoader },
   setup() {
     const toast = useToast()
     const hosts = ref([])

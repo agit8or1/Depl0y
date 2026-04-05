@@ -177,6 +177,7 @@
 <script>
 import { ref, computed, watch } from 'vue'
 import api from '@/services/api'
+import { copyToClipboard } from '@/utils/clipboard'
 
 // Full hardcoded endpoint list grouped by tag
 const ALL_ENDPOINTS = [
@@ -632,7 +633,7 @@ export default {
         const body = requestBody.value.trim() || '{}'
         curl += ` \\\n  -d '${body}'`
       }
-      navigator.clipboard.writeText(curl).then(() => {
+      copyToClipboard(curl, { toast: true }).then(() => {
         curlCopied.value = true
         setTimeout(() => { curlCopied.value = false }, 2000)
       })

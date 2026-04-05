@@ -36,6 +36,12 @@
             <span class="mini-stat__label">RAM</span>
             <span class="mini-stat__value">{{ nodeRamPct }}%</span>
           </div>
+          <button
+            @click="router.push(`/node-monitor?hostId=${hostId}&node=${node}`)"
+            class="btn btn-outline btn-sm"
+            style="align-self:center"
+            title="Open full performance monitor"
+          >Performance Monitor</button>
         </div>
       </div>
 
@@ -1926,5 +1932,68 @@ onUnmounted(() => {
 
 .cert-value {
   flex: 1;
+}
+
+/* ── Mobile Responsive ──────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  /* Header: stack on mobile */
+  .page-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .header-stats {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .node-title {
+    font-size: 1.1rem;
+  }
+
+  /* Tabs: horizontal scroll */
+  .tabs {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    flex-wrap: nowrap;
+    scrollbar-width: none;
+  }
+  .tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Stats: 2-column on mobile */
+  .stats-row {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.5rem;
+  }
+
+  /* Modals: full-screen on mobile */
+  .modal-content,
+  .modal-content.modal-large {
+    width: 100%;
+    max-width: 100%;
+    height: 100%;
+    max-height: 100%;
+    border-radius: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .modal {
+    align-items: flex-end;
+  }
+
+  .modal-body {
+    flex: 1;
+    overflow-y: auto;
+  }
+
+  /* Config / info grids: single column */
+  .config-grid,
+  .form-row {
+    grid-template-columns: 1fr !important;
+  }
 }
 </style>

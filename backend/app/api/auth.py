@@ -10,6 +10,8 @@ import io
 import base64
 import secrets
 import string
+import time
+from collections import defaultdict
 
 from app.core.database import get_db
 from app.core.security import (
@@ -26,7 +28,11 @@ from app.models import User, UserRole
 from app.models.database import ApiKey
 
 router = APIRouter()
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/v1/auth/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/v1/auth/login", auto_error=False)
+
+# In-memory rate limiting for API keys: {key_id: [timestamp, ...]}
+_api_key_rate: dict = defaultdict(list)
+_API_KEY_RPM = 60  # requests per minute per API key
 
 
 # Pydantic models
@@ -67,13 +73,76 @@ class UserResponse(BaseModel):
 
 # Dependency to get current user
 async def get_current_user(
-    token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)
+    request: Request,
+    token: Optional[str] = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
 ) -> User:
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
+
+    # --- Try X-API-Key header first ---
+    api_key_header = request.headers.get("X-API-Key")
+    if api_key_header and api_key_header.startswith("dk_"):
+        # Look up all active keys for this user prefix (first 8 chars)
+        prefix = api_key_header[:8]
+        candidate_keys = (
+            db.query(ApiKey)
+            .filter(
+                ApiKey.key_prefix == prefix,
+                ApiKey.is_active == True,
+            )
+            .all()
+        )
+        matched_key = None
+        for candidate in candidate_keys:
+            if verify_password(api_key_header, candidate.key_hash):
+                matched_key = candidate
+                break
+
+        if matched_key is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid API key",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        # Check expiry
+        if matched_key.expires_at and matched_key.expires_at < datetime.utcnow():
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="API key has expired",
+            )
+
+        # Rate limit per API key
+        now = time.time()
+        cutoff = now - 60
+        _api_key_rate[matched_key.id] = [t for t in _api_key_rate[matched_key.id] if t > cutoff]
+        if len(_api_key_rate[matched_key.id]) >= _API_KEY_RPM:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="API key rate limit exceeded (60 req/min)",
+            )
+        _api_key_rate[matched_key.id].append(now)
+
+        # Update last_used
+        try:
+            matched_key.last_used = datetime.utcnow()
+            db.commit()
+        except Exception:
+            db.rollback()
+
+        # Load the associated user
+        user = db.query(User).filter(User.id == matched_key.user_id).first()
+        if user is None or not user.is_active:
+            raise HTTPException(status_code=400, detail="Inactive user")
+        return user
+
+    # --- Fall back to JWT Bearer token ---
+    if not token:
+        raise credentials_exception
 
     payload = decode_token(token)
     if payload is None:

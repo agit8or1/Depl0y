@@ -7,6 +7,32 @@ import App from './App.vue'
 import router from './router'
 import './assets/style.css'
 
+// ── Theme initialisation (before mounting to prevent flash) ─────────────────
+const applyTheme = (theme) => {
+  const root = document.documentElement
+  if (theme === 'system') {
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
+    root.setAttribute('data-theme', prefersDark ? 'dark' : 'light')
+  } else {
+    root.setAttribute('data-theme', theme || 'light')
+  }
+}
+applyTheme(localStorage.getItem('depl0y_theme') || 'light')
+
+// ── PWA: register service worker ────────────────────────────────────────────
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker
+      .register('/sw.js')
+      .then((registration) => {
+        console.log('[SW] Registered, scope:', registration.scope)
+      })
+      .catch((err) => {
+        console.warn('[SW] Registration failed:', err)
+      })
+  })
+}
+
 const app = createApp(App)
 
 app.use(createPinia())

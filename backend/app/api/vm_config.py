@@ -81,6 +81,17 @@ class DiskAdd(BaseModel):
     bus: str = "scsi"  # scsi, virtio, ide, sata
     format: str = "qcow2"
     ssd: bool = False
+    discard: bool = False
+    cache: str = ""  # none, writeback, writethrough, directsync, unsafe
+    backup: bool = True
+    iothread: bool = False
+    replicate: bool = True
+
+class DiskMove(BaseModel):
+    storage: str
+    disk: str
+    format: Optional[str] = None
+    delete_source: bool = False
 
 class DiskResize(BaseModel):
     size: str  # e.g. "+10G" or "50G"
@@ -398,6 +409,16 @@ def add_disk(host_id: int, node: str, vmid: int, req: DiskAdd,
         disk_val = f"{req.storage}:{req.size},format={req.format}"
         if req.ssd:
             disk_val += ",ssd=1"
+        if req.discard:
+            disk_val += ",discard=on"
+        if req.cache:
+            disk_val += f",cache={req.cache}"
+        if not req.backup:
+            disk_val += ",backup=0"
+        if req.iothread:
+            disk_val += ",iothread=1"
+        if not req.replicate:
+            disk_val += ",replicate=0"
         pve.nodes(node).qemu(vmid).config.post(**{disk_key: disk_val})
         pve_cache.clear_prefix(f"pve:{host_id}:")
         return {"success": True, "disk": disk_key}
@@ -439,6 +460,72 @@ def detach_disk(host_id: int, node: str, vmid: int, disk_key: str,
                 pass
         pve_cache.clear_prefix(f"pve:{host_id}:")
         return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{host_id}/{node}/{vmid}/move-disk")
+def move_disk(host_id: int, node: str, vmid: int, req: DiskMove,
+              db: Session = Depends(get_db), current_user=Depends(require_operator)):
+    """Move a disk to a different storage pool."""
+    host = _get_host(host_id, db)
+    pve = _pve(_svc(host))
+    try:
+        params: Dict[str, Any] = {
+            "disk": req.disk,
+            "storage": req.storage,
+            "delete": int(req.delete_source),
+        }
+        if req.format:
+            params["format"] = req.format
+        upid = pve.nodes(node).qemu(vmid).move_disk.post(**params)
+        pve_cache.clear_prefix(f"pve:{host_id}:")
+        return {"upid": upid}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{host_id}/{node}/{vmid}/unused-disks")
+def list_unused_disks(host_id: int, node: str, vmid: int,
+                      db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    """List unused disk volumes attached to this VM config (unused0, unused1, ...)."""
+    host = _get_host(host_id, db)
+    pve = _pve(_svc(host))
+    try:
+        cfg = pve.nodes(node).qemu(vmid).config.get()
+        unused = []
+        for key, val in cfg.items():
+            if key.startswith("unused") and key[6:].isdigit():
+                unused.append({"key": key, "volid": val})
+        return unused
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{host_id}/{node}/{vmid}/reattach-disk")
+def reattach_disk(host_id: int, node: str, vmid: int,
+                  unused_key: str,
+                  bus: str = "scsi",
+                  db: Session = Depends(get_db), current_user=Depends(require_operator)):
+    """Reattach an unused disk to a bus slot."""
+    host = _get_host(host_id, db)
+    pve = _pve(_svc(host))
+    try:
+        cfg = pve.nodes(node).qemu(vmid).config.get()
+        volid = cfg.get(unused_key)
+        if not volid:
+            raise HTTPException(status_code=404, detail=f"{unused_key} not found in config")
+        # Find next free slot for the bus
+        idx = 0
+        while f"{bus}{idx}" in cfg:
+            idx += 1
+        disk_key = f"{bus}{idx}"
+        # Set the new slot to the volid, clear the unused entry
+        pve.nodes(node).qemu(vmid).config.put(**{disk_key: volid, unused_key: None})
+        pve_cache.clear_prefix(f"pve:{host_id}:")
+        return {"success": True, "disk": disk_key}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

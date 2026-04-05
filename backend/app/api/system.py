@@ -231,6 +231,36 @@ def system_health(db: Session = Depends(get_db)) -> Dict[str, Any]:
     }
 
 
+@router.get("/metrics")
+def get_metrics(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+) -> Dict[str, Any]:
+    """Return Prometheus-compatible metrics as JSON (admin only)"""
+    from app.main import _request_counter, _app_start_time
+    from app.models.database import User as UserModel, ProxmoxHost, ApiKey
+
+    users_total = 0
+    hosts_total = 0
+    api_keys_total = 0
+    try:
+        users_total = db.query(UserModel).count()
+        hosts_total = db.query(ProxmoxHost).count()
+        api_keys_total = db.query(ApiKey).filter(ApiKey.is_active == True).count()
+    except Exception:
+        pass
+
+    uptime_seconds = int(time.time() - _app_start_time)
+
+    return {
+        "depl0y_users_total": users_total,
+        "depl0y_proxmox_hosts_total": hosts_total,
+        "depl0y_api_keys_total": api_keys_total,
+        "depl0y_requests_total": _request_counter,
+        "depl0y_uptime_seconds": uptime_seconds,
+    }
+
+
 @router.put("/version")
 def update_version(new_version: str, db: Session = Depends(get_db)) -> Dict[str, str]:
     """Update system version (admin only)"""

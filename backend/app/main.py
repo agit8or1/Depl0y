@@ -13,6 +13,11 @@ from app.middleware.ip_filter import IPFilterMiddleware
 import logging
 from logging.handlers import RotatingFileHandler
 import os
+import time
+
+# Global request counter for metrics
+_request_counter = 0
+_app_start_time = time.time()
 
 # Configure logging
 os.makedirs(os.path.dirname(settings.LOG_FILE), exist_ok=True)
@@ -31,7 +36,27 @@ logger = logging.getLogger(__name__)
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
-    description="Automated VM Deployment Panel for Proxmox VE",
+    description=(
+        "**Depl0y** is an open-source Proxmox VE management platform providing automated VM "
+        "deployment, LXC container management, backup orchestration, security monitoring, "
+        "and full infrastructure lifecycle management via a clean REST API.\n\n"
+        "## Authentication\n"
+        "All endpoints require authentication via **Bearer JWT token** (obtained from `/api/v1/auth/login`) "
+        "or an **X-API-Key header** (`dk_...` prefix, created in your profile).\n\n"
+        "## Rate Limits\n"
+        "General API: 100 requests/minute per IP. Login endpoint: 5 requests/minute per IP."
+    ),
+    contact={
+        "name": "Depl0y Project",
+        "url": "https://github.com/agit8or1/Depl0y",
+    },
+    license_info={
+        "name": "MIT License",
+        "url": "https://opensource.org/licenses/MIT",
+    },
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_url="/openapi.json",
 )
 
 # Configure CORS
@@ -51,6 +76,15 @@ app.add_middleware(RateLimitMiddleware, requests_per_minute=100)
 
 # Add IP filter + GeoIP middleware (runs after rate limiting)
 app.add_middleware(IPFilterMiddleware)
+
+
+# Request counter middleware
+@app.middleware("http")
+async def count_requests(request: Request, call_next):
+    global _request_counter
+    _request_counter += 1
+    response = await call_next(request)
+    return response
 
 
 # Add validation error handler for debugging
@@ -111,6 +145,28 @@ async def root():
 async def health_check():
     """Health check endpoint"""
     return {"status": "healthy"}
+
+
+@app.get(f"{settings.API_V1_PREFIX}/openapi-summary", tags=["Developer Tools"])
+async def openapi_summary():
+    """Return a simplified list of all API routes with method, path, tag, and summary."""
+    result = []
+    for route in app.routes:
+        # Only include APIRoutes (not websocket, mount, etc.)
+        from fastapi.routing import APIRoute
+        if isinstance(route, APIRoute):
+            for method in route.methods or []:
+                tags = list(route.tags) if route.tags else ["Untagged"]
+                result.append({
+                    "method": method,
+                    "path": route.path,
+                    "tag": tags[0] if tags else "Untagged",
+                    "summary": route.summary or route.name or "",
+                    "description": (route.description or "").strip()[:200] if route.description else "",
+                })
+    # Sort by tag then path
+    result.sort(key=lambda x: (x["tag"], x["path"]))
+    return result
 
 
 # Include routers

@@ -270,6 +270,12 @@ export default {
     getDiagnostics: () => api.get('/system/diagnostics'),
     dbCheck: () => api.post('/system/db-check'),
     health: () => api.get('/system/health'),
+    getMetrics: () => api.get('/system/metrics'),
+  },
+
+  // Developer Tools
+  devTools: {
+    getOpenApiSummary: () => api.get('/openapi-summary'),
   },
 
   // LLM Deployment
@@ -479,6 +485,9 @@ export default {
     snapshots: (h, node, vmid) => api.get(`/pve-vm/${h}/${node}/${vmid}/snapshots`),
     firewallRules: (h, node, vmid) => api.get(`/pve-vm/${h}/${node}/${vmid}/firewall/rules`),
     detachDisk: (h, node, vmid, disk, del = false) => api.delete(`/pve-vm/${h}/${node}/${vmid}/disk/${disk}`, { params: { delete: del } }),
+    moveDisk: (h, node, vmid, data) => api.post(`/pve-vm/${h}/${node}/${vmid}/move-disk`, data),
+    listUnusedDisks: (h, node, vmid) => api.get(`/pve-vm/${h}/${node}/${vmid}/unused-disks`),
+    reattachDisk: (h, node, vmid, unused_key, bus = 'scsi') => api.post(`/pve-vm/${h}/${node}/${vmid}/reattach-disk`, null, { params: { unused_key, bus } }),
     addNIC: (h, node, vmid, data) => api.post(`/pve-vm/${h}/${node}/${vmid}/network`, data),
     removeNIC: (h, node, vmid, nic) => api.delete(`/pve-vm/${h}/${node}/${vmid}/network/${nic}`),
     template: (h, node, vmid) => api.post(`/pve-vm/${h}/${node}/${vmid}/template`),

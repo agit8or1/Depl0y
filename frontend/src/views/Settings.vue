@@ -152,6 +152,34 @@
       </div>
     </div>
 
+    <!-- Appearance Section -->
+    <div class="card">
+      <div class="card-header">
+        <h3>Appearance</h3>
+        <p>Customise how Depl0y looks</p>
+      </div>
+      <div class="card-body">
+        <div class="settings-group">
+          <h5 class="subsection-title">Theme</h5>
+          <p class="text-sm text-muted">Choose between light, dark, or system preference.</p>
+          <div class="theme-options" style="margin-top: 0.75rem;">
+            <button
+              v-for="opt in themeOptions"
+              :key="opt.value"
+              :class="['theme-option-btn', currentTheme === opt.value ? 'theme-option-btn--active' : '']"
+              @click="setTheme(opt.value)"
+            >
+              <span class="theme-option-icon">{{ opt.icon }}</span>
+              <span class="theme-option-label">{{ opt.label }}</span>
+            </button>
+          </div>
+          <p class="text-xs text-muted" style="margin-top: 0.5rem;">
+            Current: <strong>{{ themeOptions.find(t => t.value === currentTheme)?.label }}</strong>
+          </p>
+        </div>
+      </div>
+    </div>
+
     <!-- Proxmox Integration Section -->
     <div class="card">
       <div class="card-header">
@@ -1179,6 +1207,27 @@ export default {
   name: 'Settings',
   setup() {
     const toast = useToast()
+
+    // ── Theme ──────────────────────────────────────────────────────────────
+    const themeOptions = [
+      { value: 'light', label: 'Light', icon: '☀️' },
+      { value: 'dark', label: 'Dark', icon: '🌙' },
+      { value: 'system', label: 'System', icon: '💻' },
+    ]
+    const currentTheme = ref(localStorage.getItem('depl0y_theme') || 'light')
+
+    const setTheme = (theme) => {
+      currentTheme.value = theme
+      localStorage.setItem('depl0y_theme', theme)
+      const root = document.documentElement
+      if (theme === 'system') {
+        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
+        root.setAttribute('data-theme', prefersDark ? 'dark' : 'light')
+      } else {
+        root.setAttribute('data-theme', theme)
+      }
+    }
+
     const systemInfo = ref(null)
     const user = ref(null)
     const updatingProfile = ref(false)
@@ -1918,6 +1967,10 @@ export default {
     })
 
     return {
+      // Theme
+      themeOptions,
+      currentTheme,
+      setTheme,
       isNewerThanLatest,
       systemInfo,
       user,
@@ -2037,6 +2090,48 @@ export default {
 </script>
 
 <style scoped>
+/* ── Theme toggle ─────────────────────────────────────────────────────────── */
+.theme-options {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.theme-option-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 1rem;
+  border: 2px solid var(--border-color);
+  border-radius: 0.5rem;
+  background: var(--surface);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.theme-option-btn:hover {
+  border-color: var(--primary-color);
+  background: var(--background);
+}
+
+.theme-option-btn--active {
+  border-color: var(--primary-color);
+  background: rgba(37, 99, 235, 0.08);
+  color: var(--primary-color);
+}
+
+.theme-option-icon {
+  font-size: 1rem;
+}
+
+.theme-option-label {
+  font-size: 0.875rem;
+}
+
+/* ── Profile ──────────────────────────────────────────────────────────────── */
 .profile-content {
   padding: 2rem;
 }

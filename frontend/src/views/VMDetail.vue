@@ -428,8 +428,28 @@
         <div class="card">
           <div class="card-header">
             <h3>Disks</h3>
-            <button @click="showAddDiskModal = true" class="btn btn-primary btn-sm">+ Add Disk</button>
+            <div class="flex gap-1">
+              <button @click="openAddDiskModal" class="btn btn-primary btn-sm">+ Add Disk</button>
+              <button @click="loadUnusedDisks" class="btn btn-outline btn-sm" :disabled="loadingUnused" title="Refresh disk list">&#8635;</button>
+            </div>
           </div>
+
+          <!-- Boot order -->
+          <div v-if="diskBootOrder.length > 0" class="disk-boot-order">
+            <span class="text-sm" style="margin-right:0.5rem;font-weight:600;">Boot order:</span>
+            <div class="boot-order-list">
+              <div v-for="(item, idx) in diskBootOrder" :key="item.key" class="boot-order-item">
+                <span class="boot-pos">{{ idx + 1 }}</span>
+                <code>{{ item.key }}</code>
+                <div class="boot-order-btns">
+                  <button class="btn btn-outline btn-xs" :disabled="idx === 0 || actioning" @click="moveBootOrder(idx, -1)">&#8593;</button>
+                  <button class="btn btn-outline btn-xs" :disabled="idx === diskBootOrder.length - 1 || actioning" @click="moveBootOrder(idx, 1)">&#8595;</button>
+                </div>
+              </div>
+            </div>
+            <button class="btn btn-outline btn-sm" @click="saveBootOrder" :disabled="actioning" style="margin-left:0.75rem;">Save Boot Order</button>
+          </div>
+
           <div class="table-container">
             <table class="table">
               <thead>
@@ -440,7 +460,7 @@
                   <th>Size</th>
                   <th>Format</th>
                   <th>Cache</th>
-                  <th>SSD Emulation</th>
+                  <th>SSD</th>
                   <th>Discard</th>
                   <th>Actions</th>
                 </tr>
@@ -471,9 +491,35 @@
                     </button>
                   </td>
                   <td>
-                    <div class="flex gap-1">
+                    <div class="flex gap-1 flex-wrap">
                       <button @click="openResizeDisk(disk)" class="btn btn-outline btn-sm">Resize</button>
+                      <button @click="openMoveDisk(disk)" class="btn btn-outline btn-sm">Move</button>
                       <button @click="detachDisk(disk.key)" class="btn btn-danger btn-sm" :disabled="actioning">Detach</button>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Unused Disks card -->
+        <div v-if="unusedDisks.length > 0" class="card mt-2">
+          <div class="card-header">
+            <h3>Unused Disks</h3>
+            <span class="badge badge-warning">{{ unusedDisks.length }}</span>
+          </div>
+          <div class="table-container">
+            <table class="table">
+              <thead><tr><th>Slot</th><th>Volume ID</th><th>Actions</th></tr></thead>
+              <tbody>
+                <tr v-for="ud in unusedDisks" :key="ud.key">
+                  <td><code>{{ ud.key }}</code></td>
+                  <td class="text-sm text-muted">{{ ud.volid }}</td>
+                  <td>
+                    <div class="flex gap-1">
+                      <button @click="openReattachDisk(ud)" class="btn btn-primary btn-sm" :disabled="actioning">Reattach</button>
+                      <button @click="deleteUnused(ud)" class="btn btn-danger btn-sm" :disabled="actioning">Delete</button>
                     </div>
                   </td>
                 </tr>
@@ -756,6 +802,157 @@
           </div>
         </div>
       </div>
+
+      <!-- ─── Performance Tab ─── -->
+      <div v-if="activeTab === 'performance'">
+        <!-- Time range selector -->
+        <div class="flex gap-1 mb-2 align-center">
+          <span class="text-sm text-muted">Time Range:</span>
+          <div class="perf-time-selector">
+            <button
+              v-for="tr in perfTimeRanges"
+              :key="tr.value"
+              :class="['ptr-btn', perfTimeframe === tr.value ? 'ptr-btn--active' : '']"
+              @click="setPerfTimeframe(tr.value)"
+            >{{ tr.label }}</button>
+          </div>
+          <button @click="loadPerfRrd" class="btn btn-outline btn-sm" :disabled="loadingPerf">
+            {{ loadingPerf ? 'Loading...' : 'Refresh' }}
+          </button>
+        </div>
+
+        <div v-if="loadingPerf && !perfRrdData.length" class="text-center text-muted" style="padding:2rem">
+          Loading performance data...
+        </div>
+
+        <div v-else class="perf-charts-grid">
+          <!-- CPU -->
+          <div class="card perf-chart-card">
+            <div class="perf-chart-card__header">
+              <span class="perf-chart-card__title">CPU Usage</span>
+              <span v-if="vmCpuData.length" class="perf-chart-card__val">
+                {{ latestPerfVal(vmCpuData).toFixed(1) }}%
+              </span>
+            </div>
+            <div class="perf-chart-body">
+              <PerformanceCharts
+                v-if="vmCpuData.length"
+                :data="vmCpuData"
+                label="CPU"
+                unit="%"
+                color="#3b82f6"
+                :height="chartH"
+              />
+              <div v-else class="text-muted text-sm text-center" style="line-height:100px">No data</div>
+            </div>
+          </div>
+
+          <!-- Memory -->
+          <div class="card perf-chart-card">
+            <div class="perf-chart-card__header">
+              <span class="perf-chart-card__title">Memory Usage</span>
+              <span v-if="vmMemData.length" class="perf-chart-card__val">
+                {{ latestPerfVal(vmMemData).toFixed(1) }}%
+              </span>
+            </div>
+            <div class="perf-chart-body">
+              <PerformanceCharts
+                v-if="vmMemData.length"
+                :data="vmMemData"
+                label="Memory"
+                unit="%"
+                color="#10b981"
+                :height="chartH"
+              />
+              <div v-else class="text-muted text-sm text-center" style="line-height:100px">No data</div>
+            </div>
+          </div>
+
+          <!-- Disk Read -->
+          <div class="card perf-chart-card">
+            <div class="perf-chart-card__header">
+              <span class="perf-chart-card__title">Disk Read</span>
+              <span v-if="vmDiskReadData.length" class="perf-chart-card__val">
+                {{ formatPerfMBs(latestPerfVal(vmDiskReadData)) }}
+              </span>
+            </div>
+            <div class="perf-chart-body">
+              <PerformanceCharts
+                v-if="vmDiskReadData.length"
+                :data="vmDiskReadData"
+                label="Disk Read"
+                unit="MB/s"
+                color="#8b5cf6"
+                :height="chartH"
+              />
+              <div v-else class="text-muted text-sm text-center" style="line-height:100px">No data</div>
+            </div>
+          </div>
+
+          <!-- Disk Write -->
+          <div class="card perf-chart-card">
+            <div class="perf-chart-card__header">
+              <span class="perf-chart-card__title">Disk Write</span>
+              <span v-if="vmDiskWriteData.length" class="perf-chart-card__val">
+                {{ formatPerfMBs(latestPerfVal(vmDiskWriteData)) }}
+              </span>
+            </div>
+            <div class="perf-chart-body">
+              <PerformanceCharts
+                v-if="vmDiskWriteData.length"
+                :data="vmDiskWriteData"
+                label="Disk Write"
+                unit="MB/s"
+                color="#ef4444"
+                :height="chartH"
+              />
+              <div v-else class="text-muted text-sm text-center" style="line-height:100px">No data</div>
+            </div>
+          </div>
+
+          <!-- Net In -->
+          <div class="card perf-chart-card">
+            <div class="perf-chart-card__header">
+              <span class="perf-chart-card__title">Network In</span>
+              <span v-if="vmNetInData.length" class="perf-chart-card__val">
+                {{ formatPerfMBs(latestPerfVal(vmNetInData)) }}
+              </span>
+            </div>
+            <div class="perf-chart-body">
+              <PerformanceCharts
+                v-if="vmNetInData.length"
+                :data="vmNetInData"
+                label="Net In"
+                unit="MB/s"
+                color="#06b6d4"
+                :height="chartH"
+              />
+              <div v-else class="text-muted text-sm text-center" style="line-height:100px">No data</div>
+            </div>
+          </div>
+
+          <!-- Net Out -->
+          <div class="card perf-chart-card">
+            <div class="perf-chart-card__header">
+              <span class="perf-chart-card__title">Network Out</span>
+              <span v-if="vmNetOutData.length" class="perf-chart-card__val">
+                {{ formatPerfMBs(latestPerfVal(vmNetOutData)) }}
+              </span>
+            </div>
+            <div class="perf-chart-body">
+              <PerformanceCharts
+                v-if="vmNetOutData.length"
+                :data="vmNetOutData"
+                label="Net Out"
+                unit="MB/s"
+                color="#f59e0b"
+                :height="chartH"
+              />
+              <div v-else class="text-muted text-sm text-center" style="line-height:100px">No data</div>
+            </div>
+          </div>
+        </div>
+      </div>
     </template>
 
     <!-- ══════════════════════════════════════════════════════ MODALS ══ -->
@@ -978,44 +1175,188 @@
           <button @click="showAddDiskModal = false" class="btn-close">×</button>
         </div>
         <div class="modal-body">
-          <div class="form-row">
-            <div class="form-group">
-              <label class="form-label">Bus / Type</label>
-              <select v-model="addDiskForm.bus" class="form-control">
-                <option value="scsi">SCSI</option>
-                <option value="virtio">VirtIO</option>
-                <option value="sata">SATA</option>
-                <option value="ide">IDE</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label class="form-label">Storage</label>
-              <select v-model="addDiskForm.storage" class="form-control">
-                <option v-for="s in storageList" :key="s.storage" :value="s.storage">
-                  {{ s.storage }} ({{ s.type }})
-                </option>
-              </select>
-            </div>
+          <!-- Add disk mode tabs -->
+          <div class="disk-mode-tabs">
+            <button :class="['disk-mode-tab', addDiskMode === 'new' ? 'active' : '']" @click="addDiskMode = 'new'">New Disk</button>
+            <button :class="['disk-mode-tab', addDiskMode === 'existing' ? 'active' : '']" @click="addDiskMode = 'existing'; loadStorageImages()">Import Existing Image</button>
           </div>
-          <div class="form-row">
-            <div class="form-group">
-              <label class="form-label">Size (GB)</label>
-              <input v-model.number="addDiskForm.size" type="number" min="1" class="form-control" />
+
+          <!-- New disk form -->
+          <template v-if="addDiskMode === 'new'">
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Bus / Type</label>
+                <select v-model="addDiskForm.bus" class="form-control">
+                  <option value="scsi">SCSI (recommended)</option>
+                  <option value="virtio">VirtIO</option>
+                  <option value="sata">SATA</option>
+                  <option value="ide">IDE</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Storage</label>
+                <select v-model="addDiskForm.storage" class="form-control">
+                  <option v-for="s in storageList" :key="s.storage" :value="s.storage">
+                    {{ s.storage }} ({{ s.type }})
+                  </option>
+                </select>
+              </div>
             </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Size (GB)</label>
+                <input v-model.number="addDiskForm.size" type="number" min="1" class="form-control" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">Format</label>
+                <select v-model="addDiskForm.format" class="form-control">
+                  <option value="qcow2">qcow2</option>
+                  <option value="raw">raw</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Cache Mode</label>
+                <select v-model="addDiskForm.cache" class="form-control">
+                  <option value="">none (default)</option>
+                  <option value="writeback">writeback</option>
+                  <option value="writethrough">writethrough</option>
+                  <option value="directsync">directsync</option>
+                  <option value="unsafe">unsafe</option>
+                </select>
+              </div>
+              <div class="form-group" style="justify-content:center; padding-top:1.5rem;">
+                <label class="form-label checkbox-label"><input type="checkbox" v-model="addDiskForm.ssd" /> SSD Emulation</label>
+                <label class="form-label checkbox-label mt-1"><input type="checkbox" v-model="addDiskForm.discard" /> Discard (TRIM)</label>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label checkbox-label"><input type="checkbox" v-model="addDiskForm.backup" /> Include in Backup</label>
+              </div>
+              <div class="form-group">
+                <label class="form-label checkbox-label"><input type="checkbox" v-model="addDiskForm.iothread" /> IO Thread</label>
+              </div>
+              <div class="form-group">
+                <label class="form-label checkbox-label"><input type="checkbox" v-model="addDiskForm.replicate" /> Replicate</label>
+              </div>
+            </div>
+          </template>
+
+          <!-- Import existing image form -->
+          <template v-else>
             <div class="form-group">
-              <label class="form-label">Format</label>
-              <select v-model="addDiskForm.format" class="form-control">
-                <option value="qcow2">qcow2</option>
-                <option value="raw">raw</option>
-                <option value="vmdk">vmdk</option>
+              <label class="form-label">Browse Storage for Image</label>
+              <select v-model="addDiskForm.browse_storage" class="form-control" @change="loadStorageImages">
+                <option value="">Select storage...</option>
+                <option v-for="s in storageList" :key="s.storage" :value="s.storage">{{ s.storage }} ({{ s.type }})</option>
               </select>
             </div>
-          </div>
+            <div v-if="storageImagesLoading" class="text-muted text-sm mt-1">Loading images...</div>
+            <div v-else-if="storageImages.length" class="storage-image-list mt-1">
+              <div v-for="img in storageImages" :key="img.volid"
+                :class="['storage-image-row', addDiskForm.import_volid === img.volid ? 'selected' : '']"
+                @click="addDiskForm.import_volid = img.volid">
+                <input type="radio" :value="img.volid" v-model="addDiskForm.import_volid" @click.stop />
+                <span class="img-name">{{ imgFileName(img.volid) }}</span>
+                <span class="img-meta">{{ img.format || '?' }} &middot; {{ img.size ? fmtBytes(img.size) : '—' }}</span>
+              </div>
+            </div>
+            <div class="form-row mt-2">
+              <div class="form-group">
+                <label class="form-label">Target Bus</label>
+                <select v-model="addDiskForm.bus" class="form-control">
+                  <option value="scsi">SCSI</option>
+                  <option value="virtio">VirtIO</option>
+                  <option value="sata">SATA</option>
+                  <option value="ide">IDE</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Target Storage</label>
+                <select v-model="addDiskForm.storage" class="form-control">
+                  <option v-for="s in storageList" :key="s.storage" :value="s.storage">{{ s.storage }} ({{ s.type }})</option>
+                </select>
+              </div>
+            </div>
+          </template>
+
           <div class="flex gap-1 mt-2">
             <button @click="doAddDisk" class="btn btn-primary" :disabled="actioning">
               {{ actioning ? 'Adding...' : 'Add Disk' }}
             </button>
             <button @click="showAddDiskModal = false" class="btn btn-outline">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Move Disk Modal -->
+    <div v-if="showMoveDiskModal" class="modal" @click.self="showMoveDiskModal = false">
+      <div class="modal-content modal-sm" @click.stop>
+        <div class="modal-header">
+          <h3>Move Disk: {{ moveDiskKey }}</h3>
+          <button @click="showMoveDiskModal = false" class="btn-close">×</button>
+        </div>
+        <div class="modal-body">
+          <p class="text-sm text-muted mb-2">Move this disk to a different storage pool. The VM may need to be stopped first.</p>
+          <div class="form-group">
+            <label class="form-label">Target Storage <span class="text-danger">*</span></label>
+            <select v-model="moveDiskForm.storage" class="form-control">
+              <option value="" disabled>Select target storage...</option>
+              <option v-for="s in storageList" :key="s.storage" :value="s.storage">{{ s.storage }} ({{ s.type }})</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Target Format</label>
+            <select v-model="moveDiskForm.format" class="form-control">
+              <option value="">Keep original</option>
+              <option value="qcow2">qcow2</option>
+              <option value="raw">raw</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label checkbox-label">
+              <input type="checkbox" v-model="moveDiskForm.delete_source" />
+              Delete source after move
+            </label>
+          </div>
+          <div class="flex gap-1 mt-2">
+            <button @click="doMoveDisk" class="btn btn-primary" :disabled="actioning || !moveDiskForm.storage">
+              {{ actioning ? 'Moving...' : 'Move Disk' }}
+            </button>
+            <button @click="showMoveDiskModal = false" class="btn btn-outline">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Reattach Unused Disk Modal -->
+    <div v-if="showReattachModal" class="modal" @click.self="showReattachModal = false">
+      <div class="modal-content modal-sm" @click.stop>
+        <div class="modal-header">
+          <h3>Reattach Disk: {{ reattachDiskKey }}</h3>
+          <button @click="showReattachModal = false" class="btn-close">×</button>
+        </div>
+        <div class="modal-body">
+          <p class="text-sm text-muted mb-2">
+            Volume: <code>{{ reattachVolid }}</code>
+          </p>
+          <div class="form-group">
+            <label class="form-label">Bus</label>
+            <select v-model="reattachBus" class="form-control">
+              <option value="scsi">SCSI (recommended)</option>
+              <option value="virtio">VirtIO</option>
+              <option value="sata">SATA</option>
+              <option value="ide">IDE</option>
+            </select>
+          </div>
+          <div class="flex gap-1 mt-2">
+            <button @click="doReattachDisk" class="btn btn-primary" :disabled="actioning">
+              {{ actioning ? 'Reattaching...' : 'Reattach' }}
+            </button>
+            <button @click="showReattachModal = false" class="btn btn-outline">Cancel</button>
           </div>
         </div>
       </div>
@@ -1382,6 +1723,7 @@ import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Line } from 'vue-chartjs'
 import TaskProgressModal from '@/components/TaskProgressModal.vue'
+import PerformanceCharts from '@/components/PerformanceCharts.vue'
 import {
   Chart as ChartJS,
   CategoryScale, LinearScale, PointElement, LineElement,
@@ -1436,6 +1778,88 @@ const clusterNodes = ref([])
 const rrdData = ref(null)
 const rrdTimeframe = ref('hour')
 
+// ── Performance tab state ──────────────────────────────────────────────────────
+const perfRrdData = ref([])
+const perfTimeframe = ref('hour')
+const loadingPerf = ref(false)
+const chartH = 120
+
+const perfTimeRanges = [
+  { label: '1h', value: 'hour' },
+  { label: '6h', value: 'day' },
+  { label: '24h', value: 'day' },
+  { label: '1w', value: 'week' },
+]
+
+const vmCpuData = computed(() =>
+  perfRrdData.value
+    .filter(d => d.cpu != null && isFinite(d.cpu))
+    .map(d => ({ time: d.time, value: d.cpu * 100 }))
+)
+
+const vmMemData = computed(() =>
+  perfRrdData.value
+    .filter(d => d.mem != null && d.maxmem)
+    .map(d => ({ time: d.time, value: (d.mem / d.maxmem) * 100 }))
+)
+
+const vmDiskReadData = computed(() =>
+  perfRrdData.value
+    .filter(d => d.diskread != null && isFinite(d.diskread))
+    .map(d => ({ time: d.time, value: d.diskread / 1e6 }))
+)
+
+const vmDiskWriteData = computed(() =>
+  perfRrdData.value
+    .filter(d => d.diskwrite != null && isFinite(d.diskwrite))
+    .map(d => ({ time: d.time, value: d.diskwrite / 1e6 }))
+)
+
+const vmNetInData = computed(() =>
+  perfRrdData.value
+    .filter(d => d.netin != null && isFinite(d.netin))
+    .map(d => ({ time: d.time, value: d.netin / 1e6 }))
+)
+
+const vmNetOutData = computed(() =>
+  perfRrdData.value
+    .filter(d => d.netout != null && isFinite(d.netout))
+    .map(d => ({ time: d.time, value: d.netout / 1e6 }))
+)
+
+const latestPerfVal = (series) => {
+  if (!series.length) return 0
+  return series[series.length - 1].value
+}
+
+const formatPerfMBs = (v) => {
+  if (v == null || !isFinite(v)) return '—'
+  if (v >= 1) return v.toFixed(2) + ' MB/s'
+  if (v >= 0.001) return (v * 1000).toFixed(1) + ' KB/s'
+  return (v * 1e6).toFixed(0) + ' B/s'
+}
+
+const setPerfTimeframe = (tf) => {
+  perfTimeframe.value = tf
+  loadPerfRrd()
+}
+
+const loadPerfRrd = async () => {
+  loadingPerf.value = true
+  try {
+    const res = await api.pveVm.getRrdData(hostId.value, node.value, vmid.value, {
+      timeframe: perfTimeframe.value,
+      cf: 'AVERAGE',
+    })
+    perfRrdData.value = res.data || []
+  } catch (e) {
+    console.warn('Perf RRD failed', e)
+    perfRrdData.value = []
+  } finally {
+    loadingPerf.value = false
+  }
+}
+
 // Pending config changes
 const pendingChanges = ref([])
 const loadingPending = ref(false)
@@ -1455,11 +1879,47 @@ const showCompareModal = ref(false)
 const showQuickSnapProgress = ref(false)
 const showFirewallModal = ref(false)
 const showEditNicModal = ref(false)
+const showMoveDiskModal = ref(false)
+const showReattachModal = ref(false)
 
 // Resize disk state
 const resizeDiskKey = ref('')
 const resizeDiskCurrentSize = ref('')
 const resizeSize = ref('')
+
+// Move disk state
+const moveDiskKey = ref('')
+const moveDiskForm = ref({ storage: '', format: '', delete_source: false })
+
+// Reattach unused disk state
+const reattachDiskKey = ref('')
+const reattachVolid = ref('')
+const reattachBus = ref('scsi')
+
+// Unused disks state
+const unusedDisks = ref([])
+const loadingUnused = ref(false)
+
+// Add disk mode + enhancements
+const addDiskMode = ref('new')
+const storageImages = ref([])
+const storageImagesLoading = ref(false)
+
+// Boot order state (mirrors parsedDisks order, editable)
+const diskBootOrder = ref([])
+
+const imgFileName = (volid) => {
+  if (!volid) return '—'
+  const segs = (volid.includes(':') ? volid.split(':')[1] : volid).split('/')
+  return segs[segs.length - 1]
+}
+
+const fmtBytes = (bytes) => {
+  if (!bytes) return '0 B'
+  if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`
+  if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MB`
+  return `${(bytes / 1024 ** 3).toFixed(2)} GB`
+}
 
 // Edit NIC state
 const editNicKey = ref('')
@@ -1570,7 +2030,11 @@ const migrateStorageMap = ref({})   // { diskKey: targetStorageName }
 const showMigrateProgress = ref(false)
 const migrateSubmitting = ref(false)
 const migrateUpid = ref('')
-const addDiskForm = ref({ storage: '', size: 32, bus: 'scsi', format: 'qcow2' })
+const addDiskForm = ref({
+  storage: '', size: 32, bus: 'scsi', format: 'qcow2',
+  cache: '', ssd: false, discard: false, backup: true, iothread: false, replicate: true,
+  browse_storage: '', import_volid: '',
+})
 const addNicForm = ref({ bridge: 'vmbr0', model: 'virtio', tag: null })
 const snapshotForm = ref({ snapname: '', description: '', vmstate: false })
 const quickSnapForm = ref({ snapname: '', description: '' })
@@ -1589,6 +2053,7 @@ const tabs = [
   { id: 'snapshots', label: 'Snapshots' },
   { id: 'firewall', label: 'Firewall' },
   { id: 'schedule', label: 'Power Schedule' },
+  { id: 'performance', label: 'Performance' },
   { id: 'console', label: 'Console' },
 ]
 
@@ -1755,6 +2220,22 @@ const loadConfig = async () => {
     onboot: c.onboot || 0,
     protection: c.protection || 0,
   }
+  // Sync boot order from config
+  _syncBootOrder(c)
+}
+
+const _syncBootOrder = (c) => {
+  // Parse "order=scsi0;net0;ide2" from boot config
+  const bootStr = c.boot || ''
+  const orderMatch = bootStr.match(/order=([^,]+)/)
+  const diskKeys = DISK_KEYS.filter(k => c[k])
+  if (orderMatch) {
+    const ordered = orderMatch[1].split(';').filter(k => diskKeys.includes(k))
+    const rest = diskKeys.filter(k => !ordered.includes(k))
+    diskBootOrder.value = [...ordered, ...rest].map(k => ({ key: k }))
+  } else {
+    diskBootOrder.value = diskKeys.map(k => ({ key: k }))
+  }
 }
 
 const loadStatus = async () => {
@@ -1875,6 +2356,8 @@ const switchTab = (tab) => {
   if (tab === 'firewall') loadFirewall()
   if (tab === 'overview') { loadStatus(); loadRrd() }
   if (tab === 'config') loadPending()
+  if (tab === 'performance') loadPerfRrd()
+  if (tab === 'disks') loadUnusedDisks()
 }
 
 // ── Polling ────────────────────────────────────────────────────────────────────
@@ -2011,6 +2494,17 @@ const saveNotes = async () => {
 
 // ── Disk Actions ───────────────────────────────────────────────────────────────
 
+const openAddDiskModal = () => {
+  addDiskMode.value = 'new'
+  addDiskForm.value = {
+    storage: storageList.value[0]?.storage || '', size: 32, bus: 'scsi', format: 'qcow2',
+    cache: '', ssd: false, discard: false, backup: true, iothread: false, replicate: true,
+    browse_storage: '', import_volid: '',
+  }
+  storageImages.value = []
+  showAddDiskModal.value = true
+}
+
 const openResizeDisk = (disk) => {
   resizeDiskKey.value = disk.key
   resizeDiskCurrentSize.value = disk.parsed.size || 'unknown'
@@ -2040,6 +2534,7 @@ const detachDisk = async (diskKey) => {
     await api.pveVm.deleteDisk(hostId.value, node.value, vmid.value, diskKey)
     toast.success('Disk detached')
     await loadConfig()
+    await loadUnusedDisks()
   } catch (e) {
     console.error(e)
   } finally {
@@ -2054,8 +2549,28 @@ const doAddDisk = async () => {
   }
   actioning.value = true
   try {
-    await api.pveVm.addDisk(hostId.value, node.value, vmid.value, addDiskForm.value)
-    toast.success('Disk added')
+    if (addDiskMode.value === 'existing' && addDiskForm.value.import_volid) {
+      // Reattach an existing image by importing via move_disk workaround
+      // We attach the volid directly to a bus slot
+      const busKey = addDiskForm.value.bus
+      const payload = { [busKey + '0']: addDiskForm.value.import_volid }
+      await api.pveVm.updateConfig(hostId.value, node.value, vmid.value, payload)
+      toast.success('Existing disk attached')
+    } else {
+      await api.pveVm.addDisk(hostId.value, node.value, vmid.value, {
+        storage: addDiskForm.value.storage,
+        size: addDiskForm.value.size,
+        bus: addDiskForm.value.bus,
+        format: addDiskForm.value.format,
+        cache: addDiskForm.value.cache,
+        ssd: addDiskForm.value.ssd,
+        discard: addDiskForm.value.discard,
+        backup: addDiskForm.value.backup,
+        iothread: addDiskForm.value.iothread,
+        replicate: addDiskForm.value.replicate,
+      })
+      toast.success('Disk added')
+    }
     showAddDiskModal.value = false
     await loadConfig()
   } catch (e) {
@@ -2063,6 +2578,112 @@ const doAddDisk = async () => {
   } finally {
     actioning.value = false
   }
+}
+
+const loadStorageImages = async () => {
+  const storage = addDiskForm.value.browse_storage
+  if (!storage) return
+  storageImagesLoading.value = true; storageImages.value = []
+  try {
+    const res = await api.pveNode.browseStorage(hostId.value, node.value, storage, { content: 'images' })
+    storageImages.value = (res.data || []).filter(f => {
+      const n = f.volid || ''
+      return /\.(qcow2|vmdk|raw|img|vhd|vhdx)$/i.test(n)
+    })
+  } catch (e) { console.warn('Storage image browse failed', e) }
+  finally { storageImagesLoading.value = false }
+}
+
+// Move disk
+const openMoveDisk = (disk) => {
+  moveDiskKey.value = disk.key
+  moveDiskForm.value = { storage: '', format: '', delete_source: false }
+  showMoveDiskModal.value = true
+}
+
+const doMoveDisk = async () => {
+  if (!moveDiskForm.value.storage) { toast.error('Select a target storage'); return }
+  actioning.value = true
+  try {
+    await api.pveVm.moveDisk(hostId.value, node.value, vmid.value, {
+      disk: moveDiskKey.value,
+      storage: moveDiskForm.value.storage,
+      format: moveDiskForm.value.format || undefined,
+      delete_source: moveDiskForm.value.delete_source,
+    })
+    toast.success('Disk move started')
+    showMoveDiskModal.value = false
+    await loadConfig()
+  } catch (e) {
+    console.error(e)
+    toast.error('Move disk failed')
+  } finally { actioning.value = false }
+}
+
+// Unused disks
+const loadUnusedDisks = async () => {
+  loadingUnused.value = true
+  try {
+    const res = await api.pveVm.listUnusedDisks(hostId.value, node.value, vmid.value)
+    unusedDisks.value = res.data || []
+  } catch (e) { console.warn('Unused disks failed', e) }
+  finally { loadingUnused.value = false }
+}
+
+const openReattachDisk = (ud) => {
+  reattachDiskKey.value = ud.key
+  reattachVolid.value = ud.volid
+  reattachBus.value = 'scsi'
+  showReattachModal.value = true
+}
+
+const doReattachDisk = async () => {
+  actioning.value = true
+  try {
+    await api.pveVm.reattachDisk(hostId.value, node.value, vmid.value, reattachDiskKey.value, reattachBus.value)
+    toast.success('Disk reattached')
+    showReattachModal.value = false
+    await loadConfig()
+    await loadUnusedDisks()
+  } catch (e) {
+    console.error(e)
+    toast.error('Reattach failed')
+  } finally { actioning.value = false }
+}
+
+const deleteUnused = async (ud) => {
+  if (!confirm(`Delete unused disk ${ud.key} (${ud.volid})? This cannot be undone.`)) return
+  actioning.value = true
+  try {
+    await api.pveVm.updateConfig(hostId.value, node.value, vmid.value, { [ud.key]: null })
+    toast.success('Unused disk deleted')
+    await loadUnusedDisks()
+  } catch (e) {
+    console.error(e)
+    toast.error('Delete failed')
+  } finally { actioning.value = false }
+}
+
+// Boot order
+const moveBootOrder = (idx, dir) => {
+  const arr = [...diskBootOrder.value]
+  const newIdx = idx + dir
+  if (newIdx < 0 || newIdx >= arr.length) return
+  ;[arr[idx], arr[newIdx]] = [arr[newIdx], arr[idx]]
+  diskBootOrder.value = arr
+}
+
+const saveBootOrder = async () => {
+  actioning.value = true
+  try {
+    const orderStr = 'order=' + diskBootOrder.value.map(d => d.key).join(';')
+    await api.pveVm.updateConfig(hostId.value, node.value, vmid.value, { boot: orderStr })
+    toast.success('Boot order saved')
+    await loadConfig()
+  } catch (e) {
+    console.error(e)
+    toast.error('Failed to save boot order')
+  } finally { actioning.value = false }
 }
 
 // ── NIC Actions ────────────────────────────────────────────────────────────────
@@ -3460,5 +4081,275 @@ onUnmounted(() => {
   gap: 0.25rem;
   margin-top: 0.4rem;
   margin-bottom: 0.4rem;
+}
+
+/* ── Mobile Responsive ──────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  /* Header: stack vertically on small screens */
+  .page-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+
+  .header-actions {
+    width: 100%;
+  }
+
+  .vm-title {
+    font-size: 1.1rem;
+  }
+
+  /* Tabs: horizontal scroll, no wrapping */
+  .tabs {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    flex-wrap: nowrap;
+    scrollbar-width: none;
+  }
+  .tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Stats: 2-column on mobile */
+  .stats-row {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.5rem;
+  }
+
+  /* Modals: full-screen on mobile */
+  .modal-content,
+  .modal-content.modal-sm,
+  .modal-content--wide,
+  .modal-content.modal-lg {
+    width: 100%;
+    max-width: 100%;
+    height: 100%;
+    max-height: 100%;
+    border-radius: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .modal {
+    align-items: flex-end;
+  }
+
+  .modal-body {
+    flex: 1;
+    overflow-y: auto;
+  }
+}
+
+/* ── Performance Tab ─────────────────────────────────────────────────────── */
+.perf-time-selector {
+  display: flex;
+  gap: 2px;
+  background: var(--surface);
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+  padding: 2px;
+}
+
+.ptr-btn {
+  background: none;
+  border: none;
+  padding: 0.25rem 0.65rem;
+  border-radius: 0.35rem;
+  cursor: pointer;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.ptr-btn:hover {
+  color: var(--text-primary);
+  background: var(--background);
+}
+
+.ptr-btn--active {
+  background: var(--primary-color);
+  color: white;
+  font-weight: 600;
+}
+
+.perf-charts-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+@media (max-width: 900px) {
+  .perf-charts-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.perf-chart-card {
+  overflow: hidden;
+}
+
+.perf-chart-card__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 0.65rem 1rem 0.2rem;
+}
+
+.perf-chart-card__title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.perf-chart-card__val {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  font-family: monospace;
+}
+
+.perf-chart-body {
+  height: 120px;
+  padding: 0.2rem 0.5rem 0.5rem;
+  position: relative;
+}
+
+/* ── Disk boot order strip ───────────────────────────── */
+.disk-boot-order {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.6rem 1rem;
+  background: var(--background-secondary, #f8f9fa);
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.boot-order-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  flex: 1;
+}
+
+.boot-order-item {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  background: var(--card-background, #fff);
+  border: 1px solid var(--border-color);
+  border-radius: 0.35rem;
+  padding: 0.2rem 0.5rem;
+  font-size: 0.8rem;
+}
+
+.boot-pos {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.3em;
+  height: 1.3em;
+  border-radius: 50%;
+  background: var(--primary-color);
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.boot-order-btns {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.boot-order-btns .btn {
+  padding: 0 0.3rem;
+  font-size: 0.7rem;
+  line-height: 1.3;
+}
+
+/* ── Add-disk mode tabs ──────────────────────────────── */
+.disk-mode-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 2px solid var(--border-color);
+  margin-bottom: 1rem;
+}
+
+.disk-mode-tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  padding: 0.5rem 1.1rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.disk-mode-tab:hover {
+  color: var(--text-primary);
+}
+
+.disk-mode-tab.active {
+  color: var(--primary-color);
+  border-bottom-color: var(--primary-color);
+  font-weight: 600;
+}
+
+/* ── Storage image browser (import existing) ─────────── */
+.storage-image-list {
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid var(--border-color);
+  border-radius: 0.4rem;
+}
+
+.storage-image-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.45rem 0.75rem;
+  cursor: pointer;
+  transition: background 0.12s;
+  border-bottom: 1px solid var(--border-color);
+  font-size: 0.85rem;
+}
+
+.storage-image-row:last-child {
+  border-bottom: none;
+}
+
+.storage-image-row:hover {
+  background: var(--background-secondary, #f5f5f5);
+}
+
+.storage-image-row.selected {
+  background: color-mix(in srgb, var(--primary-color) 10%, transparent);
+  border-color: var(--primary-color);
+}
+
+.img-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: monospace;
+  font-size: 0.82rem;
+}
+
+.img-meta {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  white-space: nowrap;
 }
 </style>

@@ -343,6 +343,18 @@ const router = createRouter({
       meta: { requiresAuth: true, requiresAdmin: true }
     },
     {
+      path: '/node-monitor',
+      name: 'NodeMonitor',
+      component: () => import('@/views/NodeMonitor.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/api-explorer',
+      name: 'ApiExplorer',
+      component: () => import('@/views/ApiExplorer.vue'),
+      meta: { requiresAuth: true, requiresAdmin: true }
+    },
+    {
       path: '/:pathMatch(.*)*',
       name: 'NotFound',
       component: () => import('@/views/NotFound.vue')

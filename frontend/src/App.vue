@@ -1,11 +1,13 @@
 <template>
   <div id="app" class="app-container">
     <!-- Overlay backdrop for mobile sidebar -->
-    <div
-      v-if="isAuthenticated && !isFullscreen && sidebarOpen"
-      class="sidebar-overlay"
-      @click="sidebarOpen = false"
-    />
+    <transition name="fade">
+      <div
+        v-if="isAuthenticated && !isFullscreen && sidebarOpen && isMobile"
+        class="sidebar-overlay"
+        @click="sidebarOpen = false"
+      />
+    </transition>
 
     <Sidebar
       v-if="isAuthenticated && !isFullscreen"
@@ -44,22 +46,42 @@ export default {
     const isAuthenticated = computed(() => authStore.isAuthenticated)
     const isFullscreen = computed(() => route.meta?.layout === 'fullscreen')
 
+    const isMobile = ref(window.innerWidth <= 768)
+
     // Sidebar open: default true on desktop, false on mobile
     const sidebarOpen = ref(window.innerWidth > 768)
 
     const handleResize = () => {
-      if (window.innerWidth > 768) {
+      const mobile = window.innerWidth <= 768
+      isMobile.value = mobile
+      if (!mobile) {
         sidebarOpen.value = true
       }
     }
 
-    onMounted(() => window.addEventListener('resize', handleResize))
+    onMounted(() => {
+      window.addEventListener('resize', handleResize)
+      // Apply saved theme on startup
+      applyTheme(localStorage.getItem('depl0y_theme') || 'light')
+    })
+
     onBeforeUnmount(() => window.removeEventListener('resize', handleResize))
+
+    const applyTheme = (theme) => {
+      const root = document.documentElement
+      if (theme === 'system') {
+        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
+        root.setAttribute('data-theme', prefersDark ? 'dark' : 'light')
+      } else {
+        root.setAttribute('data-theme', theme)
+      }
+    }
 
     return {
       isAuthenticated,
       isFullscreen,
-      sidebarOpen
+      sidebarOpen,
+      isMobile
     }
   }
 }
@@ -69,18 +91,31 @@ export default {
 .app-container {
   display: flex;
   min-height: 100vh;
-  background-color: #f5f7fa;
+  background-color: var(--background);
 }
 
 .sidebar-overlay {
-  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 150;
+}
+
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.25s ease;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
 }
 
 .main-content {
   flex: 1;
   display: flex;
   flex-direction: column;
-  margin-left: 250px;
+  margin-left: var(--sidebar-width);
+  min-width: 0;
   transition: margin-left 0.3s ease;
 }
 
@@ -92,6 +127,7 @@ export default {
   flex: 1;
   padding: 2rem;
   overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .content-fullscreen {
@@ -103,14 +139,6 @@ export default {
 }
 
 @media (max-width: 768px) {
-  .sidebar-overlay {
-    display: block;
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.5);
-    z-index: 99;
-  }
-
   .main-content {
     margin-left: 0;
   }

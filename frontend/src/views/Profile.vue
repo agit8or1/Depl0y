@@ -142,6 +142,92 @@
         </div>
       </div>
 
+      <!-- Developer Tools Card -->
+      <div class="card mb-4">
+        <div class="card-header">
+          <h3>Developer Tools</h3>
+        </div>
+        <div class="card-body">
+          <p class="text-muted" style="margin-bottom:1rem;">
+            Use your API key to authenticate programmatic requests. The key grants the same access as your user account — keep it secret.
+          </p>
+
+          <!-- Current key hint -->
+          <div v-if="apiKeys.length > 0" style="margin-bottom:1.25rem;">
+            <label class="info-label">Active API Key</label>
+            <div style="display:flex;align-items:center;gap:0.5rem;margin-top:0.25rem;">
+              <code class="api-key-prefix" style="font-size:0.85rem;">{{ apiKeys[0].key_prefix }}...</code>
+              <span class="text-muted text-sm">({{ apiKeys[0].name }})</span>
+            </div>
+            <p class="field-hint text-muted">
+              Full key shown only at creation time. Create a new key below if you need it again.
+            </p>
+          </div>
+          <div v-else class="text-muted" style="margin-bottom:1.25rem;font-size:0.875rem;">
+            No active API keys. Create one in the API Keys section below, then return here for usage examples.
+          </div>
+
+          <!-- Code samples -->
+          <div class="code-samples">
+            <!-- cURL -->
+            <div class="code-sample">
+              <div class="code-sample-header">
+                <span class="code-lang">cURL</span>
+                <button class="btn btn-sm btn-outline" @click="copyCode('curl', apiKeys.length > 0 ? apiKeys[0].key_prefix + '...' : 'dk_YOUR_KEY_HERE')">
+                  {{ copiedLang === 'curl' ? 'Copied!' : 'Copy' }}
+                </button>
+              </div>
+              <pre class="code-block"><code>curl -H "X-API-Key: {{ apiKeys.length > 0 ? apiKeys[0].key_prefix + '...' : 'dk_YOUR_KEY_HERE' }}" \
+  {{ window.location.origin }}/api/v1/cluster/resources</code></pre>
+            </div>
+
+            <!-- Python -->
+            <div class="code-sample">
+              <div class="code-sample-header">
+                <span class="code-lang">Python</span>
+                <button class="btn btn-sm btn-outline" @click="copyCode('python', apiKeys.length > 0 ? apiKeys[0].key_prefix + '...' : 'dk_YOUR_KEY_HERE')">
+                  {{ copiedLang === 'python' ? 'Copied!' : 'Copy' }}
+                </button>
+              </div>
+              <pre class="code-block"><code>import requests
+
+headers = {"X-API-Key": "{{ apiKeys.length > 0 ? apiKeys[0].key_prefix + '...' : 'dk_YOUR_KEY_HERE' }}"}
+r = requests.get(
+    "{{ window.location.origin }}/api/v1/cluster/resources",
+    headers=headers
+)
+print(r.json())</code></pre>
+            </div>
+
+            <!-- JavaScript -->
+            <div class="code-sample">
+              <div class="code-sample-header">
+                <span class="code-lang">JavaScript</span>
+                <button class="btn btn-sm btn-outline" @click="copyCode('js', apiKeys.length > 0 ? apiKeys[0].key_prefix + '...' : 'dk_YOUR_KEY_HERE')">
+                  {{ copiedLang === 'js' ? 'Copied!' : 'Copy' }}
+                </button>
+              </div>
+              <pre class="code-block"><code>const resp = await fetch('/api/v1/cluster/resources', {
+  headers: { 'X-API-Key': '{{ apiKeys.length > 0 ? apiKeys[0].key_prefix + "..." : "dk_YOUR_KEY_HERE" }}' }
+})
+const data = await resp.json()</code></pre>
+            </div>
+          </div>
+
+          <div style="margin-top:1.25rem;display:flex;gap:0.75rem;flex-wrap:wrap;">
+            <router-link to="/api-explorer" class="btn btn-outline">
+              Open API Explorer
+            </router-link>
+            <a href="/docs" target="_blank" rel="noopener" class="btn btn-outline">
+              Swagger UI
+            </a>
+            <a href="/redoc" target="_blank" rel="noopener" class="btn btn-outline">
+              ReDoc
+            </a>
+          </div>
+        </div>
+      </div>
+
       <!-- API Keys Card -->
       <div class="card">
         <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;">
@@ -282,6 +368,21 @@ export default {
     const newKeyResult = ref(null)
     const keyCopied = ref(false)
     const revokingKeyId = ref(null)
+
+    // Developer Tools
+    const copiedLang = ref('')
+    const copyCode = (lang, keyHint) => {
+      const origin = window.location.origin
+      const samples = {
+        curl: `curl -H "X-API-Key: ${keyHint}" \\\n  ${origin}/api/v1/cluster/resources`,
+        python: `import requests\n\nheaders = {"X-API-Key": "${keyHint}"}\nr = requests.get(\n    "${origin}/api/v1/cluster/resources",\n    headers=headers\n)\nprint(r.json())`,
+        js: `const resp = await fetch('/api/v1/cluster/resources', {\n  headers: { 'X-API-Key': '${keyHint}' }\n})\nconst data = await resp.json()`,
+      }
+      navigator.clipboard.writeText(samples[lang] || '').then(() => {
+        copiedLang.value = lang
+        setTimeout(() => { copiedLang.value = '' }, 2000)
+      })
+    }
 
     const passwordFormValid = computed(() => {
       const f = passwordForm.value
@@ -428,6 +529,10 @@ export default {
       closeNewKeyResult,
       copyKey,
       revokeKey,
+      // Developer Tools
+      copiedLang,
+      copyCode,
+      window,
     }
   }
 }
@@ -535,6 +640,51 @@ export default {
 .card-body { padding: 1.25rem; }
 .text-muted { opacity: 0.65; }
 .text-sm { font-size: 0.875rem; }
+
+/* Developer Tools */
+.code-samples {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.code-sample {
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-radius: 0.4rem;
+  overflow: hidden;
+}
+
+.code-sample-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.4rem 0.75rem;
+  background: var(--surface, #f3f4f6);
+  border-bottom: 1px solid var(--border-color, #e5e7eb);
+}
+
+.code-lang {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted, #6b7280);
+}
+
+.code-block {
+  margin: 0;
+  padding: 0.75rem;
+  background: #0f172a;
+  color: #e2e8f0;
+  font-size: 0.78rem;
+  font-family: 'Fira Code', 'Cascadia Code', monospace;
+  overflow-x: auto;
+  line-height: 1.5;
+}
+
+.code-block code {
+  font-family: inherit;
+}
 
 /* API Keys */
 .api-keys-list {

@@ -42,6 +42,57 @@
       </router-link>
     </div>
 
+    <!-- PVE Live stats row -->
+    <div class="pve-live-header mb-1">
+      <span class="pve-live-badge">PVE Live</span>
+      <span class="pve-live-label">Live data from Proxmox cluster resources</span>
+    </div>
+    <div class="stats-row mb-2">
+      <div class="stat-card card" :class="{ 'loading-card': pveLoading }">
+        <div class="stat-icon">🖥️</div>
+        <div class="stat-info">
+          <p class="stat-value">
+            <span v-if="pveLoading" class="loading-dot">—</span>
+            <span v-else>{{ pveStats.totalVms }}</span>
+          </p>
+          <p class="stat-label">Total VMs</p>
+        </div>
+      </div>
+
+      <div class="stat-card card" :class="{ 'loading-card': pveLoading }">
+        <div class="stat-icon success">▶️</div>
+        <div class="stat-info">
+          <p class="stat-value">
+            <span v-if="pveLoading" class="loading-dot">—</span>
+            <span v-else>{{ pveStats.runningVms }}</span>
+          </p>
+          <p class="stat-label">Running VMs</p>
+        </div>
+      </div>
+
+      <div class="stat-card card" :class="{ 'loading-card': pveLoading }">
+        <div class="stat-icon">📦</div>
+        <div class="stat-info">
+          <p class="stat-value">
+            <span v-if="pveLoading" class="loading-dot">—</span>
+            <span v-else>{{ pveStats.totalLxc }}</span>
+          </p>
+          <p class="stat-label">LXC Containers</p>
+        </div>
+      </div>
+
+      <div class="stat-card card" :class="{ 'loading-card': pveLoading }">
+        <div class="stat-icon">🖧</div>
+        <div class="stat-info">
+          <p class="stat-value">
+            <span v-if="pveLoading" class="loading-dot">—</span>
+            <span v-else>{{ pveStats.totalNodes }}</span>
+          </p>
+          <p class="stat-label">Nodes</p>
+        </div>
+      </div>
+    </div>
+
     <div class="grid grid-cols-2 gap-2">
       <div class="card">
         <div class="card-header">
@@ -111,6 +162,48 @@
         </div>
       </div>
     </div>
+
+    <!-- Proxmox Hosts summary -->
+    <div class="card mt-2">
+      <div class="card-header">
+        <h3>Proxmox Hosts</h3>
+        <span class="pve-live-badge">PVE Live</span>
+        <router-link to="/proxmox" class="hosts-manage-link">Manage</router-link>
+      </div>
+      <div v-if="hostsLoading" class="hosts-loading">
+        Loading hosts...
+      </div>
+      <div v-else-if="proxmoxHosts.length === 0" class="hosts-empty">
+        No Proxmox hosts configured.
+        <router-link to="/proxmox">Add a host</router-link>
+      </div>
+      <table v-else class="hosts-table">
+        <thead>
+          <tr>
+            <th>Host Name</th>
+            <th>Address</th>
+            <th>Nodes</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="host in proxmoxHosts" :key="host.id">
+            <td class="host-name">{{ host.name }}</td>
+            <td class="host-addr">{{ host.host }}</td>
+            <td class="host-nodes">{{ hostNodeCounts[host.id] !== undefined ? hostNodeCounts[host.id] : '—' }}</td>
+            <td>
+              <span class="host-status-badge" :class="host.is_active ? 'status-active' : 'status-inactive'">
+                {{ host.is_active ? 'Active' : 'Inactive' }}
+              </span>
+            </td>
+            <td>
+              <router-link to="/proxmox" class="host-link">View</router-link>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
   </div>
 </template>
 
@@ -131,6 +224,20 @@ export default {
     })
 
     const resources = ref(null)
+
+    // PVE Live state
+    const pveLoading = ref(true)
+    const pveStats = ref({
+      totalVms: 0,
+      runningVms: 0,
+      totalLxc: 0,
+      totalNodes: 0
+    })
+
+    // Proxmox Hosts summary state
+    const hostsLoading = ref(true)
+    const proxmoxHosts = ref([])
+    const hostNodeCounts = ref({})
 
     const cpuPercentage = computed(() => {
       if (!resources.value) return 0
@@ -167,8 +274,85 @@ export default {
       }
     }
 
+    const fetchPveData = async () => {
+      pveLoading.value = true
+      try {
+        // Load hosts first so we can query cluster resources per host
+        const hostsResponse = await api.proxmox.listHosts()
+        const hosts = hostsResponse.data || []
+        proxmoxHosts.value = hosts
+        hostsLoading.value = false
+
+        if (hosts.length === 0) {
+          pveLoading.value = false
+          return
+        }
+
+        // Fetch cluster resources from all active hosts in parallel
+        const activeHosts = hosts.filter(h => h.is_active)
+        const resourceResults = await Promise.allSettled(
+          activeHosts.map(h => api.pveNode.clusterResources(h.id))
+        )
+
+        let totalVms = 0
+        let runningVms = 0
+        let totalLxc = 0
+        const nodeSet = new Set()
+        const nodeCountMap = {}
+
+        resourceResults.forEach((result, idx) => {
+          const host = activeHosts[idx]
+          if (result.status === 'fulfilled') {
+            const items = result.value.data || []
+            let hostNodeCount = 0
+            items.forEach(item => {
+              if (item.type === 'qemu') {
+                totalVms++
+                if (item.status === 'running') runningVms++
+              } else if (item.type === 'lxc') {
+                totalLxc++
+              } else if (item.type === 'node') {
+                nodeSet.add(`${host.id}:${item.node}`)
+                hostNodeCount++
+              }
+            })
+            nodeCountMap[host.id] = hostNodeCount
+          }
+        })
+
+        // For inactive hosts, try to use cached node data via listNodes
+        const inactiveHosts = hosts.filter(h => !h.is_active)
+        const nodeResults = await Promise.allSettled(
+          inactiveHosts.map(h => api.proxmox.listNodes(h.id))
+        )
+        nodeResults.forEach((result, idx) => {
+          const host = inactiveHosts[idx]
+          if (result.status === 'fulfilled') {
+            const nodes = result.value.data || []
+            nodeCountMap[host.id] = nodes.length
+          } else {
+            nodeCountMap[host.id] = 0
+          }
+        })
+
+        hostNodeCounts.value = nodeCountMap
+        pveStats.value = {
+          totalVms,
+          runningVms,
+          totalLxc,
+          totalNodes: nodeSet.size
+        }
+      } catch (error) {
+        console.error('Failed to fetch PVE live data:', error)
+        hostsLoading.value = false
+      } finally {
+        pveLoading.value = false
+      }
+    }
+
     onMounted(() => {
       fetchData()
+      fetchPveData()
     })
 
     return {
@@ -176,7 +360,12 @@ export default {
       resources,
       cpuPercentage,
       memoryPercentage,
-      diskPercentage
+      diskPercentage,
+      pveLoading,
+      pveStats,
+      hostsLoading,
+      proxmoxHosts,
+      hostNodeCounts
     }
   }
 }
@@ -211,6 +400,14 @@ export default {
   transform: translateY(0);
 }
 
+.loading-card {
+  opacity: 0.6;
+}
+
+.loading-dot {
+  color: var(--text-secondary);
+}
+
 .stat-icon {
   font-size: 1.5rem;
   opacity: 0.8;
@@ -243,6 +440,38 @@ export default {
   color: var(--text-secondary);
   margin: 0;
   white-space: nowrap;
+}
+
+.pve-live-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.pve-live-badge {
+  display: inline-block;
+  background: var(--primary-color);
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 0.1rem 0.4rem;
+  border-radius: 0.25rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.pve-live-label {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+}
+
+.mb-1 {
+  margin-bottom: 0.4rem;
+}
+
+.mt-2 {
+  margin-top: 0.75rem;
 }
 
 .resources {
@@ -318,5 +547,115 @@ export default {
   font-size: 0.7rem;
   color: var(--text-secondary);
   margin: 0;
+}
+
+/* Proxmox Hosts summary table */
+.card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.card-header h3 {
+  flex: 1;
+}
+
+.hosts-manage-link {
+  font-size: 0.75rem;
+  color: var(--primary-color);
+  text-decoration: none;
+  margin-left: auto;
+}
+
+.hosts-manage-link:hover {
+  text-decoration: underline;
+}
+
+.hosts-loading,
+.hosts-empty {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  padding: 0.5rem 0;
+}
+
+.hosts-empty a {
+  color: var(--primary-color);
+  text-decoration: none;
+}
+
+.hosts-empty a:hover {
+  text-decoration: underline;
+}
+
+.hosts-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.hosts-table th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-secondary);
+  font-size: 0.7rem;
+  padding: 0.35rem 0.5rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.hosts-table td {
+  padding: 0.4rem 0.5rem;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-primary);
+}
+
+.hosts-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.hosts-table tbody tr:hover td {
+  background-color: var(--background);
+}
+
+.host-name {
+  font-weight: 600;
+}
+
+.host-addr {
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+}
+
+.host-nodes {
+  text-align: center;
+}
+
+.host-status-badge {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-weight: 600;
+  padding: 0.1rem 0.4rem;
+  border-radius: 0.25rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.status-active {
+  background-color: rgba(var(--secondary-color-rgb, 34, 197, 94), 0.15);
+  color: var(--secondary-color);
+}
+
+.status-inactive {
+  background-color: rgba(var(--danger-color-rgb, 239, 68, 68), 0.12);
+  color: var(--danger-color);
+}
+
+.host-link {
+  font-size: 0.75rem;
+  color: var(--primary-color);
+  text-decoration: none;
+}
+
+.host-link:hover {
+  text-decoration: underline;
 }
 </style>

@@ -160,12 +160,12 @@ export default {
               const nodes = nodesRes.data || []
               const ctResults = await Promise.all(
                 nodes.map(n =>
-                  api.pveNode.containers(host.id, n.node_name)
+                  api.pveNode.containers(host.id, n.node)
                     .then(r => (r.data || []).map(ct => ({
                       ...ct,
                       _hostId: host.id,
                       _hostName: host.name,
-                      _node: n.node_name,
+                      _node: n.node,
                       _actioning: false,
                     })))
                     .catch(() => [])

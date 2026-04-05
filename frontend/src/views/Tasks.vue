@@ -22,7 +22,7 @@
             <label class="form-label">Node</label>
             <select v-model="selectedNode" @change="onFilterChange" class="form-control" :disabled="!selectedHostId">
               <option value="">All Nodes</option>
-              <option v-for="n in nodes" :key="n.node_name" :value="n.node_name">{{ n.node_name }}</option>
+              <option v-for="n in nodes" :key="n.node" :value="n.node">{{ n.node }}</option>
             </select>
           </div>
           <div class="form-group">
@@ -169,7 +169,7 @@ export default {
         } else if (selectedHostId.value) {
           const nodeList = nodes.value.length ? nodes.value : await api.proxmox.listNodes(selectedHostId.value).then(r => r.data || [])
           const results = await Promise.all(
-            nodeList.map(n => loadTasksForHostNode(selectedHostId.value, n.node_name, 0).catch(() => []))
+            nodeList.map(n => loadTasksForHostNode(selectedHostId.value, n.node, 0).catch(() => []))
           )
           collected = results.flat().sort((a, b) => (b.starttime || 0) - (a.starttime || 0)).slice(0, PAGE_SIZE)
         } else {
@@ -179,7 +179,7 @@ export default {
                 const nRes = await api.proxmox.listNodes(h.id)
                 const nodeList = nRes.data || []
                 const taskResults = await Promise.all(
-                  nodeList.map(n => loadTasksForHostNode(h.id, n.node_name, 0).catch(() => []))
+                  nodeList.map(n => loadTasksForHostNode(h.id, n.node, 0).catch(() => []))
                 )
                 return taskResults.flat()
               } catch { return [] }
@@ -232,7 +232,7 @@ export default {
       if (task._expanded && !task._log) {
         task._loadingLog = true
         try {
-          const res = await api.pveNode.taskLog(task._hostId, task._node || task.node, task.upid)
+          const res = await api.pveNode.taskLog(task._hostId, task._node || task.node, encodeURIComponent(task.upid))
           task._log = res.data || []
         } catch (e) {
           task._log = [{ t: 'Failed to load log' }]

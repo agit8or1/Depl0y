@@ -101,8 +101,8 @@
               <label class="form-label">Node</label>
               <select v-model="manualBackup.node" class="form-control" @change="onNodeChange">
                 <option value="">— Select node —</option>
-                <option v-for="node in nodes" :key="node.node" :value="node.node">
-                  {{ node.node }}
+                <option v-for="node in nodes" :key="node.node || node.name" :value="node.node || node.name">
+                  {{ node.node || node.name }}
                 </option>
               </select>
             </div>
@@ -329,7 +329,7 @@ export default {
 
     const fetchStorages = async () => {
       try {
-        const response = await api.pveNode.listStorage(selectedHostId.value, nodes.value[0]?.node_name || nodes.value[0]?.node || '')
+        const response = await api.pveNode.listStorage(selectedHostId.value, nodes.value[0]?.node || nodes.value[0]?.name || '')
         storages.value = (response.data || []).filter(s => s.content && s.content.includes('backup'))
       } catch (error) {
         console.error('Failed to fetch storages:', error)

@@ -466,7 +466,6 @@ export default {
   pveNode: {
     // Cluster
     clusterStatus: (h) => api.get(`/pve-node/${h}/cluster/status`),
-    clusterResources: (h) => api.get(`/pve-node/${h}/cluster/resources`),
     nextId: (h) => api.get(`/pve-node/${h}/cluster/nextid`),
     clusterOptions: (h) => api.get(`/pve-node/${h}/cluster/options`),
     // Cluster Firewall
@@ -503,7 +502,6 @@ export default {
     // Tasks
     listTasks: (h, node, params) => api.get(`/pve-node/${h}/nodes/${node}/tasks`, { params }),
     taskStatus: (h, node, upid) => api.get(`/pve-node/${h}/nodes/${node}/tasks/${upid}/status`),
-    taskLog: (h, node, upid) => api.get(`/pve-node/${h}/nodes/${node}/tasks/${upid}/log`),
     stopTask: (h, node, upid) => api.delete(`/pve-node/${h}/nodes/${node}/tasks/${upid}`),
     // Storage
     listStorage: (h, node) => api.get(`/pve-node/${h}/nodes/${node}/storage`),
@@ -538,9 +536,8 @@ export default {
     restoreBackup: (h, node, vmid, data) => api.post(`/pve-node/${h}/nodes/${node}/qemu/${vmid}/restore`, data),
     // Aliases for NodeDetail.vue / Tasks.vue / Containers.vue naming convention
     nodeRrddata: (h, node, timeframe = 'hour') => api.get(`/pve-node/${h}/nodes/${node}/rrddata`, { params: { timeframe } }),
-    nodeVms: (h, node) => api.get(`/pve-node/${h}/nodes/${node}/vms`),
     tasks: (h, node, params) => api.get(`/pve-node/${h}/nodes/${node}/tasks`, { params }),
-    taskLog: (h, node, upid) => api.get(`/pve-node/${h}/nodes/${node}/tasks/${encodeURIComponent(upid)}/log`),
+    taskLog: (h, node, upid) => api.get(`/pve-node/${h}/nodes/${node}/tasks/${upid}/log`),
     storage: (h, node) => api.get(`/pve-node/${h}/nodes/${node}/storage`),
     storageContent: (h, node, storage, content) => api.get(`/pve-node/${h}/nodes/${node}/storage/${storage}/content`, { params: { content } }),
     network: (h, node) => api.get(`/pve-node/${h}/nodes/${node}/network`),

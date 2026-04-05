@@ -1,6 +1,23 @@
 <template>
   <div class="vms-page">
-    <div class="card">
+    <!-- Tab Toggle -->
+    <div class="tab-bar">
+      <button
+        :class="['tab-btn', activeTab === 'managed' ? 'tab-btn-active' : '']"
+        @click="switchTab('managed')"
+      >
+        Depl0y Managed
+      </button>
+      <button
+        :class="['tab-btn', activeTab === 'all' ? 'tab-btn-active' : '']"
+        @click="switchTab('all')"
+      >
+        All Proxmox VMs
+      </button>
+    </div>
+
+    <!-- ===== DEPL0Y MANAGED TAB ===== -->
+    <div v-if="activeTab === 'managed'" class="card">
       <div class="card-header">
         <h3>Virtual Machines</h3>
         <router-link to="/vms/create" class="btn btn-primary">+ Create VM</router-link>
@@ -118,6 +135,141 @@
       </div>
     </div>
 
+    <!-- ===== ALL PROXMOX VMs TAB ===== -->
+    <div v-if="activeTab === 'all'" class="card">
+      <div class="card-header">
+        <h3>All Proxmox VMs</h3>
+        <button @click="fetchAllProxmoxVMs" class="btn btn-secondary" :disabled="allLoading">
+          {{ allLoading ? 'Refreshing…' : 'Refresh' }}
+        </button>
+      </div>
+
+      <!-- Search / Filter Bar -->
+      <div class="filter-bar">
+        <div class="filter-info" style="flex-wrap: wrap; gap: 0.5rem;">
+          <input
+            v-model="allSearch"
+            type="text"
+            placeholder="Search by name, node or host…"
+            class="form-control"
+            style="width: 220px;"
+          />
+          <select v-model="allStatusFilter" class="form-control" style="width: 140px;">
+            <option value="">All statuses</option>
+            <option value="running">Running</option>
+            <option value="stopped">Stopped</option>
+            <option value="paused">Paused</option>
+          </select>
+          <span class="filter-count">{{ filteredAllVMs.length }} VM{{ filteredAllVMs.length !== 1 ? 's' : '' }}</span>
+        </div>
+        <button v-if="allSearch || allStatusFilter" @click="allSearch = ''; allStatusFilter = ''" class="btn btn-sm btn-secondary">
+          Clear
+        </button>
+      </div>
+
+      <div v-if="allLoading" class="loading-spinner"></div>
+
+      <div v-else-if="allError" class="text-center text-muted" style="padding: 2rem;">
+        <p class="text-danger">{{ allError }}</p>
+        <button @click="fetchAllProxmoxVMs" class="btn btn-secondary btn-sm mt-1">Retry</button>
+      </div>
+
+      <div v-else-if="allVMs.length === 0" class="text-center text-muted" style="padding: 2rem;">
+        <p>No Proxmox VMs found.</p>
+        <p class="text-sm">Make sure at least one Proxmox host is configured and reachable.</p>
+      </div>
+
+      <div v-else-if="filteredAllVMs.length === 0" class="text-center text-muted" style="padding: 2rem;">
+        <p>No VMs match your search.</p>
+        <button @click="allSearch = ''; allStatusFilter = ''" class="btn btn-sm btn-secondary mt-1">Clear Filters</button>
+      </div>
+
+      <div v-else class="table-container">
+        <table class="table">
+          <thead>
+            <tr>
+              <th @click="allSortBy('vmid')" class="sortable">
+                VMID
+                <span class="sort-indicator" v-if="allSortField === 'vmid'">{{ allSortDirection === 'asc' ? '▲' : '▼' }}</span>
+              </th>
+              <th @click="allSortBy('name')" class="sortable">
+                Name
+                <span class="sort-indicator" v-if="allSortField === 'name'">{{ allSortDirection === 'asc' ? '▲' : '▼' }}</span>
+              </th>
+              <th @click="allSortBy('status')" class="sortable">
+                Status
+                <span class="sort-indicator" v-if="allSortField === 'status'">{{ allSortDirection === 'asc' ? '▲' : '▼' }}</span>
+              </th>
+              <th @click="allSortBy('node')" class="sortable">
+                Node
+                <span class="sort-indicator" v-if="allSortField === 'node'">{{ allSortDirection === 'asc' ? '▲' : '▼' }}</span>
+              </th>
+              <th @click="allSortBy('hostName')" class="sortable">
+                Host
+                <span class="sort-indicator" v-if="allSortField === 'hostName'">{{ allSortDirection === 'asc' ? '▲' : '▼' }}</span>
+              </th>
+              <th>CPU / Memory</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="vm in filteredAllVMs" :key="`${vm.hostId}-${vm.node}-${vm.vmid}`">
+              <td><strong>{{ vm.vmid }}</strong></td>
+              <td>
+                <a
+                  class="vm-name-link"
+                  @click="navigateToVM(vm)"
+                  style="cursor: pointer;"
+                >
+                  {{ vm.name || '(no name)' }}
+                </a>
+              </td>
+              <td>
+                <span :class="['badge', getStatusBadgeClass(vm.status)]">
+                  {{ vm.status }}
+                </span>
+              </td>
+              <td>
+                <span class="badge badge-info">{{ vm.node }}</span>
+              </td>
+              <td class="text-sm">{{ vm.hostName }}</td>
+              <td class="text-sm">
+                {{ vm.cpus || '?' }} CPU / {{ formatBytes(vm.maxmem) }} RAM
+              </td>
+              <td>
+                <div class="flex gap-1">
+                  <button
+                    v-if="vm.status === 'running'"
+                    @click="allShutdownVM(vm)"
+                    class="btn btn-warning btn-sm"
+                    :disabled="vm._busy"
+                  >
+                    Shutdown
+                  </button>
+                  <button
+                    v-if="vm.status === 'running'"
+                    @click="allStopVM(vm)"
+                    class="btn btn-danger btn-sm"
+                    :disabled="vm._busy"
+                  >
+                    Stop
+                  </button>
+                  <button
+                    v-if="vm.status !== 'running'"
+                    @click="allStartVM(vm)"
+                    class="btn btn-primary btn-sm"
+                    :disabled="vm._busy"
+                  >
+                    Start
+                  </button>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
     <!-- Delete Confirmation Modal -->
     <div v-if="showDeleteConfirmModal" class="modal-overlay" @click="closeDeleteModal">
       <div class="modal-content" @click.stop>
@@ -168,6 +320,18 @@ export default {
     const route = useRoute()
     const router = useRouter()
     const toast = useToast()
+
+    // ── Tab state ──────────────────────────────────────────────────────────
+    const activeTab = ref('managed')
+
+    const switchTab = (tab) => {
+      activeTab.value = tab
+      if (tab === 'all' && allVMs.value.length === 0 && !allLoading.value) {
+        fetchAllProxmoxVMs()
+      }
+    }
+
+    // ── Depl0y Managed tab ─────────────────────────────────────────────────
     const vms = ref([])
     const loading = ref(false)
     const sortField = ref('vmid')
@@ -222,7 +386,7 @@ export default {
       try {
         await api.vms.startByVmid(vmid, node)
         toast.success(`VM ${vmid} started successfully`)
-        setTimeout(fetchVMs, 1000) // Refresh after 1 second
+        setTimeout(fetchVMs, 1000)
       } catch (error) {
         console.error('Failed to start VM:', error)
         toast.error('Failed to start VM')
@@ -295,6 +459,170 @@ export default {
       }
     }
 
+    const filteredVMs = computed(() => {
+      if (!statusFilter.value) {
+        return vms.value
+      }
+      return vms.value.filter(vm =>
+        vm.status.toLowerCase() === statusFilter.value.toLowerCase()
+      )
+    })
+
+    const clearFilter = () => {
+      statusFilter.value = null
+      router.push('/vms')
+    }
+
+    watch(() => route.query.status, (newStatus) => {
+      statusFilter.value = newStatus || null
+    })
+
+    // ── All Proxmox VMs tab ────────────────────────────────────────────────
+    const allVMs = ref([])
+    const allLoading = ref(false)
+    const allError = ref(null)
+    const allSearch = ref('')
+    const allStatusFilter = ref('')
+    const allSortField = ref('vmid')
+    const allSortDirection = ref('asc')
+
+    const fetchAllProxmoxVMs = async () => {
+      allLoading.value = true
+      allError.value = null
+      try {
+        const hostsResp = await api.proxmox.listHosts()
+        const hosts = hostsResp.data
+
+        if (!hosts || hosts.length === 0) {
+          allVMs.value = []
+          return
+        }
+
+        const results = []
+        await Promise.allSettled(
+          hosts.map(async (host) => {
+            try {
+              const resResp = await api.pveNode.clusterResources(host.id, 'vm')
+              const resources = resResp.data
+              // clusterResources may return { data: [...] } or directly an array
+              const items = Array.isArray(resources) ? resources : (resources.data || [])
+              items.forEach((item) => {
+                // Only include qemu VMs (not lxc containers)
+                if (item.type && item.type !== 'qemu') return
+                results.push({
+                  hostId: host.id,
+                  hostName: host.name || host.host || String(host.id),
+                  node: item.node,
+                  vmid: item.vmid,
+                  name: item.name,
+                  status: item.status || 'unknown',
+                  cpus: item.cpus,
+                  maxmem: item.maxmem,
+                  mem: item.mem,
+                  _busy: false,
+                })
+              })
+            } catch (err) {
+              console.warn(`Failed to fetch cluster resources for host ${host.id}:`, err)
+            }
+          })
+        )
+
+        allVMs.value = results
+      } catch (err) {
+        console.error('Failed to fetch Proxmox hosts:', err)
+        allError.value = 'Failed to load Proxmox hosts. Check that at least one host is configured.'
+      } finally {
+        allLoading.value = false
+      }
+    }
+
+    const allSortBy = (field) => {
+      if (allSortField.value === field) {
+        allSortDirection.value = allSortDirection.value === 'asc' ? 'desc' : 'asc'
+      } else {
+        allSortField.value = field
+        allSortDirection.value = 'asc'
+      }
+    }
+
+    const filteredAllVMs = computed(() => {
+      let list = allVMs.value
+
+      if (allStatusFilter.value) {
+        list = list.filter(vm => vm.status.toLowerCase() === allStatusFilter.value.toLowerCase())
+      }
+
+      if (allSearch.value.trim()) {
+        const q = allSearch.value.trim().toLowerCase()
+        list = list.filter(vm =>
+          (vm.name || '').toLowerCase().includes(q) ||
+          (vm.node || '').toLowerCase().includes(q) ||
+          (vm.hostName || '').toLowerCase().includes(q) ||
+          String(vm.vmid).includes(q)
+        )
+      }
+
+      // Sort
+      const field = allSortField.value
+      const dir = allSortDirection.value
+      return [...list].sort((a, b) => {
+        let aVal = a[field] ?? ''
+        let bVal = b[field] ?? ''
+        if (typeof aVal === 'string') { aVal = aVal.toLowerCase(); bVal = bVal.toLowerCase() }
+        if (dir === 'asc') return aVal > bVal ? 1 : aVal < bVal ? -1 : 0
+        return aVal < bVal ? 1 : aVal > bVal ? -1 : 0
+      })
+    })
+
+    const navigateToVM = (vm) => {
+      router.push(`/proxmox/${vm.hostId}/nodes/${vm.node}/vms/${vm.vmid}`)
+    }
+
+    const allStartVM = async (vm) => {
+      vm._busy = true
+      try {
+        await api.pveVm.start(vm.hostId, vm.node, vm.vmid)
+        toast.success(`VM ${vm.vmid} started`)
+        setTimeout(fetchAllProxmoxVMs, 2000)
+      } catch (err) {
+        console.error('Failed to start VM:', err)
+        toast.error(`Failed to start VM ${vm.vmid}`)
+      } finally {
+        vm._busy = false
+      }
+    }
+
+    const allStopVM = async (vm) => {
+      if (!confirm(`Force-stop VM ${vm.vmid} (${vm.name || ''})? This is equivalent to pulling the power plug.`)) return
+      vm._busy = true
+      try {
+        await api.pveVm.stop(vm.hostId, vm.node, vm.vmid)
+        toast.success(`VM ${vm.vmid} stopped`)
+        setTimeout(fetchAllProxmoxVMs, 2000)
+      } catch (err) {
+        console.error('Failed to stop VM:', err)
+        toast.error(`Failed to stop VM ${vm.vmid}`)
+      } finally {
+        vm._busy = false
+      }
+    }
+
+    const allShutdownVM = async (vm) => {
+      vm._busy = true
+      try {
+        await api.pveVm.shutdown(vm.hostId, vm.node, vm.vmid)
+        toast.success(`VM ${vm.vmid} shutdown initiated`)
+        setTimeout(fetchAllProxmoxVMs, 2000)
+      } catch (err) {
+        console.error('Failed to shutdown VM:', err)
+        toast.error(`Failed to shutdown VM ${vm.vmid}`)
+      } finally {
+        vm._busy = false
+      }
+    }
+
+    // ── Shared helpers ─────────────────────────────────────────────────────
     const formatBytes = (bytes) => {
       if (!bytes) return '0 B'
       const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
@@ -310,38 +638,20 @@ export default {
         suspended: 'badge-warning',
         unknown: 'badge-secondary'
       }
-      return classMap[status.toLowerCase()] || 'badge-info'
+      return classMap[(status || '').toLowerCase()] || 'badge-info'
     }
-
-    // Computed property for filtered VMs
-    const filteredVMs = computed(() => {
-      if (!statusFilter.value) {
-        return vms.value
-      }
-      return vms.value.filter(vm =>
-        vm.status.toLowerCase() === statusFilter.value.toLowerCase()
-      )
-    })
-
-    // Clear filter and return to all VMs
-    const clearFilter = () => {
-      statusFilter.value = null
-      router.push('/vms')
-    }
-
-    // Watch for route changes to update filter
-    watch(() => route.query.status, (newStatus) => {
-      statusFilter.value = newStatus || null
-    })
 
     onMounted(() => {
       fetchVMs()
-      // Auto-refresh every 30 seconds
       const interval = setInterval(fetchVMs, 30000)
       return () => clearInterval(interval)
     })
 
     return {
+      // tab
+      activeTab,
+      switchTab,
+      // managed tab
       vms,
       loading,
       sortField,
@@ -359,15 +669,72 @@ export default {
       showDeleteModal,
       closeDeleteModal,
       deleteVM,
+      clearFilter,
+      // all proxmox tab
+      allVMs,
+      allLoading,
+      allError,
+      allSearch,
+      allStatusFilter,
+      allSortField,
+      allSortDirection,
+      filteredAllVMs,
+      fetchAllProxmoxVMs,
+      allSortBy,
+      navigateToVM,
+      allStartVM,
+      allStopVM,
+      allShutdownVM,
+      // shared
       formatBytes,
       getStatusBadgeClass,
-      clearFilter
     }
   }
 }
 </script>
 
 <style scoped>
+/* ── Tab bar ──────────────────────────────────────────────────────────────── */
+.tab-bar {
+  display: flex;
+  gap: 0;
+  margin-bottom: 1rem;
+  border-bottom: 2px solid var(--border, #e2e8f0);
+}
+
+.tab-btn {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  padding: 0.6rem 1.25rem;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--text-muted, #64748b);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.tab-btn:hover {
+  color: var(--text-primary, #1e293b);
+}
+
+.tab-btn-active {
+  color: var(--primary-color, #3b82f6);
+  border-bottom-color: var(--primary-color, #3b82f6);
+}
+
+/* ── VM name link ─────────────────────────────────────────────────────────── */
+.vm-name-link {
+  color: var(--primary-color, #3b82f6);
+  text-decoration: none;
+}
+
+.vm-name-link:hover {
+  text-decoration: underline;
+}
+
+/* ── Existing styles (unchanged) ──────────────────────────────────────────── */
 .btn-sm {
   padding: 0.25rem 0.5rem;
   font-size: 0.875rem;

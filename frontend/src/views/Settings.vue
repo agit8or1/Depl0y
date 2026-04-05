@@ -152,6 +152,94 @@
       </div>
     </div>
 
+    <!-- Proxmox Integration Section -->
+    <div class="card">
+      <div class="card-header">
+        <h3>Proxmox Integration</h3>
+        <p>Client-side preferences for Proxmox operations</p>
+      </div>
+      <div class="card-body">
+
+        <!-- Default Host Selector -->
+        <div class="settings-group">
+          <h5 class="subsection-title">Default Proxmox Host</h5>
+          <p class="text-sm text-muted">The host used by default for operations that require a host selection.</p>
+          <div class="form-group" style="max-width: 400px; margin-top: 0.75rem;">
+            <label class="form-label">Default host</label>
+            <div v-if="loadingHosts" class="loading-message" style="padding: 0.5rem 0;">
+              <div class="loading-spinner"></div>
+              <p>Loading hosts...</p>
+            </div>
+            <select
+              v-else
+              v-model="defaultHost"
+              @change="saveDefaultHost"
+              class="form-control"
+            >
+              <option value="">— None (always prompt) —</option>
+              <option v-for="host in proxmoxHosts" :key="host.id" :value="String(host.id)">
+                {{ host.name }} ({{ host.host }})
+              </option>
+            </select>
+            <p v-if="hostsError" class="text-sm" style="color: #ef4444; margin-top: 0.25rem;">{{ hostsError }}</p>
+          </div>
+        </div>
+
+        <!-- Console Settings -->
+        <div class="settings-group" style="margin-top: 1.75rem;">
+          <h5 class="subsection-title">Console Settings</h5>
+          <div class="toggle-row">
+            <div>
+              <strong>Open console in new tab</strong>
+              <p class="text-sm text-muted">Launch VM/node consoles in a new browser tab instead of the current one</p>
+            </div>
+            <label class="toggle-switch">
+              <input
+                type="checkbox"
+                v-model="consoleNewTab"
+                @change="saveConsoleSetting('depl0y_console_new_tab', consoleNewTab)"
+              />
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <div class="toggle-row">
+            <div>
+              <strong>Scale viewport to fit</strong>
+              <p class="text-sm text-muted">Automatically scale the console display to fit your browser window</p>
+            </div>
+            <label class="toggle-switch">
+              <input
+                type="checkbox"
+                v-model="consoleScale"
+                @change="saveConsoleSetting('depl0y_console_scale', consoleScale)"
+              />
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Auto-Refresh Interval -->
+        <div class="settings-group" style="margin-top: 1.75rem;">
+          <h5 class="subsection-title">Auto-Refresh Interval</h5>
+          <p class="text-sm text-muted">How often the dashboard and VM list automatically refresh (in seconds).</p>
+          <div class="refresh-interval-row" style="margin-top: 0.75rem;">
+            <input
+              v-model.number="refreshInterval"
+              type="number"
+              min="10"
+              max="300"
+              step="5"
+              class="form-control"
+              style="width: 120px; display: inline-block;"
+              @change="saveRefreshInterval"
+            />
+            <span class="text-sm text-muted" style="margin-left: 0.5rem;">seconds (min 10, max 300)</span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
     <!-- Proxmox Cluster Inter-Node SSH Section -->
     <div class="card">
       <div class="card-header">
@@ -864,6 +952,15 @@ export default {
     const haError = ref(null)
     const showHAManagement = ref(false)
 
+    // Proxmox Integration preferences (localStorage-backed)
+    const proxmoxHosts = ref([])
+    const loadingHosts = ref(false)
+    const hostsError = ref(null)
+    const defaultHost = ref(localStorage.getItem('depl0y_default_host') || '')
+    const consoleNewTab = ref(localStorage.getItem('depl0y_console_new_tab') !== 'false')
+    const consoleScale = ref(localStorage.getItem('depl0y_console_scale') !== 'false')
+    const refreshInterval = ref(Number(localStorage.getItem('depl0y_refresh_interval')) || 30)
+
     const profileForm = ref({
       username: '',
       email: ''
@@ -874,6 +971,48 @@ export default {
       new_password: '',
       confirm_password: ''
     })
+
+    const fetchProxmoxHosts = async () => {
+      loadingHosts.value = true
+      hostsError.value = null
+      try {
+        const response = await api.proxmox.listHosts()
+        proxmoxHosts.value = response.data
+        // Validate stored default still exists
+        if (defaultHost.value && !response.data.find(h => String(h.id) === defaultHost.value)) {
+          defaultHost.value = ''
+          localStorage.removeItem('depl0y_default_host')
+        }
+      } catch (error) {
+        console.error('Failed to fetch Proxmox hosts:', error)
+        hostsError.value = 'Could not load hosts'
+      } finally {
+        loadingHosts.value = false
+      }
+    }
+
+    const saveDefaultHost = () => {
+      if (defaultHost.value) {
+        localStorage.setItem('depl0y_default_host', defaultHost.value)
+        const host = proxmoxHosts.value.find(h => String(h.id) === defaultHost.value)
+        toast.success(`Default host set to ${host ? host.name : defaultHost.value}`)
+      } else {
+        localStorage.removeItem('depl0y_default_host')
+        toast.success('Default host cleared')
+      }
+    }
+
+    const saveConsoleSetting = (key, value) => {
+      localStorage.setItem(key, String(value))
+      toast.success('Console preference saved')
+    }
+
+    const saveRefreshInterval = () => {
+      const val = Math.min(300, Math.max(10, refreshInterval.value || 30))
+      refreshInterval.value = val
+      localStorage.setItem('depl0y_refresh_interval', String(val))
+      toast.success(`Auto-refresh interval set to ${val}s`)
+    }
 
     const fetchUser = async () => {
       try {
@@ -1291,6 +1430,7 @@ export default {
     onMounted(() => {
       fetchUser()
       fetchSystemInfo()
+      fetchProxmoxHosts()
       checkSSHStatus()
       checkClusterSSHStatus()
       checkForUpdates()
@@ -1371,7 +1511,18 @@ export default {
       savingLinuxAgent,
       linuxAgentError,
       agentCount,
-      saveLinuxAgentSettings
+      saveLinuxAgentSettings,
+      proxmoxHosts,
+      loadingHosts,
+      hostsError,
+      defaultHost,
+      consoleNewTab,
+      consoleScale,
+      refreshInterval,
+      fetchProxmoxHosts,
+      saveDefaultHost,
+      saveConsoleSetting,
+      saveRefreshInterval
     }
   }
 }

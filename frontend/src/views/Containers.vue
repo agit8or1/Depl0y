@@ -71,66 +71,12 @@
       </div>
     </div>
 
-    <!-- Inline Container Detail Panel -->
-    <div v-if="selectedCt" class="card mt-2">
-      <div class="card-header">
-        <h3>Container {{ selectedCt.vmid }} — {{ selectedCt.name }}</h3>
-        <button @click="selectedCt = null" class="btn btn-outline btn-sm">Close</button>
-      </div>
-      <div v-if="loadingDetail" class="loading-spinner"></div>
-      <div v-else-if="ctConfig" class="card-body">
-        <div class="detail-grid">
-          <div class="detail-item">
-            <span class="detail-label">Hostname</span>
-            <span class="detail-value">{{ ctConfig.hostname || '—' }}</span>
-          </div>
-          <div class="detail-item">
-            <span class="detail-label">OS Template</span>
-            <span class="detail-value">{{ ctConfig.ostemplate || '—' }}</span>
-          </div>
-          <div class="detail-item">
-            <span class="detail-label">Cores</span>
-            <span class="detail-value">{{ ctConfig.cores || '—' }}</span>
-          </div>
-          <div class="detail-item">
-            <span class="detail-label">Memory</span>
-            <span class="detail-value">{{ ctConfig.memory ? ctConfig.memory + ' MB' : '—' }}</span>
-          </div>
-          <div class="detail-item">
-            <span class="detail-label">Swap</span>
-            <span class="detail-value">{{ ctConfig.swap != null ? ctConfig.swap + ' MB' : '—' }}</span>
-          </div>
-          <div class="detail-item">
-            <span class="detail-label">Root FS</span>
-            <span class="detail-value">{{ ctConfig.rootfs || '—' }}</span>
-          </div>
-          <div class="detail-item">
-            <span class="detail-label">Network</span>
-            <span class="detail-value">{{ ctConfig.net0 || '—' }}</span>
-          </div>
-          <div class="detail-item">
-            <span class="detail-label">Start at boot</span>
-            <span class="detail-value">{{ ctConfig.onboot ? 'Yes' : 'No' }}</span>
-          </div>
-        </div>
-
-        <div v-if="ctSnapshots.length > 0" class="mt-2">
-          <h4 class="mb-1">Snapshots</h4>
-          <div class="snapshot-list">
-            <div v-for="snap in ctSnapshots" :key="snap.name" class="snapshot-item">
-              <span class="snapshot-name">{{ snap.name }}</span>
-              <span class="text-muted text-sm">{{ snap.snaptime ? new Date(snap.snaptime * 1000).toLocaleString() : '' }}</span>
-              <span class="text-muted text-sm">{{ snap.description || '' }}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
   </div>
 </template>
 
 <script>
 import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import api from '@/services/api'
 import { useToast } from 'vue-toastification'
 import { formatBytes } from '@/utils/proxmox'
@@ -139,12 +85,9 @@ export default {
   name: 'Containers',
   setup() {
     const toast = useToast()
+    const router = useRouter()
     const containers = ref([])
     const loading = ref(true)
-    const selectedCt = ref(null)
-    const ctConfig = ref(null)
-    const ctSnapshots = ref([])
-    const loadingDetail = ref(false)
 
     const loadAll = async () => {
       loading.value = true
@@ -198,36 +141,20 @@ export default {
     }
 
     const openShell = (ct) => {
-      window.open(`/proxmox/${ct._hostId}/nodes/${ct._node}/lxc/${ct.vmid}/console`, '_blank')
+      window.open(`/proxmox/${ct._hostId}/nodes/${ct._node}/lxc/${ct.vmid}/terminal`, '_blank')
     }
 
-    const openDetail = async (ct) => {
-      if (selectedCt.value?.vmid === ct.vmid && selectedCt.value?._node === ct._node) {
-        selectedCt.value = null
-        return
-      }
-      selectedCt.value = ct
-      ctConfig.value = null
-      ctSnapshots.value = []
-      loadingDetail.value = true
-      try {
-        const [configRes, snapRes] = await Promise.all([
-          api.pveNode.ctConfig(ct._hostId, ct._node, ct.vmid),
-          api.pveNode.ctSnapshots(ct._hostId, ct._node, ct.vmid).catch(() => ({ data: [] })),
-        ])
-        ctConfig.value = configRes.data
-        ctSnapshots.value = (snapRes.data || []).filter(s => s.name !== 'current')
-      } catch (e) {
-        console.warn('Failed to load container detail', e)
-      } finally {
-        loadingDetail.value = false
-      }
+    const openDetail = (ct) => {
+      router.push({
+        name: 'ContainerDetail',
+        params: { hostId: ct._hostId, node: ct._node, vmid: ct.vmid },
+      })
     }
 
     onMounted(loadAll)
 
     return {
-      containers, loading, selectedCt, ctConfig, ctSnapshots, loadingDetail,
+      containers, loading,
       formatBytes, loadAll, ctAction, openShell, openDetail,
     }
   }

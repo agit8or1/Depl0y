@@ -1,5 +1,5 @@
 """Node-level Proxmox management: status, RRD charts, tasks, storage content, network"""
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional, List, Any, Dict
@@ -742,5 +742,81 @@ def restore_vm_backup(host_id: int, node: str, vmid: int, restore: dict,
         upid = _pve(host).nodes(node).qemu.post(**{"vmid": vmid, **restore})
         pve_cache.clear_prefix(f"pve:{host_id}:")
         return {"upid": upid}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── VM / LXC create ───────────────────────────────────────────────────────────
+
+@router.post("/{host_id}/nodes/{node}/qemu")
+def create_vm(host_id: int, node: str, data: dict,
+              db: Session = Depends(get_db), current_user=Depends(require_operator)):
+    """Create a new QEMU VM on a Proxmox node."""
+    host = _get_host(host_id, db)
+    try:
+        upid = _pve(host).nodes(node).qemu.post(**data)
+        pve_cache.clear_prefix(f"pve:{host_id}:")
+        return {"upid": upid}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{host_id}/nodes/{node}/lxc")
+def create_lxc(host_id: int, node: str, data: dict,
+               db: Session = Depends(get_db), current_user=Depends(require_operator)):
+    """Create a new LXC container on a Proxmox node."""
+    host = _get_host(host_id, db)
+    try:
+        upid = _pve(host).nodes(node).lxc.post(**data)
+        pve_cache.clear_prefix(f"pve:{host_id}:")
+        return {"upid": upid}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── LXC templates ─────────────────────────────────────────────────────────────
+
+@router.get("/{host_id}/nodes/{node}/lxc-templates")
+def list_lxc_templates(host_id: int, node: str, storage: str,
+                       db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    """List available LXC templates in a storage."""
+    host = _get_host(host_id, db)
+    try:
+        return _pve(host).nodes(node).storage(storage).content.get(content="vztmpl")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── VM templates ──────────────────────────────────────────────────────────────
+
+@router.get("/{host_id}/nodes/{node}/templates")
+def list_vm_templates(host_id: int, node: str,
+                      db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    """List QEMU VM templates on a node."""
+    host = _get_host(host_id, db)
+    try:
+        vms = _pve(host).nodes(node).qemu.get()
+        return [v for v in vms if v.get("template") == 1]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Storage upload ────────────────────────────────────────────────────────────
+
+@router.post("/{host_id}/nodes/{node}/storage/{storage}/upload")
+async def upload_to_storage(host_id: int, node: str, storage: str,
+                            file: UploadFile = File(...),
+                            db: Session = Depends(get_db),
+                            current_user=Depends(require_operator)):
+    """Upload an ISO or file to Proxmox storage."""
+    host = _get_host(host_id, db)
+    try:
+        content = await file.read()
+        result = _pve(host).nodes(node).storage(storage).upload.post(
+            content="iso",
+            filename=file.filename,
+            file=(file.filename, content, file.content_type or "application/octet-stream"),
+        )
+        return {"upid": result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

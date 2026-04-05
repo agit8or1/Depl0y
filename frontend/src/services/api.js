@@ -547,6 +547,18 @@ export default {
     ctConfig: (h, node, vmid) => api.get(`/pve-node/${h}/nodes/${node}/lxc/${vmid}/config`),
     ctSnapshots: (h, node, vmid) => api.get(`/pve-node/${h}/nodes/${node}/lxc/${vmid}/snapshots`),
     clusterResources: (h, type) => api.get(`/pve-node/${h}/cluster/resources`, { params: { type } }),
+    // VM / LXC create
+    createVm: (h, node, data) => api.post(`/pve-node/${h}/nodes/${node}/qemu`, data),
+    createLxc: (h, node, data) => api.post(`/pve-node/${h}/nodes/${node}/lxc`, data),
+    // Templates
+    listLxcTemplates: (h, node, storage) => api.get(`/pve-node/${h}/nodes/${node}/lxc-templates`, { params: { storage } }),
+    listVmTemplates: (h, node) => api.get(`/pve-node/${h}/nodes/${node}/templates`),
+    // Storage upload
+    uploadToStorage: (h, node, storage, formData, onProgress) => api.post(`/pve-node/${h}/nodes/${node}/storage/${storage}/upload`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 0,
+      onUploadProgress: onProgress,
+    }),
   },
 
   // PBS Management

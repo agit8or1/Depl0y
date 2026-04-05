@@ -163,6 +163,7 @@
               </template>
               <template v-else>
                 <button @click="openConfigBMC(srv)" class="btn btn-outline btn-sm">{{ srv.idrac_hostname ? 'Edit BMC' : 'Configure BMC' }}</button>
+                <button @click="deleteNode(srv)" class="btn btn-danger btn-sm">Delete</button>
               </template>
               <a v-if="srv.idrac_hostname" :href="`https://${srv.idrac_hostname}:${srv.idrac_port || 443}`" target="_blank" rel="noopener" class="btn btn-outline btn-sm">Launch ↗</a>
               <button @click="testConnection(srv)" class="btn btn-outline btn-sm">Test</button>
@@ -1602,6 +1603,18 @@ export default {
       }
     }
 
+    const deleteNode = async (srv) => {
+      const label = srv.name || srv.hostname || srv.address || `#${srv.id}`
+      if (!confirm(`Delete "${label}" from tracking? This removes it from Depl0y but does not affect the actual host.`)) return
+      try {
+        await api.proxmox.deleteHost(srv.id)
+        allProxmox.value = allProxmox.value.filter(s => s.id !== srv.id)
+        toast.success('Removed')
+      } catch (e) {
+        toast.error(e.response?.data?.detail || 'Failed to delete')
+      }
+    }
+
     // ── PVE Add Modal ──
     const showPVEModal = ref(false)
     const pveSaving = ref(false)
@@ -1771,7 +1784,7 @@ export default {
       showUpdateModal, updateOutput, updateRunning, updateSuccess, runUpdate,
       netEditForm, netSaving, startNetEdit, cancelNetEdit, saveNetwork,
       showBMCModal, bmcForm, bmcSaving, openConfigBMC, saveBMC, clearBMC,
-      showStandaloneModal, standaloneForm, standaloneSaving, openAddStandalone, openEditStandalone, saveStandalone, deleteStandalone,
+      showStandaloneModal, standaloneForm, standaloneSaving, openAddStandalone, openEditStandalone, saveStandalone, deleteStandalone, deleteNode,
       showPVEModal, pveForm, pveSaving, openAddPVE, savePVE,
       showPBSModal, pbsForm, pbsSaving, openAddPBS, savePBS,
       pollNow,

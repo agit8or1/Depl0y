@@ -380,6 +380,21 @@ async def get_proxmox_node(
     return node
 
 
+@router.delete("/nodes/{node_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_proxmox_node(
+    node_id: int,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Delete a single Proxmox node record (admin only)"""
+    node = db.query(ProxmoxNode).filter(ProxmoxNode.id == node_id).first()
+    if not node:
+        raise HTTPException(status_code=404, detail="Node not found")
+    db.delete(node)
+    db.commit()
+    return None
+
+
 @router.get("/nodes/{node_id}/storage")
 async def get_node_storage(
     node_id: int,

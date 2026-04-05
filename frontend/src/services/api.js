@@ -130,7 +130,8 @@ export default {
     getNode: (nodeId) => api.get(`/proxmox/nodes/${nodeId}`),
     getStats: (hostId) => api.get(`/proxmox/${hostId}/stats`),
     getNodeStorage: (nodeId) => api.get(`/proxmox/nodes/${nodeId}/storage`),
-    getNodeNetwork: (nodeId) => api.get(`/proxmox/nodes/${nodeId}/network`)
+    getNodeNetwork: (nodeId) => api.get(`/proxmox/nodes/${nodeId}/network`),
+    deleteNode: (nodeId) => api.delete(`/proxmox/nodes/${nodeId}`)
   },
 
   // Virtual Machines

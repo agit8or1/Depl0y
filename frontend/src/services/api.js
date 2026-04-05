@@ -170,8 +170,11 @@ export default {
     disableTotp: (id) => api.post(`/users/${id}/disable-totp`),
     invalidateSessions: (id) => api.post(`/users/invalidate-sessions/${id}`),
     invalidateAllSessions: () => api.post('/users/invalidate-sessions-all'),
+    setPassword: (id, password) => api.post(`/users/${id}/set-password`, { password }),
+    getLoginHistory: (id, limit = 10) => api.get(`/users/${id}/login-history`, { params: { limit } }),
     listHostPermissions: (id) => api.get(`/users/${id}/host-permissions`),
     grantHostPermission: (id, data) => api.post(`/users/${id}/host-permissions`, data),
+    updateHostPermission: (id, hostId, data) => api.put(`/users/${id}/host-permissions/${hostId}`, data),
     revokeHostPermission: (id, hostId) => api.delete(`/users/${id}/host-permissions/${hostId}`),
   },
 
@@ -871,7 +874,10 @@ export default {
     list: (hostId) => api.get(`/pve-node/${hostId}/storage`),
     create: (hostId, data) => api.post(`/pve-node/${hostId}/storage`, data),
     update: (hostId, storageId, data) => api.put(`/pve-node/${hostId}/storage/${encodeURIComponent(storageId)}`, data),
-    delete: (hostId, storageId) => api.delete(`/pve-node/${hostId}/storage/${encodeURIComponent(storageId)}`),
+    // wipe=true adds ?destroy=1 to also wipe data when deleting storage
+    delete: (hostId, storageId, wipe = false) => api.delete(`/pve-node/${hostId}/storage/${encodeURIComponent(storageId)}`, { params: wipe ? { destroy: 1 } : {} }),
+    // Browse storage content on a specific node
+    browse: (hostId, node, storageId, params) => api.get(`/pve-node/${hostId}/nodes/${node}/storage/${encodeURIComponent(storageId)}/content`, { params }),
     // ZFS pool management
     getZfsPools: (hostId, node) => api.get(`/pve-node/${hostId}/nodes/${node}/disks/zfs`),
     createZfsPool: (hostId, node, data) => api.post(`/pve-node/${hostId}/nodes/${node}/disks/zfs`, data),

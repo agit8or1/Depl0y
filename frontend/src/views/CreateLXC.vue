@@ -6,18 +6,28 @@
         <p class="card-subtitle">Lightweight Linux container with shared host kernel.</p>
       </div>
 
-      <!-- Tab Navigation -->
-      <div class="lxc-tabs">
-        <button
-          v-for="tab in tabs"
+      <!-- Step Progress Bar -->
+      <div class="step-progress">
+        <div
+          v-for="(tab, i) in tabs"
           :key="tab.id"
-          :class="['lxc-tab', { 'active': activeTab === tab.id }]"
-          @click="activeTab = tab.id"
-          type="button"
+          class="step-item"
+          :class="{
+            'step-active': activeTab === tab.id,
+            'step-done': tabIndex > i,
+            'step-error': stepErrors[tab.id] && stepErrors[tab.id].length > 0
+          }"
+          @click="goToTab(i)"
         >
-          <span>{{ tab.icon }}</span>
-          <span>{{ tab.label }}</span>
-        </button>
+          <div class="step-connector-before" v-if="i > 0"></div>
+          <div class="step-circle">
+            <span v-if="stepErrors[tab.id] && stepErrors[tab.id].length > 0 && tabIndex !== i">&#10005;</span>
+            <span v-else-if="tabIndex > i">&#10003;</span>
+            <span v-else>{{ i + 1 }}</span>
+          </div>
+          <div class="step-label">{{ tab.label }}</div>
+          <div class="step-connector-after" v-if="i < tabs.length - 1"></div>
+        </div>
       </div>
 
       <form @submit.prevent="createLXC" class="create-lxc-form">
@@ -25,6 +35,11 @@
         <!-- ==================== GENERAL TAB ==================== -->
         <div v-show="activeTab === 'general'" class="tab-content">
           <h4 class="section-title">General</h4>
+
+          <!-- Step errors -->
+          <div v-if="stepErrors.general && stepErrors.general.length > 0" class="step-error-banner">
+            <div v-for="e in stepErrors.general" :key="e" class="step-error-item">&#9888; {{ e }}</div>
+          </div>
 
           <!-- Host & Node -->
           <div class="form-section">
@@ -68,7 +83,7 @@
                   @blur="fieldErrors.vmid = validate(formData.vmid, [rules.required, rules.vmId]) === true ? '' : validate(formData.vmid, [rules.required, rules.vmId])"
                 />
                 <small v-if="fieldErrors.vmid" class="form-error-text">{{ fieldErrors.vmid }}</small>
-                <small v-else class="form-help">Container ID (100–999999999)</small>
+                <small v-else class="form-help">Container ID (100&#x2013;999999999)</small>
               </div>
               <div class="form-group">
                 <label class="form-label">Hostname *</label>
@@ -109,7 +124,7 @@
                   <input type="checkbox" v-model="formData.unprivileged" style="margin-right:8px" />
                   Unprivileged Container
                 </label>
-                <div class="form-text">Recommended — runs as non-root on host</div>
+                <div class="form-text">Recommended &#8212; runs as non-root on host</div>
               </div>
               <div class="form-group">
                 <label class="form-label">
@@ -130,6 +145,10 @@
         <!-- ==================== TEMPLATE TAB ==================== -->
         <div v-show="activeTab === 'template'" class="tab-content">
           <h4 class="section-title">Template Selection</h4>
+
+          <div v-if="stepErrors.template && stepErrors.template.length > 0" class="step-error-banner">
+            <div v-for="e in stepErrors.template" :key="e" class="step-error-item">&#9888; {{ e }}</div>
+          </div>
 
           <div v-if="!selectedNode" class="info-banner">
             Select a Proxmox host and node first (General tab).
@@ -165,6 +184,10 @@
         <div v-show="activeTab === 'storage'" class="tab-content">
           <h4 class="section-title">Storage</h4>
 
+          <div v-if="stepErrors.storage && stepErrors.storage.length > 0" class="step-error-banner">
+            <div v-for="e in stepErrors.storage" :key="e" class="step-error-item">&#9888; {{ e }}</div>
+          </div>
+
           <div v-if="!selectedNode" class="info-banner">Select a host and node first.</div>
 
           <div v-else>
@@ -176,33 +199,54 @@
               <!-- Root disk -->
               <div class="form-section">
                 <h5 class="subsection-title">Root Filesystem (rootfs)</h5>
+
+                <div class="form-group" style="margin-bottom:1rem">
+                  <label class="form-label">Root Disk Size (GB) *</label>
+                  <input v-model.number="formData.rootfs_size" type="number" min="1" class="form-control" required style="max-width:200px" />
+                  <small class="form-help">Storage cards below will grey out if insufficient space</small>
+                </div>
+
                 <div class="storage-cards">
                   <div
                     v-for="storage in diskStorageList"
                     :key="storage.storage"
-                    :class="['storage-card', { 'selected': formData.storage === storage.storage, 'disabled': !storage.enabled || !storage.active }]"
+                    :class="['storage-card', {
+                      'selected': formData.storage === storage.storage,
+                      'disabled': !storage.enabled || !storage.active,
+                      'storage-insufficient': storageHasEnoughSpace(storage) === false
+                    }]"
                     @click="selectStorage(storage.storage)"
                   >
                     <div class="storage-header">
-                      <h6>{{ storage.storage }}</h6>
-                      <span class="badge badge-sm badge-info">{{ storage.type }}</span>
+                      <div class="storage-name-row">
+                        <span class="storage-type-icon">{{ storageTypeIcon(storage.type) }}</span>
+                        <h6>{{ storage.storage }}</h6>
+                      </div>
+                      <div class="storage-badges">
+                        <span class="badge badge-sm badge-info">{{ storage.type }}</span>
+                        <span v-if="storage.shared" class="badge badge-sm badge-success">Shared</span>
+                        <span v-if="storageHasEnoughSpace(storage) === false" class="badge badge-sm badge-danger">Insufficient</span>
+                      </div>
                     </div>
                     <div class="storage-info">
                       <div class="storage-bar">
-                        <div class="storage-bar-fill" :style="{ width: getStorageUsagePercent(storage) + '%' }"></div>
+                        <div
+                          class="storage-bar-fill"
+                          :class="{ 'storage-bar-danger': getStorageUsagePercent(storage) > 85 }"
+                          :style="{ width: getStorageUsagePercent(storage) + '%' }"
+                        ></div>
+                        <div
+                          v-if="formData.storage === storage.storage && storageHasEnoughSpace(storage) !== false"
+                          class="storage-bar-new"
+                          :style="{ width: getNewDiskPercent(storage) + '%', left: getStorageUsagePercent(storage) + '%' }"
+                        ></div>
                       </div>
                       <div class="storage-stats">
                         <span>{{ formatBytes(storage.available) }} free</span>
                         <span>{{ formatBytes(storage.total) }} total</span>
                       </div>
                     </div>
-                    <div v-if="storage.shared" class="storage-badge"><span class="badge badge-success">Shared</span></div>
                   </div>
-                </div>
-
-                <div class="form-group" style="margin-top:1rem">
-                  <label class="form-label">Root Disk Size (GB) *</label>
-                  <input v-model.number="formData.rootfs_size" type="number" min="1" class="form-control" required />
                 </div>
               </div>
 
@@ -222,7 +266,7 @@
                 <div v-for="(mp, idx) in mountPoints" :key="idx" class="mount-point-row">
                   <div class="mount-point-header">
                     <span class="disk-label">mp{{ idx }}</span>
-                    <button type="button" class="btn-icon-danger" @click="removeMountPoint(idx)">✕</button>
+                    <button type="button" class="btn-icon-danger" @click="removeMountPoint(idx)">&#10005;</button>
                   </div>
                   <div class="grid grid-cols-3 gap-2">
                     <div class="form-group">
@@ -250,6 +294,30 @@
         <div v-show="activeTab === 'resources'" class="tab-content">
           <h4 class="section-title">Resource Allocation</h4>
 
+          <div v-if="stepErrors.resources && stepErrors.resources.length > 0" class="step-error-banner">
+            <div v-for="e in stepErrors.resources" :key="e" class="step-error-item">&#9888; {{ e }}</div>
+          </div>
+
+          <!-- Hardware Presets -->
+          <div class="form-section">
+            <h5 class="subsection-title">Quick Presets</h5>
+            <div class="hw-presets">
+              <div
+                v-for="preset in hwPresets"
+                :key="preset.name"
+                :class="['hw-preset-card', { 'active': activePreset === preset.name }]"
+                @click="applyPreset(preset)"
+              >
+                <div class="hw-preset-name">{{ preset.name }}</div>
+                <div class="hw-preset-specs">
+                  <span>{{ preset.cpu }} CPU</span>
+                  <span>{{ preset.memGb >= 1 ? preset.memGb + ' GB' : (preset.memGb * 1024) + ' MB' }} RAM</span>
+                  <span>{{ preset.diskGb }} GB disk</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div class="form-section">
             <h5 class="subsection-title">CPU</h5>
             <div class="grid grid-cols-3 gap-2">
@@ -263,6 +331,7 @@
                   :class="['form-control', { 'input-error': fieldErrors.cores }]"
                   required
                   @blur="fieldErrors.cores = validate(formData.cores, [rules.required, rules.intRange(1, 512)]) === true ? '' : validate(formData.cores, [rules.required, rules.intRange(1, 512)])"
+                  @input="activePreset = ''"
                 />
                 <small v-if="fieldErrors.cores" class="form-error-text">{{ fieldErrors.cores }}</small>
               </div>
@@ -292,6 +361,7 @@
                   :class="['form-control', { 'input-error': fieldErrors.memory }]"
                   required
                   @blur="fieldErrors.memory = validate(formData.memory, [rules.required, rules.intRange(64, 4194304)]) === true ? '' : validate(formData.memory, [rules.required, rules.intRange(64, 4194304)])"
+                  @input="activePreset = ''"
                 />
                 <small v-if="fieldErrors.memory" class="form-error-text">{{ fieldErrors.memory }}</small>
                 <small v-else class="form-help">{{ (formData.memory / 1024).toFixed(1) }} GB</small>
@@ -332,6 +402,10 @@
         <div v-show="activeTab === 'network'" class="tab-content">
           <h4 class="section-title">Network</h4>
 
+          <div v-if="stepErrors.network && stepErrors.network.length > 0" class="step-error-banner">
+            <div v-for="e in stepErrors.network" :key="e" class="step-error-item">&#9888; {{ e }}</div>
+          </div>
+
           <div v-if="!selectedNode" class="info-banner">Select a host and node first.</div>
 
           <div v-else>
@@ -350,11 +424,15 @@
                 >
                   <div class="network-header">
                     <h6>{{ net.iface }}</h6>
-                    <span :class="['badge', 'badge-sm', net.active ? 'badge-success' : 'badge-danger']">{{ net.active ? 'Active' : 'Inactive' }}</span>
+                    <div style="display:flex;gap:0.35rem;align-items:center;flex-wrap:wrap">
+                      <span :class="['badge', 'badge-sm', net.active ? 'badge-success' : 'badge-danger']">{{ net.active ? 'Active' : 'Inactive' }}</span>
+                      <span v-if="net.bridge_vlan_aware || net.vlan_aware" class="badge badge-sm badge-info">VLAN-aware</span>
+                    </div>
                   </div>
                   <div class="network-info">
                     <div v-if="net.address" class="text-xs"><strong>IP:</strong> {{ net.address }}</div>
                     <div v-if="net.bridge_ports" class="text-xs"><strong>Ports:</strong> {{ net.bridge_ports }}</div>
+                    <div v-if="net.mtu" class="text-xs"><strong>MTU:</strong> {{ net.mtu }}</div>
                   </div>
                 </div>
               </div>
@@ -372,7 +450,7 @@
               <div v-for="(iface, idx) in netInterfaces" :key="idx" class="nic-row">
                 <div class="nic-row-header">
                   <span class="nic-label">net{{ idx }} (eth{{ idx }})</span>
-                  <button type="button" class="btn-icon-danger" v-if="idx > 0" @click="removeNetInterface(idx)">✕</button>
+                  <button type="button" class="btn-icon-danger" v-if="idx > 0" @click="removeNetInterface(idx)">&#10005;</button>
                 </div>
                 <div class="grid grid-cols-2 gap-2">
                   <div class="form-group">
@@ -382,8 +460,40 @@
                     </select>
                   </div>
                   <div class="form-group">
-                    <label class="form-label">VLAN Tag (optional)</label>
+                    <label class="form-label">
+                      {{ ifaceBridgeSupportsVlan(iface) ? 'VLAN Tag (VLAN-aware, optional)' : 'VLAN Tag (optional)' }}
+                    </label>
                     <input v-model.number="iface.vlan" type="number" min="1" max="4094" class="form-control" placeholder="None" />
+                    <small v-if="!ifaceBridgeSupportsVlan(iface) && iface.vlan" class="form-help" style="color:#f59e0b">
+                      &#9888; Bridge may not be VLAN-aware
+                    </small>
+                  </div>
+                </div>
+
+                <!-- MAC address -->
+                <div class="form-group">
+                  <label class="form-label">MAC Address</label>
+                  <div class="mac-mode-row">
+                    <label class="mac-mode-option" :class="{ active: iface.macMode === 'random' }">
+                      <input type="radio" :name="'mac-mode-' + idx" value="random" v-model="iface.macMode" />
+                      Random (auto)
+                    </label>
+                    <label class="mac-mode-option" :class="{ active: iface.macMode === 'custom' }">
+                      <input type="radio" :name="'mac-mode-' + idx" value="custom" v-model="iface.macMode" />
+                      Custom
+                    </label>
+                  </div>
+                  <div v-if="iface.macMode === 'custom'" style="margin-top:0.5rem">
+                    <input
+                      v-model="iface.mac"
+                      type="text"
+                      :class="['form-control', { 'input-error': iface.macError }]"
+                      placeholder="AA:BB:CC:DD:EE:FF"
+                      @blur="validateMac(iface)"
+                      @input="iface.macError = ''"
+                    />
+                    <small v-if="iface.macError" class="form-error-text">{{ iface.macError }}</small>
+                    <small v-else class="form-help">Format: AA:BB:CC:DD:EE:FF</small>
                   </div>
                 </div>
 
@@ -439,7 +549,7 @@
                 <div class="feature-card-content">
                   <div class="feature-card-title">{{ feat.label }}</div>
                   <div class="feature-card-desc">{{ feat.desc }}</div>
-                  <div v-if="feat.requiresPrivileged" class="feature-card-warning">⚠ Requires privileged container</div>
+                  <div v-if="feat.requiresPrivileged" class="feature-card-warning">&#9888; Requires privileged container</div>
                 </div>
               </label>
             </div>
@@ -461,12 +571,49 @@
         <div v-show="activeTab === 'confirm'" class="tab-content">
           <h4 class="section-title">Review &amp; Create</h4>
 
+          <!-- Resource Estimation Banner -->
+          <div v-if="selectedNodeObj" class="resource-estimate-banner">
+            <h5 class="res-estimate-title">Estimated Resource Impact on {{ selectedNode }}</h5>
+            <div class="res-estimate-rows">
+              <div class="res-estimate-row">
+                <div class="res-estimate-label">CPU</div>
+                <div class="res-estimate-bar-wrap">
+                  <div class="res-estimate-bar">
+                    <div class="res-estimate-existing" :style="{ width: clamp(cpuUsedPercent) + '%' }"></div>
+                    <div class="res-estimate-new" :style="{ width: clamp(cpuNewPercent) + '%' }"></div>
+                  </div>
+                  <div class="res-estimate-nums">
+                    <span>+{{ formData.cores }} core(s)</span>
+                    <span class="res-estimate-of">of {{ selectedNodeObj.cpu_cores || '?' }} total</span>
+                  </div>
+                </div>
+              </div>
+              <div class="res-estimate-row">
+                <div class="res-estimate-label">RAM</div>
+                <div class="res-estimate-bar-wrap">
+                  <div class="res-estimate-bar">
+                    <div class="res-estimate-existing" :style="{ width: clamp(memUsedPercent) + '%' }"></div>
+                    <div class="res-estimate-new" :style="{ width: clamp(memNewPercent) + '%' }"></div>
+                  </div>
+                  <div class="res-estimate-nums">
+                    <span>+{{ formData.memory }} MB</span>
+                    <span class="res-estimate-of">of {{ formatBytes(selectedNodeObj.memory_total) }} total</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="res-estimate-legend">
+              <span class="legend-dot existing"></span> Currently used
+              <span class="legend-dot new" style="margin-left:1rem"></span> This container
+            </div>
+          </div>
+
           <div class="summary-grid">
             <div class="summary-section">
               <h5 class="summary-section-title">General</h5>
               <table class="summary-table">
                 <tr><td>CT ID</td><td>{{ formData.vmid || 'Auto' }}</td></tr>
-                <tr><td>Hostname</td><td>{{ formData.hostname || '—' }}</td></tr>
+                <tr><td>Hostname</td><td>{{ formData.hostname || '&#8212;' }}</td></tr>
                 <tr><td>Unprivileged</td><td>{{ formData.unprivileged ? 'Yes' : 'No' }}</td></tr>
                 <tr><td>Start at boot</td><td>{{ formData.onboot ? 'Yes' : 'No' }}</td></tr>
                 <tr><td>Start after create</td><td>{{ formData.start ? 'Yes' : 'No' }}</td></tr>
@@ -476,7 +623,7 @@
               <h5 class="summary-section-title">Template</h5>
               <table class="summary-table">
                 <tr><td>Source</td><td>{{ templateSource === 'local' ? 'Local' : 'Library' }}</td></tr>
-                <tr><td>Template</td><td>{{ formData.ostemplate || '—' }}</td></tr>
+                <tr><td>Template</td><td>{{ formData.ostemplate || '&#8212;' }}</td></tr>
               </table>
             </div>
             <div class="summary-section">
@@ -484,7 +631,7 @@
               <table class="summary-table">
                 <tr><td>Root disk</td><td>{{ formData.storage }}:{{ formData.rootfs_size }}GB</td></tr>
                 <tr v-for="(mp, i) in mountPoints" :key="i">
-                  <td>mp{{ i }}</td><td>{{ mp.storage }}:{{ mp.size }}GB → {{ mp.mountpoint }}</td>
+                  <td>mp{{ i }}</td><td>{{ mp.storage }}:{{ mp.size }}GB &#8594; {{ mp.mountpoint }}</td>
                 </tr>
               </table>
             </div>
@@ -501,8 +648,12 @@
               <table class="summary-table">
                 <tr v-for="(iface, i) in netInterfaces" :key="i">
                   <td>net{{ i }}</td>
-                  <td>{{ iface.bridge }}{{ iface.vlan ? ' tag=' + iface.vlan : '' }}
-                    — {{ iface.dhcp ? 'DHCP' : iface.ip_cidr }}</td>
+                  <td>
+                    {{ iface.bridge }}{{ iface.vlan ? ' tag=' + iface.vlan : '' }}
+                    &#8212;
+                    {{ iface.dhcp ? 'DHCP' : iface.ip_cidr }}
+                    {{ iface.macMode === 'custom' && iface.mac ? ' [' + iface.mac + ']' : '' }}
+                  </td>
                 </tr>
                 <tr v-if="formData.nameserver"><td>DNS</td><td>{{ formData.nameserver }}</td></tr>
               </table>
@@ -531,9 +682,15 @@
 
         <!-- Bottom nav -->
         <div class="tab-nav-footer">
-          <button type="button" class="btn btn-outline" @click="prevTab" :disabled="tabIndex === 0">← Previous</button>
+          <button type="button" class="btn btn-outline" @click="prevTab" :disabled="tabIndex === 0">&#8592; Previous</button>
           <span class="tab-position">{{ tabIndex + 1 }} / {{ tabs.length }}</span>
-          <button type="button" class="btn btn-outline" @click="nextTab" :disabled="tabIndex === tabs.length - 1">Next →</button>
+          <button
+            v-if="tabIndex < tabs.length - 1"
+            type="button"
+            class="btn btn-primary"
+            @click="nextTabWithValidation"
+          >Next &#8594;</button>
+          <span v-else style="width:100px"></span>
         </div>
 
       </form>
@@ -550,8 +707,8 @@
         <div class="modal-body">
           <div class="progress-container">
             <div v-if="progressStatus === 'creating'" class="spinner-container"><div class="spinner"></div></div>
-            <div v-else-if="progressStatus === 'done'" class="success-icon">✓</div>
-            <div v-else-if="progressStatus === 'error'" class="error-icon">✕</div>
+            <div v-else-if="progressStatus === 'done'" class="success-icon">&#10003;</div>
+            <div v-else-if="progressStatus === 'error'" class="error-icon">&#10005;</div>
             <h4 class="progress-vm-name">{{ formData.hostname || 'Container' }}</h4>
             <div class="progress-steps"><div class="current-step">{{ progressMessage }}</div></div>
             <div v-if="progressError" class="progress-error"><strong>Error:</strong> {{ progressError }}</div>
@@ -575,6 +732,8 @@ import { detectOs, templateDisplayName } from '@/utils/osIcons'
 import LXCTemplateLibrary from '@/components/LXCTemplateLibrary.vue'
 import { rules, validate } from '@/utils/formValidation'
 
+const MAC_REGEX = /^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$/
+
 export default {
   name: 'CreateLXC',
 
@@ -584,15 +743,36 @@ export default {
     return {
       // Tabs
       tabs: [
-        { id: 'general', label: 'General', icon: '⚙️' },
-        { id: 'template', label: 'Template', icon: '📦' },
-        { id: 'storage', label: 'Storage', icon: '💿' },
-        { id: 'resources', label: 'Resources', icon: '📊' },
-        { id: 'network', label: 'Network', icon: '🌐' },
-        { id: 'features', label: 'Features', icon: '🔧' },
-        { id: 'confirm', label: 'Confirm', icon: '✅' },
+        { id: 'general',   label: 'General'   },
+        { id: 'template',  label: 'Template'  },
+        { id: 'storage',   label: 'Storage'   },
+        { id: 'resources', label: 'Resources' },
+        { id: 'network',   label: 'Network'   },
+        { id: 'features',  label: 'Features'  },
+        { id: 'confirm',   label: 'Confirm'   },
       ],
       activeTab: 'general',
+
+      // Per-step validation errors (populated on Next click)
+      stepErrors: {
+        general:   [],
+        template:  [],
+        storage:   [],
+        resources: [],
+        network:   [],
+        features:  [],
+        confirm:   [],
+      },
+
+      // Hardware presets
+      hwPresets: [
+        { name: 'Micro',  cpu: 1, memGb: 0.5, diskGb: 8   },
+        { name: 'Small',  cpu: 1, memGb: 1,   diskGb: 20  },
+        { name: 'Medium', cpu: 2, memGb: 2,   diskGb: 40  },
+        { name: 'Large',  cpu: 4, memGb: 8,   diskGb: 80  },
+        { name: 'XLarge', cpu: 8, memGb: 16,  diskGb: 160 },
+      ],
+      activePreset: '',
 
       // State
       hosts: [],
@@ -614,7 +794,7 @@ export default {
       },
 
       // Template selection
-      templateSource: 'local', // 'local' | 'library'
+      templateSource: 'local',
       selectedLibraryTemplate: '',
       libraryTargetStorage: '',
 
@@ -636,7 +816,7 @@ export default {
 
       // Network interfaces (net0, net1, ...)
       netInterfaces: [
-        { bridge: '', vlan: null, dhcp: true, ip_cidr: '', gateway: '' }
+        { bridge: '', vlan: null, dhcp: true, ip_cidr: '', gateway: '', macMode: 'random', mac: '', macError: '' }
       ],
 
       // Form payload
@@ -673,21 +853,6 @@ export default {
         }
       },
 
-      // LXC library templates
-      lxcLibraryTemplates: [
-        { id: 'alpine-3.19', icon: '🏔️', name: 'Alpine Linux', version: '3.19', desc: 'Ultra-minimal, ~5 MB. Great for microservices.' },
-        { id: 'debian-12', icon: '🌀', name: 'Debian', version: '12 (Bookworm)', desc: 'Stable, widely compatible.' },
-        { id: 'ubuntu-22.04', icon: '🟠', name: 'Ubuntu', version: '22.04 LTS', desc: 'Popular LTS, broad package support.' },
-        { id: 'ubuntu-24.04', icon: '🟠', name: 'Ubuntu', version: '24.04 LTS', desc: 'Latest LTS release.' },
-        { id: 'centos-stream-9', icon: '🎩', name: 'CentOS Stream', version: '9', desc: 'RHEL-compatible upstream.' },
-        { id: 'rocky-9', icon: '🪨', name: 'Rocky Linux', version: '9', desc: 'RHEL-compatible community distro.' },
-        { id: 'fedora-40', icon: '🎩', name: 'Fedora', version: '40', desc: 'Cutting-edge packages, Red Hat upstream.' },
-        { id: 'archlinux', icon: '⚙️', name: 'Arch Linux', version: 'Rolling', desc: 'Rolling release, up-to-date packages.' },
-        { id: 'opensuse-leap-15', icon: '🦎', name: 'openSUSE Leap', version: '15.6', desc: 'Stable SUSE-based distribution.' },
-        { id: 'gentoo', icon: '🐉', name: 'Gentoo', version: 'Latest', desc: 'Source-based, highly optimized.' },
-        { id: 'devuan-5', icon: '🌀', name: 'Devuan', version: '5 (Daedalus)', desc: 'Debian without systemd.' },
-      ],
-
       containerFeatures: [
         { key: 'nesting', label: 'Nesting', desc: 'Allow running Docker or LXC inside the container.', requiresPrivileged: false },
         { key: 'keyctl', label: 'keyctl', desc: 'Allow use of the keyctl system call.', requiresPrivileged: false },
@@ -704,8 +869,12 @@ export default {
       return this.tabs.findIndex(t => t.id === this.activeTab)
     },
 
+    selectedNodeObj() {
+      return this.nodes.find(n => n.node === this.selectedNode) || null
+    },
+
     selectedTemplateOs() {
-      if (!this.formData.ostemplate) return { icon: '📦', name: '', color: '#555' }
+      if (!this.formData.ostemplate) return { icon: '[CT]', name: '', color: '#555' }
       return detectOs(this.formData.ostemplate)
     },
 
@@ -713,21 +882,49 @@ export default {
       if (!this.formData.ostemplate) return ''
       return templateDisplayName(this.formData.ostemplate)
     },
+
     diskStorageList() {
       return [...this.storageList]
         .filter(s => s.content && (s.content.includes('rootdir') || s.content.includes('images')))
         .sort((a, b) => a.storage.localeCompare(b.storage, undefined, { numeric: true, sensitivity: 'base' }))
     },
+
     templateStorages() {
       return this.storageList.filter(s => s.content && s.content.includes('vztmpl'))
     },
+
     bridgeList() {
       return [...this.networkList]
         .filter(n => n.type === 'bridge' || n.iface?.startsWith('vmbr'))
         .sort((a, b) => a.iface.localeCompare(b.iface, undefined, { numeric: true, sensitivity: 'base' }))
     },
+
     enabledFeatures() {
       return Object.entries(this.formData.features).filter(([, v]) => v).map(([k]) => k)
+    },
+
+    // Resource estimation computeds
+    cpuUsedPercent() {
+      const node = this.selectedNodeObj
+      if (!node || !node.cpu_cores) return 0
+      const usedCores = node.cpu_cores - (node.cpu_free || node.cpu_cores)
+      return (usedCores / node.cpu_cores) * 100
+    },
+    cpuNewPercent() {
+      const node = this.selectedNodeObj
+      if (!node || !node.cpu_cores) return 0
+      return (this.formData.cores / node.cpu_cores) * 100
+    },
+    memUsedPercent() {
+      const node = this.selectedNodeObj
+      if (!node || !node.memory_total) return 0
+      const used = node.memory_total - (node.memory_free || 0)
+      return (used / node.memory_total) * 100
+    },
+    memNewPercent() {
+      const node = this.selectedNodeObj
+      if (!node || !node.memory_total) return 0
+      return ((this.formData.memory * 1024 * 1024) / node.memory_total) * 100
     },
   },
 
@@ -739,11 +936,130 @@ export default {
     // Expose validate() to template inline expressions
     validate,
 
+    clamp(v) { return Math.min(Math.max(v || 0, 0), 100) },
+
+    goToTab(i) {
+      this.activeTab = this.tabs[i].id
+    },
+
     prevTab() {
       if (this.tabIndex > 0) this.activeTab = this.tabs[this.tabIndex - 1].id
     },
-    nextTab() {
-      if (this.tabIndex < this.tabs.length - 1) this.activeTab = this.tabs[this.tabIndex + 1].id
+
+    nextTabWithValidation() {
+      const errs = this.validateStep(this.activeTab)
+      this.stepErrors[this.activeTab] = errs
+      if (errs.length > 0) return
+      if (this.tabIndex < this.tabs.length - 1) {
+        this.activeTab = this.tabs[this.tabIndex + 1].id
+      }
+    },
+
+    validateStep(step) {
+      const errs = []
+      if (step === 'general') {
+        if (!this.selectedHostId) errs.push('Proxmox host must be selected')
+        if (!this.selectedNode) errs.push('Node must be selected')
+        const vmidErr = validate(this.formData.vmid, [rules.required, rules.vmId])
+        if (vmidErr !== true) { this.fieldErrors.vmid = vmidErr; errs.push(`CT ID: ${vmidErr}`) }
+        const hostnameErr = validate(this.formData.hostname, [rules.required, rules.hostname])
+        if (hostnameErr !== true) { this.fieldErrors.hostname = hostnameErr; errs.push(`Hostname: ${hostnameErr}`) }
+        const pwErr = validate(this.formData.password, [rules.required, rules.password(8)])
+        if (pwErr !== true) { this.fieldErrors.password = pwErr; errs.push(`Password: ${pwErr}`) }
+      }
+      if (step === 'template') {
+        if (!this.formData.ostemplate) errs.push('OS template must be selected')
+      }
+      if (step === 'storage') {
+        if (!this.formData.storage) errs.push('Root disk storage must be selected')
+        if (!this.formData.rootfs_size || this.formData.rootfs_size < 1) errs.push('Root disk size must be at least 1 GB')
+        const sel = this.diskStorageList.find(s => s.storage === this.formData.storage)
+        if (sel && this.storageHasEnoughSpace(sel) === false) {
+          errs.push(`Selected storage "${this.formData.storage}" does not have enough free space for a ${this.formData.rootfs_size} GB disk`)
+        }
+      }
+      if (step === 'resources') {
+        const coresErr = validate(this.formData.cores, [rules.required, rules.intRange(1, 512)])
+        if (coresErr !== true) { this.fieldErrors.cores = coresErr; errs.push(`CPU cores: ${coresErr}`) }
+        const memErr = validate(this.formData.memory, [rules.required, rules.intRange(64, 4194304)])
+        if (memErr !== true) { this.fieldErrors.memory = memErr; errs.push(`Memory: ${memErr}`) }
+      }
+      if (step === 'network') {
+        this.netInterfaces.forEach((iface, i) => {
+          if (!iface.bridge) errs.push(`net${i}: bridge must be selected`)
+          if (!iface.dhcp) {
+            if (!iface.ip_cidr) errs.push(`net${i}: IP/CIDR is required when not using DHCP`)
+            if (!iface.gateway) errs.push(`net${i}: gateway is required when not using DHCP`)
+          }
+          if (iface.macMode === 'custom' && iface.mac && !MAC_REGEX.test(iface.mac)) {
+            errs.push(`net${i}: invalid MAC address format`)
+          }
+        })
+      }
+      return errs
+    },
+
+    applyPreset(preset) {
+      this.activePreset = preset.name
+      this.formData.cores = preset.cpu
+      this.formData.memory = Math.round(preset.memGb * 1024)
+      this.formData.rootfs_size = preset.diskGb
+    },
+
+    storageTypeIcon(type) {
+      const icons = {
+        dir: '[DIR]',
+        lvm: '[LVM]',
+        'lvm-thin': '[LVM-T]',
+        zfs: '[ZFS]',
+        zfspool: '[ZFS]',
+        btrfs: '[BTRFS]',
+        nfs: '[NFS]',
+        cifs: '[CIFS]',
+        rbd: '[CEPH]',
+        cephfs: '[CephFS]',
+        pvesm: '[SM]',
+        glusterfs: '[GFS]',
+        drbd: '[DRBD]',
+      }
+      return icons[type] || '[STOR]'
+    },
+
+    storageHasEnoughSpace(storage) {
+      const needed = (this.formData.rootfs_size || 0) * 1024 * 1024 * 1024
+      if (!storage.total) return null
+      return (storage.available || 0) >= needed
+    },
+
+    getStorageUsagePercent(storage) {
+      if (!storage.total || storage.total === 0) return 0
+      return Math.round(((storage.total - (storage.available || 0)) / storage.total) * 100)
+    },
+
+    getNewDiskPercent(storage) {
+      if (!storage.total || storage.total === 0) return 0
+      const needed = (this.formData.rootfs_size || 0) * 1024 * 1024 * 1024
+      return Math.min((needed / storage.total) * 100, 100 - this.getStorageUsagePercent(storage))
+    },
+
+    ifaceBridgeSupportsVlan(iface) {
+      const net = this.networkList.find(n => n.iface === iface.bridge)
+      return net ? (net.bridge_vlan_aware || net.vlan_aware || false) : false
+    },
+
+    validateMac(iface) {
+      if (iface.macMode === 'custom' && iface.mac && !MAC_REGEX.test(iface.mac)) {
+        iface.macError = 'Invalid MAC address format (AA:BB:CC:DD:EE:FF)'
+      } else {
+        iface.macError = ''
+      }
+    },
+
+    formatBytes(bytes) {
+      if (!bytes) return '0 B'
+      const gb = bytes / (1024 * 1024 * 1024)
+      if (gb >= 1) return gb.toFixed(2) + ' GB'
+      return (bytes / (1024 * 1024)).toFixed(0) + ' MB'
     },
 
     async loadHosts() {
@@ -762,7 +1078,7 @@ export default {
       this.formData.storage = ''
       this.formData.ostemplate = ''
       this.formData.vmid = null
-      this.netInterfaces = [{ bridge: '', vlan: null, dhcp: true, ip_cidr: '', gateway: '' }]
+      this.netInterfaces = [{ bridge: '', vlan: null, dhcp: true, ip_cidr: '', gateway: '', macMode: 'random', mac: '', macError: '' }]
       if (!this.selectedHostId) return
 
       this.loadingNodes = true
@@ -805,7 +1121,6 @@ export default {
           const first = diskStorages.find(s => s.enabled && s.active) || diskStorages[0]
           this.formData.storage = first.storage
         }
-        // Set library template target
         const tmplStorages = list.filter(s => s.content?.includes('vztmpl'))
         if (tmplStorages.length > 0) this.libraryTargetStorage = tmplStorages[0].storage
       } catch (e) { console.error(e) } finally { this.loadingStorage = false }
@@ -852,19 +1167,12 @@ export default {
       if (this.netInterfaces.length > 0) this.netInterfaces[0].bridge = iface
     },
 
-    selectLibraryTemplate(tmpl) {
-      this.selectedLibraryTemplate = tmpl.id
-      // Set a placeholder template name; actual download happens on Proxmox side
-      this.formData.ostemplate = `${this.libraryTargetStorage || 'local'}:vztmpl/${tmpl.id}-amd64.tar.xz`
-    },
-
     onTemplateSelected(tmpl) {
       if (!tmpl) {
         this.formData.ostemplate = ''
         return
       }
       this.formData.ostemplate = tmpl.volid
-      // Auto-detect OS type for informational display (no separate os-type field to fill here)
     },
 
     addMountPoint() {
@@ -874,63 +1182,20 @@ export default {
 
     addNetInterface() {
       const defaultBridge = this.bridgeList[0]?.iface || ''
-      this.netInterfaces.push({ bridge: defaultBridge, vlan: null, dhcp: true, ip_cidr: '', gateway: '' })
+      this.netInterfaces.push({ bridge: defaultBridge, vlan: null, dhcp: true, ip_cidr: '', gateway: '', macMode: 'random', mac: '', macError: '' })
     },
     removeNetInterface(idx) { if (idx > 0) this.netInterfaces.splice(idx, 1) },
 
-    getStorageUsagePercent(storage) {
-      if (!storage.total || storage.total === 0) return 0
-      return Math.round(((storage.total - (storage.available || 0)) / storage.total) * 100)
-    },
-
-    formatBytes(bytes) {
-      if (!bytes) return '0 B'
-      const gb = bytes / (1024 * 1024 * 1024)
-      if (gb >= 1) return gb.toFixed(2) + ' GB'
-      return (bytes / (1024 * 1024)).toFixed(0) + ' MB'
-    },
-
     validateForm() {
       const errors = []
-
-      // Reset per-field errors
       Object.keys(this.fieldErrors).forEach(k => { this.fieldErrors[k] = '' })
 
-      if (!this.selectedHostId) errors.push('Proxmox host must be selected')
-      if (!this.selectedNode) errors.push('Node must be selected')
-
-      // CT ID
-      const vmidErr = validate(this.formData.vmid, [rules.required, rules.vmId])
-      if (vmidErr !== true) { this.fieldErrors.vmid = vmidErr; errors.push(`CT ID: ${vmidErr}`) }
-
-      // Hostname
-      const hostnameErr = validate(this.formData.hostname, [rules.required, rules.hostname])
-      if (hostnameErr !== true) { this.fieldErrors.hostname = hostnameErr; errors.push(`Hostname: ${hostnameErr}`) }
-
-      // Password
-      const pwErr = validate(this.formData.password, [rules.required, rules.password(8)])
-      if (pwErr !== true) { this.fieldErrors.password = pwErr; errors.push(`Password: ${pwErr}`) }
-
-      // Memory
-      const memErr = validate(this.formData.memory, [rules.required, rules.intRange(64, 4194304)])
-      if (memErr !== true) { this.fieldErrors.memory = memErr; errors.push(`Memory: ${memErr}`) }
-
-      // Cores
-      const coresErr = validate(this.formData.cores, [rules.required, rules.intRange(1, 512)])
-      if (coresErr !== true) { this.fieldErrors.cores = coresErr; errors.push(`CPU cores: ${coresErr}`) }
-
-      if (!this.formData.ostemplate) errors.push('OS template must be selected')
-      if (!this.formData.storage) errors.push('Root disk storage must be selected')
-
-      this.netInterfaces.forEach((iface, i) => {
-        if (!iface.bridge) errors.push(`net${i}: bridge must be selected`)
-        if (!iface.dhcp) {
-          const ipErr = validate(iface.ip_cidr, [rules.required, rules.ipOrCidr])
-          if (ipErr !== true) errors.push(`net${i} IP/CIDR: ${ipErr}`)
-          const gwErr = validate(iface.gateway, [rules.required, rules.ipAddress])
-          if (gwErr !== true) errors.push(`net${i} Gateway: ${gwErr}`)
-        }
-      })
+      const nonConfirm = this.tabs.filter(t => t.id !== 'confirm')
+      for (const tab of nonConfirm) {
+        const errs = this.validateStep(tab.id)
+        this.stepErrors[tab.id] = errs
+        errors.push(...errs)
+      }
 
       return errors
     },
@@ -938,23 +1203,21 @@ export default {
     buildPayload() {
       const rootfs = `${this.formData.storage}:${this.formData.rootfs_size}`
 
-      // Build net strings
       const nets = {}
       this.netInterfaces.forEach((iface, i) => {
         let net = `name=eth${i},bridge=${iface.bridge}`
         if (iface.dhcp) net += ',ip=dhcp'
         else net += `,ip=${iface.ip_cidr},gw=${iface.gateway}`
         if (iface.vlan) net += `,tag=${iface.vlan}`
+        if (iface.macMode === 'custom' && iface.mac && MAC_REGEX.test(iface.mac)) net += `,hwaddr=${iface.mac}`
         nets[`net${i}`] = net
       })
 
-      // Build mp strings
       const mps = {}
       this.mountPoints.forEach((mp, i) => {
         mps[`mp${i}`] = `${mp.storage}:${mp.size},mp=${mp.mountpoint}`
       })
 
-      // Features string
       const featParts = Object.entries(this.formData.features)
         .filter(([, v]) => v)
         .map(([k]) => k)
@@ -984,7 +1247,6 @@ export default {
       if (this.formData.protection) payload.protection = 1
       if (featStr) payload.features = featStr
 
-      // Startup config
       if (this.formData.startup_order !== null || this.formData.startup_up !== null || this.formData.startup_down !== null) {
         const parts = []
         if (this.formData.startup_order !== null) parts.push(`order=${this.formData.startup_order}`)
@@ -1045,34 +1307,101 @@ export default {
 .card-subtitle { color: var(--text-secondary); margin: 0.25rem 0 0; font-size: 0.9rem; }
 .create-lxc-form { padding: 0 1.5rem 1.5rem; }
 
-/* Tabs */
-.lxc-tabs {
+/* ==================== STEP PROGRESS BAR ==================== */
+.step-progress {
   display: flex;
-  gap: 0.25rem;
-  padding: 0 1.5rem;
-  border-bottom: 2px solid var(--border-color);
+  align-items: flex-start;
+  justify-content: center;
+  padding: 1.5rem 1.5rem 0;
   overflow-x: auto;
   scrollbar-width: none;
 }
-.lxc-tabs::-webkit-scrollbar { display: none; }
-.lxc-tab {
+.step-progress::-webkit-scrollbar { display: none; }
+
+.step-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+  cursor: pointer;
+  min-width: 80px;
+  flex: 1;
+  max-width: 120px;
+}
+
+.step-connector-before,
+.step-connector-after {
+  position: absolute;
+  top: 18px;
+  height: 2px;
+  width: 50%;
+  z-index: 0;
+}
+.step-connector-before { left: 0; background: var(--border-color); }
+.step-connector-after  { right: 0; background: var(--border-color); }
+
+.step-done .step-connector-after,
+.step-done .step-connector-before { background: #14b8a6; }
+.step-active .step-connector-before { background: #14b8a6; }
+
+.step-circle {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
   display: flex;
   align-items: center;
-  gap: 0.4rem;
-  padding: 0.75rem 1rem;
-  border: none;
-  background: none;
-  cursor: pointer;
+  justify-content: center;
+  font-size: 0.8rem;
+  font-weight: 700;
+  border: 2px solid var(--border-color);
+  background: var(--card-bg, white);
   color: var(--text-secondary);
-  font-size: 0.875rem;
-  font-weight: 500;
-  border-bottom: 2px solid transparent;
-  margin-bottom: -2px;
-  white-space: nowrap;
-  transition: color 0.2s, border-color 0.2s;
+  position: relative;
+  z-index: 1;
+  transition: all 0.2s;
 }
-.lxc-tab:hover { color: #14b8a6; }
-.lxc-tab.active { color: #14b8a6; border-bottom-color: #14b8a6; }
+.step-done .step-circle {
+  background: #14b8a6;
+  border-color: #14b8a6;
+  color: white;
+}
+.step-active .step-circle {
+  border-color: #14b8a6;
+  color: #14b8a6;
+  box-shadow: 0 0 0 3px rgba(20,184,166,0.15);
+}
+.step-error .step-circle {
+  border-color: #ef4444;
+  background: #fee2e2;
+  color: #ef4444;
+}
+
+.step-label {
+  margin-top: 0.4rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-align: center;
+  white-space: nowrap;
+}
+.step-active .step-label { color: #14b8a6; }
+.step-done .step-label { color: #0d9488; }
+.step-error .step-label { color: #ef4444; }
+
+/* ==================== STEP ERROR BANNER ==================== */
+.step-error-banner {
+  background: rgba(239,68,68,0.07);
+  border: 1px solid rgba(239,68,68,0.25);
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1.25rem;
+}
+.step-error-item {
+  font-size: 0.85rem;
+  color: #dc2626;
+  margin-bottom: 0.2rem;
+}
+.step-error-item:last-child { margin-bottom: 0; }
 
 /* Content */
 .tab-content { padding-top: 1.5rem; min-height: 400px; }
@@ -1106,58 +1435,82 @@ export default {
 .selected-template-name { font-size: 0.9rem; font-weight: 600; color: var(--text-primary); word-break: break-all; }
 .selected-template-os { font-size: 0.8rem; font-weight: 500; margin-top: 0.1rem; }
 
-/* Library templates (legacy — still used by lxcLibraryTemplates fallback) */
-.library-info { font-size: 0.875rem; color: var(--text-secondary); margin-bottom: 1rem; }
-.template-library-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 0.875rem; }
-.template-lib-card {
+/* ==================== HARDWARE PRESETS ==================== */
+.hw-presets {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.hw-preset-card {
   border: 2px solid var(--border-color);
   border-radius: 0.5rem;
-  padding: 1rem;
-  display: flex;
-  align-items: flex-start;
-  gap: 0.875rem;
+  padding: 0.75rem 1rem;
   cursor: pointer;
   transition: all 0.2s;
   background: var(--background);
-  position: relative;
+  min-width: 110px;
+  text-align: center;
 }
-.template-lib-card:hover { border-color: #14b8a6; box-shadow: 0 4px 12px rgba(20,184,166,0.12); }
-.template-lib-card.selected { border-color: #14b8a6; background: rgba(20,184,166,0.08); }
-.template-lib-icon { font-size: 1.75rem; flex-shrink: 0; }
-.template-lib-info h6 { margin: 0 0 0.1rem; font-size: 0.9rem; font-weight: 600; }
-.template-lib-version { font-size: 0.75rem; color: #14b8a6; font-weight: 500; }
-.template-lib-desc { font-size: 0.78rem; color: var(--text-secondary); margin-top: 0.25rem; }
-.template-selected-badge { position: absolute; top: 0.5rem; right: 0.5rem; background: #14b8a6; color: white; font-size: 0.7rem; padding: 0.1rem 0.45rem; border-radius: 9999px; font-weight: 600; }
+.hw-preset-card:hover { border-color: #14b8a6; }
+.hw-preset-card.active { border-color: #14b8a6; background: rgba(20,184,166,0.1); }
+.hw-preset-name { font-weight: 700; font-size: 0.875rem; color: var(--text-primary); margin-bottom: 0.35rem; }
+.hw-preset-specs { display: flex; flex-direction: column; gap: 0.15rem; font-size: 0.75rem; color: var(--text-secondary); }
+.hw-preset-card.active .hw-preset-name { color: #0d9488; }
 
-/* Storage */
-.storage-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem; margin: 0.5rem 0; }
+/* ==================== STORAGE ==================== */
+.storage-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 1rem; margin: 0.5rem 0; }
 .storage-card { border: 2px solid var(--border-color); border-radius: 0.5rem; padding: 1rem; cursor: pointer; transition: all 0.2s; background: var(--background); position: relative; }
 .storage-card:hover { border-color: var(--primary-color); }
-.storage-card.selected { border-color: var(--primary-color); background: linear-gradient(135deg,rgba(37,99,235,0.1),rgba(147,51,234,0.1)); }
+.storage-card.selected { border-color: var(--primary-color); background: linear-gradient(135deg,rgba(37,99,235,0.08),rgba(147,51,234,0.08)); }
 .storage-card.disabled { opacity: 0.5; cursor: not-allowed; }
-.storage-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; }
-.storage-header h6 { margin: 0; font-size: 1rem; font-weight: 600; }
-.storage-bar { width: 100%; height: 8px; background: var(--border-color); border-radius: 4px; overflow: hidden; margin-bottom: 0.5rem; }
-.storage-bar-fill { height: 100%; background: linear-gradient(90deg, var(--primary-color), var(--secondary-color)); }
+.storage-card.storage-insufficient { opacity: 0.55; }
+.storage-card.storage-insufficient:hover { border-color: #ef4444; }
+.storage-name-row { display: flex; align-items: center; gap: 0.4rem; }
+.storage-type-icon { font-size: 0.72rem; font-family: monospace; background: rgba(0,0,0,0.06); border-radius: 0.25rem; padding: 0.1rem 0.35rem; color: var(--text-secondary); }
+.storage-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.75rem; flex-wrap: wrap; gap: 0.35rem; }
+.storage-header h6 { margin: 0; font-size: 0.95rem; font-weight: 600; }
+.storage-badges { display: flex; gap: 0.25rem; flex-wrap: wrap; }
+.storage-bar { width: 100%; height: 8px; background: var(--border-color); border-radius: 4px; overflow: hidden; margin-bottom: 0.5rem; position: relative; }
+.storage-bar-fill { height: 100%; background: linear-gradient(90deg, var(--primary-color), var(--secondary-color)); transition: width 0.3s; }
+.storage-bar-fill.storage-bar-danger { background: linear-gradient(90deg, #ef4444, #dc2626); }
+.storage-bar-new { position: absolute; top: 0; height: 100%; background: rgba(20,184,166,0.6); transition: width 0.3s; }
 .storage-stats { display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-secondary); }
 .storage-badge { position: absolute; top: 0.5rem; right: 0.5rem; }
+.storage-info { margin-top: 0.5rem; }
 
 /* Mount points */
 .mount-point-row { border: 1px solid var(--border-color); border-radius: 0.5rem; padding: 0.875rem; margin-bottom: 0.875rem; }
 .mount-point-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem; }
 
-/* Network */
+/* ==================== NETWORK ==================== */
 .network-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 0.875rem; margin-bottom: 1rem; }
 .network-card { border: 2px solid var(--border-color); border-radius: 0.5rem; padding: 0.875rem; cursor: pointer; transition: all 0.2s; background: var(--background); }
 .network-card:hover { border-color: #14b8a6; }
 .network-card.selected { border-color: #14b8a6; background: rgba(20,184,166,0.08); }
 .network-card.disabled { opacity: 0.5; cursor: not-allowed; }
-.network-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
+.network-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.5rem; flex-wrap: wrap; gap: 0.35rem; }
 .network-header h6 { margin: 0; font-size: 0.9rem; font-weight: 600; }
 .network-info { font-size: 0.8rem; color: var(--text-secondary); }
 .nic-row { border: 1px solid var(--border-color); border-radius: 0.5rem; padding: 1rem; margin-bottom: 1rem; }
 .nic-row-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--border-color); }
 .nic-label { font-family: monospace; font-size: 0.875rem; font-weight: 600; color: #14b8a6; }
+
+/* MAC address */
+.mac-mode-row { display: flex; gap: 0.75rem; }
+.mac-mode-option {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 0.375rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  transition: all 0.15s;
+}
+.mac-mode-option.active { border-color: #14b8a6; color: #0d9488; background: rgba(20,184,166,0.07); }
+.mac-mode-option input[type=radio] { margin: 0; }
 
 /* Features */
 .feature-note { font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1rem; }
@@ -1168,6 +1521,35 @@ export default {
 .feature-card-title { font-weight: 600; font-size: 0.875rem; color: var(--text-primary); }
 .feature-card-desc { font-size: 0.8rem; color: var(--text-secondary); margin-top: 0.15rem; }
 .feature-card-warning { font-size: 0.75rem; color: #f59e0b; margin-top: 0.25rem; }
+
+/* ==================== RESOURCE ESTIMATE ==================== */
+.resource-estimate-banner {
+  background: rgba(20,184,166,0.05);
+  border: 1px solid rgba(20,184,166,0.2);
+  border-radius: 0.5rem;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.5rem;
+}
+.res-estimate-title { font-size: 0.85rem; font-weight: 700; color: #0d9488; margin: 0 0 0.875rem; text-transform: uppercase; letter-spacing: 0.05em; }
+.res-estimate-rows { display: flex; flex-direction: column; gap: 0.75rem; }
+.res-estimate-row { display: flex; align-items: center; gap: 0.875rem; }
+.res-estimate-label { font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); width: 40px; text-align: right; flex-shrink: 0; }
+.res-estimate-bar-wrap { flex: 1; display: flex; flex-direction: column; gap: 0.25rem; }
+.res-estimate-bar {
+  height: 10px;
+  background: var(--border-color);
+  border-radius: 5px;
+  overflow: hidden;
+  display: flex;
+}
+.res-estimate-existing { height: 100%; background: #6366f1; transition: width 0.3s; }
+.res-estimate-new { height: 100%; background: #14b8a6; transition: width 0.3s; }
+.res-estimate-nums { display: flex; justify-content: space-between; font-size: 0.75rem; }
+.res-estimate-of { color: var(--text-secondary); }
+.res-estimate-legend { display: flex; align-items: center; font-size: 0.75rem; color: var(--text-secondary); margin-top: 0.75rem; }
+.legend-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 0.35rem; }
+.legend-dot.existing { background: #6366f1; }
+.legend-dot.new { background: #14b8a6; }
 
 /* Summary */
 .summary-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1.25rem; margin-bottom: 1.5rem; }
@@ -1181,19 +1563,21 @@ export default {
 .summary-table td:last-child { font-weight: 500; color: var(--text-primary); word-break: break-all; }
 
 /* Misc */
+.text-xs { font-size: 0.75rem; }
 .disk-label { font-family: monospace; font-size: 0.875rem; font-weight: 600; color: var(--primary-color); }
 .btn-icon-danger { background: none; border: 1px solid #ef4444; color: #ef4444; border-radius: 0.25rem; padding: 0.2rem 0.5rem; cursor: pointer; font-size: 0.8rem; }
 .btn-icon-danger:hover { background: #fee2e2; }
 .loading-message { text-align: center; padding: 2rem; color: var(--text-secondary); }
 .loading-spinner { width: 32px; height: 32px; border: 3px solid var(--border-color); border-top-color: #14b8a6; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 0.75rem; }
 .badge-sm { padding: 0.125rem 0.5rem; font-size: 0.75rem; }
+.badge-danger { background: rgba(239,68,68,0.15); color: #dc2626; }
 .form-actions { display: flex; gap: 1rem; align-items: center; padding-top: 1rem; }
 .btn-lg { padding: 0.75rem 2rem; font-size: 1rem; }
 .btn-sm { padding: 0.3rem 0.75rem; font-size: 0.8rem; }
 .btn-spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.4); border-top-color: white; border-radius: 50%; animation: spin 0.8s linear infinite; vertical-align: middle; margin-right: 0.5rem; }
 .form-help { display: block; margin-top: 0.25rem; font-size: 0.8rem; color: var(--text-secondary); }
 .form-error-text { display: block; margin-top: 0.25rem; font-size: 0.78rem; color: #ef4444; }
-.form-error-text::before { content: '⚠ '; }
+.form-error-text::before { content: '\26A0 '; }
 .input-error { border-color: #ef4444 !important; box-shadow: 0 0 0 2px rgba(239,68,68,0.15) !important; }
 .input-error:focus { border-color: #ef4444 !important; box-shadow: 0 0 0 3px rgba(239,68,68,0.2) !important; }
 @keyframes spin { to { transform: rotate(360deg); } }

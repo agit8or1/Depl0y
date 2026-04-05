@@ -3,22 +3,31 @@
     <div class="card">
       <div class="card-header">
         <h3>Create Virtual Machine</h3>
-        <p class="card-subtitle">Configure your new VM across all tabs, then review and create.</p>
+        <p class="card-subtitle">Configure your new VM, then review and create.</p>
       </div>
 
-      <!-- Tab Navigation -->
-      <div class="vm-tabs">
-        <button
-          v-for="tab in tabs"
+      <!-- Step Progress Bar -->
+      <div class="step-progress">
+        <div
+          v-for="(tab, i) in tabs"
           :key="tab.id"
-          :class="['vm-tab', { 'active': activeTab === tab.id, 'has-error': tabErrors[tab.id] }]"
-          @click="activeTab = tab.id"
-          type="button"
+          class="step-item"
+          :class="{
+            'step-active': activeTab === tab.id,
+            'step-done': tabIndex > i,
+            'step-error': tabErrors[tab.id]
+          }"
+          @click="goToTab(i)"
         >
-          <span class="tab-icon">{{ tab.icon }}</span>
-          <span class="tab-label">{{ tab.label }}</span>
-          <span v-if="tabErrors[tab.id]" class="tab-error-dot" title="Tab has errors">!</span>
-        </button>
+          <div class="step-connector-before" v-if="i > 0"></div>
+          <div class="step-circle">
+            <span v-if="tabErrors[tab.id]" class="step-circle-icon">!</span>
+            <span v-else-if="tabIndex > i" class="step-circle-icon">&#10003;</span>
+            <span v-else class="step-circle-num">{{ i + 1 }}</span>
+          </div>
+          <div class="step-label">{{ tab.label }}</div>
+          <div class="step-connector-after" v-if="i < tabs.length - 1"></div>
+        </div>
       </div>
 
       <form @submit.prevent="createVM" class="create-vm-form">
@@ -39,7 +48,7 @@
                   :class="['datacenter-card', { 'selected': selectedHostId === host.id }]"
                   @click="selectDatacenter(host.id)"
                 >
-                  <div class="datacenter-icon">🏢</div>
+                  <div class="datacenter-icon">&#127970;</div>
                   <div class="datacenter-info">
                     <h5>{{ host.name }}</h5>
                     <p class="text-xs">{{ host.hostname }}:{{ host.port }}</p>
@@ -49,6 +58,7 @@
                   </div>
                 </div>
               </div>
+              <small v-if="stepErrors.general?.host" class="form-error-text">{{ stepErrors.general.host }}</small>
             </div>
 
             <div v-if="selectedHostId && nodes.length > 0" class="form-group">
@@ -68,16 +78,29 @@
                   </div>
                   <div class="node-resources">
                     <div class="resource-item">
-                      <span class="resource-icon">🖥️</span>
-                      <span>{{ node.cpu_cores }} cores ({{ node.cpu_usage }}%)</span>
+                      <span class="resource-icon">&#128421;</span>
+                      <span>{{ node.cpu_cores }} cores</span>
+                      <div class="resource-bar-wrap">
+                        <div class="resource-bar">
+                          <div class="resource-bar-fill cpu" :style="{ width: Math.round(node.cpu_usage || 0) + '%' }"></div>
+                        </div>
+                        <span class="resource-pct">{{ Math.round(node.cpu_usage || 0) }}%</span>
+                      </div>
                     </div>
                     <div class="resource-item">
-                      <span class="resource-icon">💾</span>
+                      <span class="resource-icon">&#128190;</span>
                       <span>{{ formatBytes(node.memory_total) }} RAM</span>
+                      <div class="resource-bar-wrap">
+                        <div class="resource-bar">
+                          <div class="resource-bar-fill mem" :style="{ width: node.memory_total ? Math.round(((node.memory_total - (node.memory_free || 0)) / node.memory_total) * 100) + '%' : '0%' }"></div>
+                        </div>
+                        <span class="resource-pct">{{ node.memory_total ? Math.round(((node.memory_total - (node.memory_free || 0)) / node.memory_total) * 100) : 0 }}%</span>
+                      </div>
                     </div>
                   </div>
                 </div>
               </div>
+              <small v-if="stepErrors.general?.node" class="form-error-text">{{ stepErrors.general.node }}</small>
             </div>
             <div v-if="selectedHostId && loadingNodes" class="loading-message">
               <div class="loading-spinner"></div>
@@ -102,9 +125,9 @@
                     placeholder="Auto-assign"
                     @input="debouncedCheckVmId"
                   />
-                  <span v-if="vmIdStatus === 'checking'" class="status-icon checking">⟳</span>
-                  <span v-else-if="vmIdStatus === 'taken'" class="status-icon taken" title="VM ID already in use">✕</span>
-                  <span v-else-if="vmIdStatus === 'free'" class="status-icon free" title="VM ID available">✓</span>
+                  <span v-if="vmIdStatus === 'checking'" class="status-icon checking">&#8635;</span>
+                  <span v-else-if="vmIdStatus === 'taken'" class="status-icon taken" title="VM ID already in use">&#10005;</span>
+                  <span v-else-if="vmIdStatus === 'free'" class="status-icon free" title="VM ID available">&#10003;</span>
                 </div>
                 <small v-if="vmIdStatus === 'taken'" class="form-help error-text">VM ID {{ formData.vmid }} is already in use</small>
                 <small v-else class="form-help">Leave blank to auto-assign</small>
@@ -151,7 +174,7 @@
                   :style="{ background: tagColor(tag) }"
                 >
                   {{ tag }}
-                  <button type="button" class="tag-remove" @click.stop="removeTag(idx)">×</button>
+                  <button type="button" class="tag-remove" @click.stop="removeTag(idx)">&#215;</button>
                 </span>
                 <input
                   ref="tagInput"
@@ -201,6 +224,7 @@
                     <option value="other">Other / Custom</option>
                   </optgroup>
                 </select>
+                <small v-if="stepErrors.general?.os" class="form-error-text">{{ stepErrors.general.os }}</small>
               </div>
 
               <div class="form-group">
@@ -232,170 +256,40 @@
           </div>
         </div>
 
-        <!-- ==================== SYSTEM TAB ==================== -->
-        <div v-show="activeTab === 'system'" class="tab-content">
-          <h4 class="section-title">System Configuration</h4>
+        <!-- ==================== HARDWARE TAB ==================== -->
+        <div v-show="activeTab === 'hardware'" class="tab-content">
+          <h4 class="section-title">Hardware Configuration</h4>
 
+          <!-- Hardware Presets -->
           <div class="form-section">
-            <h5 class="subsection-title">Machine &amp; BIOS</h5>
-            <div class="grid grid-cols-2 gap-2">
-              <div class="form-group">
-                <label class="form-label">Machine Type</label>
-                <select v-model="formData.machine_type" class="form-control">
-                  <option value="pc">i440FX (PC) — Classic, broad compatibility</option>
-                  <option value="q35">Q35 (PCIe) — Modern, PCIe passthrough support</option>
-                </select>
-                <small class="form-help">Q35 required for UEFI/OVMF and PCIe passthrough</small>
+            <h5 class="subsection-title">Quick Presets</h5>
+            <p class="preset-hint">Click a preset to fill CPU, RAM, and primary disk size instantly.</p>
+            <div class="preset-cards">
+              <div
+                v-for="preset in hwPresets"
+                :key="preset.name"
+                :class="['preset-card', { 'preset-selected': activePreset === preset.name }]"
+                @click="applyPreset(preset)"
+              >
+                <div class="preset-name">{{ preset.name }}</div>
+                <div class="preset-specs">
+                  <span class="preset-spec">&#128421; {{ preset.cpu }}vCPU</span>
+                  <span class="preset-spec">&#128190; {{ preset.memGb }}GB</span>
+                  <span class="preset-spec">&#128190; {{ preset.diskGb }}GB</span>
+                </div>
               </div>
-
-              <div class="form-group">
-                <label class="form-label">BIOS Type</label>
-                <select v-model="formData.bios_type" class="form-control">
-                  <option value="seabios">SeaBIOS (Legacy BIOS)</option>
-                  <option value="ovmf">OVMF (UEFI)</option>
-                </select>
-              </div>
-            </div>
-
-            <div v-if="formData.bios_type === 'ovmf'" class="form-group">
-              <label class="form-label">
-                <input type="checkbox" v-model="formData.tpm_enabled" style="margin-right:8px" />
-                Enable TPM 2.0 (tpmstate0 disk)
-              </label>
-              <div class="form-text">Required for Windows 11 and modern secure boot environments</div>
             </div>
           </div>
 
+          <!-- CPU -->
           <div class="form-section">
-            <h5 class="subsection-title">Storage Controller</h5>
-            <div class="form-group">
-              <label class="form-label">SCSI Controller</label>
-              <select v-model="formData.scsihw" class="form-control">
-                <option value="virtio-scsi-pci">VirtIO SCSI (Recommended)</option>
-                <option value="virtio-scsi-single">VirtIO SCSI Single (IO thread per disk)</option>
-                <option value="lsi">LSI 53C895A</option>
-                <option value="lsi53c810">LSI 53C810</option>
-                <option value="megasas">MegaRAID SAS 8708EM2</option>
-                <option value="pvscsi">VMware PVSCSI</option>
-              </select>
-            </div>
-          </div>
-
-          <div class="form-section">
-            <h5 class="subsection-title">Display &amp; Misc</h5>
-            <div class="grid grid-cols-2 gap-2">
-              <div class="form-group">
-                <label class="form-label">VGA Type</label>
-                <select v-model="formData.vga_type" class="form-control">
-                  <option value="std">Standard VGA</option>
-                  <option value="virtio">VirtIO-GPU</option>
-                  <option value="qxl">QXL (SPICE)</option>
-                  <option value="vmware">VMware compatible</option>
-                  <option value="cirrus">Cirrus Logic</option>
-                  <option value="none">None (no display)</option>
-                </select>
-              </div>
-
-              <div class="form-group">
-                <label class="form-label">Boot Order</label>
-                <select v-model="formData.boot_order" class="form-control">
-                  <option value="cdn">Disk, CD-ROM, Network</option>
-                  <option value="dcn">CD-ROM, Disk, Network</option>
-                  <option value="ncd">Network, Disk, CD-ROM</option>
-                  <option value="c">Disk only</option>
-                  <option value="d">CD-ROM only</option>
-                  <option value="n">Network only</option>
-                </select>
-              </div>
-            </div>
-
-            <div class="grid grid-cols-3 gap-2">
-              <div class="form-group">
-                <label class="form-label">
-                  <input type="checkbox" v-model="formData.agent_enabled" style="margin-right:8px" />
-                  QEMU Guest Agent
-                </label>
-                <div class="form-text">Enables better VM management and IP detection</div>
-              </div>
-
-              <div class="form-group">
-                <label class="form-label">
-                  <input type="checkbox" v-model="formData.kvm" style="margin-right:8px" />
-                  KVM Hardware Virtualization
-                </label>
-              </div>
-
-              <div class="form-group">
-                <label class="form-label">
-                  <input type="checkbox" v-model="formData.acpi" style="margin-right:8px" />
-                  Enable ACPI
-                </label>
-              </div>
-            </div>
-
-            <div class="grid grid-cols-3 gap-2">
-              <div class="form-group">
-                <label class="form-label">
-                  <input type="checkbox" v-model="formData.tablet" style="margin-right:8px" />
-                  Tablet Pointer Device
-                </label>
-                <div class="form-text">Improves mouse tracking in VNC/SPICE</div>
-              </div>
-
-              <div class="form-group">
-                <label class="form-label">
-                  <input type="checkbox" v-model="formData.onboot" style="margin-right:8px" />
-                  Start at Boot
-                </label>
-                <div class="form-text">Auto-start when Proxmox host boots</div>
-              </div>
-
-              <div class="form-group">
-                <label class="form-label">
-                  <input type="checkbox" v-model="formData.protection" style="margin-right:8px" />
-                  Protection (prevent deletion)
-                </label>
-              </div>
-            </div>
-
-            <div class="grid grid-cols-3 gap-2">
-              <div class="form-group">
-                <label class="form-label">Startup Order</label>
-                <input v-model.number="formData.startup_order" type="number" min="0" class="form-control" placeholder="Default" />
-                <small class="form-help">Lower = starts first</small>
-              </div>
-              <div class="form-group">
-                <label class="form-label">Startup Delay (sec)</label>
-                <input v-model.number="formData.startup_up" type="number" min="0" class="form-control" placeholder="0" />
-              </div>
-              <div class="form-group">
-                <label class="form-label">Shutdown Timeout (sec)</label>
-                <input v-model.number="formData.startup_down" type="number" min="0" class="form-control" placeholder="60" />
-              </div>
-            </div>
-
-            <div class="form-group">
-              <label class="form-label">Hotplug Options</label>
-              <input v-model="formData.hotplug" type="text" class="form-control" placeholder="disk,network,usb,memory,cpu" />
-              <small class="form-help">Comma-separated list of hotplug device types</small>
-            </div>
-          </div>
-        </div>
-
-        <!-- ==================== CPU TAB ==================== -->
-        <div v-show="activeTab === 'cpu'" class="tab-content">
-          <h4 class="section-title">CPU Configuration</h4>
-
-          <div class="form-section">
-            <h5 class="subsection-title">Core Allocation</h5>
+            <h5 class="subsection-title">CPU</h5>
             <div class="grid grid-cols-3 gap-2">
               <div class="form-group">
                 <label class="form-label">CPU Sockets *</label>
                 <input
                   v-model.number="formData.cpu_sockets"
-                  type="number"
-                  min="1"
-                  max="8"
+                  type="number" min="1" max="8"
                   :class="['form-control', { 'input-error': fieldErrors.cpu_sockets }]"
                   required
                   @blur="validateField('cpu_sockets', formData.cpu_sockets, [rules.required, rules.intRange(1, 16)])"
@@ -406,9 +300,7 @@
                 <label class="form-label">CPU Cores *</label>
                 <input
                   v-model.number="formData.cpu_cores"
-                  type="number"
-                  min="1"
-                  max="64"
+                  type="number" min="1" max="64"
                   :class="['form-control', { 'input-error': fieldErrors.cpu_cores }]"
                   required
                   @blur="validateField('cpu_cores', formData.cpu_cores, [rules.required, rules.intRange(1, 512)])"
@@ -417,13 +309,10 @@
               </div>
               <div class="form-group">
                 <label class="form-label">Total vCPUs</label>
-                <input :value="formData.cpu_sockets * formData.cpu_cores" type="number" class="form-control" disabled style="background:#f8f9fa;color:#666" />
+                <input :value="formData.cpu_sockets * formData.cpu_cores" type="number" class="form-control" disabled style="background:var(--border-color);color:var(--text-secondary)" />
               </div>
             </div>
-          </div>
 
-          <div class="form-section">
-            <h5 class="subsection-title">CPU Type &amp; Emulation</h5>
             <div class="form-group">
               <label class="form-label">CPU Type</label>
               <select v-model="formData.cpu_type" class="form-control">
@@ -439,290 +328,274 @@
                 </optgroup>
                 <optgroup label="Intel">
                   <option value="Cascadelake-Server">Cascadelake Server</option>
-                  <option value="Cascadelake-Server-noTSX">Cascadelake Server (no TSX)</option>
                   <option value="Skylake-Server">Skylake Server</option>
-                  <option value="Skylake-Client">Skylake Client</option>
                   <option value="Broadwell">Broadwell</option>
-                  <option value="Broadwell-noTSX">Broadwell (no TSX)</option>
                   <option value="Haswell">Haswell</option>
-                  <option value="Haswell-noTSX">Haswell (no TSX)</option>
                   <option value="IvyBridge">IvyBridge</option>
                   <option value="SandyBridge">SandyBridge</option>
-                  <option value="Nehalem">Nehalem</option>
-                  <option value="Westmere">Westmere</option>
-                  <option value="Conroe">Conroe</option>
-                  <option value="Penryn">Penryn</option>
                 </optgroup>
                 <optgroup label="AMD">
                   <option value="EPYC">AMD EPYC</option>
                   <option value="EPYC-Rome">AMD EPYC Rome</option>
                   <option value="EPYC-Milan">AMD EPYC Milan</option>
-                  <option value="Opteron_G5">AMD Opteron G5</option>
-                  <option value="Opteron_G4">AMD Opteron G4</option>
-                  <option value="Opteron_G3">AMD Opteron G3</option>
                 </optgroup>
               </select>
             </div>
 
-            <div class="form-group">
-              <label class="form-label">CPU Flags</label>
-              <div class="cpu-flags-grid">
-                <label class="flag-checkbox" v-for="flag in cpuFlagOptions" :key="flag.value">
-                  <input type="checkbox" :value="flag.value" v-model="selectedCpuFlags" />
-                  <span class="flag-name">{{ flag.label }}</span>
-                  <span class="flag-desc">{{ flag.desc }}</span>
-                </label>
-              </div>
-              <div class="form-group" style="margin-top:0.5rem">
-                <label class="form-label">Additional Flags (raw)</label>
-                <input v-model="formData.cpu_flags" type="text" class="form-control" placeholder="e.g. +aes,+ssse3" />
-                <small class="form-help">Comma-separated additional CPU flags</small>
-              </div>
-            </div>
-          </div>
-
-          <div class="form-section">
-            <h5 class="subsection-title">NUMA &amp; Scheduling</h5>
             <div class="grid grid-cols-2 gap-2">
               <div class="form-group">
-                <label class="form-label">
-                  <input type="checkbox" v-model="formData.numa_enabled" style="margin-right:8px" />
-                  Enable NUMA Topology
-                </label>
-                <div class="form-text">Non-Uniform Memory Access — required for NUMA pinning</div>
-              </div>
-
-              <div v-if="formData.numa_enabled" class="form-group">
-                <label class="form-label">NUMA Nodes</label>
-                <input v-model.number="formData.numa_nodes" type="number" min="1" max="8" class="form-control" />
-                <small class="form-help">Number of virtual NUMA nodes</small>
-              </div>
-            </div>
-
-            <div class="grid grid-cols-2 gap-2">
-              <div class="form-group">
-                <label class="form-label">CPU Limit (max usage %)</label>
+                <label class="form-label">CPU Limit (max usage)</label>
                 <input v-model.number="formData.cpu_limit" type="number" min="0" max="128" class="form-control" placeholder="0 = unlimited" />
-                <small class="form-help">Max CPU usage as fraction of cores (0 = unlimited)</small>
               </div>
-
               <div class="form-group">
                 <label class="form-label">CPU Units (priority weight)</label>
                 <input v-model.number="formData.cpu_units" type="number" min="8" max="500000" class="form-control" />
-                <small class="form-help">Scheduler weight — default 1024, higher = more priority</small>
+                <small class="form-help">Default 1024, higher = more priority</small>
               </div>
             </div>
           </div>
-        </div>
 
-        <!-- ==================== MEMORY TAB ==================== -->
-        <div v-show="activeTab === 'memory'" class="tab-content">
-          <h4 class="section-title">Memory Configuration</h4>
-
+          <!-- Memory -->
           <div class="form-section">
-            <h5 class="subsection-title">RAM Allocation</h5>
+            <h5 class="subsection-title">Memory</h5>
             <div class="grid grid-cols-2 gap-2">
               <div class="form-group">
                 <label class="form-label">Memory (MB) *</label>
                 <input
                   v-model.number="formData.memory"
-                  type="number"
-                  min="512"
-                  max="4194304"
-                  step="512"
+                  type="number" min="512" max="4194304" step="512"
                   :class="['form-control', { 'input-error': fieldErrors.memory }]"
                   required
                   @blur="validateField('memory', formData.memory, [rules.required, rules.intRange(512, 4194304)])"
                 />
                 <small v-if="fieldErrors.memory" class="form-error-text">{{ fieldErrors.memory }}</small>
-                <small v-else class="form-help">{{ (formData.memory / 1024).toFixed(1) }} GB (min 512 MB)</small>
+                <small v-else class="form-help">{{ (formData.memory / 1024).toFixed(1) }} GB</small>
               </div>
-
               <div class="form-group">
-                <label class="form-label">Memory Shares (scheduler weight)</label>
+                <label class="form-label">Memory Shares</label>
                 <input v-model.number="formData.shares" type="number" min="0" max="50000" class="form-control" placeholder="Default (1000)" />
-                <small class="form-help">Higher = more memory priority under contention</small>
+                <small class="form-help">Higher = more priority under contention</small>
               </div>
             </div>
-          </div>
 
-          <div class="form-section">
-            <h5 class="subsection-title">Ballooning (Dynamic Memory)</h5>
             <div class="form-group">
               <label class="form-label">
                 <input type="checkbox" v-model="formData.balloon_enabled" style="margin-right:8px" />
                 Enable Ballooning Device
               </label>
-              <div class="form-text">Allows Proxmox to dynamically adjust RAM between VMs. Requires QEMU guest agent + balloon driver.</div>
+              <div class="form-text">Allows dynamic RAM adjustment. Requires balloon driver in guest.</div>
             </div>
-
-            <div v-if="formData.balloon_enabled" class="grid grid-cols-2 gap-2">
-              <div class="form-group">
-                <label class="form-label">Minimum Memory (MB)</label>
-                <input v-model.number="formData.balloon" type="number" min="0" :max="formData.memory" step="256" class="form-control" placeholder="0 = disable balloon" />
-                <small class="form-help">Minimum RAM guaranteed. 0 disables balloon device.</small>
-              </div>
-              <div class="form-group">
-                <label class="form-label">Current min / max</label>
-                <div class="memory-range">
-                  <div class="memory-range-bar">
-                    <div class="memory-range-fill" :style="{ width: balloonPercent + '%' }"></div>
-                    <div class="memory-range-max"></div>
-                  </div>
-                  <div class="memory-range-labels">
-                    <span>{{ formData.balloon || 0 }} MB min</span>
-                    <span>{{ formData.memory }} MB max</span>
-                  </div>
-                </div>
-              </div>
+            <div v-if="formData.balloon_enabled" class="form-group">
+              <label class="form-label">Minimum Memory (MB)</label>
+              <input v-model.number="formData.balloon" type="number" min="0" :max="formData.memory" step="256" class="form-control" placeholder="0 = disable balloon" />
             </div>
           </div>
 
+          <!-- System -->
           <div class="form-section">
-            <h5 class="subsection-title">Huge Pages</h5>
-            <div class="form-group">
-              <label class="form-label">Huge Pages</label>
-              <select v-model="formData.hugepages" class="form-control">
-                <option value="">Disabled (standard 4K pages)</option>
-                <option value="1024">1 GB huge pages</option>
-                <option value="2">2 MB huge pages</option>
-                <option value="any">Any</option>
-              </select>
-              <small class="form-help">Huge pages improve performance for memory-intensive workloads. Requires host configuration.</small>
+            <h5 class="subsection-title">Machine &amp; BIOS</h5>
+            <div class="grid grid-cols-2 gap-2">
+              <div class="form-group">
+                <label class="form-label">Machine Type</label>
+                <select v-model="formData.machine_type" class="form-control">
+                  <option value="pc">i440FX (PC) — Classic, broad compatibility</option>
+                  <option value="q35">Q35 (PCIe) — Modern, PCIe passthrough support</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">BIOS Type</label>
+                <select v-model="formData.bios_type" class="form-control">
+                  <option value="seabios">SeaBIOS (Legacy BIOS)</option>
+                  <option value="ovmf">OVMF (UEFI)</option>
+                </select>
+              </div>
+            </div>
+            <div v-if="formData.bios_type === 'ovmf'" class="form-group">
+              <label class="form-label">
+                <input type="checkbox" v-model="formData.tpm_enabled" style="margin-right:8px" />
+                Enable TPM 2.0
+              </label>
+              <div class="form-text">Required for Windows 11 and secure boot environments</div>
+            </div>
+
+            <div class="grid grid-cols-3 gap-2">
+              <div class="form-group">
+                <label class="form-label">SCSI Controller</label>
+                <select v-model="formData.scsihw" class="form-control">
+                  <option value="virtio-scsi-pci">VirtIO SCSI (Recommended)</option>
+                  <option value="virtio-scsi-single">VirtIO SCSI Single</option>
+                  <option value="lsi">LSI 53C895A</option>
+                  <option value="megasas">MegaRAID SAS</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">VGA Type</label>
+                <select v-model="formData.vga_type" class="form-control">
+                  <option value="std">Standard VGA</option>
+                  <option value="virtio">VirtIO-GPU</option>
+                  <option value="qxl">QXL (SPICE)</option>
+                  <option value="none">None</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Boot Order</label>
+                <select v-model="formData.boot_order" class="form-control">
+                  <option value="cdn">Disk, CD-ROM, Network</option>
+                  <option value="dcn">CD-ROM, Disk, Network</option>
+                  <option value="ncd">Network, Disk, CD-ROM</option>
+                  <option value="c">Disk only</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-3 gap-2">
+              <div class="form-group">
+                <label class="form-label">
+                  <input type="checkbox" v-model="formData.agent_enabled" style="margin-right:8px" />
+                  QEMU Guest Agent
+                </label>
+              </div>
+              <div class="form-group">
+                <label class="form-label">
+                  <input type="checkbox" v-model="formData.onboot" style="margin-right:8px" />
+                  Start at Boot
+                </label>
+              </div>
+              <div class="form-group">
+                <label class="form-label">
+                  <input type="checkbox" v-model="formData.protection" style="margin-right:8px" />
+                  Protection (prevent deletion)
+                </label>
+              </div>
             </div>
           </div>
         </div>
 
-        <!-- ==================== DISKS TAB ==================== -->
-        <div v-show="activeTab === 'disks'" class="tab-content">
-          <h4 class="section-title">Disk Configuration</h4>
+        <!-- ==================== STORAGE TAB ==================== -->
+        <div v-show="activeTab === 'storage'" class="tab-content">
+          <h4 class="section-title">Storage Configuration</h4>
 
-          <!-- Storage Pool Selection -->
-          <div v-if="formData.node_id" class="form-section">
-            <h5 class="subsection-title">Default Storage Pool</h5>
-            <div v-if="loadingStorage" class="loading-message">
-              <div class="loading-spinner"></div><p>Loading storage pools...</p>
+          <div v-if="!formData.node_id" class="info-banner">Select a Proxmox host and node first (General tab).</div>
+
+          <div v-else>
+            <!-- Storage Pool Selection -->
+            <div class="form-section">
+              <h5 class="subsection-title">Storage Pool</h5>
+              <div v-if="loadingStorage" class="loading-message">
+                <div class="loading-spinner"></div><p>Loading storage pools...</p>
+              </div>
+              <div v-else>
+                <p class="storage-hint">
+                  Primary disk size: <strong>{{ disks[0]?.size || 0 }} GB</strong>.
+                  Greyed-out pools have insufficient free space.
+                </p>
+                <div class="storage-cards">
+                  <div
+                    v-for="storage in sortedStorageList"
+                    :key="storage.storage"
+                    :class="['storage-card', {
+                      'selected': selectedStorage === storage.storage,
+                      'disabled': !storage.enabled || !storage.active || !storageHasSpace(storage)
+                    }]"
+                    @click="selectStorage(storage.storage)"
+                  >
+                    <div class="storage-header">
+                      <div class="storage-name-row">
+                        <span class="storage-type-icon">{{ storageTypeIcon(storage.type) }}</span>
+                        <h6>{{ storage.storage }}</h6>
+                      </div>
+                      <span class="badge badge-sm badge-info">{{ storage.type }}</span>
+                    </div>
+                    <div class="storage-info">
+                      <div class="storage-bar">
+                        <div class="storage-bar-fill"
+                          :class="getStorageUsagePercent(storage) > 85 ? 'storage-bar-danger' : ''"
+                          :style="{ width: getStorageUsagePercent(storage) + '%' }">
+                        </div>
+                      </div>
+                      <div class="storage-stats">
+                        <span>{{ formatBytes(storage.available) }} free</span>
+                        <span>{{ formatBytes(storage.total) }} total</span>
+                      </div>
+                    </div>
+                    <div v-if="!storageHasSpace(storage)" class="storage-insufficient">Insufficient space</div>
+                    <div v-if="storage.shared" class="storage-badge"><span class="badge badge-success">Shared</span></div>
+                  </div>
+                </div>
+                <small v-if="stepErrors.storage?.pool" class="form-error-text">{{ stepErrors.storage.pool }}</small>
+              </div>
             </div>
-            <div v-else class="storage-cards">
-              <div
-                v-for="storage in sortedStorageList"
-                :key="storage.storage"
-                :class="['storage-card', { 'selected': selectedStorage === storage.storage, 'disabled': !storage.enabled || !storage.active }]"
-                @click="selectStorage(storage.storage)"
-              >
-                <div class="storage-header">
-                  <h6>{{ storage.storage }}</h6>
-                  <span class="badge badge-sm badge-info">{{ storage.type }}</span>
+
+            <!-- Disk List -->
+            <div class="form-section">
+              <div class="section-header-with-action">
+                <h5 class="subsection-title">Virtual Disks</h5>
+                <button type="button" class="btn btn-sm btn-outline" @click="addDisk" :disabled="disks.length >= 8">+ Add Disk</button>
+              </div>
+
+              <div v-for="(disk, idx) in disks" :key="idx" class="disk-row">
+                <div class="disk-row-header">
+                  <span class="disk-label">scsi{{ idx }}</span>
+                  <button type="button" class="btn-icon-danger" @click="removeDisk(idx)" v-if="idx > 0" title="Remove disk">&#10005;</button>
                 </div>
-                <div class="storage-info">
-                  <div class="storage-bar">
-                    <div class="storage-bar-fill" :style="{ width: getStorageUsagePercent(storage) + '%' }"></div>
+                <div class="grid grid-cols-4 gap-2">
+                  <div class="form-group">
+                    <label class="form-label">Storage</label>
+                    <select v-model="disk.storage" class="form-control">
+                      <option v-for="s in sortedStorageList" :key="s.storage" :value="s.storage">{{ s.storage }}</option>
+                    </select>
                   </div>
-                  <div class="storage-stats">
-                    <span>{{ formatBytes(storage.available) }} free</span>
-                    <span>{{ formatBytes(storage.total) }} total</span>
+                  <div class="form-group">
+                    <label class="form-label">Size (GB)</label>
+                    <input v-model.number="disk.size" type="number" min="1" class="form-control" :required="idx === 0" />
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Format</label>
+                    <select v-model="disk.format" class="form-control">
+                      <option value="qcow2">qcow2 (sparse, snapshots)</option>
+                      <option value="raw">raw (best performance)</option>
+                      <option value="vmdk">vmdk</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Cache</label>
+                    <select v-model="disk.cache" class="form-control">
+                      <option value="">Default (no cache)</option>
+                      <option value="none">None (safest)</option>
+                      <option value="writethrough">Write-through</option>
+                      <option value="writeback">Write-back (fastest)</option>
+                      <option value="unsafe">Unsafe</option>
+                    </select>
                   </div>
                 </div>
-                <div v-if="storage.shared" class="storage-badge">
-                  <span class="badge badge-success">Shared</span>
+                <div class="disk-options-row">
+                  <label class="disk-option-check"><input type="checkbox" v-model="disk.discard" /> Discard (SSD TRIM)</label>
+                  <label class="disk-option-check"><input type="checkbox" v-model="disk.ssd" /> SSD emulation</label>
+                  <label class="disk-option-check"><input type="checkbox" v-model="disk.backup" /> Include in backup</label>
+                  <label class="disk-option-check"><input type="checkbox" v-model="disk.iothread" /> IO Thread</label>
                 </div>
               </div>
             </div>
-          </div>
 
-          <!-- ISO Storage -->
-          <div v-if="formData.node_id" class="form-section">
-            <h5 class="subsection-title">ISO Storage</h5>
-            <div class="storage-cards">
-              <div
-                v-for="storage in sortedISOStorageList"
-                :key="'iso-' + storage.storage"
-                :class="['storage-card', { 'selected': formData.iso_storage === storage.storage, 'disabled': !storage.enabled || !storage.active }]"
-                @click="formData.iso_storage = storage.storage"
-              >
-                <div class="storage-header">
-                  <h6>{{ storage.storage }}</h6>
-                  <span class="badge badge-sm badge-info">{{ storage.type }}</span>
-                </div>
-                <div class="storage-info">
-                  <div class="storage-bar">
-                    <div class="storage-bar-fill" :style="{ width: getStorageUsagePercent(storage) + '%' }"></div>
+            <!-- ISO Storage -->
+            <div class="form-section">
+              <h5 class="subsection-title">ISO Storage (if using ISO)</h5>
+              <div class="storage-cards">
+                <div
+                  v-for="storage in sortedISOStorageList"
+                  :key="'iso-' + storage.storage"
+                  :class="['storage-card', { 'selected': formData.iso_storage === storage.storage, 'disabled': !storage.enabled || !storage.active }]"
+                  @click="formData.iso_storage = storage.storage"
+                >
+                  <div class="storage-header">
+                    <div class="storage-name-row">
+                      <span class="storage-type-icon">{{ storageTypeIcon(storage.type) }}</span>
+                      <h6>{{ storage.storage }}</h6>
+                    </div>
+                    <span class="badge badge-sm badge-info">{{ storage.type }}</span>
                   </div>
-                  <div class="storage-stats">
-                    <span>{{ formatBytes(storage.available) }} free</span>
-                    <span>{{ formatBytes(storage.total) }} total</span>
-                  </div>
+                  <div class="storage-stats-simple">{{ formatBytes(storage.available) }} free / {{ formatBytes(storage.total) }}</div>
                 </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Disk List -->
-          <div class="form-section">
-            <div class="section-header-with-action">
-              <h5 class="subsection-title">Virtual Disks</h5>
-              <button type="button" class="btn btn-sm btn-outline" @click="addDisk" :disabled="disks.length >= 8">
-                + Add Disk
-              </button>
-            </div>
-
-            <div v-for="(disk, idx) in disks" :key="idx" class="disk-row">
-              <div class="disk-row-header">
-                <span class="disk-label">scsi{{ idx }}</span>
-                <button type="button" class="btn-icon-danger" @click="removeDisk(idx)" v-if="idx > 0" title="Remove disk">✕</button>
-              </div>
-              <div class="grid grid-cols-4 gap-2">
-                <div class="form-group">
-                  <label class="form-label">Storage</label>
-                  <select v-model="disk.storage" class="form-control">
-                    <option v-for="s in sortedStorageList" :key="s.storage" :value="s.storage">{{ s.storage }}</option>
-                  </select>
-                </div>
-                <div class="form-group">
-                  <label class="form-label">Size (GB)</label>
-                  <input v-model.number="disk.size" type="number" min="1" class="form-control" :required="idx === 0" />
-                </div>
-                <div class="form-group">
-                  <label class="form-label">Format</label>
-                  <select v-model="disk.format" class="form-control">
-                    <option value="qcow2">qcow2 (sparse, snapshots)</option>
-                    <option value="raw">raw (best performance)</option>
-                    <option value="vmdk">vmdk</option>
-                  </select>
-                </div>
-                <div class="form-group">
-                  <label class="form-label">Cache</label>
-                  <select v-model="disk.cache" class="form-control">
-                    <option value="">Default (no cache)</option>
-                    <option value="none">None (safest)</option>
-                    <option value="writethrough">Write-through</option>
-                    <option value="writeback">Write-back (fastest)</option>
-                    <option value="unsafe">Unsafe (benchmarks only)</option>
-                    <option value="directsync">Direct-sync</option>
-                  </select>
-                </div>
-              </div>
-              <div class="disk-options-row">
-                <label class="disk-option-check">
-                  <input type="checkbox" v-model="disk.discard" />
-                  Discard (SSD TRIM)
-                </label>
-                <label class="disk-option-check">
-                  <input type="checkbox" v-model="disk.ssd" />
-                  SSD emulation
-                </label>
-                <label class="disk-option-check">
-                  <input type="checkbox" v-model="disk.backup" />
-                  Include in backup
-                </label>
-                <label class="disk-option-check">
-                  <input type="checkbox" v-model="disk.replicate" />
-                  Replicate
-                </label>
-                <label class="disk-option-check">
-                  <input type="checkbox" v-model="disk.iothread" />
-                  IO Thread
-                </label>
               </div>
             </div>
           </div>
@@ -732,89 +605,124 @@
         <div v-show="activeTab === 'network'" class="tab-content">
           <h4 class="section-title">Network Configuration</h4>
 
-          <!-- Bridge Selection -->
-          <div v-if="formData.node_id" class="form-section">
-            <h5 class="subsection-title">Available Bridges</h5>
-            <div v-if="loadingNetwork" class="loading-message">
-              <div class="loading-spinner"></div><p>Loading network interfaces...</p>
-            </div>
-            <div v-else class="network-cards">
-              <div
-                v-for="net in sortedNetworkList"
-                :key="net.iface"
-                :class="['network-card', { 'selected': selectedBridge === net.iface, 'disabled': !net.active }]"
-                @click="selectBridge(net.iface)"
-              >
-                <div class="network-header">
-                  <h6>{{ net.iface }}</h6>
-                  <span :class="['badge', 'badge-sm', net.active ? 'badge-success' : 'badge-danger']">
-                    {{ net.active ? 'Active' : 'Inactive' }}
-                  </span>
-                </div>
-                <div class="network-info">
-                  <div v-if="net.address" class="text-xs"><strong>IP:</strong> {{ net.address }}</div>
-                  <div v-if="net.bridge_ports" class="text-xs"><strong>Ports:</strong> {{ net.bridge_ports }}</div>
-                </div>
-              </div>
-            </div>
-          </div>
+          <div v-if="!formData.node_id" class="info-banner">Select a Proxmox host and node first (General tab).</div>
 
-          <!-- NIC List -->
-          <div class="form-section">
-            <div class="section-header-with-action">
-              <h5 class="subsection-title">Network Interfaces (NICs)</h5>
-              <button type="button" class="btn btn-sm btn-outline" @click="addNic" :disabled="nics.length >= 8">
-                + Add NIC
-              </button>
+          <div v-else>
+            <!-- Bridge Selection -->
+            <div class="form-section">
+              <h5 class="subsection-title">Available Bridges</h5>
+              <div v-if="loadingNetwork" class="loading-message">
+                <div class="loading-spinner"></div><p>Loading network interfaces...</p>
+              </div>
+              <div v-else class="network-cards">
+                <div
+                  v-for="net in sortedNetworkList"
+                  :key="net.iface"
+                  :class="['network-card', { 'selected': selectedBridge === net.iface, 'disabled': !net.active }]"
+                  @click="selectBridge(net.iface)"
+                >
+                  <div class="network-header">
+                    <h6>{{ net.iface }}</h6>
+                    <div class="network-badges">
+                      <span :class="['badge', 'badge-sm', net.active ? 'badge-success' : 'badge-danger']">
+                        {{ net.active ? 'Active' : 'Down' }}
+                      </span>
+                      <span v-if="bridgeSupportsVlan(net)" class="badge badge-sm badge-info">VLAN-aware</span>
+                    </div>
+                  </div>
+                  <div class="network-details">
+                    <div v-if="net.address" class="net-detail"><span class="net-detail-label">IP:</span> {{ net.address }}</div>
+                    <div v-if="net.bridge_ports" class="net-detail"><span class="net-detail-label">Ports:</span> {{ net.bridge_ports }}</div>
+                    <div v-if="net.mtu" class="net-detail"><span class="net-detail-label">MTU:</span> {{ net.mtu }}</div>
+                    <div v-if="net.bridge_vlan_aware" class="net-detail net-vlan-aware"><span class="net-detail-label">VLAN-aware:</span> Yes</div>
+                  </div>
+                </div>
+              </div>
+              <small v-if="stepErrors.network?.bridge" class="form-error-text">{{ stepErrors.network.bridge }}</small>
             </div>
 
-            <div v-for="(nic, idx) in nics" :key="idx" class="nic-row">
-              <div class="nic-row-header">
-                <span class="nic-label">net{{ idx }}</span>
-                <button type="button" class="btn-icon-danger" @click="removeNic(idx)" v-if="idx > 0" title="Remove NIC">✕</button>
+            <!-- NIC List -->
+            <div class="form-section">
+              <div class="section-header-with-action">
+                <h5 class="subsection-title">Network Interfaces (NICs)</h5>
+                <button type="button" class="btn btn-sm btn-outline" @click="addNic" :disabled="nics.length >= 8">+ Add NIC</button>
               </div>
-              <div class="grid grid-cols-3 gap-2">
-                <div class="form-group">
-                  <label class="form-label">Model</label>
-                  <select v-model="nic.model" class="form-control">
-                    <option value="virtio">VirtIO (Recommended)</option>
-                    <option value="e1000">Intel E1000</option>
-                    <option value="e1000e">Intel E1000e</option>
-                    <option value="vmxnet3">VMware VMXNET3</option>
-                    <option value="rtl8139">Realtek RTL8139</option>
-                  </select>
+
+              <div v-for="(nic, idx) in nics" :key="idx" class="nic-row">
+                <div class="nic-row-header">
+                  <span class="nic-label">net{{ idx }}</span>
+                  <button type="button" class="btn-icon-danger" @click="removeNic(idx)" v-if="idx > 0" title="Remove NIC">&#10005;</button>
                 </div>
-                <div class="form-group">
-                  <label class="form-label">Bridge</label>
-                  <select v-model="nic.bridge" class="form-control">
-                    <option v-for="net in sortedNetworkList" :key="net.iface" :value="net.iface">{{ net.iface }}</option>
-                    <option v-if="sortedNetworkList.length === 0" :value="selectedBridge || 'vmbr0'">{{ selectedBridge || 'vmbr0' }}</option>
-                  </select>
+                <div class="grid grid-cols-3 gap-2">
+                  <div class="form-group">
+                    <label class="form-label">Model</label>
+                    <select v-model="nic.model" class="form-control">
+                      <option value="virtio">VirtIO (Recommended)</option>
+                      <option value="e1000">Intel E1000</option>
+                      <option value="e1000e">Intel E1000e</option>
+                      <option value="vmxnet3">VMware VMXNET3</option>
+                      <option value="rtl8139">Realtek RTL8139</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Bridge</label>
+                    <select v-model="nic.bridge" class="form-control">
+                      <option v-for="net in sortedNetworkList" :key="net.iface" :value="net.iface">{{ net.iface }}</option>
+                      <option v-if="sortedNetworkList.length === 0" :value="selectedBridge || 'vmbr0'">{{ selectedBridge || 'vmbr0' }}</option>
+                    </select>
+                  </div>
+                  <div class="form-group" v-if="nicBridgeSupportsVlan(nic)">
+                    <label class="form-label">VLAN Tag <span class="vlan-optional">(optional)</span></label>
+                    <input v-model.number="nic.vlan" type="number" min="1" max="4094" class="form-control" placeholder="None" />
+                    <small class="form-help">1–4094, leave blank for untagged</small>
+                  </div>
+                  <div class="form-group" v-else>
+                    <label class="form-label">VLAN Tag</label>
+                    <input v-model.number="nic.vlan" type="number" min="1" max="4094" class="form-control" placeholder="None" />
+                  </div>
                 </div>
-                <div class="form-group">
-                  <label class="form-label">VLAN Tag (optional)</label>
-                  <input v-model.number="nic.vlan" type="number" min="1" max="4094" class="form-control" placeholder="None" />
-                </div>
-              </div>
-              <div class="grid grid-cols-3 gap-2">
-                <div class="form-group">
-                  <label class="form-label">MAC Address</label>
-                  <input v-model="nic.mac" type="text" class="form-control" placeholder="Auto-generate" pattern="([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}" />
-                  <small class="form-help">Leave blank for auto-generate</small>
-                </div>
-                <div class="form-group">
-                  <label class="form-label">Rate Limit (MB/s)</label>
-                  <input v-model.number="nic.rate" type="number" min="0" class="form-control" placeholder="Unlimited" />
-                </div>
-                <div class="form-group" style="padding-top:1.5rem">
-                  <label class="disk-option-check">
-                    <input type="checkbox" v-model="nic.firewall" />
-                    Firewall enabled
-                  </label>
-                  <label class="disk-option-check" style="margin-top:0.25rem">
-                    <input type="checkbox" v-model="nic.linkdown" />
-                    Link down (disconnected)
-                  </label>
+
+                <!-- MAC address row -->
+                <div class="grid grid-cols-3 gap-2">
+                  <div class="form-group">
+                    <label class="form-label">MAC Address</label>
+                    <div class="mac-row">
+                      <div class="mac-toggle">
+                        <label class="radio-label">
+                          <input type="radio" :name="'mac-mode-' + idx" value="random" v-model="nic.macMode" />
+                          <span>Random</span>
+                        </label>
+                        <label class="radio-label">
+                          <input type="radio" :name="'mac-mode-' + idx" value="custom" v-model="nic.macMode" />
+                          <span>Custom</span>
+                        </label>
+                      </div>
+                      <input
+                        v-if="nic.macMode === 'custom'"
+                        v-model="nic.mac"
+                        type="text"
+                        :class="['form-control', 'mac-input', { 'input-error': nic.macError }]"
+                        placeholder="AA:BB:CC:DD:EE:FF"
+                        pattern="([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}"
+                        @blur="validateMac(nic)"
+                      />
+                      <small v-if="nic.macError" class="form-error-text">{{ nic.macError }}</small>
+                    </div>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Rate Limit (MB/s)</label>
+                    <input v-model.number="nic.rate" type="number" min="0" class="form-control" placeholder="Unlimited" />
+                  </div>
+                  <div class="form-group" style="padding-top:1.5rem">
+                    <label class="disk-option-check">
+                      <input type="checkbox" v-model="nic.firewall" />
+                      Firewall enabled
+                    </label>
+                    <label class="disk-option-check" style="margin-top:0.25rem">
+                      <input type="checkbox" v-model="nic.linkdown" />
+                      Link down (disconnected)
+                    </label>
+                  </div>
                 </div>
               </div>
             </div>
@@ -830,11 +738,21 @@
             <div class="grid grid-cols-2 gap-2">
               <div class="form-group">
                 <label class="form-label">Username *</label>
-                <input v-model="formData.username" type="text" class="form-control" required placeholder="administrator" />
+                <input v-model="formData.username" type="text"
+                  :class="['form-control', { 'input-error': fieldErrors.username }]"
+                  required placeholder="administrator"
+                  @blur="validateField('username', formData.username, [rules.required])"
+                />
+                <small v-if="fieldErrors.username" class="form-error-text">{{ fieldErrors.username }}</small>
               </div>
               <div class="form-group">
                 <label class="form-label">Password *</label>
-                <input v-model="formData.password" type="password" class="form-control" required autocomplete="new-password" />
+                <input v-model="formData.password" type="password"
+                  :class="['form-control', { 'input-error': fieldErrors.password }]"
+                  required autocomplete="new-password"
+                  @blur="validateField('password', formData.password, [rules.required, rules.password(8)])"
+                />
+                <small v-if="fieldErrors.password" class="form-error-text">{{ fieldErrors.password }}</small>
               </div>
             </div>
             <div class="form-group">
@@ -881,7 +799,7 @@
           </div>
 
           <div class="form-section">
-            <h5 class="subsection-title">DNS &amp; Domain</h5>
+            <h5 class="subsection-title">DNS &amp; Options</h5>
             <div class="grid grid-cols-2 gap-2">
               <div class="form-group">
                 <label class="form-label">DNS Search Domain</label>
@@ -892,7 +810,6 @@
                   <input type="checkbox" v-model="formData.upgrade_packages" style="margin-right:8px" />
                   Upgrade packages on first boot
                 </label>
-                <div class="form-text">Runs apt/yum upgrade during cloud-init provisioning</div>
               </div>
             </div>
           </div>
@@ -901,6 +818,50 @@
         <!-- ==================== CONFIRM TAB ==================== -->
         <div v-show="activeTab === 'confirm'" class="tab-content">
           <h4 class="section-title">Review &amp; Create</h4>
+
+          <!-- Resource usage estimation -->
+          <div v-if="selectedNodeObj" class="resource-estimate-banner">
+            <h5 class="resource-estimate-title">Estimated Resource Usage on <strong>{{ selectedNodeObj.node_name }}</strong></h5>
+            <div class="resource-estimate-bars">
+              <div class="res-estimate-item">
+                <div class="res-estimate-label">
+                  <span>CPU</span>
+                  <span class="res-estimate-nums">{{ formData.cpu_sockets * formData.cpu_cores }} vCPUs / {{ selectedNodeObj.cpu_cores }} cores</span>
+                </div>
+                <div class="res-estimate-track">
+                  <div class="res-estimate-existing" :style="{ width: Math.min(selectedNodeObj.cpu_usage || 0, 100) + '%' }"></div>
+                  <div class="res-estimate-new" :style="{ width: Math.min(cpuAllocationPercent, 100 - (selectedNodeObj.cpu_usage || 0)) + '%' }"></div>
+                </div>
+                <div class="res-estimate-pct">{{ Math.round(cpuAllocationPercent) }}% allocated</div>
+              </div>
+              <div class="res-estimate-item">
+                <div class="res-estimate-label">
+                  <span>RAM</span>
+                  <span class="res-estimate-nums">{{ (formData.memory / 1024).toFixed(1) }} GB / {{ formatBytes(selectedNodeObj.memory_total) }}</span>
+                </div>
+                <div class="res-estimate-track">
+                  <div class="res-estimate-existing" :style="{ width: Math.min(nodeMemUsedPercent, 100) + '%' }"></div>
+                  <div class="res-estimate-new" :style="{ width: Math.min(memAllocationPercent, 100 - nodeMemUsedPercent) + '%' }"></div>
+                </div>
+                <div class="res-estimate-pct">{{ Math.round(memAllocationPercent) }}% of node RAM</div>
+              </div>
+              <div class="res-estimate-item">
+                <div class="res-estimate-label">
+                  <span>Disk</span>
+                  <span class="res-estimate-nums">{{ totalDiskSize }} GB requested</span>
+                </div>
+                <div class="res-estimate-track">
+                  <div class="res-estimate-existing" :style="{ width: Math.min(diskUsedPercent, 100) + '%' }"></div>
+                  <div class="res-estimate-new" :style="{ width: Math.min(diskAllocationPercent, 100 - diskUsedPercent) + '%' }"></div>
+                </div>
+                <div class="res-estimate-pct">{{ Math.round(diskAllocationPercent) }}% of selected pool</div>
+              </div>
+            </div>
+            <div class="res-estimate-legend">
+              <span class="legend-item"><span class="legend-dot existing"></span> Currently used</span>
+              <span class="legend-item"><span class="legend-dot new"></span> This VM</span>
+            </div>
+          </div>
 
           <div class="summary-grid">
             <!-- General -->
@@ -913,39 +874,20 @@
                 <tr><td>OS</td><td>{{ formData.os_type || '—' }}</td></tr>
                 <tr><td>Install method</td><td>{{ imageSource === 'iso' ? 'ISO' : 'Cloud Image' }}</td></tr>
                 <tr v-if="parsedTags.length"><td>Tags</td><td>{{ parsedTags.join(', ') }}</td></tr>
-                <tr v-if="formData.description"><td>Description</td><td>{{ formData.description }}</td></tr>
               </table>
             </div>
-            <!-- System -->
+            <!-- Hardware -->
             <div class="summary-section">
-              <h5 class="summary-section-title">System</h5>
+              <h5 class="summary-section-title">Hardware</h5>
               <table class="summary-table">
-                <tr><td>Machine</td><td>{{ formData.machine_type === 'q35' ? 'Q35 (PCIe)' : 'i440FX (PC)' }}</td></tr>
-                <tr><td>BIOS</td><td>{{ formData.bios_type === 'ovmf' ? 'OVMF (UEFI)' : 'SeaBIOS (Legacy)' }}</td></tr>
-                <tr v-if="formData.bios_type === 'ovmf'"><td>TPM</td><td>{{ formData.tpm_enabled ? 'Enabled' : 'Disabled' }}</td></tr>
-                <tr><td>SCSI</td><td>{{ formData.scsihw }}</td></tr>
-                <tr><td>Agent</td><td>{{ formData.agent_enabled ? 'Yes' : 'No' }}</td></tr>
-                <tr><td>Start at boot</td><td>{{ formData.onboot ? 'Yes' : 'No' }}</td></tr>
-              </table>
-            </div>
-            <!-- CPU -->
-            <div class="summary-section">
-              <h5 class="summary-section-title">CPU</h5>
-              <table class="summary-table">
-                <tr><td>vCPUs</td><td>{{ formData.cpu_sockets }} socket(s) × {{ formData.cpu_cores }} core(s) = {{ formData.cpu_sockets * formData.cpu_cores }} vCPUs</td></tr>
-                <tr><td>Type</td><td>{{ formData.cpu_type }}</td></tr>
-                <tr v-if="formData.numa_enabled"><td>NUMA</td><td>Enabled ({{ formData.numa_nodes || 1 }} nodes)</td></tr>
-                <tr v-if="formData.cpu_limit"><td>CPU Limit</td><td>{{ formData.cpu_limit }}</td></tr>
-                <tr><td>CPU Units</td><td>{{ formData.cpu_units }}</td></tr>
-              </table>
-            </div>
-            <!-- Memory -->
-            <div class="summary-section">
-              <h5 class="summary-section-title">Memory</h5>
-              <table class="summary-table">
+                <tr><td>vCPUs</td><td>{{ formData.cpu_sockets }} × {{ formData.cpu_cores }} = {{ formData.cpu_sockets * formData.cpu_cores }}</td></tr>
+                <tr><td>CPU Type</td><td>{{ formData.cpu_type }}</td></tr>
                 <tr><td>RAM</td><td>{{ formData.memory }} MB ({{ (formData.memory/1024).toFixed(1) }} GB)</td></tr>
                 <tr v-if="formData.balloon_enabled"><td>Balloon min</td><td>{{ formData.balloon || 0 }} MB</td></tr>
-                <tr v-if="formData.hugepages"><td>Huge pages</td><td>{{ formData.hugepages }}</td></tr>
+                <tr><td>Machine</td><td>{{ formData.machine_type === 'q35' ? 'Q35 (PCIe)' : 'i440FX (PC)' }}</td></tr>
+                <tr><td>BIOS</td><td>{{ formData.bios_type === 'ovmf' ? 'OVMF (UEFI)' : 'SeaBIOS' }}</td></tr>
+                <tr><td>Agent</td><td>{{ formData.agent_enabled ? 'Yes' : 'No' }}</td></tr>
+                <tr><td>Start at boot</td><td>{{ formData.onboot ? 'Yes' : 'No' }}</td></tr>
               </table>
             </div>
             <!-- Disks -->
@@ -964,7 +906,7 @@
               <table class="summary-table">
                 <tr v-for="(nic, idx) in nics" :key="idx">
                   <td>net{{ idx }}</td>
-                  <td>{{ nic.model }} on {{ nic.bridge }}{{ nic.vlan ? ' VLAN ' + nic.vlan : '' }}{{ nic.mac ? ' MAC:' + nic.mac : '' }}</td>
+                  <td>{{ nic.model }} / {{ nic.bridge }}{{ nic.vlan ? ' VLAN ' + nic.vlan : '' }}{{ nic.macMode === 'custom' && nic.mac ? ' / ' + nic.mac : ' / random MAC' }}</td>
                 </tr>
               </table>
             </div>
@@ -975,7 +917,6 @@
                 <tr><td>Username</td><td>{{ formData.username || '—' }}</td></tr>
                 <tr><td>IP</td><td>{{ useDHCP ? 'DHCP' : (formData.ip_address + '/' + formData.netmask) }}</td></tr>
                 <tr v-if="!useDHCP && formData.gateway"><td>Gateway</td><td>{{ formData.gateway }}</td></tr>
-                <tr v-if="formData.searchdomain"><td>Search domain</td><td>{{ formData.searchdomain }}</td></tr>
                 <tr><td>SSH key</td><td>{{ formData.ssh_key ? 'Provided' : 'None' }}</td></tr>
                 <tr><td>Upgrade on boot</td><td>{{ formData.upgrade_packages ? 'Yes' : 'No' }}</td></tr>
               </table>
@@ -1004,14 +945,19 @@
           </div>
         </div>
 
-        <!-- Bottom nav (prev/next) -->
+        <!-- Bottom nav (prev/next + validate) -->
         <div class="tab-nav-footer">
-          <button type="button" class="btn btn-outline" @click="prevTab" :disabled="activeTab === tabs[0].id">
-            ← Previous
+          <button type="button" class="btn btn-outline" @click="prevTab" :disabled="tabIndex === 0">
+            &#8592; Back
           </button>
-          <span class="tab-position">{{ tabIndex + 1 }} / {{ tabs.length }}</span>
-          <button type="button" class="btn btn-outline" @click="nextTab" :disabled="activeTab === tabs[tabs.length - 1].id">
-            Next →
+          <span class="tab-position">Step {{ tabIndex + 1 }} of {{ tabs.length }}</span>
+          <button
+            v-if="tabIndex < tabs.length - 1"
+            type="button"
+            class="btn btn-primary"
+            @click="nextTabWithValidation"
+          >
+            Next &#8594;
           </button>
         </div>
 
@@ -1031,8 +977,8 @@
             <div v-if="progressData.status === 'creating'" class="spinner-container">
               <div class="spinner"></div>
             </div>
-            <div v-else-if="progressData.status === 'running'" class="success-icon">✓</div>
-            <div v-else-if="progressData.status === 'error'" class="error-icon">✕</div>
+            <div v-else-if="progressData.status === 'running'" class="success-icon">&#10003;</div>
+            <div v-else-if="progressData.status === 'error'" class="error-icon">&#10005;</div>
 
             <h4 class="progress-vm-name">{{ progressData.name }}</h4>
             <div class="progress-steps">
@@ -1082,28 +1028,53 @@ export default {
 
     // ---------- Tabs ----------
     const tabs = [
-      { id: 'general', label: 'General', icon: '⚙️' },
-      { id: 'system', label: 'System', icon: '🖥️' },
-      { id: 'cpu', label: 'CPU', icon: '🔲' },
-      { id: 'memory', label: 'Memory', icon: '💾' },
-      { id: 'disks', label: 'Disks', icon: '💿' },
-      { id: 'network', label: 'Network', icon: '🌐' },
-      { id: 'cloudinit', label: 'Cloud-Init', icon: '☁️' },
-      { id: 'confirm', label: 'Confirm', icon: '✅' },
+      { id: 'general',  label: 'General'    },
+      { id: 'hardware', label: 'Hardware'   },
+      { id: 'storage',  label: 'Storage'    },
+      { id: 'network',  label: 'Network'    },
+      { id: 'cloudinit',label: 'Cloud-Init' },
+      { id: 'confirm',  label: 'Confirm'    },
     ]
     const activeTab = ref('general')
     const tabErrors = ref({})
+    // Per-step inline validation errors
+    const stepErrors = ref({ general: {}, hardware: {}, storage: {}, network: {}, cloudinit: {} })
 
     const tabIndex = computed(() => tabs.findIndex(t => t.id === activeTab.value))
-    const prevTab = () => {
-      if (tabIndex.value > 0) activeTab.value = tabs[tabIndex.value - 1].id
-    }
-    const nextTab = () => {
+
+    const goToTab = (i) => { activeTab.value = tabs[i].id }
+    const prevTab = () => { if (tabIndex.value > 0) activeTab.value = tabs[tabIndex.value - 1].id }
+
+    // Validate current step, then advance
+    const nextTabWithValidation = () => {
+      const errs = validateStep(activeTab.value)
+      if (errs.length > 0) {
+        errs.forEach(e => toast.error(e))
+        return
+      }
       if (tabIndex.value < tabs.length - 1) activeTab.value = tabs[tabIndex.value + 1].id
     }
 
+    // ---------- Hardware Presets ----------
+    const hwPresets = [
+      { name: 'Micro',  cpu: 1, memGb: 0.5, diskGb: 8  },
+      { name: 'Small',  cpu: 1, memGb: 1,   diskGb: 20  },
+      { name: 'Medium', cpu: 2, memGb: 2,   diskGb: 40  },
+      { name: 'Large',  cpu: 4, memGb: 8,   diskGb: 80  },
+      { name: 'XLarge', cpu: 8, memGb: 16,  diskGb: 160 },
+    ]
+    const activePreset = ref('')
+
+    const applyPreset = (preset) => {
+      activePreset.value = preset.name
+      formData.value.cpu_sockets = 1
+      formData.value.cpu_cores   = preset.cpu
+      formData.value.memory      = Math.round(preset.memGb * 1024)
+      if (disks.value.length > 0) disks.value[0].size = preset.diskGb
+    }
+
     // ---------- VM ID check ----------
-    const vmIdStatus = ref('') // '' | 'checking' | 'free' | 'taken'
+    const vmIdStatus = ref('')
     let vmIdCheckTimer = null
     const debouncedCheckVmId = () => {
       clearTimeout(vmIdCheckTimer)
@@ -1136,8 +1107,6 @@ export default {
     const removeLastTagOnBackspace = () => {
       if (!tagInputValue.value && parsedTags.value.length) parsedTags.value.pop()
     }
-
-    // Sync tags back to formData.tags for payload
     watch(parsedTags, (tags) => { formData.value.tags = tags.join(';') }, { deep: true })
 
     // ---------- Disks ----------
@@ -1149,40 +1118,48 @@ export default {
     }
     const removeDisk = (idx) => { if (idx > 0) disks.value.splice(idx, 1) }
 
+    // Watch disk[0].size changes to reset active preset if user types manually
+    watch(() => disks.value[0]?.size, () => { activePreset.value = '' })
+    watch(() => formData.value.cpu_cores, () => { activePreset.value = '' })
+    watch(() => formData.value.memory, () => { activePreset.value = '' })
+
     // ---------- NICs ----------
-    const nics = ref([{ model: 'virtio', bridge: '', vlan: null, mac: '', rate: null, firewall: false, linkdown: false }])
+    const nics = ref([{ model: 'virtio', bridge: '', vlan: null, mac: '', macMode: 'random', macError: '', rate: null, firewall: false, linkdown: false }])
     const addNic = () => {
       if (nics.value.length < 8) {
-        nics.value.push({ model: 'virtio', bridge: selectedBridge.value || '', vlan: null, mac: '', rate: null, firewall: false, linkdown: false })
+        nics.value.push({ model: 'virtio', bridge: selectedBridge.value || '', vlan: null, mac: '', macMode: 'random', macError: '', rate: null, firewall: false, linkdown: false })
       }
     }
     const removeNic = (idx) => { if (idx > 0) nics.value.splice(idx, 1) }
 
-    // ---------- CPU flags ----------
-    const cpuFlagOptions = [
-      { value: '+aes', label: 'AES', desc: 'AES-NI hardware encryption' },
-      { value: '+avx', label: 'AVX', desc: 'Advanced Vector Extensions' },
-      { value: '+avx2', label: 'AVX2', desc: 'AVX2 (Haswell+)' },
-      { value: '+spec-ctrl', label: 'SPEC-CTRL', desc: 'Spectre/Meltdown mitigations' },
-      { value: '+pcid', label: 'PCID', desc: 'Process Context Identifiers' },
-      { value: '+md-clear', label: 'MD-CLEAR', desc: 'MDS clear buffers' },
-      { value: '+pdpe1gb', label: '1GB Pages', desc: '1 GB huge pages support' },
-      { value: '+ssbd', label: 'SSBD', desc: 'Speculative Store Bypass Disable' },
-    ]
-    const selectedCpuFlags = ref([])
-
-    // Merge selected flags into formData.cpu_flags on submit (don't overwrite manual input)
-    const buildCpuFlags = () => {
-      const manual = formData.value.cpu_flags ? formData.value.cpu_flags.split(',').map(f => f.trim()).filter(Boolean) : []
-      const merged = [...new Set([...selectedCpuFlags.value, ...manual])]
-      return merged.join(',')
+    // ---------- Bridge VLAN support ----------
+    const bridgeSupportsVlan = (net) => {
+      return net.bridge_vlan_aware || net.vlan_aware || false
+    }
+    const nicBridgeSupportsVlan = (nic) => {
+      const net = networkList.value.find(n => n.iface === nic.bridge)
+      return net ? bridgeSupportsVlan(net) : false
     }
 
-    // ---------- Balloon percent ----------
-    const balloonPercent = computed(() => {
-      if (!formData.value.memory || formData.value.memory === 0) return 0
-      return Math.round(((formData.value.balloon || 0) / formData.value.memory) * 100)
-    })
+    // ---------- MAC validation ----------
+    const macRegex = /^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$/
+    const validateMac = (nic) => {
+      if (nic.macMode === 'custom' && nic.mac && !macRegex.test(nic.mac)) {
+        nic.macError = 'Invalid MAC address format (AA:BB:CC:DD:EE:FF)'
+      } else {
+        nic.macError = ''
+      }
+    }
+
+    // ---------- Storage type icons ----------
+    const storageTypeIcon = (type) => {
+      const icons = {
+        dir: '&#128193;', lvm: '&#9925;', lvmthin: '&#9925;', zfspool: '&#129668;',
+        nfs: '&#127760;', cifs: '&#127760;', rbd: '&#128274;', sheepdog: '&#128274;',
+        btrfs: '&#128193;', zfs: '&#129668;',
+      }
+      return icons[type] || '&#128190;'
+    }
 
     // ---------- State ----------
     const hosts = ref([])
@@ -1206,66 +1183,65 @@ export default {
 
     // ---------- Form data ----------
     const formData = ref({
-      name: '',
-      hostname: '',
-      proxmox_host_id: null,
-      node_id: null,
-      vmid: null,
-      iso_id: null,
-      cloud_image_id: null,
-      os_type: '',
-      description: '',
-      tags: '',
+      name: '', hostname: '', proxmox_host_id: null, node_id: null, vmid: null,
+      iso_id: null, cloud_image_id: null, os_type: '', description: '', tags: '',
       // System
-      machine_type: 'pc',
-      bios_type: 'seabios',
-      tpm_enabled: false,
-      scsihw: 'virtio-scsi-pci',
-      vga_type: 'std',
-      boot_order: 'cdn',
-      agent_enabled: true,
-      kvm: true,
-      acpi: true,
-      tablet: true,
-      onboot: true,
-      protection: false,
-      hotplug: null,
-      startup_order: null,
-      startup_up: null,
-      startup_down: null,
+      machine_type: 'pc', bios_type: 'seabios', tpm_enabled: false,
+      scsihw: 'virtio-scsi-pci', vga_type: 'std', boot_order: 'cdn',
+      agent_enabled: true, kvm: true, acpi: true, tablet: true, onboot: true,
+      protection: false, hotplug: null,
+      startup_order: null, startup_up: null, startup_down: null,
       // CPU
-      cpu_sockets: 1,
-      cpu_cores: 2,
-      cpu_type: 'x86-64-v2-AES',
-      cpu_flags: '',
-      cpu_limit: null,
-      cpu_units: 1024,
-      numa_enabled: false,
-      numa_nodes: 1,
+      cpu_sockets: 1, cpu_cores: 2, cpu_type: 'x86-64-v2-AES', cpu_flags: '',
+      cpu_limit: null, cpu_units: 1024, numa_enabled: false, numa_nodes: 1,
       // Memory
-      memory: 2048,
-      balloon_enabled: false,
-      balloon: null,
-      shares: null,
-      hugepages: '',
+      memory: 2048, balloon_enabled: false, balloon: null, shares: null, hugepages: '',
       // Storage
-      storage: '',
-      iso_storage: '',
-      disk_size: 20,
+      storage: '', iso_storage: '', disk_size: 20,
       // Network
-      network_bridge: '',
-      vlan_tag: null,
-      network_interfaces: [],
+      network_bridge: '', vlan_tag: null, network_interfaces: [],
       // Cloud-init
-      username: 'administrator',
-      password: '',
-      ssh_key: '',
-      ip_address: '',
-      gateway: '',
-      netmask: '24',
-      dns_servers: '8.8.8.8,8.8.4.4',
-      searchdomain: '',
-      upgrade_packages: false,
+      username: 'administrator', password: '', ssh_key: '',
+      ip_address: '', gateway: '', netmask: '24', dns_servers: '8.8.8.8,8.8.4.4',
+      searchdomain: '', upgrade_packages: false,
+    })
+
+    // ---------- Selected node object (for summary) ----------
+    const selectedNodeObj = computed(() => {
+      return nodes.value.find(n => n.id === formData.value.node_id) || null
+    })
+
+    // ---------- Resource estimation ----------
+    const cpuAllocationPercent = computed(() => {
+      const node = selectedNodeObj.value
+      if (!node || !node.cpu_cores) return 0
+      return ((formData.value.cpu_sockets * formData.value.cpu_cores) / node.cpu_cores) * 100
+    })
+
+    const nodeMemUsedPercent = computed(() => {
+      const node = selectedNodeObj.value
+      if (!node || !node.memory_total) return 0
+      return Math.round(((node.memory_total - (node.memory_free || 0)) / node.memory_total) * 100)
+    })
+
+    const memAllocationPercent = computed(() => {
+      const node = selectedNodeObj.value
+      if (!node || !node.memory_total) return 0
+      return ((formData.value.memory * 1024 * 1024) / node.memory_total) * 100
+    })
+
+    const totalDiskSize = computed(() => disks.value.reduce((s, d) => s + (d.size || 0), 0))
+
+    const diskUsedPercent = computed(() => {
+      const pool = storageList.value.find(s => s.storage === selectedStorage.value)
+      if (!pool || !pool.total) return 0
+      return Math.round(((pool.total - (pool.available || 0)) / pool.total) * 100)
+    })
+
+    const diskAllocationPercent = computed(() => {
+      const pool = storageList.value.find(s => s.storage === selectedStorage.value)
+      if (!pool || !pool.total) return 0
+      return ((totalDiskSize.value * 1024 * 1024 * 1024) / pool.total) * 100
     })
 
     // ---------- Computed sorted lists ----------
@@ -1280,14 +1256,19 @@ export default {
         .sort((a, b) => a.storage.localeCompare(b.storage, undefined, { numeric: true, sensitivity: 'base' }))
     )
     const sortedNetworkList = computed(() =>
-      [...networkList.value].sort((a, b) => a.iface.localeCompare(b.iface, undefined, { numeric: true, sensitivity: 'base' }))
+      [...networkList.value]
+        .filter(n => n.type === 'bridge' || n.iface?.startsWith('vmbr'))
+        .sort((a, b) => a.iface.localeCompare(b.iface, undefined, { numeric: true, sensitivity: 'base' }))
     )
+
+    const storageHasSpace = (storage) => {
+      const needed = (disks.value[0]?.size || 0) * 1024 * 1024 * 1024
+      return (storage.available || 0) >= needed
+    }
 
     // ---------- CLI command preview ----------
     const generatedCliCommand = computed(() => {
-      const parts = ['qm create']
-      const vmid = formData.value.vmid || '<VMID>'
-      parts[0] = `qm create ${vmid}`
+      const parts = [`qm create ${formData.value.vmid || '<VMID>'}`]
       parts.push(`--name "${formData.value.name || 'vm'}"`)
       parts.push(`--memory ${formData.value.memory}`)
       parts.push(`--cores ${formData.value.cpu_cores}`)
@@ -1304,21 +1285,111 @@ export default {
       nics.value.forEach((n, i) => {
         let netstr = `model=${n.model},bridge=${n.bridge || 'vmbr0'}`
         if (n.vlan) netstr += `,tag=${n.vlan}`
-        if (n.mac) netstr += `,macaddr=${n.mac}`
+        if (n.macMode === 'custom' && n.mac) netstr += `,macaddr=${n.mac}`
         if (n.firewall) netstr += ',firewall=1'
         if (n.rate) netstr += `,rate=${n.rate}`
         parts.push(`--net${i} ${netstr}`)
       })
       if (formData.value.onboot) parts.push('--onboot 1')
       if (formData.value.agent_enabled) parts.push('--agent enabled=1')
-      if (formData.value.numa_enabled) parts.push('--numa 1')
       if (formData.value.tags) parts.push(`--tags "${formData.value.tags}"`)
-      if (formData.value.description) parts.push(`--description "${formData.value.description}"`)
       return parts.join(' \\\n  ')
     })
 
     const copyCliCommand = () => {
       navigator.clipboard.writeText(generatedCliCommand.value).then(() => toast.success('CLI command copied!'))
+    }
+
+    // ---------- Per-field validation ----------
+    const fieldErrors = ref({
+      vmid: '', name: '', hostname: '', memory: '', cpu_cores: '', cpu_sockets: '',
+      disk_size: '', ip_address: '', password: '', username: '',
+    })
+
+    const validateField = (field, value, rulesArr) => {
+      const result = validate(value, rulesArr)
+      fieldErrors.value[field] = result === true ? '' : result
+      return result === true
+    }
+
+    // ---------- Per-step validation ----------
+    const validateStep = (step) => {
+      const errors = []
+      stepErrors.value[step] = {}
+
+      if (step === 'general') {
+        if (!selectedHostId.value) {
+          stepErrors.value.general.host = 'Please select a Proxmox datacenter'
+          errors.push('Please select a Proxmox datacenter')
+        }
+        if (!formData.value.node_id) {
+          stepErrors.value.general.node = 'Please select a node'
+          errors.push('Please select a node')
+        }
+        const nameErr = validate(formData.value.name, [rules.required, rules.vmName])
+        if (nameErr !== true) { fieldErrors.value.name = nameErr; errors.push(`VM Name: ${nameErr}`) }
+        const hostnameErr = validate(formData.value.hostname, [rules.required, rules.hostname])
+        if (hostnameErr !== true) { fieldErrors.value.hostname = hostnameErr; errors.push(`Hostname: ${hostnameErr}`) }
+        if (!formData.value.os_type) {
+          stepErrors.value.general.os = 'Please select an operating system'
+          errors.push('Operating system must be selected')
+        }
+        if (vmIdStatus.value === 'taken') errors.push(`VM ID ${formData.value.vmid} is already in use`)
+      }
+
+      if (step === 'hardware') {
+        const memErr = validate(formData.value.memory, [rules.required, rules.intRange(512, 4194304)])
+        if (memErr !== true) { fieldErrors.value.memory = memErr; errors.push(`Memory: ${memErr}`) }
+        const coresErr = validate(formData.value.cpu_cores, [rules.required, rules.intRange(1, 512)])
+        if (coresErr !== true) { fieldErrors.value.cpu_cores = coresErr; errors.push(`CPU cores: ${coresErr}`) }
+        const socketsErr = validate(formData.value.cpu_sockets, [rules.required, rules.intRange(1, 16)])
+        if (socketsErr !== true) { fieldErrors.value.cpu_sockets = socketsErr; errors.push(`CPU sockets: ${socketsErr}`) }
+      }
+
+      if (step === 'storage') {
+        if (!selectedStorage.value) {
+          stepErrors.value.storage.pool = 'Please select a storage pool'
+          errors.push('Storage pool must be selected')
+        }
+        const diskErr = validate(disks.value[0]?.size, [rules.required, rules.positiveInt])
+        if (diskErr !== true) { fieldErrors.value.disk_size = diskErr; errors.push(`Primary disk: ${diskErr}`) }
+      }
+
+      if (step === 'network') {
+        if (!selectedBridge.value && nics.value[0] && !nics.value[0].bridge) {
+          stepErrors.value.network.bridge = 'Please select a network bridge'
+          errors.push('Network bridge must be selected')
+        }
+        nics.value.forEach((nic, i) => {
+          if (nic.macMode === 'custom' && nic.mac && !macRegex.test(nic.mac)) {
+            errors.push(`net${i}: invalid MAC address format`)
+          }
+        })
+      }
+
+      if (step === 'cloudinit') {
+        const userErr = validate(formData.value.username, [rules.required])
+        if (userErr !== true) { fieldErrors.value.username = userErr; errors.push(`Username: ${userErr}`) }
+        const pwErr = validate(formData.value.password, [rules.required, rules.password(8)])
+        if (pwErr !== true) { fieldErrors.value.password = pwErr; errors.push(`Password: ${pwErr}`) }
+        if (!useDHCP.value) {
+          const ipErr = validate(formData.value.ip_address, [rules.required, rules.ipOrCidr])
+          if (ipErr !== true) { fieldErrors.value.ip_address = ipErr; errors.push(`IP address: ${ipErr}`) }
+        }
+      }
+
+      return errors
+    }
+
+    // ---------- Full form validation ----------
+    const validateForm = () => {
+      const allErrors = []
+      for (const tab of tabs.slice(0, -1)) {
+        const errs = validateStep(tab.id)
+        if (errs.length) { tabErrors.value[tab.id] = true; allErrors.push(...errs) }
+        else { tabErrors.value[tab.id] = false }
+      }
+      return allErrors
     }
 
     // ---------- API calls ----------
@@ -1385,7 +1456,7 @@ export default {
       try {
         const r = await api.proxmox.getNodeNetwork(nodeId)
         networkList.value = r.data.network || []
-        const firstBridge = networkList.value.find(n => n.active) || networkList.value[0]
+        const firstBridge = networkList.value.find(n => (n.type === 'bridge' || n.iface?.startsWith('vmbr')) && n.active) || networkList.value[0]
         if (firstBridge) {
           selectedBridge.value = firstBridge.iface
           formData.value.network_bridge = firstBridge.iface
@@ -1411,12 +1482,13 @@ export default {
       if (b && b.active) {
         selectedBridge.value = name
         formData.value.network_bridge = name
+        nics.value[0].bridge = name
       }
     }
 
     const getStorageUsagePercent = (s) => {
       if (!s.total || s.total === 0) return 0
-      return Math.round((s.used / s.total) * 100)
+      return Math.round(((s.total - (s.available || 0)) / s.total) * 100)
     }
 
     const loadISOs = async () => {
@@ -1443,99 +1515,18 @@ export default {
       if (progressData.value.status === 'running') router.push('/vms')
     }
 
-    // ---------- Upload progress ----------
     const uploadProgress = computed(() => {
       const m = (progressData.value.status_message || '').match(/(\d+)%/)
       return m ? parseInt(m[1]) : 0
     })
 
-    // ---------- Per-field validation errors ----------
-    const fieldErrors = ref({
-      vmid: '',
-      name: '',
-      hostname: '',
-      memory: '',
-      cpu_cores: '',
-      cpu_sockets: '',
-      disk_size: '',
-      ip_address: '',
-      password: '',
-    })
-
-    const validateField = (field, value, rulesArr) => {
-      const result = validate(value, rulesArr)
-      fieldErrors.value[field] = result === true ? '' : result
-      return result === true
-    }
-
-    // ---------- Validate ----------
-    const validateForm = () => {
-      const errors = []
-
-      // Reset field errors
-      Object.keys(fieldErrors.value).forEach(k => { fieldErrors.value[k] = '' })
-
-      // VMID (optional but if provided must be valid)
-      if (formData.value.vmid) {
-        const vmidErr = validate(formData.value.vmid, [rules.vmId])
-        if (vmidErr !== true) { fieldErrors.value.vmid = vmidErr; errors.push(`VM ID: ${vmidErr}`) }
-      }
-      if (vmIdStatus.value === 'taken') {
-        fieldErrors.value.vmid = `VM ID ${formData.value.vmid} is already in use`
-        errors.push(fieldErrors.value.vmid)
-      }
-
-      // Name
-      const nameErr = validate(formData.value.name, [rules.required, rules.vmName])
-      if (nameErr !== true) { fieldErrors.value.name = nameErr; errors.push(`VM Name: ${nameErr}`) }
-
-      // Hostname
-      const hostnameErr = validate(formData.value.hostname, [rules.required, rules.hostname])
-      if (hostnameErr !== true) { fieldErrors.value.hostname = hostnameErr; errors.push(`Hostname: ${hostnameErr}`) }
-
-      // Memory
-      const memErr = validate(formData.value.memory, [rules.required, rules.intRange(512, 4194304)])
-      if (memErr !== true) { fieldErrors.value.memory = memErr; errors.push(`Memory: ${memErr}`) }
-
-      // CPU cores
-      const coresErr = validate(formData.value.cpu_cores, [rules.required, rules.intRange(1, 512)])
-      if (coresErr !== true) { fieldErrors.value.cpu_cores = coresErr; errors.push(`CPU cores: ${coresErr}`) }
-
-      // CPU sockets
-      const socketsErr = validate(formData.value.cpu_sockets, [rules.required, rules.intRange(1, 16)])
-      if (socketsErr !== true) { fieldErrors.value.cpu_sockets = socketsErr; errors.push(`CPU sockets: ${socketsErr}`) }
-
-      // Disk size
-      const diskErr = validate(disks.value[0]?.size, [rules.required, rules.positiveInt])
-      if (diskErr !== true) { fieldErrors.value.disk_size = diskErr; errors.push(`Primary disk: ${diskErr}`) }
-
-      // IP address when not using DHCP
-      if (!useDHCP.value) {
-        const ipErr = validate(formData.value.ip_address, [rules.required, rules.ipOrCidr])
-        if (ipErr !== true) { fieldErrors.value.ip_address = ipErr; errors.push(`IP address: ${ipErr}`) }
-      }
-
-      if (!formData.value.os_type) errors.push('Operating system must be selected')
-      if (!formData.value.proxmox_host_id) errors.push('Proxmox datacenter must be selected')
-      if (!formData.value.node_id) errors.push('Node must be selected')
-      if (!selectedStorage.value) errors.push('Storage pool must be selected')
-      if (!selectedBridge.value) errors.push('Network bridge must be selected')
-      if (imageSource.value === 'cloud_image' && !formData.value.cloud_image_id) errors.push('Cloud image must be selected')
-      if (!formData.value.username?.trim()) errors.push('Username is required')
-      if (!formData.value.password?.trim()) errors.push('Password is required')
-
-      return errors
-    }
-
     // ---------- Create ----------
     const createVM = async () => {
       const errors = validateForm()
-      if (errors.length) { errors.forEach(e => toast.error(e)); return }
+      if (errors.length) { errors.slice(0, 3).forEach(e => toast.error(e)); return }
 
       creating.value = true
       try {
-        const cpuFlags = buildCpuFlags()
-
         const payload = {
           name: formData.value.name,
           hostname: formData.value.hostname,
@@ -1544,24 +1535,20 @@ export default {
           iso_id: imageSource.value === 'iso' ? formData.value.iso_id : null,
           cloud_image_id: imageSource.value === 'cloud_image' ? formData.value.cloud_image_id : null,
           os_type: formData.value.os_type,
-          // CPU
           cpu_sockets: formData.value.cpu_sockets,
           cpu_cores: formData.value.cpu_cores,
           cpu_type: formData.value.cpu_type || 'x86-64-v2-AES',
-          cpu_flags: cpuFlags || null,
+          cpu_flags: formData.value.cpu_flags || null,
           cpu_limit: formData.value.cpu_limit || null,
           cpu_units: formData.value.cpu_units || 1024,
           numa_enabled: formData.value.numa_enabled || false,
-          // Memory
           memory: formData.value.memory,
           balloon: formData.value.balloon_enabled ? (formData.value.balloon || null) : null,
           shares: formData.value.shares || null,
-          // Disk
           disk_size: disks.value[0].size,
           storage: selectedStorage.value || null,
           iso_storage: formData.value.iso_storage || null,
           scsihw: formData.value.scsihw || 'virtio-scsi-pci',
-          // Hardware
           bios_type: formData.value.bios_type || 'seabios',
           machine_type: formData.value.machine_type || 'pc',
           vga_type: formData.value.vga_type || 'std',
@@ -1570,21 +1557,15 @@ export default {
           tablet: formData.value.tablet !== undefined ? formData.value.tablet : true,
           hotplug: formData.value.hotplug || null,
           protection: formData.value.protection || false,
-          startup_order: formData.value.startup_order || null,
-          startup_up: formData.value.startup_up || null,
-          startup_down: formData.value.startup_down || null,
           kvm: formData.value.kvm !== undefined ? formData.value.kvm : true,
           acpi: formData.value.acpi !== undefined ? formData.value.acpi : true,
           agent_enabled: formData.value.agent_enabled !== undefined ? formData.value.agent_enabled : true,
-          // Network
-          network_bridge: selectedBridge.value || null,
+          network_bridge: selectedBridge.value || nics.value[0]?.bridge || null,
           vlan_tag: nics.value[0]?.vlan || null,
           network_interfaces: null,
-          // Credentials
           username: formData.value.username,
           password: formData.value.password,
           ssh_key: formData.value.ssh_key || null,
-          // Metadata
           description: formData.value.description || null,
           tags: formData.value.tags || null,
         }
@@ -1599,10 +1580,8 @@ export default {
         }
 
         const r = await api.vms.create(payload)
-
         showProgressModal.value = true
         progressData.value = { name: formData.value.name, status: 'creating', status_message: 'Initializing VM deployment...', error_message: '', vmid: null }
-
         const vmId = r.data.id
         progressInterval = setInterval(() => pollProgress(vmId), 1000)
         toast.success('VM creation started!')
@@ -1624,18 +1603,17 @@ export default {
 
     const formatBytes = (bytes) => {
       if (!bytes) return '0 B'
-      return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB'
+      const gb = bytes / (1024 * 1024 * 1024)
+      if (gb >= 1) return gb.toFixed(2) + ' GB'
+      return (bytes / (1024 * 1024)).toFixed(0) + ' MB'
     }
 
     watch(useDHCP, (val) => {
       if (val) { formData.value.ip_address = ''; formData.value.gateway = ''; formData.value.netmask = '24'; formData.value.dns_servers = '8.8.8.8,8.8.4.4' }
     })
-
-    // When storage is selected, propagate to all disks that haven't been individually configured
     watch(selectedStorage, (name) => {
       disks.value.forEach(d => { if (!d.storage) d.storage = name })
     })
-
     watch(selectedBridge, (name) => {
       nics.value.forEach(n => { if (!n.bridge) n.bridge = name })
     })
@@ -1643,13 +1621,14 @@ export default {
     onMounted(() => { loadHosts(); loadISOs(); loadCloudImages() })
 
     return {
-      tabs, activeTab, tabErrors, tabIndex, prevTab, nextTab,
+      tabs, activeTab, tabErrors, stepErrors, tabIndex, goToTab, prevTab, nextTabWithValidation,
+      hwPresets, activePreset, applyPreset,
       vmIdStatus, debouncedCheckVmId,
       tagInputValue, parsedTags, tagColor, addTag, removeTag, removeLastTagOnBackspace,
       disks, addDisk, removeDisk,
       nics, addNic, removeNic,
-      cpuFlagOptions, selectedCpuFlags,
-      balloonPercent,
+      bridgeSupportsVlan, nicBridgeSupportsVlan, validateMac,
+      storageTypeIcon, storageHasSpace,
       hosts, nodes, isos, cloudImages, imageSource,
       storageList, networkList,
       sortedStorageList, sortedISOStorageList, sortedNetworkList,
@@ -1658,11 +1637,13 @@ export default {
       creating, useDHCP,
       showProgressModal, progressData, uploadProgress, closeProgressModal,
       formData,
+      selectedNodeObj,
+      cpuAllocationPercent, nodeMemUsedPercent, memAllocationPercent,
+      totalDiskSize, diskUsedPercent, diskAllocationPercent,
       selectDatacenter, selectNode, selectStorage, selectBridge,
       getStorageUsagePercent, formatBytes,
       createVM,
       generatedCliCommand, copyCliCommand,
-      // Validation
       fieldErrors, validateField, rules, validate,
     }
   }
@@ -1675,51 +1656,89 @@ export default {
 .card-subtitle { color: var(--text-secondary); margin: 0.25rem 0 0; font-size: 0.9rem; }
 .create-vm-form { padding: 0 1.5rem 1.5rem; }
 
-/* ---- Tabs ---- */
-.vm-tabs {
+/* ---- Step Progress Bar ---- */
+.step-progress {
   display: flex;
-  gap: 0.25rem;
-  padding: 0 1.5rem;
-  border-bottom: 2px solid var(--border-color);
+  align-items: flex-start;
+  padding: 1.25rem 1.5rem 0;
   overflow-x: auto;
   scrollbar-width: none;
+  gap: 0;
 }
-.vm-tabs::-webkit-scrollbar { display: none; }
-.vm-tab {
+.step-progress::-webkit-scrollbar { display: none; }
+
+.step-item {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 0.4rem;
-  padding: 0.75rem 1rem;
-  border: none;
-  background: none;
-  cursor: pointer;
-  color: var(--text-secondary);
-  font-size: 0.875rem;
-  font-weight: 500;
-  border-bottom: 2px solid transparent;
-  margin-bottom: -2px;
-  white-space: nowrap;
+  flex: 1;
+  min-width: 70px;
   position: relative;
-  transition: color 0.2s, border-color 0.2s;
+  cursor: pointer;
 }
-.vm-tab:hover { color: var(--primary-color); }
-.vm-tab.active { color: var(--primary-color); border-bottom-color: var(--primary-color); }
-.tab-icon { font-size: 1rem; }
-.tab-error-dot {
+
+.step-connector-before,
+.step-connector-after {
   position: absolute;
-  top: 0.35rem;
-  right: 0.35rem;
-  width: 14px;
-  height: 14px;
-  background: #ef4444;
-  color: white;
+  top: 14px;
+  height: 2px;
+  background: var(--border-color);
+  z-index: 0;
+  transition: background 0.3s;
+}
+.step-connector-before { right: 50%; width: 50%; }
+.step-connector-after  { left:  50%; width: 50%; }
+
+.step-done .step-connector-after,
+.step-active .step-connector-before,
+.step-done .step-connector-before { background: var(--primary-color); }
+
+.step-circle {
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
-  font-size: 0.6rem;
+  border: 2px solid var(--border-color);
+  background: var(--card-bg, white);
   display: flex;
   align-items: center;
   justify-content: center;
+  font-size: 0.75rem;
   font-weight: 700;
+  z-index: 1;
+  transition: all 0.3s;
+  color: var(--text-secondary);
+  position: relative;
 }
+.step-active .step-circle {
+  border-color: var(--primary-color);
+  background: var(--primary-color);
+  color: white;
+  box-shadow: 0 0 0 3px rgba(59,130,246,0.2);
+}
+.step-done .step-circle {
+  border-color: var(--primary-color);
+  background: var(--primary-color);
+  color: white;
+}
+.step-error .step-circle {
+  border-color: #ef4444;
+  background: #ef4444;
+  color: white;
+}
+.step-circle-icon { font-size: 0.8rem; }
+.step-circle-num { font-size: 0.75rem; }
+
+.step-label {
+  margin-top: 0.4rem;
+  font-size: 0.72rem;
+  font-weight: 500;
+  text-align: center;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.step-active .step-label { color: var(--primary-color); font-weight: 600; }
+.step-done .step-label { color: var(--primary-color); }
+.step-error .step-label { color: #ef4444; }
 
 /* ---- Tab content ---- */
 .tab-content { padding-top: 1.5rem; min-height: 400px; }
@@ -1729,21 +1748,42 @@ export default {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 1rem 0;
+  padding: 1.25rem 0 0.5rem;
   border-top: 1px solid var(--border-color);
   margin-top: 2rem;
 }
 .tab-position { color: var(--text-secondary); font-size: 0.875rem; }
 
-/* ---- Section titles ---- */
-.form-section {
-  margin-bottom: 1.75rem;
-  padding-bottom: 1.75rem;
-  border-bottom: 1px solid var(--border-color);
-}
+/* ---- Sections ---- */
+.form-section { margin-bottom: 1.75rem; padding-bottom: 1.75rem; border-bottom: 1px solid var(--border-color); }
 .form-section:last-child { border-bottom: none; }
 .section-title { font-size: 1.125rem; font-weight: 600; margin-bottom: 1.25rem; color: var(--text-primary); }
 .subsection-title { font-size: 0.9375rem; font-weight: 600; color: var(--text-primary); margin: 0 0 0.875rem; }
+.section-header-with-action { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.875rem; }
+.info-banner { padding: 1rem 1.25rem; background: rgba(59,130,246,0.08); border: 1px solid rgba(59,130,246,0.2); border-radius: 0.5rem; color: var(--text-secondary); font-size: 0.9rem; }
+
+/* ---- Hardware Presets ---- */
+.preset-hint { font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.75rem; }
+.preset-cards {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.preset-card {
+  border: 2px solid var(--border-color);
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  background: var(--background);
+  min-width: 110px;
+  text-align: center;
+}
+.preset-card:hover { border-color: var(--primary-color); transform: translateY(-1px); box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+.preset-selected { border-color: var(--primary-color) !important; background: linear-gradient(135deg, rgba(37,99,235,0.08), rgba(147,51,234,0.08)) !important; }
+.preset-name { font-size: 1rem; font-weight: 700; color: var(--text-primary); margin-bottom: 0.4rem; }
+.preset-specs { display: flex; flex-direction: column; gap: 0.15rem; }
+.preset-spec { font-size: 0.75rem; color: var(--text-secondary); }
 
 /* ---- VM ID input ---- */
 .input-with-status { position: relative; }
@@ -1754,145 +1794,109 @@ export default {
 .status-icon.checking { color: var(--text-secondary); animation: spin 1s linear infinite; display: inline-block; }
 .input-ok { border-color: #10b981 !important; }
 .input-error { border-color: #ef4444 !important; box-shadow: 0 0 0 2px rgba(239,68,68,0.15) !important; }
-.input-error:focus { border-color: #ef4444 !important; box-shadow: 0 0 0 3px rgba(239,68,68,0.2) !important; }
 .error-text { color: #ef4444; }
 .form-error-text { display: block; margin-top: 0.25rem; font-size: 0.78rem; color: #ef4444; }
-.form-error-text::before { content: '⚠ '; }
+.form-error-text::before { content: '\26A0 '; }
 
 /* ---- Tag input ---- */
 .tag-input-area {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem;
-  padding: 0.4rem 0.6rem;
-  border: 1px solid var(--border-color);
-  border-radius: 0.375rem;
-  cursor: text;
-  min-height: 2.5rem;
-  background: var(--background);
-  align-items: center;
+  display: flex; flex-wrap: wrap; gap: 0.35rem; padding: 0.4rem 0.6rem;
+  border: 1px solid var(--border-color); border-radius: 0.375rem; cursor: text;
+  min-height: 2.5rem; background: var(--background); align-items: center;
 }
-.tag-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  padding: 0.15rem 0.6rem;
-  border-radius: 9999px;
-  color: white;
-  font-size: 0.78rem;
-  font-weight: 500;
-}
-.tag-remove {
-  background: none;
-  border: none;
-  color: rgba(255,255,255,0.8);
-  cursor: pointer;
-  padding: 0;
-  font-size: 1rem;
-  line-height: 1;
-}
+.tag-chip { display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.15rem 0.6rem; border-radius: 9999px; color: white; font-size: 0.78rem; font-weight: 500; }
+.tag-remove { background: none; border: none; color: rgba(255,255,255,0.8); cursor: pointer; padding: 0; font-size: 1rem; line-height: 1; }
 .tag-remove:hover { color: white; }
-.tag-text-input {
-  border: none;
-  outline: none;
-  background: none;
-  font-size: 0.875rem;
-  flex: 1;
-  min-width: 120px;
-  color: var(--text-primary);
-}
+.tag-text-input { border: none; outline: none; background: none; font-size: 0.875rem; flex: 1; min-width: 120px; color: var(--text-primary); }
 
-/* ---- CPU flags ---- */
-.cpu-flags-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 0.5rem;
-}
-.flag-checkbox {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.5rem;
-  padding: 0.5rem;
-  border: 1px solid var(--border-color);
-  border-radius: 0.375rem;
-  cursor: pointer;
-  font-size: 0.83rem;
-}
-.flag-checkbox:hover { border-color: var(--primary-color); background: rgba(59,130,246,0.04); }
-.flag-name { font-weight: 600; color: var(--text-primary); min-width: 5rem; }
-.flag-desc { color: var(--text-secondary); }
+/* ---- Node resource bars ---- */
+.resource-bar-wrap { display: flex; align-items: center; gap: 0.35rem; flex: 1; }
+.resource-bar { height: 6px; background: var(--border-color); border-radius: 3px; overflow: hidden; flex: 1; }
+.resource-bar-fill { height: 100%; border-radius: 3px; }
+.resource-bar-fill.cpu { background: #3b82f6; }
+.resource-bar-fill.mem { background: #8b5cf6; }
+.resource-pct { font-size: 0.72rem; color: var(--text-secondary); min-width: 2.5rem; text-align: right; }
 
-/* ---- Memory balloon bar ---- */
-.memory-range { }
-.memory-range-bar {
-  position: relative;
-  height: 10px;
-  background: var(--border-color);
-  border-radius: 5px;
-  overflow: hidden;
-  margin-bottom: 0.4rem;
+/* ---- Storage ---- */
+.storage-hint { font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.75rem; }
+.storage-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 1rem; margin: 0.5rem 0; }
+.storage-card {
+  border: 2px solid var(--border-color); border-radius: 0.5rem; padding: 1rem;
+  cursor: pointer; transition: all 0.2s; background: var(--background); position: relative;
 }
-.memory-range-fill { height: 100%; background: var(--primary-color); border-radius: 5px; transition: width 0.3s; }
-.memory-range-labels { display: flex; justify-content: space-between; font-size: 0.78rem; color: var(--text-secondary); }
+.storage-card:hover { border-color: var(--primary-color); }
+.storage-card.selected { border-color: var(--primary-color); background: linear-gradient(135deg, rgba(37,99,235,0.08), rgba(147,51,234,0.08)); }
+.storage-card.disabled { opacity: 0.5; cursor: not-allowed; }
+.storage-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; }
+.storage-name-row { display: flex; align-items: center; gap: 0.4rem; }
+.storage-type-icon { font-size: 1.1rem; }
+.storage-header h6 { margin: 0; font-size: 0.95rem; font-weight: 600; }
+.storage-bar { width: 100%; height: 8px; background: var(--border-color); border-radius: 4px; overflow: hidden; margin-bottom: 0.5rem; }
+.storage-bar-fill { height: 100%; background: linear-gradient(90deg, var(--primary-color), var(--secondary-color)); }
+.storage-bar-danger { background: linear-gradient(90deg, #f59e0b, #ef4444) !important; }
+.storage-stats { display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-secondary); }
+.storage-stats-simple { font-size: 0.78rem; color: var(--text-secondary); margin-top: 0.35rem; }
+.storage-insufficient { font-size: 0.72rem; color: #ef4444; margin-top: 0.25rem; font-weight: 500; }
+.storage-badge { position: absolute; top: 0.5rem; right: 0.5rem; }
+
+/* ---- Network ---- */
+.network-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 0.875rem; margin-bottom: 1rem; }
+.network-card { border: 2px solid var(--border-color); border-radius: 0.5rem; padding: 0.875rem; cursor: pointer; transition: all 0.2s; background: var(--background); }
+.network-card:hover { border-color: var(--primary-color); }
+.network-card.selected { border-color: var(--primary-color); background: linear-gradient(135deg, rgba(37,99,235,0.08), rgba(147,51,234,0.08)); }
+.network-card.disabled { opacity: 0.5; cursor: not-allowed; }
+.network-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
+.network-header h6 { margin: 0; font-size: 0.9rem; font-weight: 600; }
+.network-badges { display: flex; gap: 0.35rem; flex-wrap: wrap; }
+.network-details { display: flex; flex-direction: column; gap: 0.2rem; margin-top: 0.35rem; }
+.net-detail { font-size: 0.78rem; color: var(--text-secondary); }
+.net-detail-label { font-weight: 600; color: var(--text-primary); }
+.net-vlan-aware { color: #0891b2; font-weight: 500; }
+.vlan-optional { font-size: 0.75rem; color: var(--text-secondary); font-weight: 400; }
+
+/* ---- MAC address ---- */
+.mac-row { display: flex; flex-direction: column; gap: 0.4rem; }
+.mac-toggle { display: flex; gap: 1rem; }
+.mac-input { margin-top: 0.25rem; }
 
 /* ---- Disk rows ---- */
-.section-header-with-action { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.875rem; }
-.disk-row, .nic-row {
+.disk-row, .nic-row { border: 1px solid var(--border-color); border-radius: 0.5rem; padding: 1rem; margin-bottom: 1rem; background: var(--background); }
+.disk-row-header, .nic-row-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--border-color); }
+.disk-label, .nic-label { font-family: monospace; font-size: 0.875rem; font-weight: 600; color: var(--primary-color); }
+.btn-icon-danger { background: none; border: 1px solid #ef4444; color: #ef4444; border-radius: 0.25rem; padding: 0.2rem 0.5rem; cursor: pointer; font-size: 0.8rem; }
+.btn-icon-danger:hover { background: #fee2e2; }
+.disk-options-row { display: flex; flex-wrap: wrap; gap: 1rem; margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid var(--border-color); }
+.disk-option-check { display: flex; align-items: center; gap: 0.4rem; font-size: 0.83rem; color: var(--text-secondary); cursor: pointer; }
+
+/* ---- Resource Estimate Banner ---- */
+.resource-estimate-banner {
+  background: var(--background);
   border: 1px solid var(--border-color);
   border-radius: 0.5rem;
-  padding: 1rem;
-  margin-bottom: 1rem;
-  background: var(--background);
-}
-.disk-row-header, .nic-row-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 0.75rem;
-  padding-bottom: 0.5rem;
-  border-bottom: 1px solid var(--border-color);
-}
-.disk-label, .nic-label { font-family: monospace; font-size: 0.875rem; font-weight: 600; color: var(--primary-color); }
-.btn-icon-danger {
-  background: none;
-  border: 1px solid #ef4444;
-  color: #ef4444;
-  border-radius: 0.25rem;
-  padding: 0.2rem 0.5rem;
-  cursor: pointer;
-  font-size: 0.8rem;
-}
-.btn-icon-danger:hover { background: #fee2e2; }
-.disk-options-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 1rem;
-  margin-top: 0.5rem;
-  padding-top: 0.5rem;
-  border-top: 1px solid var(--border-color);
-}
-.disk-option-check {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-size: 0.83rem;
-  color: var(--text-secondary);
-  cursor: pointer;
-}
-
-/* ---- Summary ---- */
-.summary-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 1.25rem;
+  padding: 1.25rem;
   margin-bottom: 1.5rem;
 }
-.summary-section {
-  border: 1px solid var(--border-color);
-  border-radius: 0.5rem;
-  padding: 1rem;
-  background: var(--background);
+.resource-estimate-title { font-size: 0.9rem; font-weight: 600; margin: 0 0 1rem; color: var(--text-primary); }
+.resource-estimate-bars { display: flex; flex-direction: column; gap: 0.875rem; }
+.res-estimate-item { }
+.res-estimate-label { display: flex; justify-content: space-between; font-size: 0.8rem; margin-bottom: 0.3rem; }
+.res-estimate-nums { color: var(--text-secondary); }
+.res-estimate-track {
+  height: 12px; background: var(--border-color); border-radius: 6px; overflow: hidden;
+  display: flex; position: relative;
 }
+.res-estimate-existing { height: 100%; background: #64748b; }
+.res-estimate-new { height: 100%; background: var(--primary-color); opacity: 0.85; }
+.res-estimate-pct { font-size: 0.75rem; color: var(--text-secondary); margin-top: 0.2rem; text-align: right; }
+.res-estimate-legend { display: flex; gap: 1.25rem; margin-top: 0.75rem; }
+.legend-item { display: flex; align-items: center; gap: 0.4rem; font-size: 0.78rem; color: var(--text-secondary); }
+.legend-dot { width: 12px; height: 12px; border-radius: 50%; }
+.legend-dot.existing { background: #64748b; }
+.legend-dot.new { background: var(--primary-color); }
+
+/* ---- Summary ---- */
+.summary-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1.25rem; margin-bottom: 1.5rem; }
+.summary-section { border: 1px solid var(--border-color); border-radius: 0.5rem; padding: 1rem; background: var(--background); }
 .summary-section-title { font-size: 0.875rem; font-weight: 700; color: var(--primary-color); margin: 0 0 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }
 .summary-table { width: 100%; border-collapse: collapse; font-size: 0.83rem; }
 .summary-table tr { border-bottom: 1px solid var(--border-color); }
@@ -1902,69 +1906,21 @@ export default {
 .summary-table td:last-child { font-weight: 500; color: var(--text-primary); word-break: break-all; }
 
 /* ---- CLI preview ---- */
-.cli-preview {
-  background: #0f172a;
-  color: #94a3b8;
-  border-radius: 0.5rem;
-  padding: 1rem 1.25rem;
-  font-size: 0.8rem;
-  line-height: 1.7;
-  overflow-x: auto;
-  white-space: pre-wrap;
-  word-break: break-all;
-  font-family: 'Courier New', monospace;
-}
+.cli-preview { background: #0f172a; color: #94a3b8; border-radius: 0.5rem; padding: 1rem 1.25rem; font-size: 0.8rem; line-height: 1.7; overflow-x: auto; white-space: pre-wrap; word-break: break-all; font-family: 'Courier New', monospace; }
 
-/* ---- Shared card styles ---- */
-.datacenter-cards, .node-cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-  gap: 1rem;
-  margin-top: 0.5rem;
-}
-.datacenter-card, .node-card {
-  border: 2px solid var(--border-color);
-  border-radius: 0.5rem;
-  padding: 1rem;
-  cursor: pointer;
-  transition: all 0.2s;
-  background: var(--background);
-}
+/* ---- Datacenter / Node cards ---- */
+.datacenter-cards, .node-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 1rem; margin-top: 0.5rem; }
+.datacenter-card, .node-card { border: 2px solid var(--border-color); border-radius: 0.5rem; padding: 1rem; cursor: pointer; transition: all 0.2s; background: var(--background); }
 .datacenter-card:hover, .node-card:hover { border-color: var(--primary-color); box-shadow: 0 4px 6px rgba(0,0,0,0.1); transform: translateY(-2px); }
-.datacenter-card.selected, .node-card.selected { border-color: var(--primary-color); background: linear-gradient(135deg, rgba(37,99,235,0.1), rgba(147,51,234,0.1)); }
+.datacenter-card.selected, .node-card.selected { border-color: var(--primary-color); background: linear-gradient(135deg, rgba(37,99,235,0.08), rgba(147,51,234,0.08)); }
 .datacenter-card { display: flex; align-items: center; gap: 1rem; }
 .datacenter-icon { font-size: 2.5rem; flex-shrink: 0; }
 .datacenter-info h5 { margin: 0 0 0.25rem; font-size: 1.125rem; }
 .node-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; }
 .node-header h6 { margin: 0; font-size: 1rem; font-weight: 600; }
-.node-resources { display: flex; flex-direction: column; gap: 0.35rem; }
-.resource-item { display: flex; align-items: center; gap: 0.5rem; font-size: 0.875rem; }
-
-.storage-cards, .network-cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 1rem;
-  margin: 0.5rem 0;
-}
-.storage-card, .network-card {
-  border: 2px solid var(--border-color);
-  border-radius: 0.5rem;
-  padding: 1rem;
-  cursor: pointer;
-  transition: all 0.2s;
-  background: var(--background);
-  position: relative;
-}
-.storage-card:hover, .network-card:hover { border-color: var(--primary-color); box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-.storage-card.selected, .network-card.selected { border-color: var(--primary-color); background: linear-gradient(135deg, rgba(37,99,235,0.1), rgba(147,51,234,0.1)); }
-.storage-card.disabled, .network-card.disabled { opacity: 0.5; cursor: not-allowed; }
-.storage-header, .network-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; }
-.storage-header h6, .network-header h6 { margin: 0; font-size: 1rem; font-weight: 600; }
-.storage-bar { width: 100%; height: 8px; background: var(--border-color); border-radius: 4px; overflow: hidden; margin-bottom: 0.5rem; }
-.storage-bar-fill { height: 100%; background: linear-gradient(90deg, var(--primary-color), var(--secondary-color)); }
-.storage-stats { display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-secondary); }
-.storage-badge { position: absolute; top: 0.5rem; right: 0.5rem; }
-.network-info { display: flex; flex-direction: column; gap: 0.25rem; }
+.node-resources { display: flex; flex-direction: column; gap: 0.45rem; }
+.resource-item { display: flex; align-items: center; gap: 0.4rem; font-size: 0.83rem; }
+.resource-icon { font-size: 0.9rem; }
 
 /* ---- Loading ---- */
 .loading-message { text-align: center; padding: 2rem; color: var(--text-secondary); }
@@ -1977,17 +1933,7 @@ export default {
 .form-actions { display: flex; gap: 1rem; align-items: center; }
 .btn-lg { padding: 0.75rem 2rem; font-size: 1rem; }
 .btn-sm { padding: 0.3rem 0.75rem; font-size: 0.8rem; }
-.btn-spinner {
-  display: inline-block;
-  width: 16px;
-  height: 16px;
-  border: 2px solid rgba(255,255,255,0.4);
-  border-top-color: white;
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-  vertical-align: middle;
-  margin-right: 0.5rem;
-}
+.btn-spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.4); border-top-color: white; border-radius: 50%; animation: spin 0.8s linear infinite; vertical-align: middle; margin-right: 0.5rem; }
 
 /* ---- Radio group ---- */
 .radio-group { display: flex; gap: 1.25rem; }

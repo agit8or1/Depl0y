@@ -332,6 +332,78 @@ async def admin_reset_password(
     }
 
 
+class SetPasswordRequest(BaseModel):
+    password: str = Field(..., min_length=8)
+
+
+@router.post("/{user_id}/set-password")
+async def admin_set_password(
+    user_id: int,
+    data: SetPasswordRequest,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Admin sets a specific password for a user (admin only)."""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    try:
+        from app.api.auth import _validate_password_policy
+        policy_error = _validate_password_policy(db, data.password)
+        if policy_error:
+            raise HTTPException(status_code=400, detail=policy_error)
+    except ImportError:
+        pass
+
+    user.hashed_password = get_password_hash(data.password)
+    user.updated_at = datetime.utcnow()
+    # Bump token_version to invalidate all existing sessions
+    user.token_version = (getattr(user, "token_version", 0) or 0) + 1
+    db.commit()
+    return {"message": f"Password updated for {user.username}"}
+
+
+class LoginHistoryResponse(BaseModel):
+    id: int
+    user_id: Optional[int]
+    username_attempted: str
+    ip_address: str
+    user_agent: Optional[str]
+    success: bool
+    failure_reason: Optional[str]
+    timestamp: datetime
+
+    class Config:
+        from_attributes = True
+
+
+@router.get("/{user_id}/login-history", response_model=List[LoginHistoryResponse])
+async def get_user_login_history(
+    user_id: int,
+    limit: int = 10,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Get login history for a specific user (admin only)."""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    try:
+        from app.models.security import LoginAttempt
+        attempts = (
+            db.query(LoginAttempt)
+            .filter(LoginAttempt.user_id == user_id)
+            .order_by(LoginAttempt.timestamp.desc())
+            .limit(limit)
+            .all()
+        )
+        return attempts
+    except Exception:
+        return []
+
+
 class DisableTotpRequest(BaseModel):
     pass  # No body needed; admin action
 
@@ -514,6 +586,49 @@ async def grant_user_host_permission(
         can_admin=perm.can_admin,
         host_name=host.name,
         host_hostname=host.hostname,
+    )
+
+
+class HostPermissionUpdate(BaseModel):
+    can_view: Optional[bool] = None
+    can_manage: Optional[bool] = None
+    can_admin: Optional[bool] = None
+
+
+@router.put("/{user_id}/host-permissions/{host_id}", response_model=HostPermissionResponse)
+async def update_user_host_permission(
+    user_id: int,
+    host_id: int,
+    data: HostPermissionUpdate,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Update permission flags for an existing user-host permission (admin only)."""
+    from app.models.database import UserHostPermission, ProxmoxHost
+    perm = db.query(UserHostPermission).filter(
+        UserHostPermission.user_id == user_id,
+        UserHostPermission.host_id == host_id,
+    ).first()
+    if not perm:
+        raise HTTPException(status_code=404, detail="Permission not found")
+    if data.can_view is not None:
+        perm.can_view = data.can_view
+    if data.can_manage is not None:
+        perm.can_manage = data.can_manage
+    if data.can_admin is not None:
+        perm.can_admin = data.can_admin
+    db.commit()
+    db.refresh(perm)
+    host = db.query(ProxmoxHost).filter(ProxmoxHost.id == host_id).first()
+    return HostPermissionResponse(
+        id=perm.id,
+        user_id=perm.user_id,
+        host_id=perm.host_id,
+        can_view=perm.can_view,
+        can_manage=perm.can_manage,
+        can_admin=perm.can_admin,
+        host_name=host.name if host else None,
+        host_hostname=host.hostname if host else None,
     )
 
 

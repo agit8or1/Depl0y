@@ -70,7 +70,7 @@
               <tr>
                 <th>Name</th>
                 <th>Type</th>
-                <th>Node</th>
+                <th>Nodes</th>
                 <th>Content</th>
                 <th>Usage</th>
                 <th>Shared</th>
@@ -80,11 +80,21 @@
             </thead>
             <tbody>
               <tr v-for="s in storagePools" :key="s.storage">
-                <td class="storage-name">{{ s.storage }}</td>
-                <td><span :class="['type-badge', 'type-' + s.type]">{{ s.type }}</span></td>
-                <td>{{ s.nodes || 'all' }}</td>
+                <td class="storage-name">
+                  {{ s.storage }}
+                </td>
+                <td>
+                  <span :class="['type-badge', 'type-' + s.type]">{{ s.type }}</span>
+                </td>
+                <td class="text-sm">{{ s.nodes || 'all' }}</td>
                 <td class="content-cell">
-                  <span v-for="c in parseContent(s.content)" :key="c" class="content-tag">{{ c }}</span>
+                  <div class="content-tags">
+                    <span v-for="c in parseContent(s.content)" :key="c" :class="['content-badge', 'content-' + c]">
+                      <span class="content-badge-icon">{{ contentIcon(c) }}</span>
+                      {{ contentLabel(c) }}
+                    </span>
+                    <span v-if="!s.content" class="text-muted text-xs">—</span>
+                  </div>
                 </td>
                 <td class="usage-cell">
                   <div v-if="s.total > 0" class="usage-bar-wrap">
@@ -94,7 +104,7 @@
                     </div>
                     <span class="usage-text">
                       {{ formatBytes(s.used) }} / {{ formatBytes(s.total) }}
-                      ({{ usagePct(s.used, s.total) }}%)
+                      <strong>({{ usagePct(s.used, s.total) }}%)</strong>
                     </span>
                   </div>
                   <span v-else class="text-muted text-sm">N/A</span>
@@ -110,6 +120,9 @@
                   </span>
                 </td>
                 <td class="actions-cell">
+                  <button @click="browseStorage(s)" class="btn-icon" title="Browse Content" :disabled="!canBrowse(s)">
+                    &#128193;
+                  </button>
                   <button @click="editStorage(s)" class="btn-icon" title="Edit">&#9998;</button>
                   <button @click="toggleStorage(s)" class="btn-icon"
                           :title="s.enabled !== false ? 'Disable' : 'Enable'">
@@ -395,26 +408,31 @@
     <div v-if="showStorageModal" class="modal-overlay" @click.self="closeStorageModal">
       <div class="modal modal-lg">
         <div class="modal-header">
-          <h2>{{ editingStorage ? 'Edit Storage' : 'Add Storage' }}</h2>
+          <h2>{{ editingStorage ? 'Edit Storage: ' + editingStorage.storage : 'Add Storage' }}</h2>
           <button class="modal-close" @click="closeStorageModal">&times;</button>
         </div>
         <div class="modal-body">
-          <!-- Type tabs (only when creating) -->
-          <div v-if="!editingStorage" class="type-tabs">
-            <button v-for="t in storageTypes" :key="t.value"
-                    :class="['type-tab', storageForm.type === t.value ? 'active' : '']"
-                    @click="storageForm.type = t.value">
-              {{ t.label }}
-            </button>
+          <!-- Type selector: radio cards (only when creating) -->
+          <div v-if="!editingStorage">
+            <label class="form-label" style="margin-bottom:.5rem;">Storage Type</label>
+            <div class="type-cards">
+              <label v-for="t in storageTypes" :key="t.value"
+                     :class="['type-card', storageForm.type === t.value ? 'type-card-active' : '']">
+                <input type="radio" :value="t.value" v-model="storageForm.type" class="sr-only" />
+                <span class="type-card-icon">{{ t.icon }}</span>
+                <span class="type-card-label">{{ t.label }}</span>
+                <span class="type-card-desc">{{ t.desc }}</span>
+              </label>
+            </div>
           </div>
 
-          <div class="form-grid">
+          <div class="form-grid" style="margin-top:1rem;">
             <div class="form-group">
               <label class="form-label">Storage ID <span class="required">*</span></label>
               <input v-model="storageForm.storage" type="text" class="form-control"
                      placeholder="e.g. local-zfs" :disabled="!!editingStorage" />
             </div>
-            <div class="form-group" v-if="!editingStorage">
+            <div class="form-group" v-if="editingStorage">
               <label class="form-label">Type</label>
               <input :value="storageForm.type" class="form-control" disabled />
             </div>
@@ -428,10 +446,11 @@
             </div>
             <div class="form-group">
               <label class="form-label">Content Types</label>
-              <div class="checkbox-group">
-                <label v-for="c in contentTypes" :key="c.value" class="checkbox-label">
-                  <input type="checkbox" :value="c.value" v-model="selectedContentTypes" />
-                  {{ c.label }}
+              <div class="content-checkbox-group">
+                <label v-for="c in contentTypes" :key="c.value" :class="['content-check-item', selectedContentTypes.includes(c.value) ? 'selected' : '']">
+                  <input type="checkbox" :value="c.value" v-model="selectedContentTypes" class="sr-only" />
+                  <span class="content-check-icon">{{ c.icon }}</span>
+                  <span class="content-check-label">{{ c.label }}</span>
                 </label>
               </div>
             </div>
@@ -449,10 +468,11 @@
             </div>
             <div class="form-group">
               <label class="form-label">Content Types</label>
-              <div class="checkbox-group">
-                <label v-for="c in vmContentTypes" :key="c.value" class="checkbox-label">
-                  <input type="checkbox" :value="c.value" v-model="selectedContentTypes" />
-                  {{ c.label }}
+              <div class="content-checkbox-group">
+                <label v-for="c in vmContentTypes" :key="c.value" :class="['content-check-item', selectedContentTypes.includes(c.value) ? 'selected' : '']">
+                  <input type="checkbox" :value="c.value" v-model="selectedContentTypes" class="sr-only" />
+                  <span class="content-check-icon">{{ c.icon }}</span>
+                  <span class="content-check-label">{{ c.label }}</span>
                 </label>
               </div>
             </div>
@@ -470,10 +490,11 @@
             </div>
             <div class="form-group">
               <label class="form-label">Content Types</label>
-              <div class="checkbox-group">
-                <label v-for="c in vmContentTypes" :key="c.value" class="checkbox-label">
-                  <input type="checkbox" :value="c.value" v-model="selectedContentTypes" />
-                  {{ c.label }}
+              <div class="content-checkbox-group">
+                <label v-for="c in vmContentTypes" :key="c.value" :class="['content-check-item', selectedContentTypes.includes(c.value) ? 'selected' : '']">
+                  <input type="checkbox" :value="c.value" v-model="selectedContentTypes" class="sr-only" />
+                  <span class="content-check-icon">{{ c.icon }}</span>
+                  <span class="content-check-label">{{ c.label }}</span>
                 </label>
               </div>
             </div>
@@ -491,10 +512,11 @@
             </div>
             <div class="form-group">
               <label class="form-label">Content Types</label>
-              <div class="checkbox-group">
-                <label v-for="c in vmContentTypes" :key="c.value" class="checkbox-label">
-                  <input type="checkbox" :value="c.value" v-model="selectedContentTypes" />
-                  {{ c.label }}
+              <div class="content-checkbox-group">
+                <label v-for="c in vmContentTypes" :key="c.value" :class="['content-check-item', selectedContentTypes.includes(c.value) ? 'selected' : '']">
+                  <input type="checkbox" :value="c.value" v-model="selectedContentTypes" class="sr-only" />
+                  <span class="content-check-icon">{{ c.icon }}</span>
+                  <span class="content-check-label">{{ c.label }}</span>
                 </label>
               </div>
             </div>
@@ -515,13 +537,15 @@
             <div class="form-group">
               <label class="form-label">Mount Options</label>
               <input v-model="storageForm.options" type="text" class="form-control" placeholder="vers=4,soft" />
+              <p class="form-hint">NFS mount options (e.g. vers=4,soft,timeo=600)</p>
             </div>
             <div class="form-group">
               <label class="form-label">Content Types</label>
-              <div class="checkbox-group">
-                <label v-for="c in contentTypes" :key="c.value" class="checkbox-label">
-                  <input type="checkbox" :value="c.value" v-model="selectedContentTypes" />
-                  {{ c.label }}
+              <div class="content-checkbox-group">
+                <label v-for="c in contentTypes" :key="c.value" :class="['content-check-item', selectedContentTypes.includes(c.value) ? 'selected' : '']">
+                  <input type="checkbox" :value="c.value" v-model="selectedContentTypes" class="sr-only" />
+                  <span class="content-check-icon">{{ c.icon }}</span>
+                  <span class="content-check-label">{{ c.label }}</span>
                 </label>
               </div>
             </div>
@@ -551,14 +575,15 @@
             </div>
             <div class="form-group">
               <label class="form-label">Domain</label>
-              <input v-model="storageForm.domain" type="text" class="form-control" />
+              <input v-model="storageForm.domain" type="text" class="form-control" placeholder="WORKGROUP" />
             </div>
             <div class="form-group">
               <label class="form-label">Content Types</label>
-              <div class="checkbox-group">
-                <label v-for="c in contentTypes" :key="c.value" class="checkbox-label">
-                  <input type="checkbox" :value="c.value" v-model="selectedContentTypes" />
-                  {{ c.label }}
+              <div class="content-checkbox-group">
+                <label v-for="c in contentTypes" :key="c.value" :class="['content-check-item', selectedContentTypes.includes(c.value) ? 'selected' : '']">
+                  <input type="checkbox" :value="c.value" v-model="selectedContentTypes" class="sr-only" />
+                  <span class="content-check-icon">{{ c.icon }}</span>
+                  <span class="content-check-label">{{ c.label }}</span>
                 </label>
               </div>
             </div>
@@ -588,20 +613,28 @@
             </div>
             <div class="form-group">
               <label class="form-label">Content Types</label>
-              <div class="checkbox-group">
-                <label v-for="c in vmContentTypes" :key="c.value" class="checkbox-label">
-                  <input type="checkbox" :value="c.value" v-model="selectedContentTypes" />
-                  {{ c.label }}
+              <div class="content-checkbox-group">
+                <label v-for="c in vmContentTypes" :key="c.value" :class="['content-check-item', selectedContentTypes.includes(c.value) ? 'selected' : '']">
+                  <input type="checkbox" :value="c.value" v-model="selectedContentTypes" class="sr-only" />
+                  <span class="content-check-icon">{{ c.icon }}</span>
+                  <span class="content-check-label">{{ c.label }}</span>
                 </label>
               </div>
             </div>
           </template>
 
+          <!-- Edit-only: toggle enabled -->
+          <div v-if="editingStorage" class="form-group form-toggle" style="margin-top:.5rem;">
+            <label class="form-label">Enabled</label>
+            <input type="checkbox" v-model="storageEnabledToggle" class="toggle-input" />
+          </div>
+
           <!-- Common: nodes restriction -->
-          <div class="form-group">
+          <div class="form-group" style="margin-top:.75rem;">
             <label class="form-label">Restrict to Nodes (optional)</label>
             <input v-model="storageForm.nodes" type="text" class="form-control"
                    placeholder="Leave empty for all nodes, or enter comma-separated node names" />
+            <p class="form-hint">E.g. pve1,pve2 — leave blank to allow all nodes</p>
           </div>
         </div>
         <div class="modal-footer">
@@ -660,18 +693,105 @@
     <div v-if="showDeleteConfirm" class="modal-overlay" @click.self="showDeleteConfirm = false">
       <div class="modal modal-sm">
         <div class="modal-header">
-          <h2>Confirm Delete</h2>
+          <h2>Delete Storage</h2>
           <button class="modal-close" @click="showDeleteConfirm = false">&times;</button>
         </div>
         <div class="modal-body">
-          <p>Are you sure you want to delete storage <strong>{{ deletingStorage?.storage }}</strong>?</p>
-          <p class="text-danger text-sm">This action cannot be undone. Existing data on this storage will not be removed, but the storage definition will be deleted from Proxmox.</p>
+          <p>Delete storage <strong>{{ deletingStorage?.storage }}</strong>?</p>
+          <div class="delete-options">
+            <label :class="['delete-option', deleteMode === 'config' ? 'delete-option-selected' : '']">
+              <input type="radio" value="config" v-model="deleteMode" class="sr-only" />
+              <div class="delete-option-icon">&#128462;</div>
+              <div>
+                <div class="delete-option-title">Remove from Config Only</div>
+                <div class="delete-option-desc text-muted text-sm">
+                  Remove the storage definition from Proxmox. Existing data on disk is preserved.
+                </div>
+              </div>
+            </label>
+            <label :class="['delete-option', deleteMode === 'wipe' ? 'delete-option-selected delete-option-danger' : '']">
+              <input type="radio" value="wipe" v-model="deleteMode" class="sr-only" />
+              <div class="delete-option-icon">&#128465;</div>
+              <div>
+                <div class="delete-option-title">Wipe Data</div>
+                <div class="delete-option-desc text-danger text-sm">
+                  Remove config AND destroy all data on this storage. This cannot be undone.
+                </div>
+              </div>
+            </label>
+          </div>
+          <div v-if="deleteMode === 'wipe'" class="wipe-warning">
+            <strong>Warning:</strong> All data on <strong>{{ deletingStorage?.storage }}</strong> will be permanently destroyed.
+          </div>
         </div>
         <div class="modal-footer">
           <button @click="showDeleteConfirm = false" class="btn btn-secondary">Cancel</button>
           <button @click="deleteStorage" class="btn btn-danger" :disabled="deletingStorageInProgress">
-            {{ deletingStorageInProgress ? 'Deleting...' : 'Delete' }}
+            {{ deletingStorageInProgress ? 'Deleting...' : (deleteMode === 'wipe' ? 'Wipe & Delete' : 'Remove Config') }}
           </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── BROWSE CONTENT MODAL ── -->
+    <div v-if="showBrowseModal" class="modal-overlay" @click.self="closeBrowseModal">
+      <div class="modal modal-xl">
+        <div class="modal-header">
+          <h2>Browse: {{ browsingStorage?.storage }}</h2>
+          <div class="browse-header-actions">
+            <select v-if="browseNodes.length > 1" v-model="browseNode" class="form-control form-control-sm" @change="loadBrowseContent">
+              <option v-for="n in browseNodes" :key="n" :value="n">{{ n }}</option>
+            </select>
+            <select v-model="browseContentFilter" class="form-control form-control-sm" @change="loadBrowseContent">
+              <option value="">All Content</option>
+              <option v-for="c in browsableContentTypes" :key="c.value" :value="c.value">{{ c.label }}</option>
+            </select>
+            <button @click="loadBrowseContent" class="btn btn-secondary btn-sm" :disabled="loadingBrowse">
+              Refresh
+            </button>
+          </div>
+          <button class="modal-close" @click="closeBrowseModal">&times;</button>
+        </div>
+        <div class="modal-body" style="padding:0;">
+          <div v-if="loadingBrowse" class="browse-loading">Loading content...</div>
+          <div v-else-if="browseError" class="browse-error text-danger">{{ browseError }}</div>
+          <div v-else-if="browseItems.length === 0" class="browse-empty">No files found in this storage.</div>
+          <div v-else class="table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Volume ID</th>
+                  <th>Content</th>
+                  <th>Format</th>
+                  <th>Size</th>
+                  <th>VM/CT</th>
+                  <th>Notes</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="item in browseItems" :key="item.volid">
+                  <td class="text-mono browse-volid" :title="item.volid">{{ item.volid }}</td>
+                  <td>
+                    <span :class="['content-badge', 'content-' + item.content]">
+                      <span class="content-badge-icon">{{ contentIcon(item.content) }}</span>
+                      {{ contentLabel(item.content) }}
+                    </span>
+                  </td>
+                  <td class="text-sm">{{ item.format || '—' }}</td>
+                  <td class="text-sm">{{ formatBytes(item.size) }}</td>
+                  <td class="text-sm">
+                    <span v-if="item.vmid" class="vmid-ref">VM {{ item.vmid }}</span>
+                    <span v-else class="text-muted">—</span>
+                  </td>
+                  <td class="text-sm text-muted">{{ item.notes || '' }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <span class="text-sm text-muted">{{ browseItems.length }} item(s)</span>
+          <button @click="closeBrowseModal" class="btn btn-secondary">Close</button>
         </div>
       </div>
     </div>
@@ -696,6 +816,7 @@ export default {
     const loadingNodes = ref(false)
     const selectedHostId = ref('')
     const selectedNode = ref('')
+    const loading = ref(false)
 
     // Overview tab
     const storagePools = ref([])
@@ -728,6 +849,7 @@ export default {
     const savingStorage = ref(false)
     const storageForm = ref({})
     const selectedContentTypes = ref([])
+    const storageEnabledToggle = ref(true)
 
     // ZFS create modal
     const showZfsModal = ref(false)
@@ -738,30 +860,50 @@ export default {
     const showDeleteConfirm = ref(false)
     const deletingStorage = ref(null)
     const deletingStorageInProgress = ref(false)
+    const deleteMode = ref('config')
+
+    // Browse content modal
+    const showBrowseModal = ref(false)
+    const browsingStorage = ref(null)
+    const browseNode = ref('')
+    const browseNodes = ref([])
+    const browseContentFilter = ref('')
+    const browseItems = ref([])
+    const loadingBrowse = ref(false)
+    const browseError = ref('')
 
     // ── Constants ─────────────────────────────────────────────────────────────
     const storageTypes = [
-      { value: 'dir', label: 'Directory' },
-      { value: 'lvm', label: 'LVM' },
-      { value: 'lvmthin', label: 'LVM-Thin' },
-      { value: 'zfspool', label: 'ZFS' },
-      { value: 'nfs', label: 'NFS' },
-      { value: 'cifs', label: 'SMB/CIFS' },
-      { value: 'rbd', label: 'RBD (Ceph)' },
+      { value: 'dir', label: 'Directory', icon: '📁', desc: 'Local filesystem directory' },
+      { value: 'nfs', label: 'NFS', icon: '🌐', desc: 'Network File System share' },
+      { value: 'cifs', label: 'SMB/CIFS', icon: '🖧', desc: 'Windows/Samba network share' },
+      { value: 'lvm', label: 'LVM', icon: '💾', desc: 'LVM volume group' },
+      { value: 'lvmthin', label: 'LVM-Thin', icon: '🔲', desc: 'LVM thin pool' },
+      { value: 'zfspool', label: 'ZFS', icon: '🗄', desc: 'ZFS storage pool' },
+      { value: 'rbd', label: 'RBD (Ceph)', icon: '🔴', desc: 'Ceph RADOS block device' },
     ]
 
     const contentTypes = [
+      { value: 'images', label: 'VM Disk Images', icon: '💿', short: 'Images' },
+      { value: 'rootdir', label: 'Container Volumes', icon: '📦', short: 'Containers' },
+      { value: 'vztmpl', label: 'CT Templates', icon: '📋', short: 'CT Templates' },
+      { value: 'backup', label: 'Backups', icon: '💾', short: 'Backups' },
+      { value: 'snippets', label: 'Snippets', icon: '📝', short: 'Snippets' },
+      { value: 'iso', label: 'ISO Images', icon: '💿', short: 'ISOs' },
+    ]
+
+    const vmContentTypes = [
+      { value: 'images', label: 'VM Disk Images', icon: '💿', short: 'Images' },
+      { value: 'rootdir', label: 'Container Volumes', icon: '📦', short: 'Containers' },
+    ]
+
+    const browsableContentTypes = [
       { value: 'images', label: 'VM Images' },
       { value: 'rootdir', label: 'Container Volumes' },
       { value: 'vztmpl', label: 'CT Templates' },
       { value: 'backup', label: 'Backups' },
       { value: 'snippets', label: 'Snippets' },
       { value: 'iso', label: 'ISO Images' },
-    ]
-
-    const vmContentTypes = [
-      { value: 'images', label: 'VM Images' },
-      { value: 'rootdir', label: 'Container Volumes' },
     ]
 
     // ── Computed ──────────────────────────────────────────────────────────────
@@ -785,7 +927,6 @@ export default {
     })
 
     const flatOsds = computed(() => {
-      // Proxmox returns nested: { nodes: [ { opsd: [{...}] } ] } or flat array
       if (!cephOsds.value) return []
       if (Array.isArray(cephOsds.value)) {
         const result = []
@@ -852,11 +993,9 @@ export default {
       loadingStorage.value = true
       storageError.value = ''
       try {
-        // Use cluster-wide storage list
         const res = await api.storage.list(selectedHostId.value)
         storagePools.value = res.data || []
       } catch {
-        // Fallback: per-node storage query using first available node
         try {
           const fallbackNode = nodes.value[0]?.node
           if (fallbackNode) {
@@ -911,7 +1050,6 @@ export default {
       loadingCephMons.value = true
       loadingCephOsds.value = true
       loadingCephPools.value = true
-
       try {
         const [monsRes, osdsRes, poolsRes] = await Promise.allSettled([
           api.storage.getCephMons(selectedHostId.value, selectedNode.value),
@@ -952,7 +1090,6 @@ export default {
     const getVdevs = (poolName) => {
       const detail = poolDetails.value[poolName]
       if (!detail) return []
-      // Proxmox returns: { children: [...] } or { vdevs: [...] }
       return detail.children || detail.vdevs || []
     }
 
@@ -971,6 +1108,7 @@ export default {
     const openCreateModal = () => {
       editingStorage.value = null
       selectedContentTypes.value = []
+      storageEnabledToggle.value = true
       storageForm.value = { type: 'dir', storage: '', shared: false, sparse: false }
       showStorageModal.value = true
     }
@@ -979,6 +1117,7 @@ export default {
       editingStorage.value = s
       storageForm.value = { ...s }
       selectedContentTypes.value = s.content ? s.content.split(',').map(c => c.trim()) : []
+      storageEnabledToggle.value = s.enabled !== false
       showStorageModal.value = true
     }
 
@@ -999,6 +1138,8 @@ export default {
           content: selectedContentTypes.value.join(','),
         }
         if (editingStorage.value) {
+          // Include enabled toggle for edit
+          payload.enabled = storageEnabledToggle.value ? 1 : 0
           await api.storage.update(selectedHostId.value, storageForm.value.storage, payload)
           toast.success('Storage updated')
         } else {
@@ -1027,6 +1168,7 @@ export default {
 
     const confirmDeleteStorage = (s) => {
       deletingStorage.value = s
+      deleteMode.value = 'config'
       showDeleteConfirm.value = true
     }
 
@@ -1034,7 +1176,12 @@ export default {
       if (!deletingStorage.value) return
       deletingStorageInProgress.value = true
       try {
-        await api.storage.delete(selectedHostId.value, deletingStorage.value.storage)
+        // Pass wipe param if user chose "wipe"
+        if (deleteMode.value === 'wipe') {
+          await api.storage.delete(selectedHostId.value, deletingStorage.value.storage, true)
+        } else {
+          await api.storage.delete(selectedHostId.value, deletingStorage.value.storage)
+        }
         toast.success(`Storage ${deletingStorage.value.storage} deleted`)
         showDeleteConfirm.value = false
         deletingStorage.value = null
@@ -1046,6 +1193,65 @@ export default {
       }
     }
 
+    // ── Browse Content ────────────────────────────────────────────────────────
+    const canBrowse = (s) => {
+      // storages that support content listing: dir, nfs, cifs, zfspool
+      // lvm/lvmthin typically don't expose a file listing
+      return ['dir', 'nfs', 'cifs', 'zfspool', 'rbd'].includes(s.type) && !!nodes.value.length
+    }
+
+    const browseStorage = async (s) => {
+      browsingStorage.value = s
+      browseItems.value = []
+      browseError.value = ''
+      browseContentFilter.value = ''
+
+      // Determine nodes: if storage.nodes is set, parse it; otherwise use all available nodes
+      if (s.nodes) {
+        browseNodes.value = s.nodes.split(',').map(n => n.trim()).filter(Boolean)
+      } else {
+        browseNodes.value = nodes.value.map(n => n.node)
+      }
+
+      // Pick first node if not yet chosen
+      if (!browseNode.value || !browseNodes.value.includes(browseNode.value)) {
+        browseNode.value = browseNodes.value[0] || (nodes.value[0]?.node || '')
+      }
+
+      showBrowseModal.value = true
+      await loadBrowseContent()
+    }
+
+    const loadBrowseContent = async () => {
+      if (!browsingStorage.value || !browseNode.value) return
+      loadingBrowse.value = true
+      browseError.value = ''
+      browseItems.value = []
+      try {
+        const params = {}
+        if (browseContentFilter.value) params.content = browseContentFilter.value
+        const res = await api.pveNode.browseStorage(
+          selectedHostId.value,
+          browseNode.value,
+          browsingStorage.value.storage,
+          params
+        )
+        browseItems.value = res.data || []
+      } catch (e) {
+        browseError.value = e.response?.data?.detail || 'Failed to browse storage content'
+      } finally {
+        loadingBrowse.value = false
+      }
+    }
+
+    const closeBrowseModal = () => {
+      showBrowseModal.value = false
+      browsingStorage.value = null
+      browseItems.value = []
+      browseError.value = ''
+    }
+
+    // ── ZFS Create ────────────────────────────────────────────────────────────
     const openCreateZfsModal = () => {
       zfsForm.value = { name: '', raidlevel: 'mirror', devices: '', add_storage: true }
       showZfsModal.value = true
@@ -1078,12 +1284,14 @@ export default {
     }
 
     const refresh = () => {
-      if (activeTab.value === 'overview') loadStorage()
-      if (activeTab.value === 'zfs') loadZfs()
-      if (activeTab.value === 'ceph') loadCeph()
+      loading.value = true
+      const p = activeTab.value === 'overview' ? loadStorage()
+        : activeTab.value === 'zfs' ? loadZfs()
+        : loadCeph()
+      p.finally(() => { loading.value = false })
     }
 
-    // ── Formatters / helpers ─────────────────────────────────────────────────
+    // ── Formatters / helpers ──────────────────────────────────────────────────
     const formatBytes = (bytes) => {
       if (!bytes && bytes !== 0) return '—'
       if (bytes === 0) return '0 B'
@@ -1109,6 +1317,26 @@ export default {
       return content.split(',').map(c => c.trim()).filter(Boolean)
     }
 
+    const CONTENT_LABELS = {
+      images: 'VM Images',
+      rootdir: 'Containers',
+      vztmpl: 'CT Templates',
+      backup: 'Backups',
+      snippets: 'Snippets',
+      iso: 'ISOs',
+    }
+    const CONTENT_ICONS = {
+      images: '💿',
+      rootdir: '📦',
+      vztmpl: '📋',
+      backup: '💾',
+      snippets: '📝',
+      iso: '📀',
+    }
+
+    const contentLabel = (c) => CONTENT_LABELS[c] || c
+    const contentIcon = (c) => CONTENT_ICONS[c] || '📄'
+
     const zfsStatusBadge = (status) => {
       if (!status) return 'badge-secondary'
       const s = status.toUpperCase()
@@ -1125,7 +1353,7 @@ export default {
       return 'badge-danger'
     }
 
-    // ── Watch tab change ─────────────────────────────────────────────────────
+    // ── Watch tab change ──────────────────────────────────────────────────────
     watch(activeTab, (tab) => {
       if (tab === 'overview' && selectedHostId.value) loadStorage()
       if (tab === 'zfs' && selectedHostId.value && selectedNode.value) loadZfs()
@@ -1135,16 +1363,19 @@ export default {
     onMounted(loadHosts)
 
     return {
-      activeTab, hosts, nodes, loadingHosts, loadingNodes,
+      activeTab, hosts, nodes, loadingHosts, loadingNodes, loading,
       selectedHostId, selectedNode,
       storagePools, loadingStorage, storageError,
       zfsPools, loadingZfs, zfsError, expandedPools, poolDetails,
       loadingPoolDetail, scrubbingPool,
       cephConfigured, loadingCeph, cephStatus, cephMons, cephOsds, cephPools,
       loadingCephMons, loadingCephOsds, loadingCephPools,
-      showStorageModal, editingStorage, savingStorage, storageForm, selectedContentTypes,
+      showStorageModal, editingStorage, savingStorage, storageForm,
+      selectedContentTypes, storageEnabledToggle,
       showZfsModal, creatingZfs, zfsForm,
-      showDeleteConfirm, deletingStorage, deletingStorageInProgress,
+      showDeleteConfirm, deletingStorage, deletingStorageInProgress, deleteMode,
+      showBrowseModal, browsingStorage, browseNode, browseNodes,
+      browseContentFilter, browseItems, loadingBrowse, browseError, browsableContentTypes,
       storageTypes, contentTypes, vmContentTypes,
       cephHealth, cephHealthBadge, cephPgsClean, flatOsds,
       onHostChange, onNodeChange, refresh,
@@ -1153,7 +1384,9 @@ export default {
       openCreateModal, editStorage, closeStorageModal, saveStorage,
       toggleStorage, confirmDeleteStorage, deleteStorage,
       openCreateZfsModal, closeZfsModal, createZfsPool,
+      canBrowse, browseStorage, loadBrowseContent, closeBrowseModal,
       formatBytes, usagePct, usageClass, parseContent,
+      contentLabel, contentIcon,
       zfsStatusBadge, osdStatusBadge,
     }
   }
@@ -1276,8 +1509,8 @@ export default {
 .data-table th {
   padding: 0.65rem 1rem;
   text-align: left;
-  font-size: 0.75rem;
-  font-weight: 600;
+  font-size: 0.72rem;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--text-muted, #64748b);
@@ -1295,17 +1528,23 @@ export default {
 .data-table tr:last-child td { border-bottom: none; }
 .data-table tr:hover td { background: var(--hover-bg, #f8fafc); }
 
-/* Storage-specific cells */
-.storage-name { font-weight: 600; }
+/* Storage cells */
+.storage-name {
+  font-weight: 600;
+  font-size: 0.875rem;
+}
 
+/* Type badges */
 .type-badge {
   display: inline-block;
-  padding: 0.15rem 0.5rem;
+  padding: 0.2rem 0.55rem;
   border-radius: 0.3rem;
-  font-size: 0.75rem;
-  font-weight: 600;
+  font-size: 0.72rem;
+  font-weight: 700;
   background: #e2e8f0;
   color: #475569;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
 }
 
 .type-zfspool, .type-zfs { background: #dbeafe; color: #1d4ed8; }
@@ -1314,24 +1553,45 @@ export default {
 .type-nfs, .type-cifs { background: #ede9fe; color: #5b21b6; }
 .type-rbd { background: #fee2e2; color: #991b1b; }
 
-.content-cell { max-width: 200px; }
-.content-tag {
-  display: inline-block;
-  background: var(--tag-bg, #f1f5f9);
-  color: var(--text-secondary, #475569);
-  border-radius: 0.25rem;
-  padding: 0.1rem 0.4rem;
-  font-size: 0.7rem;
-  margin: 0.1rem 0.1rem 0.1rem 0;
-  white-space: nowrap;
+/* Content badges with icons */
+.content-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem;
 }
 
+.content-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  border-radius: 0.3rem;
+  padding: 0.15rem 0.45rem;
+  font-size: 0.7rem;
+  font-weight: 500;
+  white-space: nowrap;
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.content-badge-icon { font-size: 0.75rem; line-height: 1; }
+
+.content-images { background: #dbeafe; color: #1d4ed8; }
+.content-rootdir { background: #d1fae5; color: #065f46; }
+.content-backup { background: #fef3c7; color: #92400e; }
+.content-vztmpl { background: #ede9fe; color: #5b21b6; }
+.content-iso { background: #fee2e2; color: #991b1b; }
+.content-snippets { background: #f0fdf4; color: #15803d; }
+
+/* Content cell */
+.content-cell { max-width: 260px; }
+
+/* Usage */
 .usage-cell { min-width: 200px; }
 
 .usage-bar-wrap {
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
+  gap: 0.25rem;
 }
 
 .usage-bar {
@@ -1342,9 +1602,7 @@ export default {
   overflow: hidden;
 }
 
-.usage-bar-lg {
-  height: 8px;
-}
+.usage-bar-lg { height: 8px; }
 
 .usage-fill {
   height: 100%;
@@ -1357,7 +1615,7 @@ export default {
 .usage-red { background: #ef4444; }
 
 .usage-text {
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   color: var(--text-muted, #64748b);
   white-space: nowrap;
 }
@@ -1380,10 +1638,11 @@ export default {
   transition: background 0.15s, color 0.15s;
 }
 
-.btn-icon:hover { background: var(--hover-bg, #f1f5f9); color: var(--text-primary, #1e293b); }
+.btn-icon:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-icon:hover:not(:disabled) { background: var(--hover-bg, #f1f5f9); color: var(--text-primary, #1e293b); }
 
 .btn-icon-danger { color: #dc2626; }
-.btn-icon-danger:hover { background: #fee2e2; color: #dc2626; border-color: #fca5a5; }
+.btn-icon-danger:hover:not(:disabled) { background: #fee2e2; color: #dc2626; border-color: #fca5a5; }
 
 /* Empty / loading states */
 .empty-placeholder, .loading-state, .error-state {
@@ -1453,9 +1712,7 @@ export default {
   color: var(--text-muted, #64748b);
 }
 
-.stat strong {
-  color: var(--text-secondary, #475569);
-}
+.stat strong { color: var(--text-secondary, #475569); }
 
 .zfs-pool-actions {
   display: flex;
@@ -1479,9 +1736,7 @@ export default {
   border-top: 1px solid var(--border-color, #e2e8f0);
 }
 
-.vdev-row {
-  margin-bottom: 0.75rem;
-}
+.vdev-row { margin-bottom: 0.75rem; }
 
 .vdev-header {
   display: flex;
@@ -1513,9 +1768,7 @@ export default {
 .disk-errors { font-size: 0.72rem; }
 
 /* Ceph */
-.ceph-not-configured {
-  padding: 0;
-}
+.ceph-not-configured { padding: 0; }
 
 .ceph-not-configured-inner {
   padding: 3rem;
@@ -1524,10 +1777,7 @@ export default {
   margin: 0 auto;
 }
 
-.ceph-icon {
-  font-size: 3rem;
-  margin-bottom: 1rem;
-}
+.ceph-icon { font-size: 3rem; margin-bottom: 1rem; }
 
 .ceph-not-configured-inner h3 {
   font-size: 1.25rem;
@@ -1560,11 +1810,7 @@ export default {
   padding: 1rem 1.25rem;
 }
 
-.ceph-stat-item {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
+.ceph-stat-item { display: flex; flex-direction: column; gap: 0.25rem; }
 
 .ceph-stat-label {
   font-size: 0.72rem;
@@ -1583,6 +1829,7 @@ export default {
 /* Forms */
 .form-group { margin-bottom: 1rem; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+
 .form-label {
   display: block;
   font-size: 0.8rem;
@@ -1605,6 +1852,8 @@ export default {
   transition: border-color 0.15s;
 }
 
+.form-control-sm { padding: 0.3rem 0.6rem; font-size: 0.8rem; }
+
 .form-control:focus {
   outline: none;
   border-color: #3b82f6;
@@ -1613,55 +1862,182 @@ export default {
 
 .form-hint { font-size: 0.75rem; color: var(--text-muted, #64748b); margin-top: 0.25rem; }
 
-.checkbox-group {
+/* Content checkbox group - icon style */
+.content-checkbox-group {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
 }
 
-.checkbox-label {
+.content-check-item {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 0.35rem;
-  font-size: 0.8rem;
-  color: var(--text-secondary, #475569);
-  cursor: pointer;
-  padding: 0.25rem 0.5rem;
-  border: 1px solid var(--border-color, #e2e8f0);
-  border-radius: 0.35rem;
+  gap: 0.25rem;
+  padding: 0.5rem 0.75rem;
+  border: 2px solid var(--border-color, #e2e8f0);
+  border-radius: 0.5rem;
   background: var(--card-bg, #fff);
-  transition: background 0.15s;
+  cursor: pointer;
+  transition: all 0.15s;
+  min-width: 80px;
+  text-align: center;
 }
 
-.checkbox-label:hover { background: var(--hover-bg, #f1f5f9); }
+.content-check-item:hover {
+  border-color: #93c5fd;
+  background: rgba(59, 130, 246, 0.04);
+}
+
+.content-check-item.selected {
+  border-color: #3b82f6;
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.content-check-icon { font-size: 1.25rem; line-height: 1; }
+
+.content-check-label {
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: var(--text-secondary, #475569);
+  white-space: nowrap;
+}
+
+.content-check-item.selected .content-check-label { color: #1d4ed8; }
+
+/* Type cards (radio) */
+.type-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 0.5rem;
+}
+
+.type-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.75rem 0.5rem;
+  border: 2px solid var(--border-color, #e2e8f0);
+  border-radius: 0.5rem;
+  background: var(--card-bg, #fff);
+  cursor: pointer;
+  transition: all 0.15s;
+  text-align: center;
+}
+
+.type-card:hover {
+  border-color: #93c5fd;
+  background: rgba(59, 130, 246, 0.04);
+}
+
+.type-card-active {
+  border-color: #3b82f6;
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.type-card-icon { font-size: 1.5rem; line-height: 1; }
+
+.type-card-label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text-primary, #1e293b);
+}
+
+.type-card-active .type-card-label { color: #1d4ed8; }
+
+.type-card-desc {
+  font-size: 0.65rem;
+  color: var(--text-muted, #64748b);
+  line-height: 1.2;
+}
 
 .form-toggle { display: flex; align-items: center; justify-content: space-between; }
 .toggle-input { width: 1rem; height: 1rem; cursor: pointer; }
 
-/* Type tabs (storage modal) */
-.type-tabs {
+/* Delete options */
+.delete-options {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem;
-  margin-bottom: 1.25rem;
-  padding-bottom: 1rem;
-  border-bottom: 1px solid var(--border-color, #e2e8f0);
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 1rem 0;
 }
 
-.type-tab {
-  padding: 0.35rem 0.85rem;
-  border: 1px solid var(--border-color, #e2e8f0);
-  border-radius: 0.35rem;
-  background: var(--card-bg, #fff);
-  font-size: 0.8rem;
-  font-weight: 500;
+.delete-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border: 2px solid var(--border-color, #e2e8f0);
+  border-radius: 0.5rem;
   cursor: pointer;
-  color: var(--text-secondary, #475569);
+  background: var(--card-bg, #fff);
   transition: all 0.15s;
 }
 
-.type-tab:hover { background: var(--hover-bg, #f1f5f9); }
-.type-tab.active { background: #3b82f6; color: #fff; border-color: #3b82f6; }
+.delete-option:hover { border-color: #94a3b8; background: var(--hover-bg, #f8fafc); }
+
+.delete-option-selected {
+  border-color: #3b82f6;
+  background: rgba(59, 130, 246, 0.05);
+}
+
+.delete-option-danger.delete-option-selected {
+  border-color: #ef4444;
+  background: rgba(239, 68, 68, 0.05);
+}
+
+.delete-option-icon { font-size: 1.4rem; line-height: 1; flex-shrink: 0; }
+
+.delete-option-title {
+  font-weight: 600;
+  font-size: 0.875rem;
+  color: var(--text-primary, #1e293b);
+  margin-bottom: 0.15rem;
+}
+
+.delete-option-desc { line-height: 1.3; }
+
+.wipe-warning {
+  background: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #fca5a5;
+  border-radius: 0.375rem;
+  padding: 0.65rem 1rem;
+  font-size: 0.8rem;
+}
+
+/* Browse modal content */
+.browse-header-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex: 1;
+  justify-content: flex-end;
+  margin-right: 0.75rem;
+}
+
+.browse-loading, .browse-error, .browse-empty {
+  padding: 2rem;
+  text-align: center;
+}
+
+.browse-volid {
+  font-size: 0.78rem;
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vmid-ref {
+  background: rgba(59, 130, 246, 0.1);
+  color: #1d4ed8;
+  border-radius: 0.25rem;
+  padding: 0.1rem 0.35rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
 
 /* Buttons */
 .btn {
@@ -1702,14 +2078,15 @@ export default {
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
   width: 100%;
   max-width: 560px;
-  max-height: 85vh;
+  max-height: 90vh;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
 }
 
-.modal-lg { max-width: 720px; }
-.modal-sm { max-width: 420px; }
+.modal-lg { max-width: 760px; }
+.modal-xl { max-width: 960px; }
+.modal-sm { max-width: 480px; }
 
 .modal-header {
   display: flex;
@@ -1718,6 +2095,7 @@ export default {
   padding: 1.25rem 1.5rem;
   border-bottom: 1px solid var(--border-color, #e2e8f0);
   flex-shrink: 0;
+  gap: 0.5rem;
 }
 
 .modal-header h2 { font-size: 1.1rem; font-weight: 600; margin: 0; }
@@ -1730,6 +2108,7 @@ export default {
   color: var(--text-muted, #64748b);
   line-height: 1;
   padding: 0;
+  flex-shrink: 0;
 }
 
 .modal-close:hover { color: var(--text-primary, #1e293b); }
@@ -1741,7 +2120,21 @@ export default {
   display: flex;
   gap: 0.75rem;
   justify-content: flex-end;
+  align-items: center;
   flex-shrink: 0;
+}
+
+/* SR-only for radio/checkbox hidden inputs */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0,0,0,0);
+  white-space: nowrap;
+  border-width: 0;
 }
 
 /* Text utilities */
@@ -1757,5 +2150,7 @@ export default {
   .selector-item { min-width: 100%; }
   .zfs-pool-header { flex-direction: column; align-items: flex-start; }
   .ceph-health-grid { grid-template-columns: repeat(2, 1fr); }
+  .type-cards { grid-template-columns: repeat(3, 1fr); }
+  .browse-header-actions { flex-wrap: wrap; }
 }
 </style>

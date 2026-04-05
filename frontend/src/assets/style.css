@@ -318,6 +318,17 @@ select.form-control {
   color: #93c5fd;
 }
 
+.badge-outline {
+  background-color: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+}
+
+[data-theme="dark"] .badge-outline {
+  border-color: var(--border-color);
+  color: var(--text-secondary);
+}
+
 /* Grid */
 .grid {
   display: grid;

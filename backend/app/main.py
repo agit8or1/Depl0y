@@ -7,7 +7,9 @@ from app.core.config import settings
 from app.core.database import init_db
 from app.api import auth, users, proxmox, vms, isos, cloud_images, updates, dashboard, bug_report, logs, docs, setup, system_updates, ha, system, llm, vm_agent, security, idrac, pbs, audit, notifications
 from app.api import vm_config, node as pve_node, console as pve_console, pbs_mgmt, pve_firewall, cluster as pve_cluster, sdn
-from app.api import vm_groups
+from app.api import vm_groups, vm_import
+from app.api import tasks as task_api
+from app.api import bulk_ops
 from app.middleware.security import SecurityHeadersMiddleware
 from app.middleware.rate_limit import RateLimitMiddleware
 from app.middleware.ip_filter import IPFilterMiddleware
@@ -326,6 +328,9 @@ app.include_router(pve_firewall.router, prefix=f"{settings.API_V1_PREFIX}/pve-fi
 app.include_router(pve_cluster.router, prefix=f"{settings.API_V1_PREFIX}/cluster", tags=["Cluster Operations"])
 app.include_router(sdn.router, prefix=f"{settings.API_V1_PREFIX}", tags=["SDN"])
 app.include_router(vm_groups.router, prefix=f"{settings.API_V1_PREFIX}/vm-groups", tags=["VM Groups"])
+app.include_router(vm_import.router, prefix=f"{settings.API_V1_PREFIX}/vm-import", tags=["VM Import"])
+app.include_router(task_api.router, prefix=f"{settings.API_V1_PREFIX}/tasks", tags=["Task Queue"])
+app.include_router(bulk_ops.router, prefix=f"{settings.API_V1_PREFIX}/pve-vm", tags=["Bulk Operations"])
 
 
 if __name__ == "__main__":

@@ -28,7 +28,7 @@ def get_system_info(db: Session = Depends(get_db)) -> Dict[str, str]:
         version_setting = db.query(SystemSettings).filter(SystemSettings.key == "app_version").first()
         app_name_setting = db.query(SystemSettings).filter(SystemSettings.key == "app_name").first()
         
-        version = version_setting.value if version_setting else "1.5.0"
+        version = version_setting.value if version_setting else "1.8.0"
         app_name = app_name_setting.value if app_name_setting else "Depl0y"
         
         return {
@@ -40,7 +40,7 @@ def get_system_info(db: Session = Depends(get_db)) -> Dict[str, str]:
         logger.error(f"Failed to get system info: {e}")
         # Fallback to hardcoded version if database query fails
         return {
-            "version": "1.1.3",
+            "version": "1.8.0",
             "app_name": "Depl0y",
             "status": "running"
         }

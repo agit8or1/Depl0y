@@ -327,6 +327,14 @@
                   >
                     Tags
                   </button>
+                  <button
+                    class="btn btn-outline btn-sm btn-console"
+                    title="Open Console"
+                    @click="openConsole(vm)"
+                  >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:2px;"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                    Console
+                  </button>
                 </div>
               </td>
             </tr>
@@ -950,6 +958,11 @@ export default {
       router.push(`/proxmox/${vm.hostId}/nodes/${vm.node}/vms/${vm.vmid}`)
     }
 
+    const openConsole = (vm) => {
+      const url = `/proxmox/${vm.hostId}/nodes/${vm.node}/console/${vm.vmid}`
+      window.open(url, '_blank')
+    }
+
     const allStartVM = async (vm) => {
       vm._busy = true
       try {
@@ -1426,6 +1439,7 @@ export default {
       allStopVM,
       allShutdownVM,
       allCountdown,
+      openConsole,
       // shared
       formatBytes,
       getStatusBadgeClass,
@@ -1874,6 +1888,13 @@ export default {
 
 .ml-1 { margin-left: 0.25rem; }
 .mt-2 { margin-top: 1rem; }
+
+/* ── Console button ──────────────────────────────────────────────────────── */
+.btn-console {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+}
 
 /* ── Mobile Responsive ──────────────────────────────────────────────────── */
 @media (max-width: 768px) {

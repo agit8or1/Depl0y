@@ -385,6 +385,12 @@ const router = createRouter({
       meta: { requiresAuth: true, requiresOperator: true }
     },
     {
+      path: '/bulk-ops',
+      name: 'BulkOperations',
+      component: () => import('@/views/BulkOperations.vue'),
+      meta: { requiresAuth: true, requiresOperator: true }
+    },
+    {
       path: '/:pathMatch(.*)*',
       name: 'NotFound',
       component: () => import('@/views/NotFound.vue')

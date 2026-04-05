@@ -17,6 +17,7 @@ from typing import Optional
 import websockets
 import websockets.exceptions
 from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi.responses import PlainTextResponse, Response
 from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal, get_db
@@ -28,6 +29,27 @@ from app.api.auth import get_current_user
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# ---------------------------------------------------------------------------
+# SPICE .vv file format template
+# ---------------------------------------------------------------------------
+
+_SPICE_VV_TEMPLATE = """\
+[virt-viewer]
+type=spice
+host={host}
+port={port}
+password={password}
+tls-port={tls_port}
+fullscreen=0
+title={title}
+enable-smartcard=0
+enable-usb-autoshare=1
+delete-this-file=1
+usb-filter=-1,-1,-1,-1,0
+toggle-fullscreen=shift+f11
+release-cursor=shift+f12
+"""
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -174,6 +196,62 @@ def get_lxc_ticket(
     except Exception as exc:
         logger.error("Failed to get terminal ticket for LXC %s/%s/%s: %s", host_id, node, ctid, exc)
         raise HTTPException(status_code=502, detail=f"Failed to obtain terminal ticket: {exc}")
+
+
+# ---------------------------------------------------------------------------
+# SPICE proxy endpoint (REST — returns .vv file)
+# ---------------------------------------------------------------------------
+
+@router.get("/spice/{host_id}/{node}/{vmid}", response_class=PlainTextResponse)
+def get_vm_spice(
+    host_id: int,
+    node: str,
+    vmid: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Request a SPICE connection file (.vv format) for a QEMU VM.
+
+    Calls Proxmox spiceproxy, formats the returned parameters as a
+    virt-viewer compatible .vv file, and returns it as plain text
+    (the frontend downloads it directly).
+    """
+    host = _get_host_or_none(db, host_id)
+    if host is None or not host.is_active:
+        raise HTTPException(status_code=404, detail="Proxmox host not found")
+    try:
+        svc = ProxmoxService(host)
+        # The Proxmox spiceproxy API requires a 'proxy' parameter — the address
+        # the SPICE client should connect to.  We use the Proxmox host's own
+        # hostname/IP as the proxy since Proxmox will redirect SPICE there.
+        proxy_host = host.hostname or host.host or "localhost"
+        result = svc.proxmox.nodes(node).qemu(vmid).spiceproxy.post(proxy=proxy_host)
+
+        spice_host = result.get("host", proxy_host)
+        port = result.get("port", "-1")
+        tls_port = result.get("tls-port", "-1")
+        password = result.get("password", "")
+        title = f"VM {vmid} on {node}"
+
+        vv_content = _SPICE_VV_TEMPLATE.format(
+            host=spice_host,
+            port=port,
+            password=password,
+            tls_port=tls_port,
+            title=title,
+        )
+
+        return Response(
+            content=vv_content,
+            media_type="application/x-virt-viewer",
+            headers={
+                "Content-Disposition": f'attachment; filename="vm-{vmid}-spice.vv"'
+            },
+        )
+    except Exception as exc:
+        logger.error("Failed to get SPICE proxy for VM %s/%s/%s: %s", host_id, node, vmid, exc)
+        raise HTTPException(status_code=502, detail=f"Failed to obtain SPICE connection: {exc}")
 
 
 # ---------------------------------------------------------------------------

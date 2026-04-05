@@ -1,5 +1,75 @@
 <template>
   <div class="dashboard">
+
+    <!-- ── First-run onboarding (admin, no hosts) ── -->
+    <transition name="onboard-fade">
+      <div v-if="showOnboarding" class="onboarding-screen">
+        <div class="onboard-hero">
+          <div class="onboard-logo">
+            <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="var(--primary-color)" stroke-width="1.5">
+              <rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
+            </svg>
+          </div>
+          <h1 class="onboard-title">Welcome to Depl0y</h1>
+          <p class="onboard-sub">Your Proxmox VM management platform. Follow the steps below to get started.</p>
+        </div>
+
+        <div class="onboard-checklist">
+          <!-- Step 1: Account created -->
+          <div class="checklist-item checklist-done">
+            <div class="check-icon check-complete">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+            </div>
+            <div class="check-content">
+              <span class="check-label">Account Created</span>
+              <span class="check-desc">You're logged in and ready to go</span>
+            </div>
+          </div>
+
+          <!-- Step 2: Add first host -->
+          <div :class="['checklist-item', firstHostAdded ? 'checklist-done' : 'checklist-active']">
+            <div :class="['check-icon', firstHostAdded ? 'check-complete' : 'check-pending']">
+              <svg v-if="firstHostAdded" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+              <span v-else class="check-num">2</span>
+            </div>
+            <div class="check-content">
+              <span class="check-label">Add Your First Proxmox Host</span>
+              <span v-if="firstHostAdded" class="check-desc check-done-text">Proxmox datacenter connected</span>
+              <span v-else class="check-desc">Connect Depl0y to your Proxmox cluster or standalone node</span>
+            </div>
+            <button v-if="!firstHostAdded" class="btn btn-primary btn-sm" @click="openWizard">
+              Add Host
+            </button>
+          </div>
+
+          <!-- Step 3: Deploy first VM -->
+          <div :class="['checklist-item', !firstHostAdded ? 'checklist-locked' : 'checklist-active']">
+            <div :class="['check-icon', !firstHostAdded ? 'check-locked' : 'check-pending']">
+              <svg v-if="!firstHostAdded" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+              <span v-else class="check-num">3</span>
+            </div>
+            <div class="check-content">
+              <span class="check-label">Deploy Your First VM</span>
+              <span class="check-desc">Provision a new virtual machine on your Proxmox cluster</span>
+            </div>
+            <router-link v-if="firstHostAdded" to="/vms" class="btn btn-outline btn-sm">
+              Deploy VM
+            </router-link>
+          </div>
+        </div>
+
+        <p class="onboard-skip">
+          <a href="#" @click.prevent="skipOnboarding" class="skip-link">Skip — go to dashboard</a>
+        </p>
+
+        <!-- Wizard -->
+        <AddHostWizard v-model="showWizard" @host-added="onFirstHostAdded" />
+      </div>
+    </transition>
+
+    <!-- ── Normal dashboard (hosts exist or onboarding skipped) ── -->
+    <template v-if="!showOnboarding">
+
     <!-- Dashboard header bar -->
     <div class="dash-header">
       <h2 class="dash-title">Dashboard</h2>
@@ -100,11 +170,16 @@
         </div>
       </div>
     </transition>
+
+    </template><!-- end v-if="!showOnboarding" -->
   </div>
 </template>
 
 <script>
 import { ref, computed, onMounted, onUnmounted, markRaw, nextTick } from 'vue'
+import { useAuthStore } from '@/store/auth'
+import api from '@/services/api'
+import AddHostWizard from '@/components/AddHostWizard.vue'
 
 // Widget component imports
 import ClusterStatsWidget   from '@/components/widgets/ClusterStatsWidget.vue'
@@ -170,8 +245,10 @@ export default {
     StorageOverviewWidget,
     BackupStatusWidget,
     SystemInfoWidget,
+    AddHostWizard,
   },
   setup() {
+    const authStore = useAuthStore()
     const layout   = ref([])
     const showPicker = ref(false)
     const settingsWidget = ref(null)
@@ -179,6 +256,37 @@ export default {
     const dragging = ref(null)
     const lastUpdatedSeconds = ref(0)
     let tickInterval = null
+
+    // ── Onboarding ────────────────────────────────────────────────────────────
+    const ONBOARD_SKIP_KEY = 'depl0y_onboarding_skip'
+    const showOnboarding = ref(false)
+    const showWizard = ref(false)
+    const firstHostAdded = ref(false)
+
+    const openWizard = () => { showWizard.value = true }
+
+    const onFirstHostAdded = () => {
+      firstHostAdded.value = true
+    }
+
+    const skipOnboarding = () => {
+      localStorage.setItem(ONBOARD_SKIP_KEY, '1')
+      showOnboarding.value = false
+    }
+
+    const checkOnboarding = async () => {
+      if (!authStore.isAdmin) return
+      if (localStorage.getItem(ONBOARD_SKIP_KEY)) return
+      try {
+        const res = await api.proxmox.listHosts()
+        const hosts = res.data || []
+        if (hosts.length === 0) {
+          showOnboarding.value = true
+        }
+      } catch (e) {
+        // Non-blocking — silently ignore
+      }
+    }
 
     // ── Persistence ──────────────────────────────────────────────────────────
     const saveLayout = () => {
@@ -338,6 +446,7 @@ export default {
     onMounted(() => {
       loadLayout()
       tickInterval = setInterval(() => lastUpdatedSeconds.value++, 1000)
+      checkOnboarding()
     })
 
     onUnmounted(() => {
@@ -364,6 +473,13 @@ export default {
       resetLayout,
       startDrag,
       startDragTouch,
+      // Onboarding
+      showOnboarding,
+      showWizard,
+      firstHostAdded,
+      openWizard,
+      onFirstHostAdded,
+      skipOnboarding,
     }
   }
 }
@@ -693,5 +809,238 @@ export default {
   .picker-grid {
     grid-template-columns: repeat(2, 1fr);
   }
+}
+
+/* ── Onboarding screen ──────────────────────────────────────────────────── */
+.onboarding-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 70vh;
+  padding: 2rem 1rem;
+  gap: 2rem;
+}
+
+.onboard-hero {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.onboard-logo {
+  width: 80px;
+  height: 80px;
+  border-radius: 1.25rem;
+  background: rgba(59, 130, 246, 0.08);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.onboard-title {
+  font-size: 2rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+
+.onboard-sub {
+  font-size: 1rem;
+  color: var(--text-secondary);
+  margin: 0;
+  max-width: 420px;
+}
+
+/* Checklist */
+.onboard-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  width: 100%;
+  max-width: 540px;
+  border: 1px solid var(--border-color);
+  border-radius: 0.75rem;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.checklist-item {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.1rem 1.25rem;
+  border-bottom: 1px solid var(--border-color);
+  transition: background 0.15s;
+  position: relative;
+}
+
+.checklist-item:last-child {
+  border-bottom: none;
+}
+
+.checklist-done {
+  background: var(--surface);
+}
+
+.checklist-active {
+  background: rgba(59, 130, 246, 0.04);
+}
+
+.checklist-locked {
+  background: var(--surface);
+  opacity: 0.55;
+}
+
+/* Left pulse animation for active step */
+.checklist-active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--primary-color);
+  border-radius: 0 2px 2px 0;
+}
+
+/* Icons */
+.check-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.check-complete {
+  background: rgba(34, 197, 94, 0.12);
+  color: #22c55e;
+}
+
+.check-complete svg {
+  stroke: #22c55e;
+}
+
+.check-pending {
+  background: rgba(59, 130, 246, 0.1);
+  color: var(--primary-color);
+  border: 2px solid var(--primary-color);
+}
+
+.check-num {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--primary-color);
+}
+
+.check-locked {
+  background: var(--background);
+  border: 2px solid var(--border-color);
+  color: var(--text-secondary);
+}
+
+.check-locked svg {
+  stroke: var(--text-secondary);
+}
+
+/* Content */
+.check-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.check-label {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+}
+
+.check-desc {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+.check-done-text {
+  color: #22c55e;
+}
+
+/* Buttons */
+.btn-sm {
+  padding: 0.35rem 0.85rem;
+  font-size: 0.8rem;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  border: 1px solid transparent;
+  cursor: pointer;
+  padding: 0.5rem 1.1rem;
+  transition: all 0.15s;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.btn-primary {
+  background: var(--primary-color);
+  color: #fff;
+  border-color: var(--primary-color);
+}
+
+.btn-primary:hover { opacity: 0.9; }
+
+.btn-outline {
+  background: transparent;
+  color: var(--text-primary);
+  border-color: var(--border-color);
+}
+
+.btn-outline:hover {
+  border-color: var(--primary-color);
+  color: var(--primary-color);
+}
+
+/* Skip link */
+.onboard-skip {
+  margin: 0;
+}
+
+.skip-link {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  text-decoration: none;
+  transition: color 0.15s;
+}
+
+.skip-link:hover {
+  color: var(--text-primary);
+  text-decoration: underline;
+}
+
+/* Onboarding fade transition */
+.onboard-fade-enter-active,
+.onboard-fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+.onboard-fade-enter-from,
+.onboard-fade-leave-to {
+  opacity: 0;
 }
 </style>

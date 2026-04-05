@@ -114,6 +114,145 @@ class NodeIdracUpdate(BaseModel):
     idrac_use_ssh: Optional[bool] = None
 
 
+class TestConnectionRequest(BaseModel):
+    api_url: str
+    username: str
+    token_name: Optional[str] = None
+    token_value: Optional[str] = None
+    password: Optional[str] = None
+    verify_ssl: bool = False
+
+
+@router.post("/test-connection")
+async def test_new_connection(
+    request: TestConnectionRequest,
+    current_user: User = Depends(require_admin),
+):
+    """Test a Proxmox connection before saving — accepts raw credentials, returns cluster info"""
+    import urllib.parse
+    from proxmoxer import ProxmoxAPI
+
+    # Parse the API URL to extract hostname and port
+    url = request.api_url.strip()
+    if not url.startswith("http"):
+        url = "https://" + url
+
+    parsed = urllib.parse.urlparse(url)
+    hostname = parsed.hostname or ""
+    port = parsed.port or 8006
+
+    if not hostname:
+        return {"success": False, "error": "Invalid API URL — could not parse hostname"}
+
+    try:
+        if request.token_name and request.token_value:
+            # Token authentication
+            # token_name can be "user@realm!tokenname" or "tokenname"
+            if "!" in request.token_name:
+                parts = request.token_name.split("!")
+                token_user = parts[0]
+                token_id = parts[1]
+            else:
+                token_user = request.username
+                token_id = request.token_name
+
+            pve = ProxmoxAPI(
+                hostname,
+                user=token_user,
+                token_name=token_id,
+                token_value=request.token_value,
+                port=port,
+                verify_ssl=request.verify_ssl,
+                timeout=15,
+            )
+        elif request.password:
+            pve = ProxmoxAPI(
+                hostname,
+                user=request.username,
+                password=request.password,
+                port=port,
+                verify_ssl=request.verify_ssl,
+                timeout=15,
+            )
+        else:
+            return {"success": False, "error": "No authentication credentials provided"}
+
+        # Get version
+        version_info = pve.version.get()
+        proxmox_version = version_info.get("version", "unknown")
+
+        # Get cluster status
+        cluster_name = None
+        node_count = 0
+        nodes = []
+        try:
+            cluster_status = pve.cluster.status.get()
+            for item in cluster_status:
+                if item.get("type") == "cluster":
+                    cluster_name = item.get("name")
+                elif item.get("type") == "node":
+                    node_count += 1
+                    nodes.append({
+                        "name": item.get("name"),
+                        "online": bool(item.get("online", 0)),
+                        "local": bool(item.get("local", 0)),
+                    })
+        except Exception:
+            # Standalone node — no cluster
+            try:
+                raw_nodes = pve.nodes.get()
+                node_count = len(raw_nodes)
+                nodes = [{"name": n.get("node"), "online": n.get("status") == "online", "local": True} for n in raw_nodes]
+            except Exception:
+                node_count = 1
+
+        # Get storages and networks from first available node if possible
+        storages = []
+        networks = []
+        if nodes:
+            first_node = nodes[0]["name"]
+            try:
+                raw_storage = pve.nodes(first_node).storage.get()
+                storages = [
+                    {"storage": s.get("storage"), "type": s.get("type"), "content": s.get("content", "")}
+                    for s in raw_storage
+                ]
+            except Exception:
+                pass
+            try:
+                raw_network = pve.nodes(first_node).network.get()
+                networks = [
+                    {"iface": n.get("iface"), "type": n.get("type"), "comments": n.get("comments", "")}
+                    for n in raw_network
+                    if n.get("type") in ("bridge", "bond", "vlan")
+                ]
+            except Exception:
+                pass
+
+        return {
+            "success": True,
+            "cluster_name": cluster_name,
+            "node_count": node_count,
+            "proxmox_version": proxmox_version,
+            "nodes": nodes,
+            "storages": storages,
+            "networks": networks,
+        }
+
+    except Exception as e:
+        error_msg = str(e)
+        # Simplify common SSL errors
+        if "SSL" in error_msg or "certificate" in error_msg.lower():
+            error_msg = "SSL certificate error — try disabling SSL verification"
+        elif "Connection refused" in error_msg or "timed out" in error_msg.lower():
+            error_msg = "Cannot reach host — check the URL and port"
+        elif "401" in error_msg or "Unauthorized" in error_msg:
+            error_msg = "Authentication failed — check your credentials"
+        elif "403" in error_msg or "Permission" in error_msg:
+            error_msg = "Permission denied — check token permissions (Privilege Separation must be OFF)"
+        return {"success": False, "error": error_msg}
+
+
 @router.get("/", response_model=List[ProxmoxHostResponse])
 async def list_proxmox_hosts(
     skip: int = 0,

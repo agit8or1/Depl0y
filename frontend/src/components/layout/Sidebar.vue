@@ -72,6 +72,14 @@
         <span class="icon">🛠️</span>
         <span>VM Management</span>
       </router-link>
+      <router-link v-if="isOperator" to="/vm-groups" class="nav-item" @click="handleNavClick">
+        <span class="icon">🗃️</span>
+        <span>VM Groups</span>
+      </router-link>
+      <router-link v-if="isOperator" to="/bulk-ops" class="nav-item" @click="handleNavClick">
+        <span class="icon">⚡</span>
+        <span>Bulk Operations</span>
+      </router-link>
 
       <!-- ── Infrastructure ── -->
       <div class="nav-section-label">Infrastructure</div>
@@ -205,7 +213,7 @@ export default {
     const authStore = useAuthStore()
     const isAdmin = computed(() => authStore.isAdmin)
     const isOperator = computed(() => authStore.isOperator || authStore.isAdmin)
-    const appVersion = ref('1.7.0') // Fallback version
+    const appVersion = ref('1.8.0') // Fallback version
     const linuxAgentEnabled = ref(false)
 
     // Close sidebar on mobile when navigating

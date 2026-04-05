@@ -183,6 +183,7 @@ export default {
     updateHost: (id, data) => api.put(`/proxmox/${id}`, data),
     deleteHost: (id) => api.delete(`/proxmox/${id}`),
     testConnection: (id) => api.post(`/proxmox/${id}/test`),
+    testNewConnection: (data) => api.post('/proxmox/test-connection', data),
     pollHost: (id) => api.post(`/proxmox/${id}/poll`),
     listNodes: (hostId) => api.get(`/proxmox/${hostId}/nodes`),
     getNode: (nodeId) => api.get(`/proxmox/nodes/${nodeId}`),
@@ -773,6 +774,7 @@ export default {
   pveConsole: {
     getVmTicket: (hostId, node, vmid) => api.get(`/pve-console/ticket/${hostId}/${node}/${vmid}`),
     getLxcTicket: (hostId, node, ctid) => api.get(`/pve-console/lxc-ticket/${hostId}/${node}/${ctid}`),
+    downloadSpice: (hostId, node, vmid) => api.get(`/pve-console/spice/${hostId}/${node}/${vmid}`, { responseType: 'text' }),
   },
 
   // Resource Pools (convenience namespace — delegates to pve-node pool endpoints)
@@ -820,6 +822,35 @@ export default {
     delete: (id) => api.delete(`/vm-groups/${id}`),
     addVm: (id, vmid) => api.post(`/vm-groups/${id}/add-vm`, { vmid }),
     removeVm: (id, vmid) => api.delete(`/vm-groups/${id}/remove-vm/${encodeURIComponent(vmid)}`),
+  },
+
+  // Bulk VM Operations
+  vmBulk: {
+    // Power management
+    bulkPower: (data) => api.post('/pve-vm/bulk/power', data),
+    // Snapshots
+    bulkSnapshot: (data) => api.post('/pve-vm/bulk/snapshot', data),
+    bulkDeleteSnapshots: (data) => api.post('/pve-vm/bulk/delete-snapshots', data),
+    // Config update
+    bulkConfig: (data) => api.post('/pve-vm/bulk/config', data),
+    bulkConfigPreview: (data) => api.post('/pve-vm/bulk/config/preview', data),
+    // Migration
+    bulkMigrate: (data) => api.post('/pve-vm/bulk/migrate', data),
+    // Orphaned disks
+    getOrphanedDisks: (hostId) => api.get(`/pve-vm/orphaned-disks/${hostId}`),
+    // Automation scripts
+    scriptCleanupSnapshots: (data) => api.post('/pve-vm/scripts/cleanup-snapshots', data),
+    scriptTagCompliance: (data) => api.post('/pve-vm/scripts/tag-compliance', data),
+    scriptResourceAudit: (data) => api.post('/pve-vm/scripts/resource-audit', data),
+  },
+
+  // Task Queue — Depl0y-tracked Proxmox async operations
+  tasks: {
+    getRunning: () => api.get('/tasks/running'),
+    getHistory: (params) => api.get('/tasks/history', { params }),
+    getStatus: (hostId, node, upid) => api.get(`/tasks/${hostId}/${node}/${encodeURIComponent(upid)}/status`),
+    getLog: (hostId, node, upid) => api.get(`/tasks/${hostId}/${node}/${encodeURIComponent(upid)}/log`),
+    stop: (hostId, node, upid) => api.delete(`/tasks/${hostId}/${node}/${encodeURIComponent(upid)}`),
   },
 
   // SDN — Software-Defined Networking

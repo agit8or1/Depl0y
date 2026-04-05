@@ -66,6 +66,9 @@
     <!-- Global: Command Palette (Ctrl+K) -->
     <CommandPalette v-if="isAuthenticated" />
 
+    <!-- Global: Task progress bar (bottom-right, when tasks running) -->
+    <GlobalTaskBar />
+
     <!-- Global: Keyboard Shortcuts Help Modal (?) -->
     <transition name="fade">
       <div v-if="showShortcutsModal" class="shortcuts-backdrop" @click.self="showShortcutsModal = false">
@@ -102,6 +105,7 @@ import Sidebar from '@/components/layout/Sidebar.vue'
 import Header from '@/components/layout/Header.vue'
 import CommandPalette from '@/components/CommandPalette.vue'
 import ToastContainer from '@/components/ToastContainer.vue'
+import GlobalTaskBar from '@/components/GlobalTaskBar.vue'
 
 const SHORTCUT_GROUPS = [
   {
@@ -131,7 +135,8 @@ export default {
     Sidebar,
     Header,
     CommandPalette,
-    ToastContainer
+    ToastContainer,
+    GlobalTaskBar,
   },
   setup() {
     const authStore = useAuthStore()

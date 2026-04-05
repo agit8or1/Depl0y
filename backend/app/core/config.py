@@ -26,7 +26,7 @@ def get_app_version():
         # Fallback to hardcoded version if database query fails
         pass
 
-    return "1.7.0"  # Full Proxmox VE management: VM/node/LXC/cluster/storage/firewall/console
+    return "1.8.0"  # v1.8.0: VM Groups, Bulk Ops, SDN, Storage Mgmt, Snapshot Manager, full router coverage
 
 
 class Settings(BaseSettings):

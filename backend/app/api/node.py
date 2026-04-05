@@ -7,6 +7,7 @@ from app.core.database import get_db
 from app.models import ProxmoxHost
 from app.api.auth import get_current_user, require_operator, require_admin
 from app.services.proxmox import ProxmoxService
+from app.services.task_tracker import task_tracker
 from app.core.cache import pve_cache
 import logging
 
@@ -677,6 +678,14 @@ def run_vzdump(host_id: int, node: str, backup: dict,
     host = _get_host(host_id, db)
     try:
         upid = _pve(host).nodes(node).vzdump.post(**backup)
+        vmid = backup.get("vmid")
+        task_tracker.register(
+            upid, host_id, node,
+            f"Backup VM {vmid}" if vmid else "Backup",
+            user_id=getattr(current_user, "id", None),
+            vmid=int(vmid) if vmid else None,
+            task_type="vzdump",
+        )
         return {"upid": upid}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -752,6 +761,12 @@ def run_backup_schedule_now(host_id: int, id: str, data: dict = Body(default={})
             if k != "node":
                 payload[k] = v
         upid = _pve(host).nodes(node).vzdump.post(**payload)
+        task_tracker.register(
+            upid, host_id, node,
+            f"Backup schedule {id} on {node}",
+            user_id=getattr(current_user, "id", None),
+            task_type="vzdump",
+        )
         return {"upid": upid}
     except HTTPException:
         raise
@@ -851,6 +866,13 @@ def ct_action(host_id: int, node: str, vmid: int, action: str,
     try:
         upid = getattr(_pve(host).nodes(node).lxc(vmid).status, action).post()
         pve_cache.clear_prefix(f"pve:{host_id}:")
+        task_tracker.register(
+            upid, host_id, node,
+            f"LXC {vmid} {action}",
+            user_id=getattr(current_user, "id", None),
+            vmid=vmid,
+            task_type=f"vz{action}",
+        )
         return {"upid": upid}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -872,6 +894,13 @@ def create_ct_snapshot(host_id: int, node: str, vmid: int, snap: dict,
     host = _get_host(host_id, db)
     try:
         upid = _pve(host).nodes(node).lxc(vmid).snapshot.post(**snap)
+        task_tracker.register(
+            upid, host_id, node,
+            f"Snapshot LXC {vmid}: {snap.get('snapname', '')}",
+            user_id=getattr(current_user, "id", None),
+            vmid=vmid,
+            task_type="vzsnapshot",
+        )
         return {"upid": upid}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -883,6 +912,13 @@ def rollback_ct_snapshot(host_id: int, node: str, vmid: int, snapname: str,
     host = _get_host(host_id, db)
     try:
         upid = _pve(host).nodes(node).lxc(vmid).snapshot(snapname).rollback.post()
+        task_tracker.register(
+            upid, host_id, node,
+            f"Rollback LXC {vmid} to {snapname}",
+            user_id=getattr(current_user, "id", None),
+            vmid=vmid,
+            task_type="vzrollback",
+        )
         return {"upid": upid}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -906,6 +942,13 @@ def delete_ct(host_id: int, node: str, vmid: int,
     try:
         upid = _pve(host).nodes(node).lxc(vmid).delete()
         pve_cache.clear_prefix(f"pve:{host_id}:")
+        task_tracker.register(
+            upid, host_id, node,
+            f"Delete LXC {vmid}",
+            user_id=getattr(current_user, "id", None),
+            vmid=vmid,
+            task_type="vzdestroy",
+        )
         return {"upid": upid}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -919,6 +962,14 @@ def clone_ct(host_id: int, node: str, vmid: int, data: dict,
     try:
         upid = _pve(host).nodes(node).lxc(vmid).clone.post(**data)
         pve_cache.clear_prefix(f"pve:{host_id}:")
+        new_vmid = data.get("newid")
+        task_tracker.register(
+            upid, host_id, node,
+            f"Clone LXC {vmid} → {new_vmid}",
+            user_id=getattr(current_user, "id", None),
+            vmid=vmid,
+            task_type="vzclone",
+        )
         return {"upid": upid}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -1071,6 +1122,14 @@ def create_vm(host_id: int, node: str, data: dict,
     try:
         upid = _pve(host).nodes(node).qemu.post(**data)
         pve_cache.clear_prefix(f"pve:{host_id}:")
+        vmid = data.get("vmid")
+        task_tracker.register(
+            upid, host_id, node,
+            f"Create VM {vmid}" if vmid else "Create VM",
+            user_id=getattr(current_user, "id", None),
+            vmid=int(vmid) if vmid else None,
+            task_type="qmcreate",
+        )
         return {"upid": upid}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -1084,6 +1143,14 @@ def create_lxc(host_id: int, node: str, data: dict,
     try:
         upid = _pve(host).nodes(node).lxc.post(**data)
         pve_cache.clear_prefix(f"pve:{host_id}:")
+        vmid = data.get("vmid")
+        task_tracker.register(
+            upid, host_id, node,
+            f"Create LXC {vmid}" if vmid else "Create LXC",
+            user_id=getattr(current_user, "id", None),
+            vmid=int(vmid) if vmid else None,
+            task_type="vzcreate",
+        )
         return {"upid": upid}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

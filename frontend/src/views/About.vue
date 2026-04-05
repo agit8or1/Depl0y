@@ -207,7 +207,7 @@
 import { ref, onMounted } from 'vue'
 import api from '@/services/api'
 
-const CURRENT_VERSION = '1.7.0'
+const CURRENT_VERSION = '1.8.0'
 
 export default {
   name: 'About',
@@ -299,6 +299,29 @@ export default {
 
     const changelog = [
       {
+        version: '1.8.0',
+        date: 'April 2026',
+        entries: [
+          { type: 'new', text: 'VM Groups — logical grouping of VMs across hosts with full CRUD management' },
+          { type: 'new', text: 'Snapshot Manager — cross-host snapshot overview with create, rollback and delete' },
+          { type: 'new', text: 'Storage Management — cluster-wide storage definition editor with ZFS and Ceph support' },
+          { type: 'new', text: 'SDN / VNets — Software-Defined Networking zones, VNets and subnets management' },
+          { type: 'new', text: 'Network Management — per-node bridge, VLAN and bond configuration with apply/revert' },
+          { type: 'new', text: 'Replication Manager — cross-node and cross-cluster replication job management' },
+          { type: 'new', text: 'Node Monitor — cluster-wide per-node resource overview with live metrics' },
+          { type: 'new', text: 'API Explorer — interactive OpenAPI endpoint browser with full schema details' },
+          { type: 'new', text: 'VM Import — OVA, VMDK and direct VMware/vSphere import with progress tracking' },
+          { type: 'new', text: 'Cloud-Init Editor — standalone cloud-init configuration view per VM' },
+          { type: 'improved', text: 'Sidebar now includes VM Groups link under Compute section' },
+          { type: 'improved', text: 'Version number consistently sourced across all fallback paths (backend + frontend)' },
+          { type: 'improved', text: 'Added .badge-outline CSS utility for consistent outlined badge styling' },
+          { type: 'improved', text: 'VM Import router registered in backend — /vm-import endpoints now reachable' },
+          { type: 'improved', text: 'Router audit: all 40+ views have registered routes with correct auth guards' },
+          { type: 'fixed', text: 'package.json version was stale at 1.6.1 — now tracks release version correctly' },
+          { type: 'fixed', text: 'system.py fallback version was returning 1.1.3 on DB failure — fixed to 1.8.0' },
+        ]
+      },
+      {
         version: '1.7.0',
         date: 'April 2026',
         entries: [
@@ -379,7 +402,7 @@ export default {
         const response = await api.system.getInfo()
         if (response.data?.version) version.value = response.data.version
       } catch {
-        version.value = '1.7.0'
+        version.value = '1.8.0'
       }
     })
 

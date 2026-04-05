@@ -7,6 +7,7 @@ from app.core.database import get_db
 from app.models import ProxmoxHost
 from app.api.auth import get_current_user, require_operator
 from app.services.proxmox import ProxmoxService
+from app.services.task_tracker import task_tracker
 from app.core.cache import pve_cache
 import logging
 
@@ -177,6 +178,16 @@ def get_vm_status(host_id: int, node: str, vmid: int, db: Session = Depends(get_
 
 # ── Lifecycle actions ─────────────────────────────────────────────────────────
 
+def _register_vm_task(upid, host_id, node, vmid, action, current_user):
+    task_tracker.register(
+        upid, host_id, node,
+        f"VM {vmid} {action}",
+        user_id=getattr(current_user, "id", None),
+        vmid=vmid,
+        task_type=f"qm{action}",
+    )
+
+
 @router.post("/{host_id}/{node}/{vmid}/start")
 def start_vm(host_id: int, node: str, vmid: int, db: Session = Depends(get_db),
              current_user=Depends(require_operator)):
@@ -184,6 +195,7 @@ def start_vm(host_id: int, node: str, vmid: int, db: Session = Depends(get_db),
     try:
         upid = _pve(_svc(host)).nodes(node).qemu(vmid).status.start.post()
         pve_cache.clear_prefix(f"pve:{host_id}:")
+        _register_vm_task(upid, host_id, node, vmid, "start", current_user)
         return {"upid": upid}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -196,6 +208,7 @@ def stop_vm(host_id: int, node: str, vmid: int, db: Session = Depends(get_db),
     try:
         upid = _pve(_svc(host)).nodes(node).qemu(vmid).status.stop.post()
         pve_cache.clear_prefix(f"pve:{host_id}:")
+        _register_vm_task(upid, host_id, node, vmid, "stop", current_user)
         return {"upid": upid}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -208,6 +221,7 @@ def shutdown_vm(host_id: int, node: str, vmid: int, db: Session = Depends(get_db
     try:
         upid = _pve(_svc(host)).nodes(node).qemu(vmid).status.shutdown.post()
         pve_cache.clear_prefix(f"pve:{host_id}:")
+        _register_vm_task(upid, host_id, node, vmid, "shutdown", current_user)
         return {"upid": upid}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -220,6 +234,7 @@ def reboot_vm(host_id: int, node: str, vmid: int, db: Session = Depends(get_db),
     try:
         upid = _pve(_svc(host)).nodes(node).qemu(vmid).status.reboot.post()
         pve_cache.clear_prefix(f"pve:{host_id}:")
+        _register_vm_task(upid, host_id, node, vmid, "reboot", current_user)
         return {"upid": upid}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -232,6 +247,7 @@ def reset_vm(host_id: int, node: str, vmid: int, db: Session = Depends(get_db),
     try:
         upid = _pve(_svc(host)).nodes(node).qemu(vmid).status.reset.post()
         pve_cache.clear_prefix(f"pve:{host_id}:")
+        _register_vm_task(upid, host_id, node, vmid, "reset", current_user)
         return {"upid": upid}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -244,6 +260,7 @@ def suspend_vm(host_id: int, node: str, vmid: int, db: Session = Depends(get_db)
     try:
         upid = _pve(_svc(host)).nodes(node).qemu(vmid).status.suspend.post()
         pve_cache.clear_prefix(f"pve:{host_id}:")
+        _register_vm_task(upid, host_id, node, vmid, "suspend", current_user)
         return {"upid": upid}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -256,6 +273,7 @@ def resume_vm(host_id: int, node: str, vmid: int, db: Session = Depends(get_db),
     try:
         upid = _pve(_svc(host)).nodes(node).qemu(vmid).status.resume.post()
         pve_cache.clear_prefix(f"pve:{host_id}:")
+        _register_vm_task(upid, host_id, node, vmid, "resume", current_user)
         return {"upid": upid}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -290,6 +308,13 @@ def create_snapshot(host_id: int, node: str, vmid: int, snap: SnapshotCreate,
             vmstate=int(snap.vmstate),
         )
         pve_cache.clear_prefix(f"pve:{host_id}:")
+        task_tracker.register(
+            upid, host_id, node,
+            f"Snapshot VM {vmid}: {snap.snapname}",
+            user_id=getattr(current_user, "id", None),
+            vmid=vmid,
+            task_type="qmsnapshot",
+        )
         return {"upid": upid}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -302,6 +327,13 @@ def delete_snapshot(host_id: int, node: str, vmid: int, snapname: str,
     try:
         upid = _pve(_svc(host)).nodes(node).qemu(vmid).snapshot(snapname).delete()
         pve_cache.clear_prefix(f"pve:{host_id}:")
+        task_tracker.register(
+            upid, host_id, node,
+            f"Delete snapshot {snapname} VM {vmid}",
+            user_id=getattr(current_user, "id", None),
+            vmid=vmid,
+            task_type="qmsnapshot",
+        )
         return {"upid": upid}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -314,6 +346,13 @@ def rollback_snapshot(host_id: int, node: str, vmid: int, snapname: str,
     try:
         upid = _pve(_svc(host)).nodes(node).qemu(vmid).snapshot(snapname).rollback.post()
         pve_cache.clear_prefix(f"pve:{host_id}:")
+        task_tracker.register(
+            upid, host_id, node,
+            f"Rollback VM {vmid} to {snapname}",
+            user_id=getattr(current_user, "id", None),
+            vmid=vmid,
+            task_type="qmrollback",
+        )
         return {"upid": upid}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -345,6 +384,13 @@ def clone_vm(host_id: int, node: str, vmid: int, req: CloneRequest,
     try:
         upid = _pve(_svc(host)).nodes(node).qemu(vmid).clone.post(**params)
         pve_cache.clear_prefix(f"pve:{host_id}:")
+        task_tracker.register(
+            upid, host_id, node,
+            f"Clone VM {vmid} → {req.newid}",
+            user_id=getattr(current_user, "id", None),
+            vmid=vmid,
+            task_type="qmclone",
+        )
         return {"upid": upid}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -363,6 +409,13 @@ def migrate_vm(host_id: int, node: str, vmid: int, req: MigrateRequest,
             with_local_disks=int(req.with_local_disks),
         )
         pve_cache.clear_prefix(f"pve:{host_id}:")
+        task_tracker.register(
+            upid, host_id, node,
+            f"Migrate VM {vmid} → {req.target}",
+            user_id=getattr(current_user, "id", None),
+            vmid=vmid,
+            task_type="qmmigrate",
+        )
         return {"upid": upid}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -397,6 +450,13 @@ def delete_vm(host_id: int, node: str, vmid: int,
             params["destroy-unreferenced-disks"] = 1
         upid = _pve(_svc(host)).nodes(node).qemu(vmid).delete(**params)
         pve_cache.clear_prefix(f"pve:{host_id}:")
+        task_tracker.register(
+            upid, host_id, node,
+            f"Delete VM {vmid}",
+            user_id=getattr(current_user, "id", None),
+            vmid=vmid,
+            task_type="qmdestroy",
+        )
         return {"upid": upid}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

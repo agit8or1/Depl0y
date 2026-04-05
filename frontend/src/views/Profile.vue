@@ -167,10 +167,43 @@
         </div>
       </div>
 
+      <!-- Current Session Info Card -->
+      <div class="card mb-4">
+        <div class="card-header">
+          <h3>Current Session</h3>
+        </div>
+        <div class="card-body">
+          <div v-if="currentSession" class="current-session-grid">
+            <div class="cs-item">
+              <span class="cs-label">IP Address</span>
+              <span class="cs-value"><code>{{ currentSession.ip_address || 'Unknown' }}</code></span>
+            </div>
+            <div class="cs-item">
+              <span class="cs-label">Browser / Client</span>
+              <span class="cs-value cs-ua">{{ truncateUA(currentSession.user_agent) || 'Unknown' }}</span>
+            </div>
+            <div class="cs-item">
+              <span class="cs-label">Session Started</span>
+              <span class="cs-value">{{ formatDate(currentSession.created_at) }}</span>
+            </div>
+            <div class="cs-item">
+              <span class="cs-label">Session Expires</span>
+              <span class="cs-value">{{ formatDate(currentSession.expires_at) }}</span>
+            </div>
+          </div>
+          <div v-else-if="sessionsLoading" class="loading-state" style="padding:1rem 0;">
+            <div class="spinner"></div>
+          </div>
+          <div v-else class="text-muted text-sm">
+            Session details unavailable. Sessions are tracked via refresh tokens.
+          </div>
+        </div>
+      </div>
+
       <!-- Active Sessions Card -->
       <div class="card mb-4">
         <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;">
-          <h3>Active Sessions</h3>
+          <h3>All Active Sessions</h3>
           <button class="btn btn-sm btn-outline" @click="loadSessions" :disabled="sessionsLoading">
             {{ sessionsLoading ? 'Loading...' : 'Refresh' }}
           </button>
@@ -186,12 +219,19 @@
             No active sessions found.
           </div>
           <div v-else class="sessions-list">
-            <div v-for="session in sessions" :key="session.id" class="session-row">
+            <div
+              v-for="(session, idx) in sessions"
+              :key="session.id"
+              :class="['session-row', idx === 0 ? 'session-row-current' : '']"
+            >
               <div class="session-info">
-                <span class="session-ua">{{ truncateUA(session.user_agent) || 'Unknown client' }}</span>
+                <div style="display:flex;align-items:center;gap:0.5rem;">
+                  <span class="session-ua">{{ truncateUA(session.user_agent) || 'Unknown client' }}</span>
+                  <span v-if="idx === 0" class="session-current-badge">Current</span>
+                </div>
                 <span class="text-muted text-sm">
                   {{ session.ip_address || 'unknown IP' }} &middot;
-                  Created {{ formatDate(session.created_at) }} &middot;
+                  Started {{ formatDate(session.created_at) }} &middot;
                   Expires {{ formatDate(session.expires_at) }}
                 </span>
               </div>
@@ -709,6 +749,14 @@ export default {
       )
     })
 
+    // Most recent session is considered "current" (newest created_at)
+    const currentSession = computed(() => {
+      if (!sessions.value.length) return null
+      return sessions.value.reduce((latest, s) =>
+        new Date(s.created_at) > new Date(latest.created_at) ? s : latest
+      )
+    })
+
     const getRoleBadge = (role) => {
       const map = { admin: 'danger', operator: 'warning', viewer: 'info' }
       return map[role] || 'secondary'
@@ -1048,6 +1096,7 @@ export default {
       sessions,
       sessionsLoading,
       revokingSessionId,
+      currentSession,
       loadSessions,
       revokeSession,
       // API Keys
@@ -1251,6 +1300,37 @@ export default {
   color: #fff;
 }
 
+/* Current session info */
+.current-session-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.cs-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.cs-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  opacity: 0.55;
+}
+
+.cs-value {
+  font-size: 0.9rem;
+  color: var(--text-primary);
+}
+
+.cs-ua {
+  font-size: 0.82rem;
+  word-break: break-word;
+}
+
 /* Sessions */
 .sessions-list {
   display: flex;
@@ -1267,6 +1347,23 @@ export default {
   border: 1px solid var(--border-color, #e5e7eb);
   border-radius: 0.4rem;
   background: var(--background, #f9fafb);
+}
+
+.session-row-current {
+  border-color: var(--primary-color, #3b82f6);
+  background: rgba(59, 130, 246, 0.04);
+}
+
+.session-current-badge {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  background: rgba(59,130,246,0.15);
+  color: var(--primary-color, #3b82f6);
+  padding: 0.1rem 0.4rem;
+  border-radius: 3px;
+  flex-shrink: 0;
 }
 
 .session-info {

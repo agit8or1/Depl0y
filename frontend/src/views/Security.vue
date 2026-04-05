@@ -21,6 +21,117 @@
         </button>
       </div>
 
+      <!-- ── Overview ─────────────────────────────────────────── -->
+      <div v-if="activeTab === 'overview'">
+        <div class="overview-cards mb-2">
+          <div class="overview-card">
+            <div class="ov-icon ov-icon-blue">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            </div>
+            <div class="ov-body">
+              <div class="ov-value">{{ overviewStats.twofa_count }}</div>
+              <div class="ov-label">Users with 2FA</div>
+              <div class="ov-sub">of {{ overviewStats.total_users }} total users</div>
+            </div>
+          </div>
+          <div class="overview-card">
+            <div class="ov-icon ov-icon-green">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+            </div>
+            <div class="ov-body">
+              <div class="ov-value">{{ overviewStats.active_sessions }}</div>
+              <div class="ov-label">Active Sessions</div>
+              <div class="ov-sub">non-expired refresh tokens</div>
+            </div>
+          </div>
+          <div class="overview-card">
+            <div class="ov-icon ov-icon-red">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            </div>
+            <div class="ov-body">
+              <div class="ov-value">{{ overviewStats.failed_logins_24h }}</div>
+              <div class="ov-label">Failed Logins (24h)</div>
+              <div class="ov-sub">{{ overviewStats.success_rate_24h }}% success rate</div>
+            </div>
+          </div>
+          <div class="overview-card">
+            <div class="ov-icon ov-icon-yellow">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+            </div>
+            <div class="ov-body">
+              <div class="ov-value">{{ overviewStats.ip_entries }}</div>
+              <div class="ov-label">IP List Entries</div>
+              <div class="ov-sub">{{ overviewStats.lockouts_active }} active lockout{{ overviewStats.lockouts_active !== 1 ? 's' : '' }}</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card mb-2">
+          <div class="card-header"><h3>Recent Activity</h3></div>
+          <div v-if="recentActivity.length === 0" class="empty-state">No recent login activity.</div>
+          <div v-else class="table-container">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>User</th>
+                  <th>IP</th>
+                  <th>Result</th>
+                  <th>Reason</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="item in recentActivity" :key="item.id">
+                  <td class="text-sm text-muted">{{ formatDate(item.timestamp) }}</td>
+                  <td><strong>{{ item.username_attempted }}</strong></td>
+                  <td><code>{{ item.ip_address }}</code></td>
+                  <td>
+                    <span :class="['badge', item.success ? 'badge-success' : 'badge-danger']">
+                      {{ item.success ? 'Success' : 'Failed' }}
+                    </span>
+                  </td>
+                  <td class="text-sm text-muted">{{ item.failure_reason || '—' }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><h3>Quick Actions</h3></div>
+          <div class="section-body">
+            <div class="setting-row">
+              <div class="setting-info">
+                <span class="setting-label">View Login History</span>
+                <span class="setting-desc">Review all authentication attempts with filters and export</span>
+              </div>
+              <button @click="activeTab = 'history'" class="btn btn-outline btn-sm">Open</button>
+            </div>
+            <div class="setting-row">
+              <div class="setting-info">
+                <span class="setting-label">Manage IP Access Control</span>
+                <span class="setting-desc">Add or modify IP ban/allow entries</span>
+              </div>
+              <button @click="activeTab = 'iplist'" class="btn btn-outline btn-sm">Open</button>
+            </div>
+            <div class="setting-row">
+              <div class="setting-info">
+                <span class="setting-label">2FA Status Overview</span>
+                <span class="setting-desc">View and manage 2FA settings for all users</span>
+              </div>
+              <button @click="activeTab = '2fa'" class="btn btn-outline btn-sm">Open</button>
+            </div>
+            <div class="setting-row">
+              <div class="setting-info">
+                <span class="setting-label">Compliance Report</span>
+                <span class="setting-desc">View security score and recommendations</span>
+              </div>
+              <button @click="activeTab = 'compliance'" class="btn btn-outline btn-sm">Open</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- ── Brute Force ─────────────────────────────────────── -->
       <div v-if="activeTab === 'brute'">
         <div class="card">
@@ -407,16 +518,47 @@
         <div class="card">
           <div class="card-header">
             <h3>Login History</h3>
-            <div class="flex gap-1">
-              <select v-model="historyFilter" class="form-control" style="width:130px">
-                <option value="all">All</option>
-                <option value="success">Successes</option>
-                <option value="failure">Failures</option>
-              </select>
+            <div class="flex gap-1" style="flex-wrap:wrap;align-items:center;">
+              <button @click="exportHistoryCSV" class="btn btn-outline btn-sm">Export CSV</button>
               <button @click="loadLoginHistory" class="btn btn-outline btn-sm">Refresh</button>
             </div>
           </div>
-          <div v-if="loginHistory.length === 0" class="empty-state">No login history available.</div>
+
+          <!-- Filters bar -->
+          <div class="filter-bar">
+            <input
+              v-model="historySearch"
+              class="form-control filter-input"
+              placeholder="Filter by username..."
+              @input="historyPage = 1"
+            />
+            <select v-model="historyFilter" class="form-control" style="width:130px" @change="historyPage = 1">
+              <option value="all">All</option>
+              <option value="success">Success</option>
+              <option value="failure">Failure</option>
+            </select>
+            <input
+              v-model="historyDateFrom"
+              type="date"
+              class="form-control"
+              style="width:140px"
+              @change="historyPage = 1"
+              title="From date"
+            />
+            <input
+              v-model="historyDateTo"
+              type="date"
+              class="form-control"
+              style="width:140px"
+              @change="historyPage = 1"
+              title="To date"
+            />
+            <button @click="clearHistoryFilters" class="btn btn-outline btn-sm" v-if="historySearch || historyFilter !== 'all' || historyDateFrom || historyDateTo">
+              Clear
+            </button>
+          </div>
+
+          <div v-if="paginatedHistory.length === 0" class="empty-state">No login history matches your filters.</div>
           <div v-else class="table-container">
             <table class="table">
               <thead>
@@ -430,8 +572,8 @@
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="item in filteredHistory" :key="item.id">
-                  <td class="text-sm text-muted">{{ formatDate(item.timestamp) }}</td>
+                <tr v-for="item in paginatedHistory" :key="item.id">
+                  <td class="text-sm text-muted" style="white-space:nowrap;">{{ formatDate(item.timestamp) }}</td>
                   <td><strong>{{ item.username_attempted }}</strong></td>
                   <td><code>{{ item.ip_address }}</code></td>
                   <td>
@@ -440,17 +582,31 @@
                     </span>
                   </td>
                   <td class="text-sm text-muted">{{ item.failure_reason || '—' }}</td>
-                  <td class="text-sm text-muted ua-cell">{{ item.user_agent || '—' }}</td>
+                  <td class="text-sm text-muted ua-cell" :title="item.user_agent">{{ truncateUA(item.user_agent) }}</td>
                 </tr>
               </tbody>
             </table>
+          </div>
+
+          <!-- Pagination -->
+          <div v-if="filteredHistory.length > historyPageSize" class="pagination-bar">
+            <span class="text-sm text-muted">
+              {{ filteredHistory.length }} record{{ filteredHistory.length !== 1 ? 's' : '' }}
+              &mdash; page {{ historyPage }} of {{ historyTotalPages }}
+            </span>
+            <div class="pagination-btns">
+              <button @click="historyPage = 1" :disabled="historyPage === 1" class="btn btn-outline btn-sm">«</button>
+              <button @click="historyPage--" :disabled="historyPage === 1" class="btn btn-outline btn-sm">‹</button>
+              <button @click="historyPage++" :disabled="historyPage >= historyTotalPages" class="btn btn-outline btn-sm">›</button>
+              <button @click="historyPage = historyTotalPages" :disabled="historyPage >= historyTotalPages" class="btn btn-outline btn-sm">»</button>
+            </div>
           </div>
         </div>
       </div>
 
       <!-- ── Password Policy ─────────────────────────────────── -->
       <div v-if="activeTab === 'policy'">
-        <div class="card">
+        <div class="card mb-2">
           <div class="card-header">
             <h3>Password Policy</h3>
           </div>
@@ -507,6 +663,51 @@
               <button @click="savePasswordPolicy" class="btn btn-primary" :disabled="savingPolicy">
                 {{ savingPolicy ? 'Saving...' : 'Save Policy' }}
               </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Visual strength indicator -->
+        <div class="card">
+          <div class="card-header"><h3>Current Policy Requirements</h3></div>
+          <div class="section-body">
+            <div class="policy-strength">
+              <div class="strength-label">
+                <span>Policy Strength</span>
+                <span :class="['strength-level', policyStrength.cls]">{{ policyStrength.label }}</span>
+              </div>
+              <div class="strength-bar-wrap">
+                <div
+                  class="strength-bar-fill"
+                  :class="policyStrength.cls"
+                  :style="{ width: policyStrength.pct + '%' }"
+                ></div>
+              </div>
+            </div>
+
+            <div class="policy-checklist mt-1">
+              <div class="policy-req" :class="passwordPolicy.min_length >= 8 ? 'req-met' : 'req-unmet'">
+                <span class="req-icon">{{ passwordPolicy.min_length >= 8 ? '✓' : '✗' }}</span>
+                Minimum {{ passwordPolicy.min_length }} characters
+                <span class="text-muted text-xs">({{ passwordPolicy.min_length >= 12 ? 'Strong' : passwordPolicy.min_length >= 8 ? 'Acceptable' : 'Weak' }})</span>
+              </div>
+              <div class="policy-req" :class="passwordPolicy.require_uppercase ? 'req-met' : 'req-unmet'">
+                <span class="req-icon">{{ passwordPolicy.require_uppercase ? '✓' : '✗' }}</span>
+                Uppercase letters required
+              </div>
+              <div class="policy-req" :class="passwordPolicy.require_numbers ? 'req-met' : 'req-unmet'">
+                <span class="req-icon">{{ passwordPolicy.require_numbers ? '✓' : '✗' }}</span>
+                Numbers required
+              </div>
+              <div class="policy-req" :class="passwordPolicy.require_symbols ? 'req-met' : 'req-unmet'">
+                <span class="req-icon">{{ passwordPolicy.require_symbols ? '✓' : '✗' }}</span>
+                Symbols required
+              </div>
+            </div>
+
+            <div class="info-box mt-1" style="margin-top:1rem;">
+              <strong>Example compliant password:</strong>
+              <code class="example-password">{{ policyExamplePassword }}</code>
             </div>
           </div>
         </div>
@@ -652,9 +853,33 @@
         <div class="card">
           <div class="card-header">
             <h3>2FA Status Overview</h3>
-            <button @click="load2faOverview" class="btn btn-outline btn-sm">Refresh</button>
+            <div class="flex gap-1" style="align-items:center;">
+              <select v-model="twoFaFilter" class="form-control" style="width:150px">
+                <option value="all">All Users</option>
+                <option value="enabled">2FA Enabled</option>
+                <option value="disabled">2FA Disabled</option>
+              </select>
+              <button @click="load2faOverview" class="btn btn-outline btn-sm">Refresh</button>
+            </div>
           </div>
-          <div v-if="twoFaList.length === 0" class="empty-state">No users found.</div>
+
+          <!-- Summary row -->
+          <div class="twofa-summary">
+            <div class="twofa-stat">
+              <span class="twofa-stat-val">{{ twoFaList.filter(u => u.totp_enabled).length }}</span>
+              <span class="twofa-stat-label">2FA Enabled</span>
+            </div>
+            <div class="twofa-stat">
+              <span class="twofa-stat-val twofa-stat-warn">{{ twoFaList.filter(u => !u.totp_enabled && u.is_active).length }}</span>
+              <span class="twofa-stat-label">Active without 2FA</span>
+            </div>
+            <div class="twofa-stat">
+              <span class="twofa-stat-val twofa-stat-red">{{ twoFaList.filter(u => u.role === 'admin' && !u.totp_enabled).length }}</span>
+              <span class="twofa-stat-label">Admins without 2FA</span>
+            </div>
+          </div>
+
+          <div v-if="filtered2faList.length === 0" class="empty-state">No users match the current filter.</div>
           <div v-else class="table-container">
             <table class="table">
               <thead>
@@ -662,13 +887,14 @@
                   <th>Username</th>
                   <th>Email</th>
                   <th>Role</th>
-                  <th>Account Status</th>
-                  <th>2FA Status</th>
+                  <th>Account</th>
+                  <th>2FA</th>
+                  <th>Backup Codes</th>
                   <th></th>
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="u in twoFaList" :key="u.id">
+                <tr v-for="u in filtered2faList" :key="u.id">
                   <td><strong>{{ u.username }}</strong></td>
                   <td class="text-sm text-muted">{{ u.email }}</td>
                   <td>
@@ -683,6 +909,12 @@
                     <span :class="['badge', u.totp_enabled ? 'badge-success' : 'badge-secondary']">
                       {{ u.totp_enabled ? 'Enabled' : 'Disabled' }}
                     </span>
+                  </td>
+                  <td class="text-sm text-muted">
+                    <span v-if="u.totp_enabled">
+                      {{ u.backup_codes_remaining !== undefined ? u.backup_codes_remaining + ' remaining' : '—' }}
+                    </span>
+                    <span v-else>—</span>
                   </td>
                   <td>
                     <button
@@ -809,10 +1041,17 @@ export default {
     const invalidatingAll = ref(false)
     const showIPModal = ref(false)
     const showGeoIPModal = ref(false)
-    const activeTab = ref('brute')
+    const activeTab = ref('overview')
     const historyFilter = ref('all')
+    const historySearch = ref('')
+    const historyDateFrom = ref('')
+    const historyDateTo = ref('')
+    const historyPage = ref(1)
+    const historyPageSize = 50
+    const twoFaFilter = ref('all')
 
     const tabs = [
+      { key: 'overview',   label: 'Overview' },
       { key: 'brute',      label: 'Brute Force' },
       { key: 'lockouts',   label: 'Lockouts' },
       { key: 'iplist',     label: 'IP Access' },
@@ -950,9 +1189,88 @@ export default {
 
     // Filtered login history
     const filteredHistory = computed(() => {
-      if (historyFilter.value === 'all') return loginHistory.value
-      const success = historyFilter.value === 'success'
-      return loginHistory.value.filter(h => h.success === success)
+      let list = loginHistory.value
+      if (historyFilter.value !== 'all') {
+        const success = historyFilter.value === 'success'
+        list = list.filter(h => h.success === success)
+      }
+      if (historySearch.value.trim()) {
+        const q = historySearch.value.trim().toLowerCase()
+        list = list.filter(h => (h.username_attempted || '').toLowerCase().includes(q) || (h.ip_address || '').toLowerCase().includes(q))
+      }
+      if (historyDateFrom.value) {
+        const from = new Date(historyDateFrom.value)
+        list = list.filter(h => new Date(h.timestamp) >= from)
+      }
+      if (historyDateTo.value) {
+        const to = new Date(historyDateTo.value)
+        to.setHours(23, 59, 59, 999)
+        list = list.filter(h => new Date(h.timestamp) <= to)
+      }
+      return list
+    })
+
+    const historyTotalPages = computed(() => Math.max(1, Math.ceil(filteredHistory.value.length / historyPageSize)))
+
+    const paginatedHistory = computed(() => {
+      const start = (historyPage.value - 1) * historyPageSize
+      return filteredHistory.value.slice(start, start + historyPageSize)
+    })
+
+    // 2FA filtered list
+    const filtered2faList = computed(() => {
+      if (twoFaFilter.value === 'enabled') return twoFaList.value.filter(u => u.totp_enabled)
+      if (twoFaFilter.value === 'disabled') return twoFaList.value.filter(u => !u.totp_enabled)
+      return twoFaList.value
+    })
+
+    // Overview stats (computed from loaded data)
+    const overviewStats = computed(() => {
+      const users = twoFaList.value
+      const history24h = loginHistory.value.filter(h => {
+        const ts = new Date(h.timestamp)
+        return (Date.now() - ts.getTime()) < 86400000
+      })
+      const failed24h = history24h.filter(h => !h.success).length
+      const total24h = history24h.length
+      const successRate = total24h > 0 ? Math.round(((total24h - failed24h) / total24h) * 100) : 100
+
+      return {
+        twofa_count: users.filter(u => u.totp_enabled).length,
+        total_users: users.length,
+        active_sessions: 0, // Populated separately
+        failed_logins_24h: failed24h,
+        success_rate_24h: successRate,
+        ip_entries: ipList.value.length,
+        lockouts_active: lockouts.value.length,
+      }
+    })
+
+    const recentActivity = computed(() => loginHistory.value.slice(0, 10))
+
+    // Password policy strength
+    const policyStrength = computed(() => {
+      const p = passwordPolicy.value
+      let score = 0
+      if (p.min_length >= 8) score += 25
+      if (p.min_length >= 12) score += 25
+      if (p.require_uppercase) score += 15
+      if (p.require_numbers) score += 15
+      if (p.require_symbols) score += 20
+      let label = 'Weak', cls = 'strength-weak'
+      if (score >= 75) { label = 'Strong'; cls = 'strength-strong' }
+      else if (score >= 40) { label = 'Moderate'; cls = 'strength-moderate' }
+      return { pct: score, label, cls }
+    })
+
+    const policyExamplePassword = computed(() => {
+      const p = passwordPolicy.value
+      let pw = 'mysecret'
+      if (p.require_uppercase) pw = 'MySecret'
+      if (p.require_numbers) pw += '42'
+      if (p.require_symbols) pw += '!'
+      while (pw.length < p.min_length) pw += 'x'
+      return pw
     })
 
     // ── Country picker ──
@@ -1303,11 +1621,57 @@ export default {
       viewer: 'badge-info',
     }[role] || 'badge-secondary')
 
+    const truncateUA = (ua) => {
+      if (!ua) return '—'
+      return ua.length > 60 ? ua.substring(0, 60) + '…' : ua
+    }
+
+    const clearHistoryFilters = () => {
+      historySearch.value = ''
+      historyFilter.value = 'all'
+      historyDateFrom.value = ''
+      historyDateTo.value = ''
+      historyPage.value = 1
+    }
+
+    const exportHistoryCSV = () => {
+      const rows = filteredHistory.value
+      if (rows.length === 0) { toast.error('No data to export'); return }
+      const headers = ['Timestamp', 'Username', 'IP Address', 'Result', 'Failure Reason', 'User Agent']
+      const escape = (v) => '"' + String(v || '').replace(/"/g, '""') + '"'
+      const lines = [headers.join(',')]
+      for (const r of rows) {
+        lines.push([
+          escape(r.timestamp),
+          escape(r.username_attempted),
+          escape(r.ip_address),
+          escape(r.success ? 'Success' : 'Failed'),
+          escape(r.failure_reason || ''),
+          escape(r.user_agent || ''),
+        ].join(','))
+      }
+      const blob = new Blob([lines.join('\n')], { type: 'text/csv' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `login-history-${new Date().toISOString().slice(0, 10)}.csv`
+      a.click()
+      URL.revokeObjectURL(url)
+      toast.success(`Exported ${rows.length} records`)
+    }
+
     onMounted(loadAll)
 
     watch(activeTab, (tab) => {
       if (tab === 'compliance') {
         loadComplianceData()
+      }
+    })
+
+    watch(historyPage, () => {
+      // ensure page stays in bounds when filters change
+      if (historyPage.value > historyTotalPages.value) {
+        historyPage.value = historyTotalPages.value
       }
     })
 
@@ -1317,7 +1681,11 @@ export default {
       settings, passwordPolicy,
       lockouts, failedLogins, ipList, geoipRules, loginHistory, userList, twoFaList,
       newIP, newGeoIP,
-      historyFilter, filteredHistory,
+      historyFilter, historySearch, historyDateFrom, historyDateTo,
+      historyPage, historyPageSize, historyTotalPages, filteredHistory, paginatedHistory,
+      twoFaFilter, filtered2faList,
+      overviewStats, recentActivity,
+      policyStrength, policyExamplePassword,
       countrySearch, filteredCountries, filterCountries, selectCountry,
       lookupIP, lookupResult, lookingUp, lookupIPCountry, quickAddCountry,
       saveSettings, savePasswordPolicy,
@@ -1328,6 +1696,7 @@ export default {
       invalidateAllSessions, invalidateUserSessions,
       forceDisable2fa,
       formatDate, formatRole, getRoleBadgeClass,
+      truncateUA, clearHistoryFilters, exportHistoryCSV,
       // Compliance
       complianceLoading, complianceData, complianceScore, scoreClass,
       recommendations, loadComplianceData,
@@ -1848,5 +2217,210 @@ export default {
 .rec-desc {
   font-size: 0.8rem;
   color: var(--text-secondary);
+}
+
+/* ── Overview Tab ── */
+.overview-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+.overview-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+  padding: 1.25rem;
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.ov-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.ov-icon svg { width: 22px; height: 22px; }
+.ov-icon-blue  { background: rgba(59,130,246,0.12); color: #3b82f6; }
+.ov-icon-green { background: rgba(34,197,94,0.12);  color: #22c55e; }
+.ov-icon-red   { background: rgba(239,68,68,0.12);  color: #ef4444; }
+.ov-icon-yellow{ background: rgba(234,179,8,0.12);  color: #eab308; }
+
+.ov-body { display: flex; flex-direction: column; gap: 0.1rem; }
+
+.ov-value {
+  font-size: 1.75rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--text-primary);
+}
+
+.ov-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-top: 0.25rem;
+}
+
+.ov-sub {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+/* ── Filter bar (Login History) ── */
+.filter-bar {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 0.75rem 1.5rem;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--background);
+}
+
+.filter-input {
+  min-width: 180px;
+  flex: 1;
+}
+
+/* ── Pagination ── */
+.pagination-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1.5rem;
+  border-top: 1px solid var(--border-color);
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.pagination-btns {
+  display: flex;
+  gap: 0.25rem;
+}
+
+/* ── Password Policy Strength ── */
+.policy-strength {
+  margin-bottom: 0.75rem;
+}
+
+.strength-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.4rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.strength-level {
+  font-size: 0.8rem;
+  font-weight: 700;
+  padding: 0.15rem 0.5rem;
+  border-radius: 99px;
+}
+
+.strength-weak     { background: rgba(239,68,68,0.15);   color: #ef4444; }
+.strength-moderate { background: rgba(234,179,8,0.15);   color: #d97706; }
+.strength-strong   { background: rgba(34,197,94,0.15);   color: #16a34a; }
+
+.strength-bar-wrap {
+  height: 8px;
+  background: var(--border-color);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.strength-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.4s ease;
+}
+
+.strength-bar-fill.strength-weak     { background: #ef4444; }
+.strength-bar-fill.strength-moderate { background: #f59e0b; }
+.strength-bar-fill.strength-strong   { background: #22c55e; }
+
+.policy-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.policy-req {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.policy-req:last-child { border-bottom: none; }
+
+.req-icon {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.req-met .req-icon   { background: rgba(34,197,94,0.15); color: #16a34a; }
+.req-unmet .req-icon { background: rgba(239,68,68,0.15); color: #dc2626; }
+.req-met   { color: var(--text-primary); }
+.req-unmet { color: var(--text-secondary); }
+
+.example-password {
+  display: inline-block;
+  margin-left: 0.5rem;
+  font-family: monospace;
+  font-size: 0.85rem;
+  background: var(--surface, #f3f4f6);
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+}
+
+/* ── 2FA Overview summary ── */
+.twofa-summary {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.twofa-stat {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0.85rem 0.5rem;
+  border-right: 1px solid var(--border-color);
+}
+
+.twofa-stat:last-child { border-right: none; }
+
+.twofa-stat-val {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.twofa-stat-warn { color: #d97706; }
+.twofa-stat-red  { color: #dc2626; }
+
+.twofa-stat-label {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  text-align: center;
+  margin-top: 0.15rem;
 }
 </style>

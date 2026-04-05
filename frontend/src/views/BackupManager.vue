@@ -65,6 +65,8 @@
                 <th>Node</th>
                 <th>Storage</th>
                 <th>VMs</th>
+                <th>Enabled</th>
+                <th>Last Run</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -77,7 +79,21 @@
                 <td>{{ sched.storage || '—' }}</td>
                 <td class="text-sm">{{ sched.vmid || 'all' }}</td>
                 <td>
+                  <label class="toggle-switch" :title="sched.enabled === 0 ? 'Disabled — click to enable' : 'Enabled — click to disable'">
+                    <input
+                      type="checkbox"
+                      :checked="sched.enabled !== 0"
+                      @change="toggleScheduleEnabled(sched)"
+                    />
+                    <span class="toggle-slider"></span>
+                  </label>
+                </td>
+                <td class="text-sm text-muted">
+                  {{ sched['next-run'] ? formatDate(sched['next-run']) : (sched.starttime ? formatDate(sched.starttime) : '—') }}
+                </td>
+                <td>
                   <div class="flex gap-1">
+                    <button @click="openRunNowModal(sched)" class="btn btn-outline btn-sm" title="Run this schedule now">Run Now</button>
                     <button @click="openEditModal(sched)" class="btn btn-outline btn-sm">Edit</button>
                     <button @click="deleteSchedule(sched.id)" class="btn btn-danger btn-sm">Delete</button>
                   </div>
@@ -279,6 +295,7 @@
                 <th>Name</th>
                 <th>Hostname</th>
                 <th>Port</th>
+                <th>Datastore</th>
                 <th>Token ID</th>
                 <th>SSL</th>
                 <th>Status</th>
@@ -286,33 +303,112 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-for="srv in pbsServerList" :key="srv.id">
-                <td><strong>{{ srv.name }}</strong></td>
-                <td>{{ srv.hostname }}</td>
-                <td>{{ srv.port }}</td>
-                <td class="text-sm text-muted">{{ srv.api_token_id || '—' }}</td>
-                <td>
-                  <span :class="['badge', srv.verify_ssl ? 'badge--ok' : 'badge--off']">
-                    {{ srv.verify_ssl ? 'Verified' : 'Skip' }}
-                  </span>
-                </td>
-                <td>
-                  <span v-if="pbsServerStatus[srv.id] === undefined" class="text-muted text-sm">—</span>
-                  <span v-else-if="pbsServerStatus[srv.id] === 'testing'" class="text-muted text-sm">Testing...</span>
-                  <span v-else-if="pbsServerStatus[srv.id] === true" class="badge badge--ok">Online</span>
-                  <span v-else class="badge badge--fail">Offline</span>
-                </td>
-                <td>
-                  <div class="flex gap-1">
-                    <button
-                      @click="testPbsServer(srv)"
-                      class="btn btn-outline btn-sm"
-                      :disabled="pbsServerStatus[srv.id] === 'testing'"
-                    >Test</button>
-                    <button @click="deletePbsServer(srv)" class="btn btn-danger btn-sm">Delete</button>
-                  </div>
-                </td>
-              </tr>
+              <template v-for="srv in pbsServerList" :key="srv.id">
+                <tr>
+                  <td><strong>{{ srv.name }}</strong></td>
+                  <td>{{ srv.hostname }}</td>
+                  <td>{{ srv.port }}</td>
+                  <td class="text-sm text-muted">
+                    <span v-if="pbsServerDatastores[srv.id]">
+                      {{ pbsServerDatastores[srv.id].map(d => d.store || d.name).join(', ') || '—' }}
+                    </span>
+                    <span v-else class="text-muted">—</span>
+                  </td>
+                  <td class="text-sm text-muted">{{ srv.api_token_id || '—' }}</td>
+                  <td>
+                    <span :class="['badge', srv.verify_ssl ? 'badge--ok' : 'badge--off']">
+                      {{ srv.verify_ssl ? 'Verified' : 'Skip' }}
+                    </span>
+                  </td>
+                  <td>
+                    <span v-if="pbsServerStatus[srv.id] === undefined" class="text-muted text-sm">—</span>
+                    <span v-else-if="pbsServerStatus[srv.id] === 'testing'" class="text-muted text-sm">Testing...</span>
+                    <span v-else-if="pbsServerStatus[srv.id] === true" class="badge badge--ok">Online</span>
+                    <span v-else class="badge badge--fail">Offline</span>
+                  </td>
+                  <td>
+                    <div class="flex gap-1">
+                      <button
+                        @click="testPbsServer(srv)"
+                        class="btn btn-outline btn-sm"
+                        :disabled="pbsServerStatus[srv.id] === 'testing'"
+                      >Test</button>
+                      <button
+                        @click="togglePbsServerSnapshots(srv)"
+                        class="btn btn-outline btn-sm"
+                      >{{ expandedPbsServer === srv.id ? 'Hide Snapshots' : 'View Snapshots' }}</button>
+                      <button @click="deletePbsServer(srv)" class="btn btn-danger btn-sm">Delete</button>
+                    </div>
+                  </td>
+                </tr>
+                <!-- Per-server snapshot sub-panel -->
+                <tr v-if="expandedPbsServer === srv.id">
+                  <td colspan="8" style="padding:0; background:var(--bg-secondary,rgba(0,0,0,0.15));">
+                    <div class="pbs-server-snapshot-panel">
+                      <div class="pbs-server-snapshot-header">
+                        <strong class="text-sm">Snapshots for {{ srv.name }}</strong>
+                        <div class="flex gap-1 align-center">
+                          <select
+                            v-model="pbsServerSnapshotState.selectedDatastore"
+                            class="form-control form-control-sm"
+                            :disabled="pbsServerSnapshotState.loadingDatastores"
+                            @change="fetchPbsServerSnapshots(srv)"
+                            style="min-width:160px;"
+                          >
+                            <option value="">{{ pbsServerSnapshotState.loadingDatastores ? 'Loading...' : 'Select datastore...' }}</option>
+                            <option
+                              v-for="ds in (pbsServerDatastores[srv.id] || [])"
+                              :key="ds.store || ds.name"
+                              :value="ds.store || ds.name"
+                            >{{ ds.store || ds.name }}</option>
+                          </select>
+                          <button
+                            @click="fetchPbsServerSnapshots(srv)"
+                            class="btn btn-outline btn-sm"
+                            :disabled="!pbsServerSnapshotState.selectedDatastore || pbsServerSnapshotState.loading"
+                          >Refresh</button>
+                        </div>
+                      </div>
+
+                      <div v-if="pbsServerSnapshotState.loading" class="loading-spinner" style="margin:1rem;"></div>
+                      <div v-else-if="!pbsServerSnapshotState.selectedDatastore" class="text-center text-muted p-3 text-sm">
+                        Select a datastore to view snapshots.
+                      </div>
+                      <div v-else-if="pbsServerSnapshotState.snapshots.length === 0" class="text-center text-muted p-3 text-sm">
+                        No snapshots found.
+                      </div>
+                      <div v-else class="table-container">
+                        <table class="table table-sm">
+                          <thead>
+                            <tr>
+                              <th>Type</th>
+                              <th>VM/CT ID</th>
+                              <th>Date</th>
+                              <th>Size</th>
+                              <th>Verify</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr v-for="snap in pbsServerSnapshotState.snapshots" :key="`${snap['backup-type']}/${snap['backup-id']}/${snap['backup-time']}`">
+                              <td><code class="text-xs">{{ snap['backup-type'] }}</code></td>
+                              <td><span class="vmid-badge">{{ snap['backup-id'] }}</span></td>
+                              <td class="text-sm">{{ formatDate(snap['backup-time']) }}</td>
+                              <td class="text-sm">{{ snap.size !== undefined ? formatSize(snap.size) : '—' }}</td>
+                              <td>
+                                <span
+                                  v-if="snap['verify-state']"
+                                  :class="['verify-badge', snap['verify-state'] === 'ok' ? 'verify-badge--ok' : 'verify-badge--fail']"
+                                >{{ snap['verify-state'] }}</span>
+                                <span v-else class="text-muted text-xs">—</span>
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+              </template>
             </tbody>
           </table>
         </div>
@@ -710,6 +806,58 @@
             <div v-else class="text-muted text-sm" style="padding: 0.25rem 0;">
               No prune policy configured — all backups kept.
             </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Run Now Modal (per schedule) -->
+    <div v-if="runNowModal.show" class="modal" @click="closeRunNowModal">
+      <div class="modal-content" @click.stop>
+        <div class="modal-header">
+          <h3>Run Schedule Now</h3>
+          <button @click="closeRunNowModal" class="btn-close">&#215;</button>
+        </div>
+        <div class="modal-body">
+          <div class="restore-source-info mb-2">
+            <div class="text-sm text-muted">Schedule: <strong>{{ runNowModal.scheduleId }}</strong></div>
+          </div>
+
+          <div v-if="runNowModal.result" :class="['notif-result', runNowModal.result.ok ? 'notif-result--ok' : 'notif-result--err']" style="margin-bottom:1rem;">
+            {{ runNowModal.result.message }}
+            <div v-if="runNowModal.result.upid" class="mt-1">
+              <span class="text-xs text-muted">Task UPID: </span>
+              <code class="upid-code" style="display:inline;font-size:0.75rem;">{{ runNowModal.result.upid }}</code>
+            </div>
+          </div>
+
+          <div v-if="!runNowModal.result">
+            <div class="form-group mb-2">
+              <label class="form-label">Target Node <span class="required">*</span></label>
+              <select v-model="runNowModal.node" class="form-control" required>
+                <option value="">Select node...</option>
+                <option v-for="n in clusterNodes" :key="n.node || n.name" :value="n.node || n.name">
+                  {{ n.node || n.name }}
+                </option>
+              </select>
+              <div class="text-xs text-muted mt-1">The node that will execute the backup job.</div>
+            </div>
+            <p class="text-sm text-muted">
+              This will immediately trigger the backup job defined by schedule <strong>{{ runNowModal.scheduleId }}</strong>.
+              A task UPID will be returned to track progress.
+            </p>
+          </div>
+
+          <div class="flex gap-1 mt-2">
+            <button
+              v-if="!runNowModal.result"
+              @click="submitRunNow"
+              class="btn btn-primary"
+              :disabled="runNowModal.running || !runNowModal.node"
+            >
+              {{ runNowModal.running ? 'Starting...' : 'Run Now' }}
+            </button>
+            <button @click="closeRunNowModal" class="btn btn-outline">{{ runNowModal.result ? 'Close' : 'Cancel' }}</button>
           </div>
         </div>
       </div>
@@ -1370,6 +1518,125 @@ async function submitAddPbsServer() {
     addPbsServerModal.value.error = err.response?.data?.detail || 'Failed to add server'
   } finally {
     addPbsServerModal.value.saving = false
+  }
+}
+
+// ── PBS Server per-row snapshot sub-panel ────────────────────────────────────
+
+const expandedPbsServer = ref(null)
+// server id -> array of datastores
+const pbsServerDatastores = ref({})
+const pbsServerSnapshotState = ref({
+  serverId: null,
+  selectedDatastore: '',
+  loadingDatastores: false,
+  loading: false,
+  snapshots: [],
+})
+
+async function togglePbsServerSnapshots(srv) {
+  if (expandedPbsServer.value === srv.id) {
+    expandedPbsServer.value = null
+    return
+  }
+  expandedPbsServer.value = srv.id
+  pbsServerSnapshotState.value = {
+    serverId: srv.id,
+    selectedDatastore: '',
+    loadingDatastores: true,
+    loading: false,
+    snapshots: [],
+  }
+  // Load datastores for this server if not already cached
+  if (!pbsServerDatastores.value[srv.id]) {
+    try {
+      const res = await api.pbsMgmt.listDatastores(srv.id)
+      pbsServerDatastores.value = { ...pbsServerDatastores.value, [srv.id]: res.data || [] }
+    } catch (err) {
+      console.error('Failed to load PBS datastores for server', srv.id, err)
+      pbsServerDatastores.value = { ...pbsServerDatastores.value, [srv.id]: [] }
+    }
+  }
+  pbsServerSnapshotState.value.loadingDatastores = false
+  // Auto-select the first datastore and load snapshots
+  const dsList = pbsServerDatastores.value[srv.id] || []
+  if (dsList.length === 1) {
+    pbsServerSnapshotState.value.selectedDatastore = dsList[0].store || dsList[0].name
+    await fetchPbsServerSnapshots(srv)
+  }
+}
+
+async function fetchPbsServerSnapshots(srv) {
+  const ds = pbsServerSnapshotState.value.selectedDatastore
+  if (!ds) return
+  pbsServerSnapshotState.value.loading = true
+  pbsServerSnapshotState.value.snapshots = []
+  try {
+    const res = await api.pbsMgmt.listSnapshots(srv.id, ds)
+    pbsServerSnapshotState.value.snapshots = (res.data || []).sort(
+      (a, b) => (b['backup-time'] || 0) - (a['backup-time'] || 0)
+    )
+  } catch (err) {
+    console.error('Failed to load snapshots for server', srv.id, 'datastore', ds, err)
+    toast.error('Failed to load snapshots')
+    pbsServerSnapshotState.value.snapshots = []
+  } finally {
+    pbsServerSnapshotState.value.loading = false
+  }
+}
+
+// ── Run Now modal (per schedule) ─────────────────────────────────────────────
+
+const runNowModal = ref({ show: false, scheduleId: null, node: '', running: false, result: null })
+
+function openRunNowModal(sched) {
+  runNowModal.value = { show: true, scheduleId: sched.id, node: sched.node || '', running: false, result: null }
+}
+
+function closeRunNowModal() {
+  runNowModal.value = { show: false, scheduleId: null, node: '', running: false, result: null }
+}
+
+async function submitRunNow() {
+  if (!runNowModal.value.scheduleId) return
+  if (!runNowModal.value.node) { toast.error('Please select a target node'); return }
+  runNowModal.value.running = true
+  runNowModal.value.result = null
+  try {
+    const payload = { node: runNowModal.value.node }
+    const res = await api.pveNode.runBackupScheduleNow(hostId.value, runNowModal.value.scheduleId, payload)
+    const upid = res.data?.upid || res.data || null
+    runNowModal.value.result = {
+      ok: true,
+      message: 'Backup job started successfully.',
+      upid,
+    }
+    toast.success('Backup job started')
+  } catch (err) {
+    console.error('Failed to run schedule now:', err)
+    runNowModal.value.result = {
+      ok: false,
+      message: err.response?.data?.detail || 'Failed to start backup job.',
+      upid: null,
+    }
+    toast.error('Failed to start backup job')
+  } finally {
+    runNowModal.value.running = false
+  }
+}
+
+// ── Schedule enabled toggle ───────────────────────────────────────────────────
+
+async function toggleScheduleEnabled(sched) {
+  const newEnabled = sched.enabled === 0 ? 1 : 0
+  try {
+    await api.pveNode.updateBackupSchedule(hostId.value, sched.id, { enabled: newEnabled })
+    // Optimistically update local state
+    sched.enabled = newEnabled
+    toast.success(`Schedule ${newEnabled ? 'enabled' : 'disabled'}`)
+  } catch (err) {
+    console.error('Failed to toggle schedule enabled:', err)
+    toast.error('Failed to update schedule')
   }
 }
 
@@ -3130,4 +3397,63 @@ onUnmounted(() => {
 
 .text-danger { color: #ef4444; }
 .text-success { color: #059669; }
+
+/* Toggle switch for schedule enabled/disabled */
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 36px;
+  height: 20px;
+  cursor: pointer;
+}
+
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+  position: absolute;
+}
+
+.toggle-slider {
+  position: absolute;
+  inset: 0;
+  background: rgba(107, 114, 128, 0.4);
+  border-radius: 20px;
+  transition: background 0.2s;
+}
+
+.toggle-slider::before {
+  content: '';
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  left: 3px;
+  top: 3px;
+  background: #fff;
+  border-radius: 50%;
+  transition: transform 0.2s;
+}
+
+.toggle-switch input:checked + .toggle-slider {
+  background: var(--primary-color, #6366f1);
+}
+
+.toggle-switch input:checked + .toggle-slider::before {
+  transform: translateX(16px);
+}
+
+/* PBS Server per-row snapshot sub-panel */
+.pbs-server-snapshot-panel {
+  padding: 0.75rem 1rem;
+  border-top: 2px solid var(--primary-color, #6366f1);
+}
+
+.pbs-server-snapshot-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
 </style>

@@ -426,10 +426,11 @@ export default {
     toggleGeoIPRule: (id) => api.patch(`/security/geoip/${id}/toggle`),
     getEvents: (params) => api.get('/security/events', { params }),
     lookupIP: (ip) => api.get(`/security/lookup-ip/${ip}`),
-    getLoginHistory: (limit = 50) => api.get('/security/login-history', { params: { limit } }),
+    getLoginHistory: (limit = 50, params) => api.get('/security/login-history', { params: { limit, ...params } }),
     getPasswordPolicy: () => api.get('/security/password-policy'),
     updatePasswordPolicy: (data) => api.patch('/security/password-policy', data),
     get2faOverview: () => api.get('/security/2fa-overview'),
+    adminDisable2fa: (userId) => api.post(`/users/${userId}/disable-totp`),
   },
 
   // iDRAC / iLO management (Proxmox hosts)

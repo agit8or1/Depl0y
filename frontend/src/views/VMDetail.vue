@@ -41,6 +41,15 @@
           <button @click="doConvertToTemplate" class="btn btn-outline btn-sm" :disabled="actioning">To Template</button>
           <button @click="showDeleteConfirm = true" class="btn btn-danger btn-sm" :disabled="actioning">Delete</button>
           <button @click="openQuickSnapshotModal" class="btn btn-outline btn-sm" :disabled="actioning" title="Quick Snapshot">📸</button>
+          <span class="action-sep">|</span>
+          <router-link
+            :to="`/proxmox/${hostId}/nodes/${node}/console/${vmid}`"
+            class="btn btn-outline btn-sm btn-console-link"
+            title="Open VM Console"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:3px;"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+            Console
+          </router-link>
         </div>
       </div>
 

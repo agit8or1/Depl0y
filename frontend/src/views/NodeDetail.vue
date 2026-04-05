@@ -211,8 +211,14 @@
 
       <!-- ─── Storage Tab ─── -->
       <div v-if="activeTab === 'storage'">
-        <div class="card">
-          <div class="card-header"><h3>Storage Pools</h3></div>
+        <!-- Storage Pools -->
+        <div class="card mb-2">
+          <div class="card-header">
+            <h3>Storage Pools</h3>
+            <button @click="loadStorage" class="btn btn-outline btn-sm" :disabled="loadingStorage">
+              {{ loadingStorage ? 'Loading...' : 'Refresh' }}
+            </button>
+          </div>
           <SkeletonLoader v-if="loadingStorage" type="table" :count="5" />
           <div v-else class="table-container">
             <table class="table">
@@ -221,29 +227,39 @@
                   <th>Name</th>
                   <th>Type</th>
                   <th>Content</th>
-                  <th>Used</th>
+                  <th>Usage</th>
                   <th>Available</th>
                   <th>Total</th>
+                  <th>Enabled</th>
+                  <th>Shared</th>
                   <th>Status</th>
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 <tr v-if="storageList.length === 0">
-                  <td colspan="8" class="text-muted text-center">No storage found</td>
+                  <td colspan="10" class="text-muted text-center">No storage found</td>
                 </tr>
                 <tr v-for="s in storageList" :key="s.storage" class="clickable-row" @click="browseStorage(s.storage)">
                   <td><strong>{{ s.storage }}</strong></td>
                   <td><span class="badge badge-info">{{ s.type }}</span></td>
                   <td class="text-sm">{{ (s.content || '').replace(/,/g, ', ') || '—' }}</td>
-                  <td>
+                  <td style="min-width:140px">
                     <div class="usage-bar-wrap">
                       <div class="usage-bar" :style="{ width: usagePct(s) + '%', background: usageColor(s) }"></div>
                     </div>
-                    <span class="text-sm">{{ formatBytes(s.used) }}</span>
+                    <span class="text-sm">{{ formatBytes(s.used) }} / {{ formatBytes(s.total) }} ({{ usagePct(s) }}%)</span>
                   </td>
                   <td class="text-sm">{{ formatBytes(s.avail) }}</td>
                   <td class="text-sm">{{ formatBytes(s.total) }}</td>
+                  <td>
+                    <span v-if="s.enabled !== 0 && s.enabled !== false" class="badge badge-success">Yes</span>
+                    <span v-else class="badge badge-danger">No</span>
+                  </td>
+                  <td>
+                    <span v-if="s.shared" class="badge badge-info">Shared</span>
+                    <span v-else class="text-muted text-sm">Local</span>
+                  </td>
                   <td>
                     <span v-if="s.active" class="badge badge-success">Active</span>
                     <span v-else class="badge badge-danger">Inactive</span>
@@ -251,6 +267,63 @@
                   <td @click.stop>
                     <button @click="browseStorage(s.storage)" class="btn btn-outline btn-sm">Browse</button>
                   </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- ZFS Pools -->
+        <div class="card">
+          <div class="card-header">
+            <h3>ZFS Pools</h3>
+            <button @click="loadZfsPools" class="btn btn-outline btn-sm" :disabled="loadingZfs">
+              {{ loadingZfs ? 'Loading...' : 'Refresh' }}
+            </button>
+          </div>
+          <SkeletonLoader v-if="loadingZfs" type="table" :count="3" />
+          <div v-else-if="zfsError" class="text-muted text-center" style="padding:1.5rem">
+            {{ zfsError }}
+          </div>
+          <div v-else-if="zfsPools.length === 0" class="text-muted text-center" style="padding:1.5rem">
+            No ZFS pools found on this node
+          </div>
+          <div v-else class="table-container">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Pool Name</th>
+                  <th>Status</th>
+                  <th>Size</th>
+                  <th>Free</th>
+                  <th>Allocated</th>
+                  <th>Usage</th>
+                  <th>Dedup</th>
+                  <th>Fragmentation</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="pool in zfsPools" :key="pool.name">
+                  <td><strong>{{ pool.name }}</strong></td>
+                  <td>
+                    <span :class="zfsStatusBadge(pool.health || pool.status)">
+                      {{ pool.health || pool.status || '—' }}
+                    </span>
+                  </td>
+                  <td class="text-sm">{{ pool.size ? formatBytes(pool.size) : '—' }}</td>
+                  <td class="text-sm">{{ pool.free ? formatBytes(pool.free) : '—' }}</td>
+                  <td class="text-sm">{{ pool.alloc ? formatBytes(pool.alloc) : '—' }}</td>
+                  <td style="min-width:120px">
+                    <template v-if="pool.size && pool.alloc">
+                      <div class="usage-bar-wrap">
+                        <div class="usage-bar" :style="{ width: zfsUsagePct(pool) + '%', background: usageColorPct(zfsUsagePct(pool)) }"></div>
+                      </div>
+                      <span class="text-sm">{{ zfsUsagePct(pool) }}%</span>
+                    </template>
+                    <span v-else class="text-muted text-sm">—</span>
+                  </td>
+                  <td class="text-sm">{{ pool.dedup != null ? parseFloat(pool.dedup).toFixed(2) + 'x' : '—' }}</td>
+                  <td class="text-sm">{{ pool.frag != null ? pool.frag + '%' : '—' }}</td>
                 </tr>
               </tbody>
             </table>
@@ -286,6 +359,7 @@
                   <th>Address / CIDR</th>
                   <th>Gateway</th>
                   <th>Bridge Ports / Slaves</th>
+                  <th>VLAN ID</th>
                   <th>Autostart</th>
                   <th>Comments</th>
                   <th>Actions</th>
@@ -293,7 +367,7 @@
               </thead>
               <tbody>
                 <tr v-if="networkIfaces.length === 0">
-                  <td colspan="9" class="text-muted text-center">No interfaces found</td>
+                  <td colspan="10" class="text-muted text-center">No interfaces found</td>
                 </tr>
                 <tr v-for="iface in networkIfaces" :key="iface.iface">
                   <td><code>{{ iface.iface }}</code></td>
@@ -311,6 +385,10 @@
                   </td>
                   <td class="text-sm">{{ iface.gateway || '—' }}</td>
                   <td class="text-sm">{{ iface['bridge-ports'] || iface.slaves || '—' }}</td>
+                  <td class="text-sm">
+                    <span v-if="iface['vlan-id'] || iface.vlan_id" class="badge badge-secondary">{{ iface['vlan-id'] || iface.vlan_id }}</span>
+                    <span v-else class="text-muted">—</span>
+                  </td>
                   <td>
                     <span v-if="iface.autostart" class="badge badge-success">Yes</span>
                     <span v-else class="text-muted text-sm">No</span>
@@ -319,13 +397,21 @@
                     {{ iface.comments || iface.comment || '—' }}
                   </td>
                   <td @click.stop>
-                    <button
-                      @click="deleteNetworkIface(iface)"
-                      class="btn btn-danger btn-sm"
-                      :disabled="networkIfaceDeleting[iface.iface]"
-                      title="Delete interface">
-                      {{ networkIfaceDeleting[iface.iface] ? '...' : 'Delete' }}
-                    </button>
+                    <div class="flex gap-1">
+                      <button
+                        @click="openEditNetworkModal(iface)"
+                        class="btn btn-outline btn-sm"
+                        title="Edit interface">
+                        Edit
+                      </button>
+                      <button
+                        @click="deleteNetworkIface(iface)"
+                        class="btn btn-danger btn-sm"
+                        :disabled="networkIfaceDeleting[iface.iface]"
+                        title="Delete interface">
+                        {{ networkIfaceDeleting[iface.iface] ? '...' : 'Delete' }}
+                      </button>
+                    </div>
                   </td>
                 </tr>
               </tbody>
@@ -840,6 +926,48 @@
       </div>
     </div>
 
+    <!-- Edit Network Interface Modal -->
+    <div v-if="showEditNetworkModal" class="modal" @click.self="showEditNetworkModal = false">
+      <div class="modal-content" @click.stop>
+        <div class="modal-header">
+          <h3>Edit Interface: <code>{{ editNetworkForm.iface }}</code></h3>
+          <button @click="showEditNetworkModal = false" class="btn-close">×</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label">IP Address</label>
+            <input v-model="editNetworkForm.address" class="form-control" placeholder="e.g. 192.168.1.1" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Netmask</label>
+            <input v-model="editNetworkForm.netmask" class="form-control" placeholder="e.g. 255.255.255.0" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Gateway</label>
+            <input v-model="editNetworkForm.gateway" class="form-control" placeholder="e.g. 192.168.1.254" />
+          </div>
+          <div v-if="editNetworkForm.type === 'bridge'" class="form-group">
+            <label class="form-label">Bridge Ports</label>
+            <input v-model="editNetworkForm.bridge_ports" class="form-control" placeholder="e.g. eth0 eth1" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Comments</label>
+            <input v-model="editNetworkForm.comments" class="form-control" placeholder="Optional description" />
+          </div>
+          <div class="form-group flex gap-1 align-center">
+            <input type="checkbox" v-model="editNetworkForm.autostart" id="edit-net-autostart" />
+            <label for="edit-net-autostart" class="form-label" style="margin:0">Autostart</label>
+          </div>
+          <div class="flex gap-1 mt-2" style="justify-content:flex-end">
+            <button @click="showEditNetworkModal = false" class="btn btn-outline">Cancel</button>
+            <button @click="saveEditNetworkIface" class="btn btn-primary" :disabled="savingNetwork">
+              {{ savingNetwork ? 'Saving...' : 'Save Changes' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Create Network Interface Modal -->
     <div v-if="showCreateNetworkModal" class="modal" @click.self="showCreateNetworkModal = false">
       <div class="modal-content" @click.stop>
@@ -1148,6 +1276,25 @@ const usbDevices = ref([])
 const loadingPci = ref(false)
 const loadingUsb = ref(false)
 
+// ZFS Pools
+const zfsPools = ref([])
+const loadingZfs = ref(false)
+const zfsError = ref(null)
+
+// Edit Network Interface
+const showEditNetworkModal = ref(false)
+const editNetworkForm = ref({
+  iface: '',
+  type: '',
+  address: '',
+  netmask: '',
+  gateway: '',
+  bridge_ports: '',
+  autostart: false,
+  comments: '',
+})
+const savingNetwork = ref(false)
+
 // Polling
 let pollInterval = null
 
@@ -1156,7 +1303,7 @@ const tabs = [
   { id: 'guests', label: 'VMs & Containers' },
   { id: 'storage', label: 'Storage' },
   { id: 'network', label: 'Network' },
-  { id: 'updates', label: 'Updates' },
+  { id: 'updates', label: 'APT Updates' },
   { id: 'backups', label: 'Backup Schedules' },
   { id: 'tasks', label: 'Tasks' },
   { id: 'disks', label: 'Disk Health' },
@@ -1373,7 +1520,7 @@ const loadAll = async () => {
 const switchTab = (tab) => {
   activeTab.value = tab
   if (tab === 'guests') loadGuests()
-  if (tab === 'storage') loadStorage()
+  if (tab === 'storage') { loadStorage(); loadZfsPools() }
   if (tab === 'network') loadNetwork()
   if (tab === 'backups') loadBackupSchedules()
   if (tab === 'tasks') loadTasks()
@@ -1865,6 +2012,90 @@ const loadUsbDevices = async () => {
     usbDevices.value = []
   } finally {
     loadingUsb.value = false
+  }
+}
+
+// ── ZFS Pools ──────────────────────────────────────────────────────────────────
+
+const loadZfsPools = async () => {
+  loadingZfs.value = true
+  zfsError.value = null
+  try {
+    const res = await api.storage.getZfsPools(hostId.value, node.value)
+    zfsPools.value = res.data || []
+  } catch (e) {
+    // ZFS may not be available on all nodes — treat as non-critical
+    if (e?.response?.status === 500 || e?.response?.status === 404) {
+      zfsError.value = 'ZFS not available or no pools configured on this node'
+    } else {
+      console.warn('ZFS pools load failed', e)
+      zfsError.value = 'Failed to load ZFS pools'
+    }
+    zfsPools.value = []
+  } finally {
+    loadingZfs.value = false
+  }
+}
+
+const zfsStatusBadge = (status) => {
+  if (!status) return 'badge badge-secondary'
+  const s = status.toUpperCase()
+  if (s === 'ONLINE') return 'badge badge-success'
+  if (s === 'DEGRADED') return 'badge badge-warning'
+  if (s === 'FAULTED' || s === 'OFFLINE' || s === 'UNAVAIL') return 'badge badge-danger'
+  return 'badge badge-secondary'
+}
+
+const zfsUsagePct = (pool) => {
+  if (!pool.size || !pool.alloc) return 0
+  return Math.min(100, Math.round((pool.alloc / pool.size) * 100))
+}
+
+const usageColorPct = (pct) => {
+  if (pct > 90) return '#dc2626'
+  if (pct > 75) return '#f59e0b'
+  return '#2563eb'
+}
+
+// ── Edit Network Interface ─────────────────────────────────────────────────────
+
+const openEditNetworkModal = (iface) => {
+  editNetworkForm.value = {
+    iface: iface.iface,
+    type: iface.type || '',
+    address: iface.address || '',
+    netmask: iface.netmask || '',
+    gateway: iface.gateway || '',
+    bridge_ports: iface['bridge-ports'] || iface.slaves || '',
+    autostart: !!iface.autostart,
+    comments: iface.comments || iface.comment || '',
+  }
+  showEditNetworkModal.value = true
+}
+
+const saveEditNetworkIface = async () => {
+  savingNetwork.value = true
+  try {
+    const payload = {
+      type: editNetworkForm.value.type,
+      autostart: editNetworkForm.value.autostart ? 1 : 0,
+    }
+    if (editNetworkForm.value.address) payload.address = editNetworkForm.value.address
+    if (editNetworkForm.value.netmask) payload.netmask = editNetworkForm.value.netmask
+    if (editNetworkForm.value.gateway) payload.gateway = editNetworkForm.value.gateway
+    if (editNetworkForm.value.comments) payload.comments = editNetworkForm.value.comments
+    if (editNetworkForm.value.type === 'bridge' && editNetworkForm.value.bridge_ports) {
+      payload['bridge-ports'] = editNetworkForm.value.bridge_ports
+    }
+    await api.pveNode.updateNetwork(hostId.value, node.value, editNetworkForm.value.iface, payload)
+    toast.success(`Interface ${editNetworkForm.value.iface} updated (apply changes to activate)`)
+    showEditNetworkModal.value = false
+    await loadNetwork()
+  } catch (e) {
+    toast.error('Failed to update interface: ' + (e?.response?.data?.detail || e.message || 'Unknown error'))
+    console.error(e)
+  } finally {
+    savingNetwork.value = false
   }
 }
 

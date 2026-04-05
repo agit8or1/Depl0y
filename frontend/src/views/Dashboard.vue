@@ -70,20 +70,55 @@
     <!-- ── Normal dashboard (hosts exist or onboarding skipped) ── -->
     <template v-if="!showOnboarding">
 
+    <!-- QuickStatsBar — always full-width at top -->
+    <QuickStatsBar />
+
     <!-- Dashboard header bar -->
     <div class="dash-header">
       <h2 class="dash-title">Dashboard</h2>
       <div class="dash-actions">
         <span class="last-updated">{{ lastUpdatedSeconds }}s ago</span>
+        <button class="btn-icon" title="Customize Widgets" @click="showCustomize = !showCustomize">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/>
+          </svg>
+        </button>
         <button class="btn-icon" title="Add Widget" @click="showPicker = true">+</button>
         <button class="btn-icon" title="Reset Layout" @click="resetLayout">↺</button>
       </div>
     </div>
 
+    <!-- Customize panel -->
+    <transition name="panel-slide">
+      <div v-if="showCustomize" class="customize-panel">
+        <div class="customize-header">
+          <span class="customize-title">Widget Visibility</span>
+          <span class="customize-hint">Toggled widgets are hidden but not removed from your layout</span>
+        </div>
+        <div class="customize-grid">
+          <label
+            v-for="type in allWidgetTypes"
+            :key="type.type"
+            class="toggle-item"
+            :class="{ 'toggle-active': isWidgetVisible(type.type) }"
+          >
+            <input
+              type="checkbox"
+              class="toggle-check"
+              :checked="isWidgetVisible(type.type)"
+              @change="toggleWidgetVisibility(type.type)"
+            />
+            <span class="toggle-icon">{{ type.icon }}</span>
+            <span class="toggle-label">{{ type.label }}</span>
+          </label>
+        </div>
+      </div>
+    </transition>
+
     <!-- Widget grid -->
     <div class="widget-grid" ref="gridEl">
       <div
-        v-for="widget in layout"
+        v-for="widget in visibleLayout"
         :key="widget.id"
         :class="['widget-card', dragging && dragging.id === widget.id ? 'widget-dragging' : '']"
         :data-widget-id="widget.id"
@@ -181,31 +216,41 @@ import { useAuthStore } from '@/store/auth'
 import api from '@/services/api'
 import AddHostWizard from '@/components/AddHostWizard.vue'
 
-// Widget component imports
-import ClusterStatsWidget   from '@/components/widgets/ClusterStatsWidget.vue'
-import RecentTasksWidget    from '@/components/widgets/RecentTasksWidget.vue'
-import AlertsWidget         from '@/components/widgets/AlertsWidget.vue'
-import ResourceUsageWidget  from '@/components/widgets/ResourceUsageWidget.vue'
-import QuickActionsWidget   from '@/components/widgets/QuickActionsWidget.vue'
-import ActivityFeedWidget   from '@/components/widgets/ActivityFeedWidget.vue'
-import TopVMsWidget         from '@/components/widgets/TopVMsWidget.vue'
+// Original widget imports
+import ClusterStatsWidget    from '@/components/widgets/ClusterStatsWidget.vue'
+import RecentTasksWidget     from '@/components/widgets/RecentTasksWidget.vue'
+import AlertsWidget          from '@/components/widgets/AlertsWidget.vue'
+import ResourceUsageWidget   from '@/components/widgets/ResourceUsageWidget.vue'
+import QuickActionsWidget    from '@/components/widgets/QuickActionsWidget.vue'
+import ActivityFeedWidget    from '@/components/widgets/ActivityFeedWidget.vue'
+import TopVMsWidget          from '@/components/widgets/TopVMsWidget.vue'
 import StorageOverviewWidget from '@/components/widgets/StorageOverviewWidget.vue'
-import BackupStatusWidget   from '@/components/widgets/BackupStatusWidget.vue'
-import SystemInfoWidget     from '@/components/widgets/SystemInfoWidget.vue'
+import BackupStatusWidget    from '@/components/widgets/BackupStatusWidget.vue'
+import SystemInfoWidget      from '@/components/widgets/SystemInfoWidget.vue'
 
-const STORAGE_KEY = 'dashboard_layout'
+// New widget imports
+import NetworkTrafficWidget  from '@/components/widgets/NetworkTrafficWidget.vue'
+import DiskIOWidget          from '@/components/widgets/DiskIOWidget.vue'
+import NodeStatusGrid        from '@/components/widgets/NodeStatusGrid.vue'
+import QuickStatsBar         from '@/components/widgets/QuickStatsBar.vue'
+
+const STORAGE_KEY        = 'dashboard_layout'
+const VISIBILITY_KEY     = 'dashboard_widget_visibility'
 
 const WIDGET_META = {
-  cluster_stats:    { type: 'cluster_stats',    label: 'Cluster Stats',    icon: '🖥️', multi: false },
-  recent_tasks:     { type: 'recent_tasks',     label: 'Recent Tasks',     icon: '📋', multi: false },
-  alerts:           { type: 'alerts',           label: 'Alerts',           icon: '⚠️', multi: false },
-  resource_usage:   { type: 'resource_usage',   label: 'Resource Usage',   icon: '📊', multi: false },
-  quick_actions:    { type: 'quick_actions',    label: 'Quick Actions',    icon: '⚡', multi: false },
-  activity_feed:    { type: 'activity_feed',    label: 'Activity Feed',    icon: '📡', multi: false },
-  top_vms:          { type: 'top_vms',          label: 'Top VMs',          icon: '🏆', multi: false },
-  storage_overview: { type: 'storage_overview', label: 'Storage Overview', icon: '💾', multi: false },
-  backup_status:    { type: 'backup_status',    label: 'Backup Status',    icon: '🗄️', multi: false },
-  system_info:      { type: 'system_info',      label: 'System Info',      icon: 'ℹ️', multi: false },
+  cluster_stats:    { type: 'cluster_stats',    label: 'Cluster Stats',     icon: '🖥️', multi: false },
+  recent_tasks:     { type: 'recent_tasks',     label: 'Recent Tasks',      icon: '📋', multi: false },
+  alerts:           { type: 'alerts',           label: 'Alerts',            icon: '⚠️', multi: false },
+  resource_usage:   { type: 'resource_usage',   label: 'Resource Usage',    icon: '📊', multi: false },
+  quick_actions:    { type: 'quick_actions',    label: 'Quick Actions',     icon: '⚡', multi: false },
+  activity_feed:    { type: 'activity_feed',    label: 'Activity Feed',     icon: '📡', multi: false },
+  top_vms:          { type: 'top_vms',          label: 'Top VMs',           icon: '🏆', multi: false },
+  storage_overview: { type: 'storage_overview', label: 'Storage Overview',  icon: '💾', multi: false },
+  backup_status:    { type: 'backup_status',    label: 'Backup Status',     icon: '🗄️', multi: false },
+  system_info:      { type: 'system_info',      label: 'System Info',       icon: 'ℹ️', multi: false },
+  network_traffic:  { type: 'network_traffic',  label: 'Network Traffic',   icon: '📶', multi: false },
+  disk_io:          { type: 'disk_io',          label: 'Disk I/O',          icon: '💿', multi: false },
+  node_status_grid: { type: 'node_status_grid', label: 'Node Status Grid',  icon: '🔲', multi: false },
 }
 
 const WIDGET_COMPONENTS = {
@@ -219,15 +264,21 @@ const WIDGET_COMPONENTS = {
   storage_overview: markRaw(StorageOverviewWidget),
   backup_status:    markRaw(BackupStatusWidget),
   system_info:      markRaw(SystemInfoWidget),
+  network_traffic:  markRaw(NetworkTrafficWidget),
+  disk_io:          markRaw(DiskIOWidget),
+  node_status_grid: markRaw(NodeStatusGrid),
 }
 
 const DEFAULT_LAYOUT = [
-  { id: 'w1', type: 'cluster_stats',  colSpan: 1, collapsed: false, config: {} },
-  { id: 'w2', type: 'recent_tasks',   colSpan: 1, collapsed: false, config: {} },
-  { id: 'w3', type: 'alerts',         colSpan: 1, collapsed: false, config: {} },
-  { id: 'w4', type: 'resource_usage', colSpan: 1, collapsed: false, config: {} },
-  { id: 'w5', type: 'quick_actions',  colSpan: 1, collapsed: false, config: {} },
-  { id: 'w6', type: 'activity_feed',  colSpan: 1, collapsed: false, config: {} },
+  { id: 'w1', type: 'cluster_stats',    colSpan: 1, collapsed: false, config: {} },
+  { id: 'w2', type: 'node_status_grid', colSpan: 2, collapsed: false, config: {} },
+  { id: 'w3', type: 'network_traffic',  colSpan: 1, collapsed: false, config: {} },
+  { id: 'w4', type: 'disk_io',          colSpan: 1, collapsed: false, config: {} },
+  { id: 'w5', type: 'resource_usage',   colSpan: 1, collapsed: false, config: {} },
+  { id: 'w6', type: 'top_vms',          colSpan: 1, collapsed: false, config: {} },
+  { id: 'w7', type: 'alerts',           colSpan: 1, collapsed: false, config: {} },
+  { id: 'w8', type: 'activity_feed',    colSpan: 1, collapsed: false, config: {} },
+  { id: 'w9', type: 'recent_tasks',     colSpan: 1, collapsed: false, config: {} },
 ]
 
 let _idCounter = 100
@@ -245,17 +296,59 @@ export default {
     StorageOverviewWidget,
     BackupStatusWidget,
     SystemInfoWidget,
+    NetworkTrafficWidget,
+    DiskIOWidget,
+    NodeStatusGrid,
+    QuickStatsBar,
     AddHostWizard,
   },
   setup() {
     const authStore = useAuthStore()
     const layout   = ref([])
-    const showPicker = ref(false)
+    const showPicker     = ref(false)
+    const showCustomize  = ref(false)
     const settingsWidget = ref(null)
     const gridEl   = ref(null)
     const dragging = ref(null)
     const lastUpdatedSeconds = ref(0)
     let tickInterval = null
+
+    // ── Widget visibility (localStorage) ──────────────────────────────────────
+    // A Set of widget types that are explicitly hidden. Empty = all visible.
+    const hiddenTypes = ref(new Set())
+
+    const loadVisibility = () => {
+      try {
+        const stored = localStorage.getItem(VISIBILITY_KEY)
+        if (stored) {
+          hiddenTypes.value = new Set(JSON.parse(stored))
+        }
+      } catch (e) {}
+    }
+
+    const saveVisibility = () => {
+      try {
+        localStorage.setItem(VISIBILITY_KEY, JSON.stringify([...hiddenTypes.value]))
+      } catch (e) {}
+    }
+
+    const isWidgetVisible = (type) => !hiddenTypes.value.has(type)
+
+    const toggleWidgetVisibility = (type) => {
+      if (hiddenTypes.value.has(type)) {
+        hiddenTypes.value.delete(type)
+      } else {
+        hiddenTypes.value.add(type)
+      }
+      // Trigger reactivity — replace with new Set
+      hiddenTypes.value = new Set(hiddenTypes.value)
+      saveVisibility()
+    }
+
+    // Filtered layout: only show widgets whose type is not hidden
+    const visibleLayout = computed(() =>
+      layout.value.filter(w => isWidgetVisible(w.type))
+    )
 
     // ── Onboarding ────────────────────────────────────────────────────────────
     const ONBOARD_SKIP_KEY = 'depl0y_onboarding_skip'
@@ -445,6 +538,7 @@ export default {
     // ── Lifecycle ─────────────────────────────────────────────────────────────
     onMounted(() => {
       loadLayout()
+      loadVisibility()
       tickInterval = setInterval(() => lastUpdatedSeconds.value++, 1000)
       checkOnboarding()
     })
@@ -455,7 +549,9 @@ export default {
 
     return {
       layout,
+      visibleLayout,
       showPicker,
+      showCustomize,
       settingsWidget,
       gridEl,
       dragging,
@@ -465,6 +561,8 @@ export default {
       widgetComponent,
       widgetStyle,
       isWidgetAdded,
+      isWidgetVisible,
+      toggleWidgetVisibility,
       addWidget,
       removeWidget,
       toggleCollapse,
@@ -539,6 +637,104 @@ export default {
   background: var(--primary-color);
   color: #fff;
   border-color: var(--primary-color);
+}
+
+/* ── Customize Panel ──────────────────────────────────────────────────────── */
+.customize-panel {
+  background: var(--surface);
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+  padding: 0.85rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.customize-header {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.customize-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.customize-hint {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+}
+
+.customize-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.toggle-item {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.6rem;
+  border: 1px solid var(--border-color);
+  border-radius: 0.375rem;
+  cursor: pointer;
+  background: var(--background);
+  transition: all 0.15s;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.toggle-item:hover {
+  border-color: var(--primary-color);
+}
+
+.toggle-active {
+  border-color: var(--primary-color);
+  background: rgba(59, 130, 246, 0.06);
+}
+
+.toggle-check {
+  width: 0.9rem;
+  height: 0.9rem;
+  accent-color: var(--primary-color);
+  cursor: pointer;
+}
+
+.toggle-icon {
+  font-size: 0.85rem;
+  line-height: 1;
+}
+
+.toggle-label {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+/* Panel slide transition */
+.panel-slide-enter-active,
+.panel-slide-leave-active {
+  transition: all 0.22s ease;
+  overflow: hidden;
+}
+
+.panel-slide-enter-from,
+.panel-slide-leave-to {
+  opacity: 0;
+  transform: translateY(-6px);
+  max-height: 0;
+}
+
+.panel-slide-enter-to,
+.panel-slide-leave-from {
+  opacity: 1;
+  transform: translateY(0);
+  max-height: 300px;
 }
 
 /* ── Widget Grid ──────────────────────────────────────────────────────────── */
@@ -808,6 +1004,10 @@ export default {
 
   .picker-grid {
     grid-template-columns: repeat(2, 1fr);
+  }
+
+  .customize-grid {
+    flex-direction: column;
   }
 }
 

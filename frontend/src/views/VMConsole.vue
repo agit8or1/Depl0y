@@ -14,56 +14,74 @@
           </div>
         </div>
         <div class="toolbar-center">
-          <span :class="['conn-badge', connectionStatus]">{{ connStatusLabel }}</span>
-          <span v-if="sessionTimer" class="session-timer">{{ sessionTimer }}</span>
-          <span v-if="disconnectReason" class="disconnect-reason">{{ disconnectReason }}</span>
+          <!-- Tab switcher -->
+          <div class="console-tabs">
+            <button
+              v-for="tab in consoleTabs"
+              :key="tab.id"
+              :class="['console-tab-btn', activeConsoleTab === tab.id ? 'console-tab-btn--active' : '']"
+              @click="switchConsoleTab(tab.id)"
+            >{{ tab.label }}</button>
+          </div>
         </div>
         <div class="toolbar-right">
-          <!-- Quality selector -->
-          <select v-if="connectionStatus === 'connected'" v-model="qualityLevel" @change="applyQuality" class="select-toolbar" title="Quality">
-            <option value="low">Low</option>
-            <option value="medium">Medium</option>
-            <option value="high">High</option>
-          </select>
-          <!-- Scale mode -->
-          <select v-if="connectionStatus === 'connected'" v-model="scaleMode" @change="applyScaleMode" class="select-toolbar" title="Scale Mode">
-            <option value="remote">Remote Resize</option>
-            <option value="local">Local Scale</option>
-            <option value="fixed">Fixed Size</option>
-          </select>
-          <!-- Screenshot -->
-          <button v-if="connectionStatus === 'connected'" @click="takeScreenshot" class="btn-toolbar" title="Screenshot (PNG)">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="12" cy="12" r="4"/></svg>
-          </button>
-          <!-- Open in new tab -->
-          <button @click="openNewTab" class="btn-toolbar" title="Open in new tab">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-          </button>
-          <!-- SPICE download -->
-          <button @click="downloadSpice" class="btn-toolbar" title="Download SPICE .vv file">
-            SPICE
-          </button>
-          <!-- Compact toggle -->
-          <button @click="compactMode = true" class="btn-toolbar" title="Hide toolbar (F11)">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="10" y1="14" x2="21" y2="3"/><line x1="3" y1="21" x2="14" y2="10"/></svg>
-          </button>
-          <button v-if="connectionStatus !== 'connecting' && connectionStatus !== 'connected'" @click="connect" class="btn-toolbar btn-connect">
-            Connect
-          </button>
-          <button v-if="connectionStatus === 'connected' || connectionStatus === 'connecting'" @click="disconnect" class="btn-toolbar btn-disconnect">
-            Disconnect
-          </button>
+          <!-- VNC-specific controls -->
+          <template v-if="activeConsoleTab === 'vnc'">
+            <span :class="['conn-badge', connectionStatus]">{{ connStatusLabel }}</span>
+            <span v-if="sessionTimer" class="session-timer">{{ sessionTimer }}</span>
+            <span v-if="disconnectReason" class="disconnect-reason">{{ disconnectReason }}</span>
+            <!-- Quality selector -->
+            <select v-if="connectionStatus === 'connected'" v-model="qualityLevel" @change="applyQuality" class="select-toolbar" title="Quality">
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+            </select>
+            <!-- Scale mode -->
+            <select v-if="connectionStatus === 'connected'" v-model="scaleMode" @change="applyScaleMode" class="select-toolbar" title="Scale Mode">
+              <option value="remote">Remote Resize</option>
+              <option value="local">Local Scale</option>
+              <option value="fixed">Fixed Size</option>
+            </select>
+            <!-- Screenshot -->
+            <button v-if="connectionStatus === 'connected'" @click="takeScreenshot" class="btn-toolbar" title="Screenshot (PNG)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="12" cy="12" r="4"/></svg>
+            </button>
+            <!-- Fullscreen -->
+            <button @click="toggleFullscreen" class="btn-toolbar" title="Toggle Fullscreen (F11)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+            </button>
+            <!-- Open in new tab -->
+            <button @click="openNewTab" class="btn-toolbar" title="Open in new tab">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+            </button>
+            <!-- Compact toggle -->
+            <button @click="compactMode = true" class="btn-toolbar" title="Hide toolbar (F11)">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="10" y1="14" x2="21" y2="3"/><line x1="3" y1="21" x2="14" y2="10"/></svg>
+            </button>
+            <button v-if="connectionStatus !== 'connecting' && connectionStatus !== 'connected'" @click="connect" class="btn-toolbar btn-connect">
+              Connect
+            </button>
+            <button v-if="connectionStatus === 'connected' || connectionStatus === 'connecting'" @click="disconnect" class="btn-toolbar btn-disconnect">
+              Disconnect
+            </button>
+          </template>
+
+          <!-- Serial terminal controls -->
+          <template v-if="activeConsoleTab === 'serial'">
+            <span :class="['conn-badge', serialStatus]">{{ serialStatusLabel }}</span>
+            <button v-if="serialStatus !== 'connected' && serialStatus !== 'connecting'" @click="connectSerial" class="btn-toolbar btn-connect">Connect</button>
+            <button v-if="serialStatus === 'connected' || serialStatus === 'connecting'" @click="disconnectSerial" class="btn-toolbar btn-disconnect">Disconnect</button>
+            <button @click="clearTerminal" class="btn-toolbar" title="Clear terminal output">Clear</button>
+          </template>
         </div>
       </div>
 
-      <!-- Row 2: Key shortcuts (only when connected) -->
-      <div v-if="connectionStatus === 'connected'" class="toolbar-row toolbar-row-keys">
-        <!-- Common keyboard shortcuts -->
+      <!-- Row 2: Key shortcuts (VNC only, when connected) -->
+      <div v-if="activeConsoleTab === 'vnc' && connectionStatus === 'connected'" class="toolbar-row toolbar-row-keys">
         <button @click="sendCtrlAltDel" class="btn-key" title="Send Ctrl+Alt+Del">Ctrl+Alt+Del</button>
         <button @click="sendCtrlC" class="btn-key" title="Send Ctrl+C">Ctrl+C</button>
         <button @click="openClipboardModal" class="btn-key" title="Paste text through VNC">Paste Text</button>
 
-        <!-- Ctrl+Alt+Fx -->
         <div class="dropdown-wrap">
           <button class="btn-key dropdown-trigger" @click="showFxMenu = !showFxMenu">Ctrl+Alt+Fx ▾</button>
           <div v-if="showFxMenu" class="dropdown-menu" @mouseleave="showFxMenu = false">
@@ -73,7 +91,6 @@
           </div>
         </div>
 
-        <!-- Special keys -->
         <div class="dropdown-wrap">
           <button class="btn-key dropdown-trigger" @click="showSpecialMenu = !showSpecialMenu">Special Keys ▾</button>
           <div v-if="showSpecialMenu" class="dropdown-menu" @mouseleave="showSpecialMenu = false">
@@ -94,8 +111,8 @@
       </button>
     </div>
 
-    <!-- Console canvas area -->
-    <div class="console-area">
+    <!-- ====================== VNC TAB ====================== -->
+    <div v-show="activeConsoleTab === 'vnc'" class="console-area">
       <div id="novnc-screen" ref="canvasRef" class="novnc-screen"></div>
 
       <!-- Connecting overlay -->
@@ -150,15 +167,147 @@
             <a v-if="proxmoxConsoleUrl !== '#'" :href="proxmoxConsoleUrl" target="_blank" rel="noopener" class="btn-secondary-lg">
               Proxmox Web UI
             </a>
-            <button @click="downloadSpice" class="btn-secondary-lg">
-              Download SPICE
+            <button @click="openNewTab" class="btn-secondary-lg">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px;vertical-align:middle"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+              Open in New Window
+            </button>
+            <button @click="switchConsoleTab('spice')" class="btn-secondary-lg">
+              SPICE Download
             </button>
           </div>
 
           <p class="note">
             Full in-browser VNC is provided via noVNC loaded from CDN.
-            If the connection fails, use the Proxmox Web UI link above.
+            If the connection fails, use the Proxmox Web UI link above or try SPICE.
           </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ====================== SERIAL TERMINAL TAB ====================== -->
+    <div v-show="activeConsoleTab === 'serial'" class="serial-area">
+      <!-- Connection overlay -->
+      <div v-if="serialStatus === 'idle' || serialStatus === 'disconnected' || serialStatus === 'error'" class="serial-connect-overlay">
+        <div class="overlay-content">
+          <div class="console-icon" style="color:#58a6ff;">&#9646;&#9646;</div>
+          <h3>{{ vmName || `VM ${vmid}` }} — Serial Terminal</h3>
+          <p class="subtitle">Node: <strong>{{ node }}</strong> &nbsp;|&nbsp; VMID: <strong>{{ vmid }}</strong></p>
+
+          <div v-if="serialStatus === 'error'" class="error-box">
+            <strong>Error:</strong> {{ serialErrorMessage }}
+          </div>
+          <div v-if="serialStatus === 'disconnected'" class="info-box">
+            Terminal disconnected.
+          </div>
+
+          <div class="info-panel" style="text-align:left;margin-bottom:1.25rem;">
+            <div class="info-row">
+              <span class="info-key">Endpoint</span>
+              <code class="info-val">/api/v1/pve-console/ws/lxc/{{ hostId }}/{{ node }}/{{ vmid }}</code>
+            </div>
+            <div class="info-row">
+              <span class="info-key">Note</span>
+              <span class="info-val muted" style="font-size:0.75rem;">Serial terminal uses the Proxmox LXC/QEMU termproxy. VM must be running and have a serial port configured.</span>
+            </div>
+          </div>
+
+          <div class="overlay-actions">
+            <button @click="connectSerial" class="btn-primary-lg" :disabled="serialStatus === 'connecting'">
+              {{ serialStatus === 'connecting' ? 'Connecting…' : (serialStatus === 'disconnected' ? 'Reconnect' : 'Connect') }}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Connecting indicator -->
+      <div v-if="serialStatus === 'connecting'" class="serial-connecting-bar">
+        <div class="spinner" style="width:1.25rem;height:1.25rem;border-width:2px;"></div>
+        <span>Connecting to terminal…</span>
+      </div>
+
+      <!-- Terminal output -->
+      <div class="terminal-wrap">
+        <textarea
+          ref="terminalRef"
+          class="terminal-output"
+          :value="terminalOutput"
+          readonly
+          spellcheck="false"
+          autocomplete="off"
+          placeholder="Terminal output will appear here when connected…"
+        ></textarea>
+        <!-- Input row -->
+        <div class="terminal-input-row" v-if="serialStatus === 'connected'">
+          <span class="terminal-prompt">$</span>
+          <input
+            ref="terminalInputRef"
+            v-model="terminalInput"
+            class="terminal-input"
+            placeholder="Type command and press Enter…"
+            spellcheck="false"
+            autocomplete="off"
+            @keydown.enter="sendTerminalInput"
+            @keydown.up="navigateHistory(-1)"
+            @keydown.down="navigateHistory(1)"
+            @keydown.ctrl.c.prevent="sendSerialCtrlC"
+          />
+          <button @click="sendTerminalInput" class="btn-terminal-send" :disabled="!terminalInput.trim()">Send</button>
+          <button @click="sendSerialCtrlC" class="btn-key" title="Send Ctrl+C">Ctrl+C</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ====================== SPICE TAB ====================== -->
+    <div v-show="activeConsoleTab === 'spice'" class="spice-area">
+      <div class="overlay-content" style="max-width:560px;margin:auto;padding-top:3rem;text-align:center;">
+        <div class="console-icon" style="color:#e3b341;font-size:2.5rem;">&#9670;</div>
+        <h3>{{ vmName || `VM ${vmid}` }} — SPICE Connection</h3>
+        <p class="subtitle">Node: <strong>{{ node }}</strong> &nbsp;|&nbsp; VMID: <strong>{{ vmid }}</strong></p>
+
+        <div class="info-panel" style="text-align:left;margin-bottom:1.5rem;">
+          <div class="info-row">
+            <span class="info-key">Protocol</span>
+            <span class="info-val">SPICE (Simple Protocol for Independent Computing Environments)</span>
+          </div>
+          <div class="info-row">
+            <span class="info-key">Client required</span>
+            <a href="https://www.spice-space.org/download.html" target="_blank" rel="noopener" class="ext-link">
+              virt-viewer / remote-viewer
+            </a>
+          </div>
+          <div class="info-row">
+            <span class="info-key">File format</span>
+            <span class="info-val">.vv (virt-viewer connection file)</span>
+          </div>
+          <div class="info-row">
+            <span class="info-key">Advantages</span>
+            <span class="info-val muted" style="font-size:0.75rem;">Audio, USB redirect, clipboard, better performance than VNC on LAN</span>
+          </div>
+        </div>
+
+        <div v-if="spiceError" class="error-box" style="margin-bottom:1.25rem;">
+          <strong>Error:</strong> {{ spiceError }}
+        </div>
+
+        <div class="overlay-actions">
+          <button @click="downloadSpice" class="btn-primary-lg" :disabled="spiceLoading">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:6px;vertical-align:middle"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            {{ spiceLoading ? 'Generating…' : 'Download .vv File' }}
+          </button>
+        </div>
+
+        <p class="note" style="margin-top:1rem;">
+          Download the .vv connection file and open it with virt-viewer or remote-viewer to start a SPICE session.
+          The file contains a one-time password and expires shortly after download.
+        </p>
+
+        <div class="spice-install-hint">
+          <strong>Install virt-viewer:</strong>
+          <code class="spice-code">apt install virt-viewer</code>
+          <span class="text-muted">or</span>
+          <code class="spice-code">dnf install virt-viewer</code>
+          <span class="text-muted">or</span>
+          <a href="https://www.spice-space.org/download.html" target="_blank" rel="noopener" class="ext-link">Download for Windows/macOS</a>
         </div>
       </div>
     </div>
@@ -184,7 +333,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import api from '@/services/api'
 import toast from '@/plugins/toast.js'
@@ -197,13 +346,42 @@ const vmid = computed(() => route.params.vmid || route.query.vmid)
 // Standalone mode = opened via "open in new tab" without sidebar
 const standaloneMode = computed(() => !!route.query.standalone)
 
+// ── Console tab switcher ────────────────────────────────────────────────────
+const consoleTabs = [
+  { id: 'vnc', label: 'VNC Console' },
+  { id: 'serial', label: 'Serial Terminal' },
+  { id: 'spice', label: 'SPICE Download' },
+]
+const activeConsoleTab = ref('vnc')
+
+function switchConsoleTab(tabId) {
+  if (activeConsoleTab.value === tabId) return
+  activeConsoleTab.value = tabId
+  if (tabId === 'vnc' && connectionStatus.value === 'idle') {
+    connect()
+  }
+}
+
+// ── Shared VM info ──────────────────────────────────────────────────────────
+const vmName = ref('')
+const vmStatus = ref('')
+const hostInfo = ref(null)
+
+async function fetchVmInfo() {
+  try {
+    const res = await api.pveVm.getStatus(hostId.value, node.value, vmid.value)
+    vmName.value = res.data?.name || ''
+    vmStatus.value = res.data?.status || ''
+  } catch (e) {
+    // non-fatal
+  }
+}
+
+// ── VNC state ───────────────────────────────────────────────────────────────
 const connectionStatus = ref('idle')
 const errorMessage = ref('')
 const disconnectReason = ref('')
-const vmName = ref('')
-const vmStatus = ref('')
 const ticketData = ref(null)
-const hostInfo = ref(null)
 const loadingTicket = ref(false)
 const canvasRef = ref(null)
 
@@ -265,16 +443,6 @@ function buildWsUrl() {
   const token = localStorage.getItem('access_token') || ''
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
   return `${proto}//${location.host}/api/v1/pve-console/ws/vm/${hostId.value}/${node.value}/${vmid.value}?token=${encodeURIComponent(token)}`
-}
-
-async function fetchVmInfo() {
-  try {
-    const res = await api.pveVm.getStatus(hostId.value, node.value, vmid.value)
-    vmName.value = res.data?.name || ''
-    vmStatus.value = res.data?.status || ''
-  } catch (e) {
-    // non-fatal
-  }
 }
 
 async function getTicketAndHost() {
@@ -429,7 +597,6 @@ function sendSpecialKey(code) {
 function openClipboardModal() {
   clipboardText.value = ''
   showClipboardModal.value = true
-  // Try to read system clipboard
   if (navigator.clipboard?.readText) {
     navigator.clipboard.readText().then(text => {
       clipboardText.value = text
@@ -439,7 +606,6 @@ function openClipboardModal() {
 
 function sendClipboardText() {
   if (!rfb || connectionStatus.value !== 'connected') return
-  // Use RFB clipboard API
   rfb.clipboardPasteFrom(clipboardText.value)
   showClipboardModal.value = false
   toast.success('Text sent to VM clipboard')
@@ -476,29 +642,7 @@ function applyScaleMode() {
   rfb.resizeSession = scaleMode.value === 'remote'
 }
 
-// --- SPICE ---
-
-async function downloadSpice() {
-  try {
-    const res = await api.pveConsole.downloadSpice(hostId.value, node.value, vmid.value)
-    const blob = new Blob([res.data], { type: 'application/x-virt-viewer' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `vm-${vmid.value}-spice.vv`
-    a.click()
-    URL.revokeObjectURL(url)
-  } catch (e) {
-    toast.error('SPICE download failed: ' + (e?.response?.data?.detail || e.message))
-  }
-}
-
-// --- Misc ---
-
-function openNewTab() {
-  const url = `/vm-console?hostId=${hostId.value}&node=${node.value}&vmid=${vmid.value}&standalone=1`
-  window.open(url, '_blank')
-}
+// --- Fullscreen ---
 
 function toggleFullscreen() {
   if (!document.fullscreenElement) {
@@ -508,6 +652,188 @@ function toggleFullscreen() {
   } else {
     document.exitFullscreen()
   }
+}
+
+// ── SPICE ──────────────────────────────────────────────────────────────────
+
+const spiceLoading = ref(false)
+const spiceError = ref('')
+
+async function downloadSpice() {
+  spiceLoading.value = true
+  spiceError.value = ''
+  try {
+    const res = await api.pveConsole.downloadSpice(hostId.value, node.value, vmid.value)
+    const blob = new Blob([res.data], { type: 'application/x-virt-viewer' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `vm-${vmid.value}-spice.vv`
+    a.click()
+    URL.revokeObjectURL(url)
+    toast.success('SPICE file downloaded — open with virt-viewer')
+  } catch (e) {
+    const msg = e?.response?.data?.detail || e.message || 'SPICE download failed'
+    spiceError.value = msg
+    toast.error('SPICE download failed: ' + msg)
+  } finally {
+    spiceLoading.value = false
+  }
+}
+
+// ── Serial Terminal ─────────────────────────────────────────────────────────
+
+const serialStatus = ref('idle')
+const serialErrorMessage = ref('')
+const terminalOutput = ref('')
+const terminalInput = ref('')
+const terminalRef = ref(null)
+const terminalInputRef = ref(null)
+const commandHistory = ref([])
+let historyIndex = -1
+let serialWs = null
+
+const serialStatusLabel = computed(() => {
+  const map = {
+    idle: 'Not connected',
+    connecting: 'Connecting…',
+    connected: 'Connected',
+    disconnected: 'Disconnected',
+    error: 'Error',
+  }
+  return map[serialStatus.value] || serialStatus.value
+})
+
+function buildSerialWsUrl() {
+  const token = localStorage.getItem('access_token') || ''
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
+  // Use the LXC terminal proxy endpoint — Proxmox uses the same termproxy for QEMU serial terminals
+  return `${proto}//${location.host}/api/v1/pve-console/ws/lxc/${hostId.value}/${node.value}/${vmid.value}?token=${encodeURIComponent(token)}`
+}
+
+function appendToTerminal(text) {
+  terminalOutput.value += text
+  // Scroll to bottom
+  nextTick(() => {
+    if (terminalRef.value) {
+      terminalRef.value.scrollTop = terminalRef.value.scrollHeight
+    }
+  })
+}
+
+function connectSerial() {
+  if (serialWs) {
+    try { serialWs.close() } catch {}
+    serialWs = null
+  }
+
+  serialStatus.value = 'connecting'
+  serialErrorMessage.value = ''
+
+  const wsUrl = buildSerialWsUrl()
+
+  try {
+    serialWs = new WebSocket(wsUrl, ['binary'])
+
+    serialWs.onopen = () => {
+      serialStatus.value = 'connected'
+      appendToTerminal('\r\n--- Terminal connected ---\r\n')
+      nextTick(() => {
+        if (terminalInputRef.value) terminalInputRef.value.focus()
+      })
+    }
+
+    serialWs.onmessage = (event) => {
+      if (event.data instanceof Blob) {
+        const reader = new FileReader()
+        reader.onload = () => {
+          appendToTerminal(reader.result)
+        }
+        reader.readAsText(event.data)
+      } else if (event.data instanceof ArrayBuffer) {
+        const text = new TextDecoder().decode(event.data)
+        appendToTerminal(text)
+      } else {
+        appendToTerminal(String(event.data))
+      }
+    }
+
+    serialWs.onerror = () => {
+      serialStatus.value = 'error'
+      serialErrorMessage.value = 'WebSocket connection error. Ensure the VM is running and has serial console configured.'
+      appendToTerminal('\r\n--- Connection error ---\r\n')
+    }
+
+    serialWs.onclose = (event) => {
+      if (serialStatus.value === 'connected') {
+        appendToTerminal(`\r\n--- Connection closed (code ${event.code}) ---\r\n`)
+      }
+      if (serialStatus.value !== 'error') {
+        serialStatus.value = 'disconnected'
+      }
+      serialWs = null
+    }
+  } catch (e) {
+    serialStatus.value = 'error'
+    serialErrorMessage.value = e.message || 'Failed to open WebSocket'
+  }
+}
+
+function disconnectSerial() {
+  if (serialWs) {
+    try { serialWs.close() } catch {}
+    serialWs = null
+  }
+  serialStatus.value = 'disconnected'
+  appendToTerminal('\r\n--- Disconnected by user ---\r\n')
+}
+
+function sendTerminalInput() {
+  const text = terminalInput.value
+  if (!text || serialStatus.value !== 'connected' || !serialWs) return
+
+  commandHistory.value.unshift(text)
+  if (commandHistory.value.length > 50) commandHistory.value.pop()
+  historyIndex = -1
+
+  // Show echo in terminal
+  appendToTerminal(`${text}\r\n`)
+
+  try {
+    const encoder = new TextEncoder()
+    serialWs.send(encoder.encode(text + '\n'))
+  } catch (e) {
+    appendToTerminal(`\r\n[Error sending: ${e.message}]\r\n`)
+  }
+
+  terminalInput.value = ''
+}
+
+function sendSerialCtrlC() {
+  if (serialStatus.value !== 'connected' || !serialWs) return
+  try {
+    serialWs.send(new Uint8Array([0x03]))
+    appendToTerminal('^C\r\n')
+  } catch (e) {
+    // ignore
+  }
+}
+
+function navigateHistory(direction) {
+  if (commandHistory.value.length === 0) return
+  historyIndex = Math.max(-1, Math.min(commandHistory.value.length - 1, historyIndex + direction))
+  terminalInput.value = historyIndex >= 0 ? commandHistory.value[historyIndex] : ''
+}
+
+function clearTerminal() {
+  terminalOutput.value = ''
+}
+
+// ── Misc ───────────────────────────────────────────────────────────────────
+
+function openNewTab() {
+  const url = `/proxmox/${hostId.value}/nodes/${node.value}/console/${vmid.value}?standalone=1`
+  window.open(url, '_blank')
 }
 
 function copyWsUrl() {
@@ -521,7 +847,7 @@ function copyWsUrl() {
 
 // Keyboard handler for F11 compact toggle
 function handleKeydown(e) {
-  if (e.key === 'F11') {
+  if (e.key === 'F11' && activeConsoleTab.value === 'vnc') {
     e.preventDefault()
     compactMode.value = !compactMode.value
   }
@@ -541,6 +867,10 @@ onBeforeUnmount(() => {
   if (rfb) {
     try { rfb.disconnect() } catch {}
     rfb = null
+  }
+  if (serialWs) {
+    try { serialWs.close() } catch {}
+    serialWs = null
   }
 })
 </script>
@@ -590,6 +920,7 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 1rem;
   min-width: 0;
+  flex-shrink: 0;
 }
 
 .back-link {
@@ -647,12 +978,49 @@ onBeforeUnmount(() => {
   font-weight: 600;
 }
 
+/* ---- Console tab switcher ---- */
 .toolbar-center {
   flex: 1;
   display: flex;
   justify-content: center;
   align-items: center;
-  gap: 0.75rem;
+}
+
+.console-tabs {
+  display: flex;
+  gap: 0;
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.console-tab-btn {
+  padding: 0.3rem 0.9rem;
+  background: transparent;
+  border: none;
+  border-right: 1px solid #30363d;
+  color: #8b949e;
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+  white-space: nowrap;
+}
+.console-tab-btn:last-child { border-right: none; }
+.console-tab-btn:hover { background: #21262d; color: #c9d1d9; }
+.console-tab-btn--active {
+  background: #1f4068;
+  color: #58a6ff;
+  font-weight: 600;
+}
+
+.toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
+  flex-wrap: wrap;
 }
 
 .conn-badge {
@@ -680,14 +1048,6 @@ onBeforeUnmount(() => {
 .disconnect-reason {
   font-size: 0.72rem;
   color: #e3b341;
-}
-
-.toolbar-right {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  flex-shrink: 0;
-  flex-wrap: wrap;
 }
 
 .btn-toolbar {
@@ -735,7 +1095,6 @@ onBeforeUnmount(() => {
 .btn-key:hover { background: #30363d; color: #c9d1d9; }
 
 .dropdown-wrap { position: relative; }
-
 .dropdown-trigger { cursor: pointer; }
 
 .dropdown-menu {
@@ -799,7 +1158,7 @@ onBeforeUnmount(() => {
   color: #e3b341;
 }
 
-/* ---- Console area ---- */
+/* ---- VNC Console area ---- */
 .console-area {
   flex: 1;
   position: relative;
@@ -980,6 +1339,143 @@ onBeforeUnmount(() => {
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* ---- Serial Terminal area ---- */
+.serial-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+  background: #0d1117;
+}
+
+.serial-connect-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #0d1117;
+  z-index: 5;
+  overflow-y: auto;
+  padding: 1rem;
+}
+
+.serial-connecting-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 1rem;
+  background: #161b22;
+  border-bottom: 1px solid #30363d;
+  font-size: 0.82rem;
+  color: #e3b341;
+  flex-shrink: 0;
+}
+
+.terminal-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.terminal-output {
+  flex: 1;
+  width: 100%;
+  box-sizing: border-box;
+  background: #0d1117;
+  color: #c9d1d9;
+  font-family: 'Fira Mono', 'Cascadia Code', 'Consolas', monospace;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  padding: 0.75rem 1rem;
+  border: none;
+  outline: none;
+  resize: none;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.terminal-input-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: #161b22;
+  border-top: 1px solid #30363d;
+  flex-shrink: 0;
+}
+
+.terminal-prompt {
+  color: #3fb950;
+  font-family: monospace;
+  font-size: 0.9rem;
+  flex-shrink: 0;
+}
+
+.terminal-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid #30363d;
+  color: #f0f6fc;
+  font-family: 'Fira Mono', 'Cascadia Code', 'Consolas', monospace;
+  font-size: 0.82rem;
+  outline: none;
+  padding: 0.2rem 0;
+}
+.terminal-input::placeholder { color: #4d5566; }
+
+.btn-terminal-send {
+  padding: 0.25rem 0.75rem;
+  background: #238636;
+  border: none;
+  border-radius: 4px;
+  color: #fff;
+  font-size: 0.78rem;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.btn-terminal-send:hover:not(:disabled) { background: #2ea043; }
+.btn-terminal-send:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ---- SPICE area ---- */
+.spice-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: #0d1117;
+  overflow-y: auto;
+  padding: 2rem 1rem;
+}
+
+.spice-install-hint {
+  margin-top: 1.5rem;
+  padding: 0.75rem 1rem;
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  color: #8b949e;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.spice-code {
+  font-family: monospace;
+  background: #0d1117;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  color: #58a6ff;
+  font-size: 0.8rem;
+}
+
 /* ---- Clipboard modal ---- */
 .modal-overlay {
   position: fixed;
@@ -1026,9 +1522,7 @@ onBeforeUnmount(() => {
 }
 .modal-close:hover { color: #f0f6fc; }
 
-.modal-body {
-  padding: 1rem 1.25rem;
-}
+.modal-body { padding: 1rem 1.25rem; }
 
 .modal-hint {
   font-size: 0.82rem;

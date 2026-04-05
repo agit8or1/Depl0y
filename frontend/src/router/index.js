@@ -17,6 +17,12 @@ const router = createRouter({
       meta: { requiresAuth: true }
     },
     {
+      path: '/datacenter',
+      name: 'Datacenter',
+      component: () => import('@/views/Datacenter.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
       path: '/vms',
       name: 'VirtualMachines',
       component: () => import('@/views/VirtualMachines.vue'),
@@ -38,6 +44,12 @@ const router = createRouter({
       path: '/import-vm',
       name: 'ImportVM',
       component: () => import('@/views/ImportVM.vue'),
+      meta: { requiresAuth: true, requiresOperator: true }
+    },
+    {
+      path: '/create-lxc',
+      name: 'CreateLXC',
+      component: () => import('@/views/CreateLXC.vue'),
       meta: { requiresAuth: true, requiresOperator: true }
     },
     {
@@ -269,6 +281,18 @@ const router = createRouter({
       name: 'Containers',
       component: () => import('@/views/Containers.vue'),
       meta: { requiresAuth: true }
+    },
+    {
+      path: '/templates',
+      name: 'Templates',
+      component: () => import('@/views/Templates.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/create-pve-vm',
+      name: 'CreatePVEVM',
+      component: () => import('@/views/CreatePVEVM.vue'),
+      meta: { requiresAuth: true, requiresOperator: true }
     },
     {
       path: '/:pathMatch(.*)*',

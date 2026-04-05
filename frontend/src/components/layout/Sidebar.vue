@@ -12,6 +12,11 @@
         <span>Dashboard</span>
       </router-link>
 
+      <router-link to="/datacenter" class="nav-item">
+        <span class="icon">🏢</span>
+        <span>Datacenter</span>
+      </router-link>
+
       <router-link to="/vms" class="nav-item">
         <span class="icon">🖥️</span>
         <span>Virtual Machines</span>
@@ -28,9 +33,19 @@
         <span>Import VM</span>
       </router-link>
 
+      <router-link v-if="isOperator" to="/create-lxc" class="nav-item">
+        <span class="icon">📦</span>
+        <span>Create LXC</span>
+      </router-link>
+
       <router-link v-if="isOperator" to="/llm-deploy" class="nav-item">
         <span class="icon">🤖</span>
         <span>LLM Deploy</span>
+      </router-link>
+
+      <router-link v-if="isOperator" to="/create-pve-vm" class="nav-item">
+        <span class="icon">🖥️</span>
+        <span>Create VM (PVE)</span>
       </router-link>
 
       <router-link v-if="isOperator" to="/vm-management" class="nav-item">
@@ -47,6 +62,11 @@
       <router-link v-if="isOperator" to="/containers" class="nav-item">
         <span class="icon">📦</span>
         <span>Containers</span>
+      </router-link>
+
+      <router-link to="/templates" class="nav-item">
+        <span class="icon">📋</span>
+        <span>Templates</span>
       </router-link>
 
       <router-link to="/tasks" class="nav-item">

@@ -36,6 +36,18 @@
           <div class="form-group form-group--btn">
             <button @click="loadTasks(true)" class="btn btn-outline btn-sm">Refresh</button>
           </div>
+          <div class="form-group form-group--btn">
+            <button
+              v-if="notifPermission !== 'granted'"
+              @click="requestNotifPermission"
+              class="btn btn-outline btn-sm"
+            >
+              Enable Notifications
+            </button>
+            <button v-else class="btn btn-outline btn-sm" disabled>
+              Notifications On
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -91,7 +103,7 @@
 </template>
 
 <script>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import api from '@/services/api'
 
@@ -114,6 +126,64 @@ export default {
     const selectedNode = ref('')
     const filterType = ref('')
     const filterVmid = ref(null)
+
+    // ===== Browser Notifications =====
+    const notifPermission = ref(typeof Notification !== 'undefined' ? Notification.permission : 'denied')
+
+    const requestNotifPermission = async () => {
+      if (typeof Notification === 'undefined') return
+      const result = await Notification.requestPermission()
+      notifPermission.value = result
+      if (result === 'granted') {
+        const hasRunning = tasks.value.some(t => !t.status || t.status === 'running')
+        if (hasRunning) startTaskPolling()
+      }
+    }
+
+    const sendTaskNotification = (task) => {
+      if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return
+      const title = task.status === 'OK'
+        ? `Task completed: ${task.type}`
+        : `Task failed: ${task.type}`
+      const body = [task.id && `VMID: ${task.id}`, task.node && `Node: ${task.node}`]
+        .filter(Boolean).join(' | ') || task.upid
+      new Notification(title, { body, icon: '/favicon.ico' })
+    }
+
+    // Track running tasks by upid to detect transitions
+    const runningTaskKeys = new Set()
+    let pollInterval = null
+
+    const startTaskPolling = () => {
+      if (pollInterval) return
+      pollInterval = setInterval(async () => {
+        if (Notification.permission !== 'granted') return
+        const running = tasks.value.filter(t => !t.status || t.status === 'running')
+        for (const task of running) {
+          if (!runningTaskKeys.has(task._key)) {
+            runningTaskKeys.add(task._key)
+          }
+        }
+        // Poll status of tracked running tasks
+        for (const task of running) {
+          try {
+            const res = await api.pveNode.taskStatus(task._hostId, task._node || task.node, encodeURIComponent(task.upid))
+            const status = res.data?.status
+            if (status && status !== 'running') {
+              task.status = status
+              runningTaskKeys.delete(task._key)
+              sendTaskNotification(task)
+            }
+          } catch (e) {
+            // ignore poll errors
+          }
+        }
+        if (running.length === 0) {
+          clearInterval(pollInterval)
+          pollInterval = null
+        }
+      }, 5000)
+    }
 
     const loadHosts = async () => {
       try {
@@ -199,6 +269,11 @@ export default {
       } finally {
         loading.value = false
       }
+      // Start polling if notifications are enabled and there are running tasks
+      if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+        const hasRunning = tasks.value.some(t => !t.status || t.status === 'running')
+        if (hasRunning) startTaskPolling()
+      }
     }
 
     const loadMore = async () => {
@@ -252,6 +327,13 @@ export default {
       await loadHosts()
       if (selectedHostId.value) await loadNodes()
       await loadTasks(true)
+      if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+        startTaskPolling()
+      }
+    })
+
+    onUnmounted(() => {
+      if (pollInterval) { clearInterval(pollInterval); pollInterval = null }
     })
 
     return {
@@ -259,6 +341,7 @@ export default {
       selectedHostId, selectedNode, filterType, filterVmid,
       loadTasks, loadMore, onHostChange, onFilterChange,
       toggleLog, statusBadgeClass,
+      notifPermission, requestNotifPermission,
     }
   }
 }

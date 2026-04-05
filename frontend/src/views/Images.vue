@@ -726,6 +726,44 @@
           </div>
         </div>
 
+        <!-- ISO Upload Section -->
+        <div v-if="pxSelectedStorage && pxStorageSupportsIso" class="px-upload-section">
+          <div class="px-upload-header" @click="pxShowUpload = !pxShowUpload">
+            <span class="px-upload-title">Upload ISO</span>
+            <span class="px-upload-toggle">{{ pxShowUpload ? '▲' : '▼' }}</span>
+          </div>
+          <div v-if="pxShowUpload" class="px-upload-body">
+            <div class="px-upload-row">
+              <div class="form-group" style="flex:1;margin-bottom:0">
+                <input
+                  type="file"
+                  accept=".iso,.img"
+                  @change="onPxFileSelected"
+                  class="form-control"
+                  :disabled="pxUploading"
+                />
+                <p v-if="pxUploadFile" class="text-sm text-muted mt-1">
+                  {{ pxUploadFile.name }} ({{ formatBytes(pxUploadFile.size) }})
+                </p>
+              </div>
+              <button
+                class="btn btn-primary"
+                :disabled="!pxUploadFile || pxUploading"
+                @click="uploadToProxmoxStorage"
+                style="white-space:nowrap"
+              >
+                {{ pxUploading ? 'Uploading...' : 'Upload' }}
+              </button>
+            </div>
+            <div v-if="pxUploading" class="px-upload-progress">
+              <div class="px-progress-bar">
+                <div class="px-progress-fill" :style="{ width: pxUploadProgress + '%' }"></div>
+              </div>
+              <span class="px-progress-label">{{ pxUploadProgress }}%</span>
+            </div>
+          </div>
+        </div>
+
         <!-- Loading spinner -->
         <div v-if="pxStorageLoading" class="loading-spinner"></div>
 
@@ -1291,6 +1329,55 @@ export default {
     const pxNodesLoading = ref(false)
     const pxStoragesLoading = ref(false)
 
+    // Upload state
+    const pxShowUpload = ref(false)
+    const pxUploadFile = ref(null)
+    const pxUploading = ref(false)
+    const pxUploadProgress = ref(0)
+
+    const pxStorageSupportsIso = computed(() => {
+      if (!pxSelectedStorage.value) return false
+      const stor = pxStorages.value.find(s => s.storage === pxSelectedStorage.value)
+      if (!stor) return false
+      return (stor.content || '').includes('iso')
+    })
+
+    const onPxFileSelected = (event) => {
+      pxUploadFile.value = event.target.files[0] || null
+      pxUploadProgress.value = 0
+    }
+
+    const uploadToProxmoxStorage = async () => {
+      if (!pxUploadFile.value) return
+      pxUploading.value = true
+      pxUploadProgress.value = 0
+      try {
+        const formData = new FormData()
+        formData.append('content', 'iso')
+        formData.append('filename', pxUploadFile.value)
+        const onProgress = (evt) => {
+          if (evt.total) pxUploadProgress.value = Math.round((evt.loaded * 100) / evt.total)
+        }
+        await api.pveNode.uploadToStorage(
+          pxSelectedHostId.value,
+          pxSelectedNode.value,
+          pxSelectedStorage.value,
+          formData,
+          onProgress
+        )
+        pxUploadProgress.value = 100
+        toast.success(`${pxUploadFile.value.name} uploaded successfully`)
+        pxUploadFile.value = null
+        pxShowUpload.value = false
+        await loadPxContent()
+      } catch (error) {
+        console.error('Failed to upload ISO to Proxmox storage:', error)
+        toast.error('Upload failed: ' + (error?.response?.data?.detail || error.message || 'Unknown error'))
+      } finally {
+        pxUploading.value = false
+      }
+    }
+
     const pxFilteredContent = computed(() => {
       if (pxContentFilter.value === 'ISO') return pxContent.value.filter(i => i.content === 'iso')
       if (pxContentFilter.value === 'Images') return pxContent.value.filter(i => i.content === 'images')
@@ -1457,6 +1544,8 @@ export default {
       pxContentFilter, pxStorageLoading, pxNodesLoading, pxStoragesLoading,
       pxBasename, pxFormatBadgeClass,
       initProxmoxStorage, onPxHostChange, onPxNodeChange, onPxStorageChange, refreshProxmoxStorage,
+      pxShowUpload, pxUploadFile, pxUploading, pxUploadProgress, pxStorageSupportsIso,
+      onPxFileSelected, uploadToProxmoxStorage,
       // Shared
       formatBytes, formatOSType
     }
@@ -2126,6 +2215,77 @@ export default {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-family: monospace;
+}
+
+.px-upload-section {
+  border-bottom: 1px solid var(--border-color);
+}
+
+.px-upload-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1.5rem;
+  cursor: pointer;
+  background: rgba(59, 130, 246, 0.05);
+  user-select: none;
+}
+
+.px-upload-header:hover {
+  background: rgba(59, 130, 246, 0.1);
+}
+
+.px-upload-title {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+}
+
+.px-upload-toggle {
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+}
+
+.px-upload-body {
+  padding: 1rem 1.5rem;
+  background: rgba(255, 255, 255, 0.02);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.px-upload-row {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.px-upload-progress {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.px-progress-bar {
+  flex: 1;
+  height: 8px;
+  background: var(--border-color);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.px-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #3b82f6, #60a5fa);
+  transition: width 0.2s ease;
+}
+
+.px-progress-label {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  min-width: 3rem;
+  text-align: right;
   font-family: monospace;
 }
 </style>

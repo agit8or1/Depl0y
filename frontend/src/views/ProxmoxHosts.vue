@@ -292,7 +292,10 @@
 
       <div v-else class="nodes-section">
         <div v-for="datacenter in datacentersWithNodes" :key="datacenter.id" class="datacenter-section">
-          <h4 class="datacenter-title">{{ datacenter.name }}</h4>
+          <h4 class="datacenter-title">
+            {{ getFedSummary(datacenter.id)?.cluster_name || datacenter.name }}
+            <span v-if="getFedSummary(datacenter.id)?.cluster_name && getFedSummary(datacenter.id).cluster_name !== datacenter.name" class="datacenter-host-label">({{ datacenter.name }})</span>
+          </h4>
 
           <div v-if="datacenter.nodes.length === 0" class="text-muted text-sm" style="padding: 0.5rem 0;">
             No nodes discovered yet. Click "Poll" to discover nodes.
@@ -1930,6 +1933,15 @@ export default {
   color: var(--primary-color);
   padding-left: 0.5rem;
   border-left: 3px solid var(--primary-color);
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.datacenter-host-label {
+  font-size: 0.8rem;
+  font-weight: 400;
+  color: #9aabb8;
 }
 
 .nodes-grid {

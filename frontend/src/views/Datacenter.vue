@@ -290,7 +290,9 @@
                 {{ panel.online ? 'Online' : 'Offline' }}
               </span>
             </div>
-            <div class="host-addr text-sm text-muted">{{ panel.address }}</div>
+            <div class="host-addr text-sm" style="color:#9aabb8;">
+              <span v-if="panel.hostLabel">{{ panel.hostLabel }} &bull; </span>{{ panel.address }}
+            </div>
           </div>
 
           <div class="host-card-body">
@@ -1225,9 +1227,15 @@ const hostPanels = computed(() => {
     const cpuRatio = cpuCores > 0 ? Math.min(1, cpuUsed / cpuCores) : 0
     const memRatio = memTotal > 0 ? Math.min(1, memUsed / memTotal) : 0
 
+    const dcSummary = datacenterSummaries.value[host.id]
+    const clusterName = dcSummary?.cluster_name
+    const displayName = clusterName || host.name || host.hostname || `Host ${host.id}`
+    const hostLabel = (clusterName && clusterName !== (host.name || host.hostname)) ? (host.name || host.hostname) : null
+
     return {
       hostId: host.id,
-      name: host.name || host.hostname || `Host ${host.id}`,
+      name: displayName,
+      hostLabel,
       address: host.address || host.host || '',
       online: host.status === 'online' || host.connected === true || resources.length > 0,
       vmsTotal, vmsRunning, lxcTotal, lxcRunning, nodeCount,

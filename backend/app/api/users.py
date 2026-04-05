@@ -90,6 +90,21 @@ async def create_user(
     db.commit()
     db.refresh(new_user)
 
+    # Audit log: user created
+    try:
+        from app.api.audit import log_audit_event
+        log_audit_event(
+            db,
+            action="user_created",
+            user_id=current_user.id,
+            resource_type="user",
+            resource_id=new_user.id,
+            details={"username": new_user.username, "role": str(new_user.role), "created_by": current_user.username},
+            success=True,
+        )
+    except Exception:
+        pass
+
     return new_user
 
 
@@ -136,6 +151,7 @@ async def update_user(
             raise HTTPException(status_code=400, detail="Email already exists")
         user.email = user_data.email
 
+    old_role = str(user.role) if user_data.role is not None else None
     if user_data.role is not None:
         user.role = user_data.role
 
@@ -145,6 +161,29 @@ async def update_user(
     user.updated_at = datetime.utcnow()
     db.commit()
     db.refresh(user)
+
+    # Audit log: user updated
+    try:
+        from app.api.audit import log_audit_event
+        changes = {}
+        if user_data.email is not None:
+            changes["email"] = user_data.email
+        if user_data.role is not None:
+            changes["role"] = {"from": old_role, "to": str(user_data.role)}
+        if user_data.is_active is not None:
+            changes["is_active"] = user_data.is_active
+        action = "user_role_changed" if user_data.role is not None else "user_updated"
+        log_audit_event(
+            db,
+            action=action,
+            user_id=current_user.id,
+            resource_type="user",
+            resource_id=user.id,
+            details={"username": user.username, "changes": changes, "updated_by": current_user.username},
+            success=True,
+        )
+    except Exception:
+        pass
 
     return user
 
@@ -164,8 +203,24 @@ async def delete_user(
     if user.id == current_user.id:
         raise HTTPException(status_code=400, detail="Cannot delete your own account")
 
+    username_deleted = user.username
     db.delete(user)
     db.commit()
+
+    # Audit log: user deleted
+    try:
+        from app.api.audit import log_audit_event
+        log_audit_event(
+            db,
+            action="user_deleted",
+            user_id=current_user.id,
+            resource_type="user",
+            resource_id=user_id,
+            details={"username": username_deleted, "deleted_by": current_user.username},
+            success=True,
+        )
+    except Exception:
+        pass
 
     return None
 

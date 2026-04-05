@@ -29,9 +29,10 @@ api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config
+    const status = error.response?.status
 
-    // Handle 401 errors (unauthorized)
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    // Handle 401 — try token refresh, then redirect to login
+    if (status === 401 && !originalRequest._retry) {
       originalRequest._retry = true
 
       try {
@@ -55,40 +56,74 @@ api.interceptors.response.use(
         window.location.href = '/login'
         return Promise.reject(refreshError)
       }
-    }
 
-    // Show error toast with detailed message (but not for login errors)
-    let message = 'An error occurred'
-    if (error.response?.data) {
-      // Handle FastAPI validation errors
-      if (error.response.data.detail) {
-        if (Array.isArray(error.response.data.detail)) {
-          // Validation errors from FastAPI
-          message = error.response.data.detail.map(err =>
-            `${err.loc.join('.')}: ${err.msg}`
-          ).join(', ')
-        } else {
-          message = error.response.data.detail
-        }
-      }
+      // No refresh token available — go to login
+      localStorage.removeItem('access_token')
+      localStorage.removeItem('refresh_token')
+      window.location.href = '/login'
+      return Promise.reject(error)
     }
 
     if (import.meta.env.DEV) {
       console.error('API Error Details:', {
-        status: error.response?.status,
+        status,
         statusText: error.response?.statusText,
         data: error.response?.data,
-        headers: error.response?.headers
+        url: originalRequest?.url,
       })
     }
 
-    // Don't show toast for login endpoint errors (auth store handles them)
-    // This prevents duplicate error messages during login/2FA
-    const isLoginEndpoint = originalRequest.url?.includes('/auth/login')
-    if (!isLoginEndpoint) {
-      toast.error(message)
+    // Don't show toast for login/2FA endpoint errors — auth store handles those
+    const isAuthEndpoint = originalRequest?.url?.includes('/auth/login') ||
+                           originalRequest?.url?.includes('/auth/2fa')
+    if (isAuthEndpoint) return Promise.reject(error)
+
+    // Network error — no response received
+    if (!error.response) {
+      toast.error('Network error — check your connection')
+      return Promise.reject(error)
     }
 
+    // 403 — permission denied
+    if (status === 403) {
+      toast.error("You don't have permission to do this")
+      return Promise.reject(error)
+    }
+
+    // 422 — FastAPI validation error: extract per-field messages
+    if (status === 422) {
+      const detail = error.response.data?.detail
+      if (Array.isArray(detail) && detail.length > 0) {
+        const fieldErrors = detail.map(err => {
+          const field = err.loc?.slice(1).join('.') || err.loc?.join('.') || 'field'
+          return `${field}: ${err.msg}`
+        })
+        toast.error('Validation error: ' + fieldErrors.join(' | '))
+      } else {
+        toast.error('Validation error — please check your input')
+      }
+      return Promise.reject(error)
+    }
+
+    // 5xx — server errors
+    if (status >= 500) {
+      toast.error('Server error — please try again')
+      return Promise.reject(error)
+    }
+
+    // All other errors — extract FastAPI detail message or fall back
+    let message = 'An error occurred'
+    if (error.response?.data?.detail) {
+      if (Array.isArray(error.response.data.detail)) {
+        message = error.response.data.detail.map(err =>
+          `${err.loc?.join('.') || 'field'}: ${err.msg}`
+        ).join(', ')
+      } else {
+        message = String(error.response.data.detail)
+      }
+    }
+
+    toast.error(message)
     return Promise.reject(error)
   }
 )
@@ -470,7 +505,7 @@ export default {
     createSnapshot: (h, node, vmid, data) => api.post(`/pve-vm/${h}/${node}/${vmid}/snapshots`, data),
     deleteSnapshot: (h, node, vmid, snap) => api.delete(`/pve-vm/${h}/${node}/${vmid}/snapshots/${snap}`),
     rollbackSnapshot: (h, node, vmid, snap) => api.post(`/pve-vm/${h}/${node}/${vmid}/snapshots/${snap}/rollback`),
-    getSnapshotConfig: (h, node, vmid, snapname) => api.get(`/pve-vm/${h}/${node}/${vmid}/config`, { params: { snapname } }),
+    getSnapshotConfig: (h, node, vmid, snapname) => api.get(`/pve-vm/${h}/${node}/${vmid}/snapshot/${snapname}/config`),
     clone: (h, node, vmid, data) => api.post(`/pve-vm/${h}/${node}/${vmid}/clone`, data),
     migrate: (h, node, vmid, data) => api.post(`/pve-vm/${h}/${node}/${vmid}/migrate`, data),
     convertToTemplate: (h, node, vmid) => api.post(`/pve-vm/${h}/${node}/${vmid}/template`),
@@ -602,6 +637,7 @@ export default {
     setCtFirewallOptions: (h, node, vmid, data) => api.put(`/pve-node/${h}/nodes/${node}/lxc/${vmid}/firewall/options`, data),
     // Restore
     restoreBackup: (h, node, vmid, data) => api.post(`/pve-node/${h}/nodes/${node}/qemu/${vmid}/restore`, data),
+    restoreLxcBackup: (h, node, vmid, data) => api.post(`/pve-node/${h}/nodes/${node}/lxc/${vmid}/restore`, data),
     // Aliases for NodeDetail.vue / Tasks.vue / Containers.vue naming convention
     nodeRrddata: (h, node, timeframe = 'hour') => api.get(`/pve-node/${h}/nodes/${node}/rrddata`, { params: { timeframe } }),
     tasks: (h, node, params) => api.get(`/pve-node/${h}/nodes/${node}/tasks`, { params }),
@@ -643,6 +679,7 @@ export default {
   audit: {
     list: (params) => api.get('/audit/', { params }),
     feed: (params) => api.get('/audit/feed', { params }),
+    stats: (params) => api.get('/audit/stats', { params }),
   },
 
   // PBS Management
@@ -725,5 +762,40 @@ export default {
     create: (hostId, data) => api.post(`/pve-node/${hostId}/pools`, data),
     update: (hostId, poolid, data) => api.put(`/pve-node/${hostId}/pools/${encodeURIComponent(poolid)}`, data),
     delete: (hostId, poolid) => api.delete(`/pve-node/${hostId}/pools/${encodeURIComponent(poolid)}`),
+  },
+
+  // Storage Management
+  storage: {
+    // Cluster-wide storage definitions (via pve-node router)
+    list: (hostId) => api.get(`/pve-node/${hostId}/storage`),
+    create: (hostId, data) => api.post(`/pve-node/${hostId}/storage`, data),
+    update: (hostId, storageId, data) => api.put(`/pve-node/${hostId}/storage/${encodeURIComponent(storageId)}`, data),
+    delete: (hostId, storageId) => api.delete(`/pve-node/${hostId}/storage/${encodeURIComponent(storageId)}`),
+    // ZFS pool management
+    getZfsPools: (hostId, node) => api.get(`/pve-node/${hostId}/nodes/${node}/disks/zfs`),
+    createZfsPool: (hostId, node, data) => api.post(`/pve-node/${hostId}/nodes/${node}/disks/zfs`, data),
+    getZfsPool: (hostId, node, name) => api.get(`/pve-node/${hostId}/nodes/${node}/disks/zfs/${encodeURIComponent(name)}`),
+    scrubZfsPool: (hostId, node, name) => api.post(`/pve-node/${hostId}/nodes/${node}/disks/zfs/${encodeURIComponent(name)}/scrub`),
+    // Ceph management
+    getCephStatus: (hostId, node) => api.get(`/pve-node/${hostId}/nodes/${node}/ceph/status`),
+    getCephOsds: (hostId, node) => api.get(`/pve-node/${hostId}/nodes/${node}/ceph/osd`),
+    getCephMons: (hostId, node) => api.get(`/pve-node/${hostId}/nodes/${node}/ceph/mon`),
+    getCephPools: (hostId, node) => api.get(`/pve-node/${hostId}/nodes/${node}/ceph/pools`),
+  },
+
+  // SDN — Software-Defined Networking
+  sdn: {
+    listVnets: (hostId) => api.get(`/sdn/${hostId}/vnets`),
+    createVnet: (hostId, data) => api.post(`/sdn/${hostId}/vnets`, data),
+    updateVnet: (hostId, vnet, data) => api.put(`/sdn/${hostId}/vnets/${encodeURIComponent(vnet)}`, data),
+    deleteVnet: (hostId, vnet) => api.delete(`/sdn/${hostId}/vnets/${encodeURIComponent(vnet)}`),
+    listZones: (hostId) => api.get(`/sdn/${hostId}/zones`),
+    createZone: (hostId, data) => api.post(`/sdn/${hostId}/zones`, data),
+    updateZone: (hostId, zone, data) => api.put(`/sdn/${hostId}/zones/${encodeURIComponent(zone)}`, data),
+    deleteZone: (hostId, zone) => api.delete(`/sdn/${hostId}/zones/${encodeURIComponent(zone)}`),
+    listSubnets: (hostId, vnet) => api.get(`/sdn/${hostId}/subnets`, { params: vnet ? { vnet } : {} }),
+    createSubnet: (hostId, data) => api.post(`/sdn/${hostId}/subnets`, data),
+    deleteSubnet: (hostId, subnet, vnet) => api.delete(`/sdn/${hostId}/subnets/${encodeURIComponent(subnet)}`, { params: { vnet } }),
+    apply: (hostId) => api.post(`/sdn/${hostId}/apply`),
   },
 }

@@ -302,7 +302,13 @@ class AuditLog(Base):
     resource_id = Column(Integer, nullable=True)
     details = Column(JSON, nullable=True)
     ip_address = Column(String(45), nullable=True)
-    user_agent = Column(String(255), nullable=True)
+    user_agent = Column(String(500), nullable=True)
+    request_body = Column(Text, nullable=True)      # JSON string of request body
+    response_status = Column(Integer, nullable=True) # HTTP status code
+    duration_ms = Column(Integer, nullable=True)     # Request duration in ms
+    http_method = Column(String(10), nullable=True)  # GET, POST, PUT, DELETE, etc.
+    request_path = Column(String(500), nullable=True) # URL path
+    success = Column(Boolean, default=True, nullable=True)  # Whether the action succeeded
     timestamp = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Relationships

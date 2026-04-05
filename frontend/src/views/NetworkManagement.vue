@@ -62,8 +62,14 @@
       <p>Select a host and node above to view and manage network interfaces.</p>
     </div>
 
+    <!-- Tabs (only shown when node is selected) -->
+    <div v-else-if="selectedNode" class="tab-bar mb-3">
+      <button :class="['tab-btn', { active: activeNetTab === 'interfaces' }]" @click="activeNetTab = 'interfaces'">Interfaces</button>
+      <button :class="['tab-btn', { active: activeNetTab === 'vlans' }]" @click="activeNetTab = 'vlans'; fetchVlanInfo()">VLANs</button>
+    </div>
+
     <!-- Interfaces table -->
-    <div v-else class="card">
+    <div v-if="selectedNode && activeNetTab === 'interfaces'" class="card">
       <div class="card-header">
         <h3>Network Interfaces — {{ selectedNode }}</h3>
         <span class="text-muted text-sm">{{ interfaces.length }} interface{{ interfaces.length !== 1 ? 's' : '' }}</span>
@@ -127,6 +133,149 @@
             </tr>
           </tbody>
         </table>
+      </div>
+    </div>
+
+    <!-- VLANs tab -->
+    <div v-if="selectedNode && activeNetTab === 'vlans'">
+      <!-- VLAN interfaces across node -->
+      <div class="card mb-3">
+        <div class="card-header">
+          <h3>VLAN Interfaces — {{ selectedNode }}</h3>
+          <button class="btn btn-primary" @click="openCreateVlanModal">+ Create VLAN Interface</button>
+        </div>
+        <div v-if="loadingVlans" class="loading-spinner"></div>
+        <div v-else-if="vlanInterfaces.length === 0" class="text-center text-muted" style="padding: 2rem;">
+          No VLAN interfaces found on this node.
+        </div>
+        <div v-else class="table-container">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Interface</th>
+                <th>Raw Device</th>
+                <th>VLAN Tag</th>
+                <th>IP / CIDR</th>
+                <th>Active</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="iface in vlanInterfaces" :key="iface.iface">
+                <td><strong>{{ iface.iface }}</strong></td>
+                <td>{{ iface['vlan-raw-device'] || iface.vlan_raw_device || '—' }}</td>
+                <td>{{ iface['vlan-id'] || iface.vlan_id || extractVlanTag(iface.iface) }}</td>
+                <td class="text-sm">
+                  <span v-if="iface.address">{{ iface.address }}<span v-if="iface.netmask">/{{ cidrFromNetmask(iface.netmask) }}</span></span>
+                  <span v-else-if="iface.cidr">{{ iface.cidr }}</span>
+                  <span v-else class="text-muted">—</span>
+                </td>
+                <td>
+                  <span :class="['badge', iface.active ? 'badge-success' : 'badge-danger']">
+                    {{ iface.active ? 'Active' : 'Inactive' }}
+                  </span>
+                </td>
+                <td>
+                  <div class="action-btns">
+                    <button @click="openEditModal(iface)" class="btn btn-outline btn-sm">Edit</button>
+                    <button @click="confirmDelete(iface)" class="btn btn-danger btn-sm">Delete</button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Bridge VLAN-aware section -->
+      <div class="card mb-3">
+        <div class="card-header">
+          <h3>Bridge VLAN-Aware Settings</h3>
+          <span class="text-muted text-sm">Enable/disable VLAN-aware mode on Linux bridges</span>
+        </div>
+        <div v-if="bridgeInterfaces.length === 0" class="text-center text-muted" style="padding: 1.5rem;">
+          No bridge interfaces found on this node.
+        </div>
+        <div v-else class="table-container">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Bridge</th>
+                <th>Ports</th>
+                <th>VLAN Aware</th>
+                <th>Toggle</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="br in bridgeInterfaces" :key="br.iface">
+                <td><strong>{{ br.iface }}</strong></td>
+                <td class="text-sm">{{ br['bridge-ports'] || '—' }}</td>
+                <td>
+                  <span :class="['badge', br['bridge_vlan_aware'] || br.bridge_vlan_aware ? 'badge-success' : 'badge-secondary']">
+                    {{ (br['bridge_vlan_aware'] || br.bridge_vlan_aware) ? 'Yes' : 'No' }}
+                  </span>
+                </td>
+                <td>
+                  <button
+                    @click="toggleBridgeVlanAware(br)"
+                    class="btn btn-outline btn-sm"
+                    :disabled="togglingBridge === br.iface"
+                  >
+                    {{ togglingBridge === br.iface ? 'Saving...' : ((br['bridge_vlan_aware'] || br.bridge_vlan_aware) ? 'Disable VLAN-Aware' : 'Enable VLAN-Aware') }}
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Create VLAN Interface Modal -->
+    <div v-if="showVlanModal" class="modal" @click="showVlanModal = false">
+      <div class="modal-content" @click.stop>
+        <div class="modal-header">
+          <h3>Create VLAN Interface</h3>
+          <button @click="showVlanModal = false" class="btn-close">×</button>
+        </div>
+        <form @submit.prevent="submitVlanModal" class="modal-body">
+          <div class="form-group">
+            <label class="form-label">Raw Device <span class="text-danger">*</span></label>
+            <input v-model="vlanForm.raw_device" class="form-control" placeholder="e.g. vmbr0" required />
+            <div class="help-text-sm">The parent interface to tag (usually a bridge or ethernet port)</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">VLAN Tag <span class="text-danger">*</span></label>
+            <input v-model.number="vlanForm.tag" type="number" class="form-control" placeholder="e.g. 100" min="1" max="4094" required />
+            <div class="help-text-sm">Creates interface named <code>{{ vlanForm.raw_device || 'device' }}.{{ vlanForm.tag || 'tag' }}</code></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">IP / CIDR</label>
+              <input v-model="vlanForm.cidr" class="form-control" placeholder="e.g. 192.168.100.1/24" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Gateway</label>
+              <input v-model="vlanForm.gateway" class="form-control" placeholder="e.g. 192.168.100.254" />
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Comment</label>
+            <input v-model="vlanForm.comments" class="form-control" placeholder="Optional" />
+          </div>
+          <div class="form-group">
+            <label class="form-label toggle-label">
+              <input type="checkbox" v-model="vlanForm.autostart" />
+              <span>Autostart on boot</span>
+            </label>
+          </div>
+          <div class="form-actions mt-2">
+            <button type="submit" class="btn btn-primary" :disabled="savingVlan">
+              {{ savingVlan ? 'Creating...' : 'Create VLAN Interface' }}
+            </button>
+            <button type="button" @click="showVlanModal = false" class="btn btn-outline">Cancel</button>
+          </div>
+        </form>
       </div>
     </div>
 
@@ -522,6 +671,84 @@ export default {
       }
     }
 
+    // ── VLANs tab ─────────────────────────────────────────────────────────────
+    const activeNetTab = ref('interfaces')
+    const loadingVlans = ref(false)
+    const vlanInterfaces = computed(() => interfaces.value.filter(i => i.type === 'vlan'))
+    const bridgeInterfaces = computed(() => interfaces.value.filter(i => i.type === 'bridge'))
+    const togglingBridge = ref(null)
+
+    // VLAN create modal
+    const showVlanModal = ref(false)
+    const savingVlan = ref(false)
+    const freshVlanForm = () => ({
+      raw_device: '', tag: null, cidr: '', gateway: '', comments: '', autostart: true,
+    })
+    const vlanForm = ref(freshVlanForm())
+
+    const fetchVlanInfo = async () => {
+      // VLAN info is derived from interfaces; re-fetch if empty
+      if (interfaces.value.length === 0) {
+        loadingVlans.value = true
+        await fetchInterfaces()
+        loadingVlans.value = false
+      }
+    }
+
+    const openCreateVlanModal = () => {
+      vlanForm.value = freshVlanForm()
+      showVlanModal.value = true
+    }
+
+    const submitVlanModal = async () => {
+      savingVlan.value = true
+      try {
+        const f = vlanForm.value
+        const ifaceName = `${f.raw_device}.${f.tag}`
+        const payload = {
+          iface: ifaceName,
+          type: 'vlan',
+          autostart: f.autostart ? 1 : 0,
+          'vlan-raw-device': f.raw_device,
+        }
+        if (f.cidr) payload.cidr = f.cidr
+        if (f.gateway) payload.gateway = f.gateway
+        if (f.comments) payload.comments = f.comments
+        await api.pveNode.createNetwork(selectedHostId.value, selectedNode.value, payload)
+        toast.success(`VLAN interface ${ifaceName} created`)
+        showVlanModal.value = false
+        await fetchInterfaces()
+      } catch {
+        toast.error('Failed to create VLAN interface')
+      } finally {
+        savingVlan.value = false
+      }
+    }
+
+    const toggleBridgeVlanAware = async (br) => {
+      togglingBridge.value = br.iface
+      try {
+        const currentVal = br['bridge_vlan_aware'] || br.bridge_vlan_aware
+        const newVal = currentVal ? 0 : 1
+        await api.pveNode.updateNetwork(selectedHostId.value, selectedNode.value, br.iface, {
+          bridge_vlan_aware: newVal,
+        })
+        toast.success(`${br.iface} VLAN-aware ${newVal ? 'enabled' : 'disabled'}`)
+        await fetchInterfaces()
+      } catch {
+        toast.error(`Failed to toggle VLAN-aware on ${br.iface}`)
+      } finally {
+        togglingBridge.value = null
+      }
+    }
+
+    const extractVlanTag = (ifaceName) => {
+      // e.g. vmbr0.100 → 100
+      if (!ifaceName) return '—'
+      const parts = ifaceName.split('.')
+      return parts.length >= 2 ? parts[parts.length - 1] : '—'
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────
     const getTypeBadge = (type) => {
       const map = {
@@ -563,6 +790,12 @@ export default {
       confirmDelete,
       applyConfig, doApplyConfig, revertConfig,
       getTypeBadge, cidrFromNetmask,
+      // VLAN tab
+      activeNetTab,
+      loadingVlans, vlanInterfaces, bridgeInterfaces, togglingBridge,
+      showVlanModal, savingVlan, vlanForm,
+      fetchVlanInfo, openCreateVlanModal, submitVlanModal,
+      toggleBridgeVlanAware, extractVlanTag,
     }
   }
 }
@@ -727,6 +960,46 @@ export default {
 
 .text-danger {
   color: var(--color-danger, #ef4444);
+}
+
+/* Tabs */
+.tab-bar {
+  display: flex;
+  gap: 0.25rem;
+  border-bottom: 2px solid var(--border-color);
+}
+
+.tab-btn {
+  padding: 0.6rem 1.25rem;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  border-radius: 0.25rem 0.25rem 0 0;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.tab-btn:hover { color: var(--text-primary); }
+.tab-btn.active {
+  color: var(--color-primary, #3b82f6);
+  border-bottom-color: var(--color-primary, #3b82f6);
+  font-weight: 600;
+}
+
+.help-text-sm {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  margin-top: 0.3rem;
+}
+
+.help-text-sm code {
+  background: var(--bg-secondary, #f1f5f9);
+  padding: 0.1rem 0.3rem;
+  border-radius: 0.2rem;
+  font-family: monospace;
 }
 
 @media (max-width: 900px) {

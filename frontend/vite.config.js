@@ -7,6 +7,19 @@ export default defineConfig({
   build: {
     outDir: '/opt/depl0y/frontend/dist',
     emptyOutDir: true,
+    chunkSizeWarningLimit: 1000,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // Vue core
+          'vendor-vue': ['vue', 'vue-router', 'pinia'],
+          // HTTP / utilities
+          'vendor-axios': ['axios'],
+          // Toast notifications
+          'vendor-toast': ['vue-toastification'],
+        }
+      }
+    }
   },
   resolve: {
     alias: {

@@ -48,16 +48,22 @@
 
       <div v-if="loading" class="loading-spinner"></div>
 
-      <div v-else-if="filteredVMs.length === 0 && vms.length === 0" class="text-center text-muted">
-        <p>No virtual machines yet.</p>
-        <p class="text-sm">Create your first VM to get started.</p>
+      <div v-else-if="filteredVMs.length === 0 && vms.length === 0" class="empty-state">
+        <div class="empty-icon-wrap">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+        </div>
+        <h4 class="empty-title">No virtual machines found</h4>
+        <p class="empty-subtitle">Deploy your first VM to get started with Depl0y.</p>
+        <router-link to="/vms/create" class="btn btn-primary">+ Create VM</router-link>
       </div>
 
-      <div v-else-if="filteredVMs.length === 0 && statusFilter" class="text-center text-muted">
-        <p>No {{ statusFilter }} VMs found.</p>
-        <button @click="clearFilter" class="btn btn-sm btn-secondary mt-1">
-          Show All VMs
-        </button>
+      <div v-else-if="filteredVMs.length === 0" class="empty-state">
+        <div class="empty-icon-wrap">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        </div>
+        <h4 class="empty-title">No VMs match your filters</h4>
+        <p class="empty-subtitle">Try adjusting the search query or status filter.</p>
+        <button @click="clearFilter" class="btn btn-outline">Clear Filters</button>
       </div>
 
       <div v-else class="table-container">
@@ -1758,5 +1764,41 @@ export default {
     white-space: nowrap;
     flex-wrap: nowrap;
   }
+}
+
+/* ── Empty state ── */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 3.5rem 1.5rem;
+  text-align: center;
+}
+
+.empty-icon-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: var(--background);
+  border: 2px dashed var(--border-color);
+  color: var(--text-muted);
+}
+
+.empty-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.empty-subtitle {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  margin: 0;
 }
 </style>

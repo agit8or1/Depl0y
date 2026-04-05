@@ -1005,9 +1005,23 @@ def ct_rrddata(host_id: int, node: str, vmid: int,
 @router.post("/{host_id}/nodes/{node}/qemu/{vmid}/restore")
 def restore_vm_backup(host_id: int, node: str, vmid: int, restore: dict,
                       db: Session = Depends(get_db), current_user=Depends(require_operator)):
+    """Restore a QEMU VM from a vzdump backup archive. Pass 'archive' and restore options in body."""
     host = _get_host(host_id, db)
     try:
         upid = _pve(host).nodes(node).qemu.post(**{"vmid": vmid, **restore})
+        pve_cache.clear_prefix(f"pve:{host_id}:")
+        return {"upid": upid}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{host_id}/nodes/{node}/lxc/{vmid}/restore")
+def restore_lxc_backup(host_id: int, node: str, vmid: int, restore: dict,
+                       db: Session = Depends(get_db), current_user=Depends(require_operator)):
+    """Restore an LXC container from a vzdump backup archive. Pass 'ostemplate' (archive path) and options."""
+    host = _get_host(host_id, db)
+    try:
+        upid = _pve(host).nodes(node).lxc.post(**{"vmid": vmid, **restore})
         pve_cache.clear_prefix(f"pve:{host_id}:")
         return {"upid": upid}
     except Exception as e:
@@ -1167,5 +1181,163 @@ def download_url_to_storage(host_id: int, node: str, storage: str,
     try:
         result = _pve(host).nodes(node).storage(storage)("download-url").post(**data)
         return {"upid": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Storage management (cluster-wide) ─────────────────────────────────────────
+
+@router.get("/{host_id}/storage")
+def list_all_storage(host_id: int, db: Session = Depends(get_db),
+                     current_user=Depends(get_current_user)):
+    """List all storage definitions on a Proxmox host (cluster-wide)."""
+    host = _get_host(host_id, db)
+    cache_key = f"pve:{host_id}:storage"
+    cached = pve_cache.get(cache_key)
+    if cached is not None:
+        return cached
+    try:
+        result = _pve(host).storage.get()
+        pve_cache.set(cache_key, result, ttl=30)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{host_id}/storage")
+def create_storage(host_id: int, data: dict = Body(default={}),
+                   db: Session = Depends(get_db),
+                   current_user=Depends(require_admin)):
+    """Create a new storage definition."""
+    host = _get_host(host_id, db)
+    try:
+        _pve(host).storage.post(**data)
+        pve_cache.clear_prefix(f"pve:{host_id}:storage")
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/{host_id}/storage/{storage_id}")
+def update_storage(host_id: int, storage_id: str, data: dict = Body(default={}),
+                   db: Session = Depends(get_db),
+                   current_user=Depends(require_admin)):
+    """Update a storage definition."""
+    host = _get_host(host_id, db)
+    try:
+        _pve(host).storage(storage_id).put(**data)
+        pve_cache.clear_prefix(f"pve:{host_id}:storage")
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/{host_id}/storage/{storage_id}")
+def delete_storage(host_id: int, storage_id: str,
+                   db: Session = Depends(get_db),
+                   current_user=Depends(require_admin)):
+    """Delete a storage definition."""
+    host = _get_host(host_id, db)
+    try:
+        _pve(host).storage(storage_id).delete()
+        pve_cache.clear_prefix(f"pve:{host_id}:storage")
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── ZFS pool management ───────────────────────────────────────────────────────
+
+@router.get("/{host_id}/nodes/{node}/disks/zfs")
+def list_zfs_pools(host_id: int, node: str, db: Session = Depends(get_db),
+                   current_user=Depends(get_current_user)):
+    """List ZFS pools on a node."""
+    host = _get_host(host_id, db)
+    try:
+        return _pve(host).nodes(node).disks.zfs.get()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{host_id}/nodes/{node}/disks/zfs")
+def create_zfs_pool(host_id: int, node: str, data: dict = Body(default={}),
+                    db: Session = Depends(get_db),
+                    current_user=Depends(require_admin)):
+    """Create a new ZFS pool on a node."""
+    host = _get_host(host_id, db)
+    try:
+        result = _pve(host).nodes(node).disks.zfs.post(**data)
+        pve_cache.clear_prefix(f"pve:{host_id}:")
+        return {"upid": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{host_id}/nodes/{node}/disks/zfs/{name}")
+def get_zfs_pool(host_id: int, node: str, name: str, db: Session = Depends(get_db),
+                 current_user=Depends(get_current_user)):
+    """Get ZFS pool details including vdev tree."""
+    host = _get_host(host_id, db)
+    try:
+        return _pve(host).nodes(node).disks.zfs(name).get()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{host_id}/nodes/{node}/disks/zfs/{name}/scrub")
+def scrub_zfs_pool(host_id: int, node: str, name: str,
+                   db: Session = Depends(get_db),
+                   current_user=Depends(require_admin)):
+    """Start a scrub on a ZFS pool."""
+    host = _get_host(host_id, db)
+    try:
+        result = _pve(host).nodes(node).disks.zfs(name).scrub.post()
+        return {"upid": result} if result else {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Ceph management ───────────────────────────────────────────────────────────
+
+@router.get("/{host_id}/nodes/{node}/ceph/status")
+def ceph_status(host_id: int, node: str, db: Session = Depends(get_db),
+                current_user=Depends(get_current_user)):
+    """Get Ceph cluster status from a node."""
+    host = _get_host(host_id, db)
+    try:
+        return _pve(host).nodes(node).ceph.status.get()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{host_id}/nodes/{node}/ceph/osd")
+def ceph_osd(host_id: int, node: str, db: Session = Depends(get_db),
+             current_user=Depends(get_current_user)):
+    """List Ceph OSDs."""
+    host = _get_host(host_id, db)
+    try:
+        return _pve(host).nodes(node).ceph.osd.get()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{host_id}/nodes/{node}/ceph/mon")
+def ceph_mon(host_id: int, node: str, db: Session = Depends(get_db),
+             current_user=Depends(get_current_user)):
+    """List Ceph monitors."""
+    host = _get_host(host_id, db)
+    try:
+        return _pve(host).nodes(node).ceph.mon.get()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{host_id}/nodes/{node}/ceph/pools")
+def ceph_pools(host_id: int, node: str, db: Session = Depends(get_db),
+               current_user=Depends(get_current_user)):
+    """List Ceph pools."""
+    host = _get_host(host_id, db)
+    try:
+        return _pve(host).nodes(node).ceph.pools.get()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

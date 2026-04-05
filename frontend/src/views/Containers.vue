@@ -78,6 +78,25 @@
     <!-- Loading spinner -->
     <div v-if="loading && containers.length === 0" class="loading-spinner"></div>
 
+    <!-- Empty state: no containers at all -->
+    <div v-else-if="!loading && containers.length === 0" class="card empty-state">
+      <div class="empty-icon-wrap">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
+      </div>
+      <h4 class="empty-title">No containers found</h4>
+      <p class="empty-subtitle">Make sure your Proxmox hosts are configured and reachable, then create an LXC container.</p>
+      <router-link to="/create-lxc" class="btn btn-primary">+ Create LXC</router-link>
+    </div>
+
+    <!-- Empty state: filters match nothing -->
+    <div v-else-if="!loading && sortedContainers.length === 0" class="card empty-state">
+      <div class="empty-icon-wrap">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      </div>
+      <h4 class="empty-title">No containers match your filters</h4>
+      <p class="empty-subtitle">Try adjusting the search query, status or node filters.</p>
+    </div>
+
     <!-- Table -->
     <div v-else class="card">
       <div class="table-container">
@@ -817,4 +836,41 @@ export default {
 .flex { display: flex; }
 .gap-1 { gap: 0.5rem; }
 .btn-sm { padding: 0.25rem 0.6rem; font-size: 0.875rem; }
+
+/* ── Empty state ── */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 3.5rem 1.5rem;
+  text-align: center;
+}
+
+.empty-icon-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: var(--background);
+  border: 2px dashed var(--border-color);
+  color: var(--text-muted);
+}
+
+.empty-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.empty-subtitle {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  margin: 0;
+  max-width: 400px;
+}
 </style>

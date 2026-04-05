@@ -133,6 +133,14 @@
         <h3>Task History</h3>
       </div>
       <div v-if="loading" class="loading-spinner"></div>
+      <div v-else-if="displayedTasks.length === 0" class="empty-state">
+        <div class="empty-icon-wrap">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+        </div>
+        <h4 class="empty-title">No tasks to show</h4>
+        <p class="empty-subtitle">No Proxmox tasks match your current filters. Try selecting a different host, node or status.</p>
+        <button @click="clearFilters" class="btn btn-outline">Clear Filters</button>
+      </div>
       <div v-else class="table-container">
         <table class="table">
           <thead>
@@ -146,9 +154,6 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-if="displayedTasks.length === 0">
-              <td colspan="6" class="text-muted text-center">No tasks found</td>
-            </tr>
             <tr
               v-for="task in displayedTasks"
               :key="task._key"
@@ -585,6 +590,14 @@ export default {
       if (detailPollTimer) { clearInterval(detailPollTimer); detailPollTimer = null }
     })
 
+    const clearFilters = () => {
+      filterType.value = ''
+      filterStatus.value = ''
+      filterVmid.value = null
+      customType.value = ''
+      onFilterChange()
+    }
+
     return {
       hosts, nodes, tasks, loading, loadingMore, hasMore,
       selectedHostId, selectedNode, filterType, customType, filterVmid, filterStatus,
@@ -594,6 +607,7 @@ export default {
       statusBadgeClass,
       notifPermission, requestNotifPermission,
       openTaskDetail, stopTask, exportLog, exportTaskLog,
+      clearFilters,
     }
   }
 }
@@ -830,5 +844,42 @@ export default {
   border-radius: 9999px;
   font-size: 0.75rem;
   font-weight: 600;
+}
+
+/* ── Empty state ── */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 3rem 1.5rem;
+  text-align: center;
+}
+
+.empty-icon-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: var(--background);
+  border: 2px dashed var(--border-color);
+  color: var(--text-muted);
+}
+
+.empty-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.empty-subtitle {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  margin: 0;
+  max-width: 400px;
 }
 </style>

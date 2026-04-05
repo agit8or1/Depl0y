@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse
 from app.core.config import settings
 from app.core.database import init_db
 from app.api import auth, users, proxmox, vms, isos, cloud_images, updates, dashboard, bug_report, logs, docs, setup, system_updates, ha, system, llm, vm_agent, security, idrac, pbs, audit, notifications
-from app.api import vm_config, node as pve_node, console as pve_console, pbs_mgmt, pve_firewall, cluster as pve_cluster
+from app.api import vm_config, node as pve_node, console as pve_console, pbs_mgmt, pve_firewall, cluster as pve_cluster, sdn
 from app.middleware.security import SecurityHeadersMiddleware
 from app.middleware.rate_limit import RateLimitMiddleware
 from app.middleware.ip_filter import IPFilterMiddleware
@@ -84,6 +84,131 @@ async def count_requests(request: Request, call_next):
     global _request_counter
     _request_counter += 1
     response = await call_next(request)
+    return response
+
+
+# Audit middleware — logs mutating requests for authenticated users
+@app.middleware("http")
+async def audit_middleware(request: Request, call_next):
+    import time as _time
+    start = _time.time()
+    response = await call_next(request)
+    duration_ms = int((_time.time() - start) * 1000)
+
+    method = request.method
+    path = request.url.path
+
+    # Only audit mutating requests to API endpoints (not static/health)
+    if method not in ("POST", "PUT", "PATCH", "DELETE"):
+        return response
+    if not path.startswith(settings.API_V1_PREFIX):
+        return response
+
+    # Skip certain noisy/login endpoints (those handle their own audit entries)
+    skip_suffixes = ("/auth/refresh", "/auth/login", "/auth/2fa/login",
+                     "/auth/logout", "/notifications/in-app/mark-read",
+                     "/auth/me/password", "/auth/totp/verify", "/auth/totp/disable",
+                     "/auth/api-keys")
+    if any(path.endswith(s) for s in skip_suffixes):
+        return response
+    # Also skip user creation/deletion which are logged explicitly
+    import re as _re
+    if _re.search(r'/users/\d+$', path) and method in ("DELETE", "PUT", "PATCH"):
+        return response
+    if path.endswith("/users/") and method == "POST":
+        return response
+
+    # Try to identify the user from the request
+    try:
+        from app.core.database import SessionLocal
+        from app.core.security import decode_token
+        from app.models.database import AuditLog, User as UserModel
+
+        user_id = None
+        token = request.headers.get("Authorization", "")
+        if token.startswith("Bearer "):
+            payload = decode_token(token[7:])
+            if payload:
+                username = payload.get("sub")
+                if username:
+                    _db = SessionLocal()
+                    try:
+                        u = _db.query(UserModel).filter(UserModel.username == username).first()
+                        if u:
+                            user_id = u.id
+                    finally:
+                        _db.close()
+
+        # Determine action from method + path
+        action = "api_call"
+        p = path.lower()
+        if method == "DELETE":
+            action = "delete"
+        elif method == "POST":
+            action = "create"
+            if "start" in p:
+                action = "vm_start"
+            elif "stop" in p or "shutdown" in p:
+                action = "vm_stop"
+            elif "reboot" in p or "restart" in p:
+                action = "vm_reboot"
+            elif "backup" in p or "vzdump" in p:
+                action = "backup"
+            elif "snapshot" in p:
+                action = "snapshot_create"
+            elif "migrate" in p:
+                action = "vm_migrate"
+            elif "clone" in p:
+                action = "vm_clone"
+        elif method in ("PUT", "PATCH"):
+            action = "modify"
+
+        # Determine resource type
+        resource_type = None
+        if "/vms/" in p or "/qemu/" in p or "/pve-vm/" in p:
+            resource_type = "vm"
+        elif "/lxc/" in p:
+            resource_type = "lxc"
+        elif "/users/" in p:
+            resource_type = "user"
+        elif "/proxmox/" in p or "/pve-node/" in p:
+            resource_type = "node"
+        elif "/pbs" in p:
+            resource_type = "storage"
+        elif "/auth/" in p:
+            resource_type = "system"
+        elif "/security/" in p:
+            resource_type = "system"
+
+        success = response.status_code < 400
+
+        if user_id is not None:
+            _db = SessionLocal()
+            try:
+                client_ip = request.client.host if request.client else None
+                user_agent = request.headers.get("user-agent", "")
+                entry = AuditLog(
+                    user_id=user_id,
+                    action=action,
+                    resource_type=resource_type,
+                    details={"path": path, "method": method},
+                    ip_address=client_ip,
+                    user_agent=user_agent[:500] if user_agent else None,
+                    http_method=method,
+                    request_path=path,
+                    response_status=response.status_code,
+                    duration_ms=duration_ms,
+                    success=success,
+                )
+                _db.add(entry)
+                _db.commit()
+            except Exception:
+                _db.rollback()
+            finally:
+                _db.close()
+    except Exception:
+        pass
+
     return response
 
 
@@ -198,6 +323,7 @@ app.include_router(audit.router, prefix=f"{settings.API_V1_PREFIX}/audit", tags=
 app.include_router(notifications.router, prefix=f"{settings.API_V1_PREFIX}/notifications", tags=["Notifications"])
 app.include_router(pve_firewall.router, prefix=f"{settings.API_V1_PREFIX}/pve-firewall", tags=["PVE Firewall"])
 app.include_router(pve_cluster.router, prefix=f"{settings.API_V1_PREFIX}/cluster", tags=["Cluster Operations"])
+app.include_router(sdn.router, prefix=f"{settings.API_V1_PREFIX}", tags=["SDN"])
 
 
 if __name__ == "__main__":

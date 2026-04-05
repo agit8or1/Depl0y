@@ -319,6 +319,18 @@ def rollback_snapshot(host_id: int, node: str, vmid: int, snapname: str,
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/{host_id}/{node}/{vmid}/snapshot/{snapname}/config")
+def get_snapshot_config(host_id: int, node: str, vmid: int, snapname: str,
+                        db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    """Get the VM config as it was at the time of a specific snapshot."""
+    host = _get_host(host_id, db)
+    try:
+        cfg = _pve(_svc(host)).nodes(node).qemu(vmid).snapshot(snapname).config.get()
+        return cfg
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ── Clone ─────────────────────────────────────────────────────────────────────
 
 @router.post("/{host_id}/{node}/{vmid}/clone")

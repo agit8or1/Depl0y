@@ -530,6 +530,21 @@ async def login(credentials: LoginRequest, request: Request, db: Session = Depen
             success=False,
             reason="bad_password",
         )
+        # Audit log: failed login
+        try:
+            from app.api.audit import log_audit_event
+            log_audit_event(
+                db,
+                action="login_failed",
+                user_id=user.id if user else None,
+                resource_type="user",
+                details={"username": credentials.username, "reason": "bad_password"},
+                ip_address=client_ip,
+                user_agent=user_agent,
+                success=False,
+            )
+        except Exception:
+            pass
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
@@ -554,6 +569,22 @@ async def login(credentials: LoginRequest, request: Request, db: Session = Depen
     # No 2FA — complete login immediately
     _clear_failed_attempts(db, credentials.username)
     _record_login_attempt(db, user.id, credentials.username, client_ip, user_agent, True, None)
+
+    # Audit log: successful login
+    try:
+        from app.api.audit import log_audit_event
+        log_audit_event(
+            db,
+            action="login",
+            user_id=user.id,
+            resource_type="user",
+            details={"username": user.username},
+            ip_address=client_ip,
+            user_agent=user_agent,
+            success=True,
+        )
+    except Exception:
+        pass
 
     return _finalize_login(db, user, client_ip, user_agent)
 
@@ -626,6 +657,22 @@ async def login_2fa(data: TwoFactorLoginRequest, request: Request, db: Session =
     del _temp_tokens[data.temp_token]
     _clear_failed_attempts(db, username)
     _record_login_attempt(db, user.id, username, client_ip, user_agent, True, None)
+
+    # Audit log: successful 2FA login
+    try:
+        from app.api.audit import log_audit_event
+        log_audit_event(
+            db,
+            action="login",
+            user_id=user.id,
+            resource_type="user",
+            details={"username": user.username, "method": "2fa"},
+            ip_address=client_ip,
+            user_agent=user_agent,
+            success=True,
+        )
+    except Exception:
+        pass
 
     return _finalize_login(db, user, client_ip, user_agent)
 
@@ -783,6 +830,20 @@ async def change_own_password(
     current_user.updated_at = datetime.utcnow()
     db.commit()
 
+    # Audit log: password change
+    try:
+        from app.api.audit import log_audit_event
+        log_audit_event(
+            db,
+            action="password_change",
+            user_id=current_user.id,
+            resource_type="user",
+            details={"username": current_user.username},
+            success=True,
+        )
+    except Exception:
+        pass
+
     return {"message": "Password changed"}
 
 
@@ -851,6 +912,20 @@ async def verify_totp(
         db.add(bc)
     db.commit()
 
+    # Audit log: 2FA enabled
+    try:
+        from app.api.audit import log_audit_event
+        log_audit_event(
+            db,
+            action="2fa_enabled",
+            user_id=current_user.id,
+            resource_type="user",
+            details={"username": current_user.username},
+            success=True,
+        )
+    except Exception:
+        pass
+
     return {
         "message": "2FA enabled successfully",
         "backup_codes": codes,
@@ -894,6 +969,20 @@ async def disable_totp(
     current_user.totp_secret = None
     db.query(TotpBackupCode).filter(TotpBackupCode.user_id == current_user.id).delete()
     db.commit()
+
+    # Audit log: 2FA disabled
+    try:
+        from app.api.audit import log_audit_event
+        log_audit_event(
+            db,
+            action="2fa_disabled",
+            user_id=current_user.id,
+            resource_type="user",
+            details={"username": current_user.username},
+            success=True,
+        )
+    except Exception:
+        pass
 
     return {"message": "2FA disabled successfully"}
 
@@ -1020,6 +1109,21 @@ async def create_api_key(
     db.commit()
     db.refresh(api_key)
 
+    # Audit log: API key created
+    try:
+        from app.api.audit import log_audit_event
+        log_audit_event(
+            db,
+            action="api_key_created",
+            user_id=current_user.id,
+            resource_type="api_key",
+            resource_id=api_key.id,
+            details={"name": api_key.name, "key_prefix": api_key.key_prefix},
+            success=True,
+        )
+    except Exception:
+        pass
+
     return {
         "id": api_key.id,
         "name": api_key.name,
@@ -1047,5 +1151,20 @@ async def revoke_api_key(
 
     api_key.is_active = False
     db.commit()
+
+    # Audit log: API key revoked
+    try:
+        from app.api.audit import log_audit_event
+        log_audit_event(
+            db,
+            action="api_key_revoked",
+            user_id=current_user.id,
+            resource_type="api_key",
+            resource_id=api_key.id,
+            details={"name": api_key.name, "key_prefix": api_key.key_prefix},
+            success=True,
+        )
+    except Exception:
+        pass
 
     return {"message": "API key revoked"}

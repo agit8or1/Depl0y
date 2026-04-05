@@ -512,6 +512,141 @@
         </div>
       </div>
 
+      <!-- ── Compliance ──────────────────────────────────────── -->
+      <div v-if="activeTab === 'compliance'">
+        <div class="card mb-2">
+          <div class="card-header">
+            <h3>Security Score</h3>
+            <button @click="loadComplianceData" class="btn btn-outline btn-sm" :disabled="complianceLoading">
+              {{ complianceLoading ? 'Loading...' : 'Refresh' }}
+            </button>
+          </div>
+          <div class="section-body">
+            <div v-if="complianceLoading" class="empty-state">Loading compliance data...</div>
+            <div v-else>
+              <div class="score-section">
+                <div class="score-circle" :class="scoreClass">
+                  <span class="score-number">{{ complianceScore }}</span>
+                  <span class="score-label">/ 100</span>
+                </div>
+                <div class="score-breakdown">
+                  <div class="score-item">
+                    <span class="score-item-label">2FA Adoption</span>
+                    <div class="score-bar-wrap">
+                      <div class="score-bar" :style="{ width: complianceData.twofa_pct + '%' }"></div>
+                    </div>
+                    <span class="score-item-val">{{ complianceData.twofa_pct }}%</span>
+                  </div>
+                  <div class="score-item">
+                    <span class="score-item-label">Admin 2FA</span>
+                    <div class="score-bar-wrap">
+                      <div class="score-bar" :class="complianceData.all_admins_2fa ? 'bar-green' : 'bar-red'" :style="{ width: complianceData.all_admins_2fa ? '100%' : '0%' }"></div>
+                    </div>
+                    <span class="score-item-val">{{ complianceData.all_admins_2fa ? '100%' : '0%' }}</span>
+                  </div>
+                  <div class="score-item">
+                    <span class="score-item-label">Password Policy</span>
+                    <div class="score-bar-wrap">
+                      <div class="score-bar" :class="complianceData.password_policy_score >= 50 ? 'bar-green' : 'bar-red'" :style="{ width: complianceData.password_policy_score + '%' }"></div>
+                    </div>
+                    <span class="score-item-val">{{ complianceData.password_policy_score }}%</span>
+                  </div>
+                  <div class="score-item">
+                    <span class="score-item-label">Failed Login Rate</span>
+                    <div class="score-bar-wrap">
+                      <div class="score-bar" :class="complianceData.login_success_rate >= 80 ? 'bar-green' : 'bar-red'" :style="{ width: complianceData.login_success_rate + '%' }"></div>
+                    </div>
+                    <span class="score-item-val">{{ complianceData.login_success_rate }}% success</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card mb-2">
+          <div class="card-header"><h3>Compliance Checklist</h3></div>
+          <div class="section-body">
+            <div v-if="!complianceLoading" class="checklist">
+              <div class="checklist-item" :class="complianceData.all_admins_2fa ? 'check-pass' : 'check-fail'">
+                <span class="check-icon">{{ complianceData.all_admins_2fa ? '✓' : '✗' }}</span>
+                <div class="check-info">
+                  <span class="check-title">2FA enabled for all admins</span>
+                  <span class="check-desc">{{ complianceData.all_admins_2fa ? 'All admin accounts have 2FA enabled.' : `${complianceData.admins_without_2fa} admin(s) do not have 2FA enabled.` }}</span>
+                </div>
+              </div>
+              <div class="checklist-item" :class="complianceData.password_policy_configured ? 'check-pass' : 'check-fail'">
+                <span class="check-icon">{{ complianceData.password_policy_configured ? '✓' : '✗' }}</span>
+                <div class="check-info">
+                  <span class="check-title">Password policy configured</span>
+                  <span class="check-desc">{{ complianceData.password_policy_configured ? 'Password policy is active with complexity requirements.' : 'No password complexity requirements configured.' }}</span>
+                </div>
+              </div>
+              <div class="checklist-item check-pass">
+                <span class="check-icon">✓</span>
+                <div class="check-info">
+                  <span class="check-title">Audit logging active</span>
+                  <span class="check-desc">All user actions are being recorded in the audit log.</span>
+                </div>
+              </div>
+              <div class="checklist-item" :class="complianceData.api_keys_have_expiry ? 'check-pass' : 'check-warn'">
+                <span class="check-icon">{{ complianceData.api_keys_have_expiry ? '✓' : '!' }}</span>
+                <div class="check-info">
+                  <span class="check-title">API keys have expiry dates</span>
+                  <span class="check-desc">{{ complianceData.api_keys_have_expiry ? 'All active API keys have expiry dates set.' : `${complianceData.api_keys_no_expiry} API key(s) have no expiry date.` }}</span>
+                </div>
+              </div>
+              <div class="checklist-item" :class="complianceData.no_inactive_users ? 'check-pass' : 'check-warn'">
+                <span class="check-icon">{{ complianceData.no_inactive_users ? '✓' : '!' }}</span>
+                <div class="check-info">
+                  <span class="check-title">No users inactive > 90 days</span>
+                  <span class="check-desc">{{ complianceData.no_inactive_users ? 'All users have been active within 90 days.' : `${complianceData.inactive_users_count} user(s) have not logged in within 90 days.` }}</span>
+                </div>
+              </div>
+              <div class="checklist-item" :class="complianceData.brute_force_enabled ? 'check-pass' : 'check-fail'">
+                <span class="check-icon">{{ complianceData.brute_force_enabled ? '✓' : '✗' }}</span>
+                <div class="check-info">
+                  <span class="check-title">Brute force protection enabled</span>
+                  <span class="check-desc">{{ complianceData.brute_force_enabled ? 'Account lockout protection is active.' : 'Brute force protection is disabled.' }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card mb-2">
+          <div class="card-header"><h3>Recommendations</h3></div>
+          <div class="section-body">
+            <div v-if="!complianceLoading && recommendations.length === 0" class="empty-state">
+              No issues found. Your security posture looks good.
+            </div>
+            <div v-else class="recommendations">
+              <div v-for="rec in recommendations" :key="rec.title" class="rec-item" :class="'rec-' + rec.severity">
+                <div class="rec-severity">{{ rec.severity.toUpperCase() }}</div>
+                <div class="rec-body">
+                  <div class="rec-title">{{ rec.title }}</div>
+                  <div class="rec-desc">{{ rec.description }}</div>
+                </div>
+                <button v-if="rec.action" @click="rec.action()" class="btn btn-outline btn-sm">Fix</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><h3>Export Compliance Report</h3></div>
+          <div class="section-body">
+            <div class="setting-row">
+              <div class="setting-info">
+                <span class="setting-label">Generate a full compliance report</span>
+                <span class="setting-desc">Opens the Audit Log report generator with compliance-relevant filters pre-applied</span>
+              </div>
+              <button @click="$router.push('/audit-log')" class="btn btn-primary btn-sm">Open Audit Log</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- ── 2FA Overview ────────────────────────────────────── -->
       <div v-if="activeTab === '2fa'">
         <div class="card">
@@ -658,7 +793,7 @@
 </template>
 
 <script>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import api from '@/services/api'
 import { useToast } from 'vue-toastification'
 
@@ -678,14 +813,15 @@ export default {
     const historyFilter = ref('all')
 
     const tabs = [
-      { key: 'brute',    label: 'Brute Force' },
-      { key: 'lockouts', label: 'Lockouts' },
-      { key: 'iplist',   label: 'IP Access' },
-      { key: 'geoip',    label: 'GeoIP' },
-      { key: 'sessions', label: 'Sessions' },
-      { key: 'history',  label: 'Login History' },
-      { key: 'policy',   label: 'Password Policy' },
-      { key: '2fa',      label: '2FA Overview' },
+      { key: 'brute',      label: 'Brute Force' },
+      { key: 'lockouts',   label: 'Lockouts' },
+      { key: 'iplist',     label: 'IP Access' },
+      { key: 'geoip',      label: 'GeoIP' },
+      { key: 'sessions',   label: 'Sessions' },
+      { key: 'history',    label: 'Login History' },
+      { key: 'policy',     label: 'Password Policy' },
+      { key: '2fa',        label: '2FA Overview' },
+      { key: 'compliance', label: 'Compliance' },
     ]
 
     const settings = ref({
@@ -714,6 +850,103 @@ export default {
 
     const newIP = ref({ ip_address: '', list_type: 'ban', reason: '', expires_at: '' })
     const newGeoIP = ref({ country_code: '', country_name: '', action: 'block' })
+
+    // Compliance
+    const complianceLoading = ref(false)
+    const complianceData = ref({
+      twofa_pct: 0,
+      all_admins_2fa: false,
+      admins_without_2fa: 0,
+      password_policy_configured: false,
+      password_policy_score: 0,
+      login_success_rate: 100,
+      api_keys_have_expiry: true,
+      api_keys_no_expiry: 0,
+      no_inactive_users: true,
+      inactive_users_count: 0,
+      brute_force_enabled: true,
+    })
+
+    const complianceScore = computed(() => {
+      const d = complianceData.value
+      let score = 0
+      // 2FA adoption (max 25 pts)
+      score += Math.round(d.twofa_pct * 0.25)
+      // Admin 2FA (20 pts)
+      if (d.all_admins_2fa) score += 20
+      // Password policy (15 pts)
+      score += Math.round(d.password_policy_score * 0.15)
+      // Brute force (15 pts)
+      if (d.brute_force_enabled) score += 15
+      // Login success rate (15 pts)
+      score += Math.round(Math.min(100, d.login_success_rate) * 0.15)
+      // API keys with expiry (5 pts)
+      if (d.api_keys_have_expiry) score += 5
+      // No inactive users (5 pts)
+      if (d.no_inactive_users) score += 5
+      return Math.min(100, score)
+    })
+
+    const scoreClass = computed(() => {
+      const s = complianceScore.value
+      if (s >= 80) return 'score-good'
+      if (s >= 50) return 'score-warn'
+      return 'score-bad'
+    })
+
+    const recommendations = computed(() => {
+      const d = complianceData.value
+      const recs = []
+      if (!d.all_admins_2fa) {
+        recs.push({
+          severity: 'high',
+          title: 'Enable 2FA for all admin accounts',
+          description: `${d.admins_without_2fa} admin account(s) do not have 2FA enabled. This is a critical security risk.`,
+          action: () => { activeTab.value = '2fa' },
+        })
+      }
+      if (!d.brute_force_enabled) {
+        recs.push({
+          severity: 'high',
+          title: 'Enable brute force protection',
+          description: 'Account lockout protection is disabled. Enable it to prevent password guessing attacks.',
+          action: () => { activeTab.value = 'brute' },
+        })
+      }
+      if (!d.password_policy_configured) {
+        recs.push({
+          severity: 'medium',
+          title: 'Configure password policy',
+          description: 'No password complexity requirements are set. Configure minimum length and complexity rules.',
+          action: () => { activeTab.value = 'policy' },
+        })
+      }
+      if (d.api_keys_no_expiry > 0) {
+        recs.push({
+          severity: 'medium',
+          title: 'Set expiry dates on API keys',
+          description: `${d.api_keys_no_expiry} API key(s) have no expiry date. Long-lived keys increase exposure risk.`,
+          action: null,
+        })
+      }
+      if (!d.no_inactive_users) {
+        recs.push({
+          severity: 'low',
+          title: 'Review inactive user accounts',
+          description: `${d.inactive_users_count} user(s) have not logged in within 90 days. Consider disabling unused accounts.`,
+          action: null,
+        })
+      }
+      if (d.login_success_rate < 80) {
+        recs.push({
+          severity: 'medium',
+          title: 'High failed login rate',
+          description: `Only ${d.login_success_rate}% of recent login attempts succeeded. Review the login history for potential attacks.`,
+          action: () => { activeTab.value = 'history' },
+        })
+      }
+      return recs
+    })
 
     // Filtered login history
     const filteredHistory = computed(() => {
@@ -832,6 +1065,82 @@ export default {
         twoFaList.value = r.data
       } catch (e) {
         twoFaList.value = []
+      }
+    }
+
+    const loadComplianceData = async () => {
+      complianceLoading.value = true
+      try {
+        // Gather data from multiple endpoints
+        const [usersRes, policyRes, settingsRes, loginHistRes, twoFaRes] = await Promise.allSettled([
+          api.users.list(),
+          api.security.getPasswordPolicy(),
+          api.security.getSettings(),
+          api.security.getLoginHistory(200),
+          api.security.get2faOverview(),
+        ])
+
+        const users = usersRes.status === 'fulfilled' ? usersRes.value.data : []
+        const policy = policyRes.status === 'fulfilled' ? policyRes.value.data : {}
+        const sec = settingsRes.status === 'fulfilled' ? settingsRes.value.data : {}
+        const history = loginHistRes.status === 'fulfilled' ? loginHistRes.value.data : []
+        const twoFaUsers = twoFaRes.status === 'fulfilled' ? twoFaRes.value.data : []
+
+        // 2FA stats
+        const activeUsers = (twoFaUsers.length ? twoFaUsers : users).filter(u => u.is_active)
+        const totpEnabled = activeUsers.filter(u => u.totp_enabled).length
+        const twofa_pct = activeUsers.length ? Math.round((totpEnabled / activeUsers.length) * 100) : 0
+
+        const admins = activeUsers.filter(u => u.role === 'admin')
+        const adminsWithout2fa = admins.filter(u => !u.totp_enabled).length
+        const all_admins_2fa = admins.length > 0 && adminsWithout2fa === 0
+
+        // Password policy score
+        let ppScore = 0
+        if (policy.min_length >= 8) ppScore += 25
+        if (policy.min_length >= 12) ppScore += 25
+        if (policy.require_uppercase) ppScore += 15
+        if (policy.require_numbers) ppScore += 15
+        if (policy.require_symbols) ppScore += 20
+        const configured = ppScore > 0
+
+        // Login success rate
+        const totalLogins = history.length
+        const successLogins = history.filter(h => h.success).length
+        const loginSuccessRate = totalLogins > 0 ? Math.round((successLogins / totalLogins) * 100) : 100
+
+        // API keys
+        let apiKeysNoExpiry = 0
+        try {
+          const keysRes = await api.auth.listApiKeys()
+          const keys = keysRes.data.api_keys || []
+          apiKeysNoExpiry = keys.filter(k => k.is_active && !k.expires_at).length
+        } catch (e) {
+          apiKeysNoExpiry = 0
+        }
+
+        // Inactive users (>90 days)
+        const ninetyDaysAgo = new Date()
+        ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90)
+        const inactiveCount = users.filter(u => u.is_active && (!u.last_login || new Date(u.last_login) < ninetyDaysAgo)).length
+
+        complianceData.value = {
+          twofa_pct,
+          all_admins_2fa,
+          admins_without_2fa: adminsWithout2fa,
+          password_policy_configured: configured,
+          password_policy_score: ppScore,
+          login_success_rate: loginSuccessRate,
+          api_keys_have_expiry: apiKeysNoExpiry === 0,
+          api_keys_no_expiry: apiKeysNoExpiry,
+          no_inactive_users: inactiveCount === 0,
+          inactive_users_count: inactiveCount,
+          brute_force_enabled: !!sec.brute_force_enabled,
+        }
+      } catch (e) {
+        // non-critical
+      } finally {
+        complianceLoading.value = false
       }
     }
 
@@ -996,6 +1305,12 @@ export default {
 
     onMounted(loadAll)
 
+    watch(activeTab, (tab) => {
+      if (tab === 'compliance') {
+        loadComplianceData()
+      }
+    })
+
     return {
       loading, savingSettings, savingIP, savingGeoIP, savingPolicy, invalidatingAll,
       showIPModal, showGeoIPModal, activeTab, tabs,
@@ -1013,6 +1328,9 @@ export default {
       invalidateAllSessions, invalidateUserSessions,
       forceDisable2fa,
       formatDate, formatRole, getRoleBadgeClass,
+      // Compliance
+      complianceLoading, complianceData, complianceScore, scoreClass,
+      recommendations, loadComplianceData,
     }
   }
 }
@@ -1310,5 +1628,225 @@ export default {
 .btn-sm {
   padding: 0.25rem 0.6rem;
   font-size: 0.8rem;
+}
+
+/* Compliance Tab */
+.score-section {
+  display: flex;
+  gap: 2rem;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  padding: 0.5rem 0 1rem;
+}
+
+.score-circle {
+  width: 90px;
+  height: 90px;
+  border-radius: 50%;
+  border: 4px solid;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.score-good {
+  border-color: #22c55e;
+  color: #4ade80;
+}
+
+.score-warn {
+  border-color: #eab308;
+  color: #facc15;
+}
+
+.score-bad {
+  border-color: #ef4444;
+  color: #f87171;
+}
+
+.score-number {
+  font-size: 1.75rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.score-label {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  line-height: 1.2;
+}
+
+.score-breakdown {
+  flex: 1;
+  min-width: 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.score-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.score-item-label {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  min-width: 140px;
+  white-space: nowrap;
+}
+
+.score-bar-wrap {
+  flex: 1;
+  height: 6px;
+  background: var(--border-color);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.score-bar {
+  height: 100%;
+  background: #3b82f6;
+  border-radius: 3px;
+  transition: width 0.4s ease;
+}
+
+.bar-green { background: #22c55e; }
+.bar-red   { background: #ef4444; }
+
+.score-item-val {
+  font-size: 0.75rem;
+  color: var(--text-primary);
+  min-width: 70px;
+  text-align: right;
+}
+
+/* Checklist */
+.checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.checklist-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  padding: 0.8rem 0;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.checklist-item:last-child {
+  border-bottom: none;
+}
+
+.check-icon {
+  font-size: 1rem;
+  font-weight: 700;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 0.75rem;
+}
+
+.check-pass .check-icon {
+  background: rgba(34, 197, 94, 0.15);
+  color: #4ade80;
+}
+
+.check-fail .check-icon {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+}
+
+.check-warn .check-icon {
+  background: rgba(234, 179, 8, 0.15);
+  color: #facc15;
+}
+
+.check-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.check-title {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.check-desc {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+/* Recommendations */
+.recommendations {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.rec-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  border-radius: 6px;
+  border: 1px solid;
+}
+
+.rec-high {
+  border-color: rgba(239, 68, 68, 0.3);
+  background: rgba(239, 68, 68, 0.05);
+}
+
+.rec-medium {
+  border-color: rgba(234, 179, 8, 0.3);
+  background: rgba(234, 179, 8, 0.05);
+}
+
+.rec-low {
+  border-color: rgba(59, 130, 246, 0.3);
+  background: rgba(59, 130, 246, 0.05);
+}
+
+.rec-severity {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 0.15rem 0.4rem;
+  border-radius: 3px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+}
+
+.rec-high .rec-severity   { background: rgba(239, 68, 68, 0.2); color: #f87171; }
+.rec-medium .rec-severity { background: rgba(234, 179, 8, 0.2);  color: #facc15; }
+.rec-low .rec-severity    { background: rgba(59, 130, 246, 0.2); color: #60a5fa; }
+
+.rec-body {
+  flex: 1;
+}
+
+.rec-title {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: 0.2rem;
+}
+
+.rec-desc {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
 }
 </style>

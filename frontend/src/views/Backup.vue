@@ -160,8 +160,13 @@
 
           <div v-if="loadingSchedules" class="loading-spinner"></div>
 
-          <div v-else-if="schedules.length === 0" class="text-center text-muted" style="padding: 2rem;">
-            <p>No backup schedules configured.</p>
+          <div v-else-if="schedules.length === 0" class="empty-state">
+            <div class="empty-icon-wrap">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            </div>
+            <h4 class="empty-title">No backup schedules configured</h4>
+            <p class="empty-subtitle">Create a backup schedule to automatically back up your VMs and containers.</p>
+            <button @click="openCreateScheduleModal" class="btn btn-primary">+ Create Schedule</button>
           </div>
 
           <div v-else class="table-container">
@@ -474,7 +479,37 @@
           </div>
         </template>
       </div>
+
+      <!-- Restore Tab -->
+      <div v-if="activeTab === 'Restore'" class="tab-content">
+        <div class="tab-header" style="display:flex; justify-content:space-between; align-items:center; padding:1.25rem; border-bottom:1px solid var(--border-color);">
+          <div>
+            <h3 style="margin:0;">Restore Wizard</h3>
+            <p class="text-muted text-sm" style="margin:0.2rem 0 0;">Guided step-by-step restore from Proxmox storage or PBS</p>
+          </div>
+          <button @click="showRestoreWizard = true" class="btn btn-primary">
+            Launch Restore Wizard
+          </button>
+        </div>
+        <div style="padding:1.5rem; color:var(--text-secondary); font-size:0.875rem; line-height:1.7;">
+          <p>The Restore Wizard guides you through:</p>
+          <ol style="margin:0.5rem 0 0 1.25rem;">
+            <li><strong>Source</strong> — Select a backup from Proxmox storage or PBS</li>
+            <li><strong>Target</strong> — Choose the destination node, VMID and storage</li>
+            <li><strong>Options</strong> — Start after restore, unique MACs, live restore</li>
+            <li><strong>Confirm &amp; Execute</strong> — Review and run with live task progress</li>
+          </ol>
+        </div>
+      </div>
     </div>
+
+    <!-- Restore Wizard modal -->
+    <RestoreWizard
+      :visible="showRestoreWizard"
+      :pre-host-id="selectedHostId"
+      @close="showRestoreWizard = false"
+      @restored="showRestoreWizard = false"
+    />
 
     <!-- Create / Edit Schedule Modal -->
     <div v-if="scheduleModal.show" class="modal" @click="closeScheduleModal">
@@ -725,9 +760,11 @@
 import { ref, computed, onMounted } from 'vue'
 import api from '@/services/api'
 import { useToast } from 'vue-toastification'
+import RestoreWizard from '@/components/RestoreWizard.vue'
 
 export default {
   name: 'Backup',
+  components: { RestoreWizard },
   setup() {
     const toast = useToast()
     const hosts = ref([])
@@ -772,7 +809,8 @@ export default {
     const loadingHistory = ref(false)
     const historyFilter = ref({ node: '', vmid: '', status: '', search: '' })
 
-    const availableTabs = computed(() => ['PBS Servers', 'Schedules', 'Run Backup Now', 'History'])
+    const availableTabs = computed(() => ['PBS Servers', 'Schedules', 'Run Backup Now', 'History', 'Restore'])
+    const showRestoreWizard = ref(false)
 
     const cronPresets = [
       { label: 'Daily at 2AM', value: '0 2 * * *' },
@@ -1386,6 +1424,7 @@ export default {
       selectedHostId,
       activeTab,
       availableTabs,
+      showRestoreWizard,
       schedules,
       loadingSchedules,
       savingSchedule,
@@ -2212,5 +2251,42 @@ export default {
   .history-filters {
     flex-direction: column;
   }
+}
+
+/* ── Empty state ── */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 3rem 1.5rem;
+  text-align: center;
+}
+
+.empty-icon-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: var(--background);
+  border: 2px dashed var(--border-color);
+  color: var(--text-muted);
+}
+
+.empty-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.empty-subtitle {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  margin: 0;
+  max-width: 420px;
 }
 </style>

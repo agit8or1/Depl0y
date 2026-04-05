@@ -13,7 +13,7 @@ const router = createRouter({
     {
       path: '/',
       name: 'Dashboard',
-      component: () => import('@/views/Dashboard.vue'),
+      component: () => import(/* webpackPrefetch: true */ '@/views/Dashboard.vue'),
       meta: { requiresAuth: true }
     },
     {
@@ -25,7 +25,7 @@ const router = createRouter({
     {
       path: '/vms',
       name: 'VirtualMachines',
-      component: () => import('@/views/VirtualMachines.vue'),
+      component: () => import(/* webpackPrefetch: true */ '@/views/VirtualMachines.vue'),
       meta: { requiresAuth: true }
     },
     {
@@ -297,7 +297,7 @@ const router = createRouter({
     {
       path: '/containers',
       name: 'Containers',
-      component: () => import('@/views/Containers.vue'),
+      component: () => import(/* webpackPrefetch: true */ '@/views/Containers.vue'),
       meta: { requiresAuth: true }
     },
     {
@@ -337,9 +337,21 @@ const router = createRouter({
       meta: { requiresAuth: true, requiresOperator: true }
     },
     {
+      path: '/sdn',
+      name: 'SDNManagement',
+      component: () => import('@/views/SDNManagement.vue'),
+      meta: { requiresAuth: true, requiresAdmin: true }
+    },
+    {
       path: '/pools',
       name: 'ResourcePools',
       component: () => import('@/views/ResourcePools.vue'),
+      meta: { requiresAuth: true, requiresAdmin: true }
+    },
+    {
+      path: '/storage-management',
+      name: 'StorageManagement',
+      component: () => import('@/views/StorageManagement.vue'),
       meta: { requiresAuth: true, requiresAdmin: true }
     },
     {
@@ -353,6 +365,12 @@ const router = createRouter({
       name: 'ApiExplorer',
       component: () => import('@/views/ApiExplorer.vue'),
       meta: { requiresAuth: true, requiresAdmin: true }
+    },
+    {
+      path: '/snapshots',
+      name: 'SnapshotManager',
+      component: () => import('@/views/SnapshotManager.vue'),
+      meta: { requiresAuth: true }
     },
     {
       path: '/:pathMatch(.*)*',

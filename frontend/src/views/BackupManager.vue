@@ -161,6 +161,21 @@
 
     <!-- Restore tab -->
     <div v-if="activeTab === 'restore'">
+      <!-- Restore Wizard launcher -->
+      <div class="card mb-2">
+        <div class="card-body" style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:0.75rem;">
+          <div>
+            <strong>Restore Wizard</strong>
+            <p class="text-muted text-sm mb-0" style="margin:0.1rem 0 0;">
+              Step-by-step guided restore from Proxmox storage or PBS
+            </p>
+          </div>
+          <button @click="showRestoreWizard = true" class="btn btn-primary">
+            Launch Restore Wizard
+          </button>
+        </div>
+      </div>
+
       <div class="card mb-2">
         <div class="card-header">
           <h3>Browse Backups</h3>
@@ -1206,6 +1221,14 @@
       </div>
     </div>
   </div>
+
+  <!-- Restore Wizard -->
+  <RestoreWizard
+    :visible="showRestoreWizard"
+    :pre-host-id="hostId"
+    @close="showRestoreWizard = false"
+    @restored="showRestoreWizard = false"
+  />
 </template>
 
 <script setup>
@@ -1213,6 +1236,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useToast } from 'vue-toastification'
 import api from '@/services/api'
+import RestoreWizard from '@/components/RestoreWizard.vue'
 
 const route = useRoute()
 const toast = useToast()
@@ -1220,6 +1244,7 @@ const toast = useToast()
 const hostId = ref(route.params.hostId)
 
 const activeTab = ref('schedules')
+const showRestoreWizard = ref(false)
 
 // Schedules
 const schedules = ref([])

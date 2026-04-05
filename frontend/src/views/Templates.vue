@@ -69,9 +69,20 @@
             <div class="loading-spinner"></div>
             <span>Loading templates...</span>
           </div>
-          <div v-else-if="filteredTemplates.length === 0" class="empty-state">
-            <span class="empty-icon">&#128203;</span>
-            <p>No templates found{{ search ? ' matching your search' : '' }}.</p>
+          <div v-else-if="filteredTemplates.length === 0 && !search" class="empty-state-full">
+            <div class="empty-icon-wrap">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+            </div>
+            <h4 class="empty-title">No templates found</h4>
+            <p class="empty-subtitle">Convert a VM to a template on your Proxmox host, or browse the Template Library tab to discover community templates.</p>
+            <button @click="loadTemplates" class="btn btn-outline">Refresh</button>
+          </div>
+          <div v-else-if="filteredTemplates.length === 0" class="empty-state-full">
+            <div class="empty-icon-wrap">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            </div>
+            <h4 class="empty-title">No templates match your search</h4>
+            <p class="empty-subtitle">Try a different search term or clear the filter.</p>
           </div>
           <div v-else class="table-container">
             <table class="table">
@@ -1587,4 +1598,41 @@ onMounted(async () => {
 .text-sm { font-size: 0.875rem; }
 .text-muted { color: var(--text-secondary); }
 .text-danger { color: var(--danger-color, #ef4444); }
+
+/* ── Empty state (full-width, inside card) ── */
+.empty-state-full {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 3.5rem 1.5rem;
+  text-align: center;
+}
+
+.empty-icon-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: var(--background);
+  border: 2px dashed var(--border-color);
+  color: var(--text-muted);
+}
+
+.empty-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.empty-subtitle {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  margin: 0;
+  max-width: 440px;
+}
 </style>

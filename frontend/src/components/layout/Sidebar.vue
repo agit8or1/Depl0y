@@ -75,6 +75,10 @@
         <span class="icon">💾</span>
         <span>Backup</span>
       </router-link>
+      <router-link to="/snapshots" class="nav-item" @click="handleNavClick">
+        <span class="icon">📷</span>
+        <span>Snapshots</span>
+      </router-link>
       <router-link v-if="isAdmin" to="/ha-management" class="nav-item" @click="handleNavClick">
         <span class="icon">🔄</span>
         <span>HA Management</span>
@@ -91,6 +95,10 @@
         <span class="icon">🔌</span>
         <span>Network Management</span>
       </router-link>
+      <router-link v-if="isAdmin" to="/sdn" class="nav-item" @click="handleNavClick">
+        <span class="icon">🕸️</span>
+        <span>SDN / VNets</span>
+      </router-link>
       <router-link to="/images" class="nav-item" @click="handleNavClick">
         <span class="icon">💿</span>
         <span>Images</span>
@@ -98,6 +106,10 @@
       <router-link to="/proxmox" class="nav-item" @click="handleNavClick">
         <span class="icon">🌐</span>
         <span>Proxmox Hosts</span>
+      </router-link>
+      <router-link v-if="isAdmin" to="/storage-management" class="nav-item" @click="handleNavClick">
+        <span class="icon">🗄️</span>
+        <span>Storage Management</span>
       </router-link>
       <router-link v-if="isAdmin" to="/pools" class="nav-item" @click="handleNavClick">
         <span class="icon">🗂️</span>

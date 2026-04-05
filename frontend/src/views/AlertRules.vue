@@ -46,13 +46,13 @@
       <!-- Filters + bulk actions -->
       <div class="toolbar">
         <div class="toolbar-left">
-          <select v-model="activeFilters.severity" class="filter-select">
+          <select v-model="activeFilters.severity" class="filter-select" aria-label="Filter by severity">
             <option value="">All severities</option>
             <option value="critical">Critical</option>
             <option value="warning">Warning</option>
             <option value="info">Info</option>
           </select>
-          <select v-model="activeFilters.acked" class="filter-select">
+          <select v-model="activeFilters.acked" class="filter-select" aria-label="Filter by acknowledgement status">
             <option value="">All statuses</option>
             <option value="unacked">Unacknowledged</option>
             <option value="acked">Acknowledged</option>
@@ -199,14 +199,14 @@
       <!-- Filters -->
       <div class="toolbar">
         <div class="toolbar-left">
-          <select v-model="historyFilters.days" @change="historyFilters.page = 1; loadHistory()" class="filter-select">
+          <select v-model="historyFilters.days" @change="historyFilters.page = 1; loadHistory()" class="filter-select" aria-label="Filter by date range">
             <option :value="1">Last 24h</option>
             <option :value="3">Last 3 days</option>
             <option :value="7">Last 7 days</option>
             <option :value="14">Last 14 days</option>
             <option :value="30">Last 30 days</option>
           </select>
-          <select v-model="historyFilters.severity" @change="historyFilters.page = 1; loadHistory()" class="filter-select">
+          <select v-model="historyFilters.severity" @change="historyFilters.page = 1; loadHistory()" class="filter-select" aria-label="Filter by severity">
             <option value="">All severities</option>
             <option value="critical">Critical</option>
             <option value="warning">Warning</option>
@@ -217,6 +217,7 @@
             @change="historyFilters.page = 1; loadHistory()"
             class="filter-input"
             placeholder="Filter by rule key..."
+            aria-label="Filter by rule key"
           />
         </div>
         <div class="toolbar-right">
@@ -298,11 +299,11 @@
     <!-- ══════════════════════════════════════════════════════════════════ -->
     <!-- Create / Edit Rule Modal                                           -->
     <!-- ══════════════════════════════════════════════════════════════════ -->
-    <div v-if="showRuleModal" class="modal-overlay" @click.self="closeModal">
+    <div v-if="showRuleModal" class="modal-overlay" @click.self="closeModal" role="dialog" aria-modal="true" :aria-label="editingRule ? 'Edit Alert Rule' : 'Create Alert Rule'">
       <div class="modal">
         <div class="modal-header">
           <h3>{{ editingRule ? 'Edit Alert Rule' : 'Create Alert Rule' }}</h3>
-          <button class="modal-close" @click="closeModal">&#215;</button>
+          <button class="modal-close" @click="closeModal" aria-label="Close dialog">&#215;</button>
         </div>
 
         <div class="modal-body">
@@ -910,14 +911,14 @@ export default {
 }
 
 .text-muted {
-  color: var(--text-muted, rgba(255,255,255,0.5));
+  color: var(--text-muted, #8fa3b8);
   font-size: 0.875rem;
   margin: 0;
 }
 
 .refresh-countdown {
   font-size: 0.78rem;
-  color: var(--text-muted, rgba(255,255,255,0.4));
+  color: var(--text-muted, #8fa3b8);
 }
 
 /* ── Tab bar ──────────────────────────────────────────────────────────── */
@@ -935,13 +936,19 @@ export default {
   padding: 0.6rem 1.25rem;
   font-size: 0.875rem;
   font-weight: 500;
-  color: var(--text-muted, rgba(255,255,255,0.5));
+  color: var(--text-muted, #8fa3b8);
   cursor: pointer;
   display: flex;
   align-items: center;
   gap: 0.5rem;
   transition: color 0.15s, border-color 0.15s;
   margin-bottom: -1px;
+}
+
+.tab-btn:focus-visible {
+  outline: 2px solid var(--accent-color, #3b82f6);
+  outline-offset: 2px;
+  border-radius: 3px;
 }
 
 .tab-btn:hover {
@@ -1020,14 +1027,19 @@ export default {
   width: 180px;
 }
 
+.filter-input:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 0;
+  border-color: #3b82f6;
+}
+
 .filter-input:focus {
-  outline: none;
   border-color: #3b82f6;
 }
 
 .total-label {
   font-size: 0.8rem;
-  color: var(--text-muted, rgba(255,255,255,0.5));
+  color: var(--text-muted, #8fa3b8);
 }
 
 /* ── Loading / empty states ───────────────────────────────────────────── */
@@ -1037,7 +1049,7 @@ export default {
   flex-direction: column;
   align-items: center;
   gap: 0.75rem;
-  color: var(--text-muted, rgba(255,255,255,0.5));
+  color: var(--text-muted, #8fa3b8);
   font-size: 0.875rem;
 }
 
@@ -1078,7 +1090,7 @@ export default {
 
 .empty-sub {
   font-size: 0.82rem;
-  color: var(--text-muted, rgba(255,255,255,0.45));
+  color: var(--text-muted, #8fa3b8);
 }
 
 /* ── Active alert list ────────────────────────────────────────────────── */
@@ -1144,7 +1156,7 @@ export default {
 
 .alert-message {
   font-size: 0.81rem;
-  color: var(--text-muted, rgba(255,255,255,0.6));
+  color: var(--text-muted, #9aabb8);
   line-height: 1.5;
   margin-bottom: 0.35rem;
   word-break: break-word;
@@ -1154,7 +1166,7 @@ export default {
   display: flex;
   gap: 0.75rem;
   font-size: 0.73rem;
-  color: var(--text-muted, rgba(255,255,255,0.4));
+  color: var(--text-muted, #8fa3b8);
   flex-wrap: wrap;
 }
 
@@ -1195,7 +1207,7 @@ export default {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--text-muted, rgba(255,255,255,0.4));
+  color: var(--text-muted, #8fa3b8);
   background: rgba(255,255,255,0.03);
   border-bottom: 1px solid var(--border-color, rgba(255,255,255,0.08));
   white-space: nowrap;
@@ -1221,10 +1233,10 @@ export default {
 }
 
 .rule-name { font-weight: 500; }
-.col-muted { color: var(--text-muted, rgba(255,255,255,0.5)); font-size: 0.81rem; }
+.col-muted { color: var(--text-muted, #8fa3b8); font-size: 0.81rem; }
 .col-time  { white-space: nowrap; }
 .col-title { font-weight: 500; max-width: 240px; }
-.col-message { max-width: 320px; font-size: 0.78rem; color: var(--text-muted, rgba(255,255,255,0.6)); word-break: break-word; }
+.col-message { max-width: 320px; font-size: 0.78rem; color: var(--text-muted, #9aabb8); word-break: break-word; }
 .col-rule { font-family: monospace; font-size: 0.75rem; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ── Type badge ───────────────────────────────────────────────────────── */
@@ -1298,7 +1310,7 @@ export default {
 
 .page-info {
   font-size: 0.83rem;
-  color: var(--text-muted, rgba(255,255,255,0.5));
+  color: var(--text-muted, #8fa3b8);
 }
 
 /* ── Row actions ──────────────────────────────────────────────────────── */
@@ -1337,6 +1349,11 @@ export default {
 
 .toggle-switch input:checked + .toggle-slider { background: #3b82f6; }
 .toggle-switch input:checked + .toggle-slider::before { transform: translateX(18px); }
+
+.toggle-switch input:focus-visible + .toggle-slider {
+  outline: 2px solid var(--accent-color, #3b82f6);
+  outline-offset: 2px;
+}
 
 /* ── Modal ─────────────────────────────────────────────────────────────── */
 .modal-overlay {
@@ -1383,13 +1400,18 @@ export default {
 .modal-close {
   background: none;
   border: none;
-  color: var(--text-muted, rgba(255,255,255,0.5));
+  color: var(--text-muted, #8fa3b8);
   font-size: 1.4rem;
   cursor: pointer;
-  padding: 0;
+  padding: 0.2rem;
   line-height: 1;
+  border-radius: 0.25rem;
 }
 .modal-close:hover { color: var(--text-primary, #f1f5f9); }
+.modal-close:focus-visible {
+  outline: 2px solid var(--accent-color, #3b82f6);
+  outline-offset: 2px;
+}
 
 .modal-body {
   padding: 1.25rem 1.5rem;
@@ -1455,7 +1477,7 @@ export default {
 
 .rt-desc {
   font-size: 0.68rem;
-  color: var(--text-muted, rgba(255,255,255,0.45));
+  color: var(--text-muted, #8fa3b8);
 }
 
 /* ── Form ──────────────────────────────────────────────────────────────── */
@@ -1468,20 +1490,20 @@ export default {
 .form-group label {
   font-size: 0.82rem;
   font-weight: 500;
-  color: var(--text-muted, rgba(255,255,255,0.7));
+  color: var(--text-secondary, #94a3b8);
 }
 
 .required { color: #f87171; }
 
 .threshold-unit {
   font-weight: 400;
-  color: var(--text-muted, rgba(255,255,255,0.4));
+  color: var(--text-muted, #8fa3b8);
   margin-left: 0.25rem;
 }
 
 .form-hint {
   font-size: 0.75rem;
-  color: var(--text-muted, rgba(255,255,255,0.4));
+  color: var(--text-muted, #8fa3b8);
 }
 
 .form-input {
@@ -1495,8 +1517,14 @@ export default {
   box-sizing: border-box;
 }
 
+.form-input:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 0;
+  border-color: #3b82f6;
+  background: rgba(255,255,255,0.1);
+}
+
 .form-input:focus {
-  outline: none;
   border-color: #3b82f6;
   background: rgba(255,255,255,0.1);
 }
@@ -1514,7 +1542,7 @@ export default {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--text-muted, rgba(255,255,255,0.4));
+  color: var(--text-muted, #8fa3b8);
   border-top: 1px solid var(--border-color, rgba(255,255,255,0.08));
   padding-top: 0.75rem;
 }
@@ -1575,9 +1603,27 @@ export default {
 
 .btn-icon { font-size: 1rem; line-height: 1; }
 
+/* ── Placeholder contrast ───────────────────────────────────────────── */
+.filter-input::placeholder,
+.form-input::placeholder {
+  color: #8fa3b8;
+  opacity: 1;
+}
+
 /* ── Select option dark mode fix ─────────────────────────────────────── */
 select option {
   background: #1e2a3a;
   color: #f1f5f9;
+}
+
+/* ── Button focus-visible ────────────────────────────────────────────── */
+.btn:focus-visible {
+  outline: 2px solid var(--accent-color, #3b82f6);
+  outline-offset: 2px;
+}
+
+.filter-select:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 0;
 }
 </style>

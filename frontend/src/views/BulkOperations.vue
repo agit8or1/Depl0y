@@ -148,6 +148,64 @@
               🔄 Reboot All
             </button>
           </div>
+
+          <!-- Rolling Restart Section -->
+          <div class="rolling-restart-section">
+            <h4>Rolling Restart</h4>
+            <p class="tab-desc">Restart selected VMs one-by-one with a configurable delay between each.</p>
+
+            <div class="form-row">
+              <label>Delay between restarts (seconds)</label>
+              <div class="input-with-unit">
+                <input v-model.number="rollingDelay" type="number" min="0" max="300" class="input input-sm" />
+                <span>sec</span>
+              </div>
+            </div>
+
+            <div class="form-row checkbox-row">
+              <label>
+                <input v-model="rollingGraceful" type="checkbox" />
+                Graceful shutdown (ACPI) instead of force stop
+              </label>
+            </div>
+
+            <button
+              class="btn btn-warning"
+              :disabled="!hasSelection || rollingRunning || executing"
+              @click="startRollingRestart"
+            >
+              {{ rollingRunning ? '⏳ Rolling Restart in Progress...' : '🔄 Start Rolling Restart' }}
+            </button>
+
+            <!-- Rolling progress table -->
+            <div v-if="rollingResults.length > 0" class="rolling-progress">
+              <div class="rolling-progress-header">
+                <span class="rolling-summary">
+                  {{ rollingResults.filter(r => r.status === 'done').length }} done ·
+                  {{ rollingResults.filter(r => r.status === 'error').length }} errors ·
+                  {{ rollingResults.filter(r => r.status === 'pending').length }} pending
+                </span>
+                <button class="btn btn-xs btn-secondary" @click="rollingResults = []">Clear</button>
+              </div>
+              <table class="results-table">
+                <thead>
+                  <tr><th>VM</th><th>Node</th><th>Status</th><th>Detail</th></tr>
+                </thead>
+                <tbody>
+                  <tr v-for="r in rollingResults" :key="`roll-${r.vmid}`" :class="rollingRowClass(r)">
+                    <td>{{ r.name || r.vmid }}</td>
+                    <td>{{ r.node }}</td>
+                    <td>
+                      <span class="exec-status-badge" :class="r.status === 'done' ? 'success' : r.status === 'error' ? 'failed' : r.status === 'running' ? 'running' : 'pending'">
+                        {{ r.status === 'done' ? '✓ done' : r.status === 'error' ? '✗ error' : r.status }}
+                      </span>
+                    </td>
+                    <td class="exec-detail"><span v-if="r.detail" class="error-text">{{ r.detail }}</span></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
 
         <!-- ── Snapshot Tab ── -->
@@ -382,198 +440,310 @@
           </button>
         </div>
 
-        <!-- ── Scripts Tab ── -->
+        <!-- ── Scripts Tab (legacy list view) — replaced by new card grid below ── -->
         <div v-if="activeTab === 'scripts'" class="tab-content">
           <h3>Automation Scripts</h3>
+          <p class="tab-desc">Run automation scripts against your Proxmox hosts.</p>
 
-          <!-- Script selector -->
-          <div class="script-list">
+          <!-- New card grid -->
+          <div class="script-cards-grid">
             <div
-              v-for="script in scripts"
-              :key="script.key"
-              class="script-card"
-              :class="{ active: activeScript === script.key }"
-              @click="activeScript = script.key"
+              v-for="card in scriptCards"
+              :key="card.key"
+              class="script-card-new"
             >
-              <span class="script-icon">{{ script.icon }}</span>
-              <div class="script-info">
-                <span class="script-name">{{ script.name }}</span>
-                <span class="script-desc">{{ script.desc }}</span>
+              <div class="script-card-header">
+                <span class="script-card-icon">{{ card.icon }}</span>
+                <div>
+                  <div class="script-card-name">{{ card.name }}</div>
+                  <div class="script-card-desc">{{ card.desc }}</div>
+                </div>
+              </div>
+              <button
+                class="btn btn-secondary btn-sm"
+                @click="toggleScriptCard(card.key)"
+              >
+                {{ openScriptCard === card.key ? 'Close' : 'Configure & Run' }}
+              </button>
+
+              <!-- Inline config panel -->
+              <div v-if="openScriptCard === card.key" class="script-card-config">
+                <!-- Nightly Snapshot -->
+                <template v-if="card.key === 'nightly-snapshot'">
+                  <div class="form-row">
+                    <label>Host</label>
+                    <select v-model="scHostId" class="select">
+                      <option value="">Select host...</option>
+                      <option v-for="h in hosts" :key="h.id" :value="h.id">{{ h.name }}</option>
+                    </select>
+                  </div>
+                  <p class="hint">Creates snapshots named <code>snap-YYYY-MM-DD</code> on all running VMs on the selected host.</p>
+                </template>
+
+                <!-- Cleanup Old Snapshots -->
+                <template v-if="card.key === 'cleanup-old-snaps'">
+                  <div class="form-row">
+                    <label>Host</label>
+                    <select v-model="scHostId" class="select">
+                      <option value="">Select host...</option>
+                      <option v-for="h in hosts" :key="h.id" :value="h.id">{{ h.name }}</option>
+                    </select>
+                  </div>
+                  <div class="form-row">
+                    <label>Delete snapshots older than (days)</label>
+                    <input v-model.number="scCleanupDays" type="number" min="1" class="input input-sm" />
+                  </div>
+                </template>
+
+                <!-- VM Health Check -->
+                <template v-if="card.key === 'health-check'">
+                  <div class="form-row">
+                    <label>Host</label>
+                    <select v-model="scHostId" class="select">
+                      <option value="">Select host...</option>
+                      <option v-for="h in hosts" :key="h.id" :value="h.id">{{ h.name }}</option>
+                    </select>
+                  </div>
+                  <p class="hint">Lists VMs that have <code>onboot=true</code> but are currently stopped.</p>
+                </template>
+
+                <!-- Resource Report -->
+                <template v-if="card.key === 'resource-report'">
+                  <div class="form-row">
+                    <label>Host</label>
+                    <select v-model="scHostId" class="select">
+                      <option value="">Select host...</option>
+                      <option v-for="h in hosts" :key="h.id" :value="h.id">{{ h.name }}</option>
+                    </select>
+                  </div>
+                  <p class="hint">Shows per-node CPU and RAM utilization summary. No configuration needed.</p>
+                </template>
+
+                <!-- Bulk Tag Updater -->
+                <template v-if="card.key === 'bulk-tag-updater'">
+                  <div class="form-row">
+                    <label>Host</label>
+                    <select v-model="scHostId" class="select">
+                      <option value="">Select host...</option>
+                      <option v-for="h in hosts" :key="h.id" :value="h.id">{{ h.name }}</option>
+                    </select>
+                  </div>
+                  <div class="form-row">
+                    <label>Tag</label>
+                    <input v-model="scTag" class="input" placeholder="e.g. env:prod" />
+                  </div>
+                  <div class="form-row">
+                    <label>Action</label>
+                    <div class="radio-group">
+                      <label class="radio-label">
+                        <input type="radio" v-model="scTagAction" value="add" /> Add tag
+                      </label>
+                      <label class="radio-label">
+                        <input type="radio" v-model="scTagAction" value="remove" /> Remove tag
+                      </label>
+                    </div>
+                  </div>
+                </template>
+
+                <!-- Config Standardizer -->
+                <template v-if="card.key === 'config-standardizer'">
+                  <div class="form-row">
+                    <label>Host</label>
+                    <select v-model="scHostId" class="select">
+                      <option value="">Select host...</option>
+                      <option v-for="h in hosts" :key="h.id" :value="h.id">{{ h.name }}</option>
+                    </select>
+                  </div>
+                  <div class="form-row checkbox-row">
+                    <label>
+                      <input v-model="scDryRun" type="checkbox" />
+                      Dry-run (preview only, no changes)
+                    </label>
+                  </div>
+                  <p class="hint">Ensures all VMs have <code>onboot=true</code> set.</p>
+                </template>
+
+                <div class="script-card-run-row">
+                  <button
+                    class="btn btn-primary"
+                    :disabled="!scHostId || scRunning"
+                    @click="runScriptCard(card.key)"
+                  >
+                    {{ scRunning && openScriptCard === card.key ? 'Running...' : 'Run' }}
+                  </button>
+                </div>
+
+                <!-- Results panel -->
+                <div v-if="scResults && scResultsKey === card.key" class="sc-results">
+                  <div class="sc-results-header">
+                    <strong>Results</strong>
+                    <button class="btn btn-xs btn-secondary" @click="scResults = null">Close Results</button>
+                  </div>
+
+                  <!-- Health check results -->
+                  <template v-if="card.key === 'health-check'">
+                    <p class="hint">{{ (scResults.vms || []).length }} VM(s) found stopped with onboot=true</p>
+                    <table class="results-table" v-if="(scResults.vms || []).length > 0">
+                      <thead><tr><th>VM Name</th><th>Action</th><th>Status</th></tr></thead>
+                      <tbody>
+                        <tr v-for="r in scResults.vms" :key="r.vmid">
+                          <td>{{ r.vm_name || r.vmid }}</td>
+                          <td>Stopped with onboot=true</td>
+                          <td><span class="badge badge-warning">Needs attention</span></td>
+                        </tr>
+                      </tbody>
+                    </table>
+                    <p v-else class="hint">All VMs with onboot=true are running.</p>
+                  </template>
+
+                  <!-- Resource report results -->
+                  <template v-else-if="card.key === 'resource-report'">
+                    <table class="results-table" v-if="(scResults.nodes || []).length > 0">
+                      <thead><tr><th>Node</th><th>CPU Used</th><th>CPU Total</th><th>RAM Used</th><th>RAM Total</th></tr></thead>
+                      <tbody>
+                        <tr v-for="n in scResults.nodes" :key="n.node">
+                          <td>{{ n.node }}</td>
+                          <td>{{ n.cpu_used != null ? (n.cpu_used * 100).toFixed(1) + '%' : 'N/A' }}</td>
+                          <td>{{ n.cpu_total || 'N/A' }}</td>
+                          <td>{{ n.mem_used != null ? formatBytes(n.mem_used) : 'N/A' }}</td>
+                          <td>{{ n.mem_total != null ? formatBytes(n.mem_total) : 'N/A' }}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                    <p v-else class="hint">No node data returned.</p>
+                  </template>
+
+                  <!-- Generic results table -->
+                  <template v-else>
+                    <table class="results-table" v-if="(scResults.results || []).length > 0">
+                      <thead><tr><th>VM Name</th><th>Action</th><th>Status</th></tr></thead>
+                      <tbody>
+                        <tr v-for="r in scResults.results" :key="`scr-${r.vmid}`">
+                          <td>{{ r.vm_name || r.vmid }}</td>
+                          <td>{{ r.action || '-' }}</td>
+                          <td>
+                            <span v-if="r.error" class="badge badge-error">✗ {{ r.error }}</span>
+                            <span v-else class="badge badge-success">✓ done</span>
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                    <p v-else class="hint">{{ scResults.message || 'No results returned.' }}</p>
+                  </template>
+                </div>
               </div>
             </div>
           </div>
+        </div>
 
-          <!-- Script parameters -->
-          <div class="script-params" v-if="activeScript">
-            <!-- Cleanup Snapshots -->
-            <template v-if="activeScript === 'cleanup-snapshots'">
-              <h4>Cleanup Old Snapshots</h4>
-              <div class="form-row">
-                <label>Host</label>
-                <select v-model="scriptHostId" class="select">
-                  <option value="">Select host...</option>
-                  <option v-for="h in hosts" :key="h.id" :value="h.id">{{ h.name }}</option>
-                </select>
-              </div>
-              <div class="form-row">
-                <label>Older than (days)</label>
-                <input v-model.number="cleanupDays" type="number" min="1" class="input input-sm" />
-              </div>
-            </template>
+        <!-- ── Scheduled Jobs Tab ── -->
+        <div v-if="activeTab === 'scheduled'" class="tab-content">
+          <h3>Scheduled Jobs</h3>
 
-            <!-- Tag Compliance -->
-            <template v-if="activeScript === 'tag-compliance'">
-              <h4>Tag Compliance</h4>
-              <div class="form-row">
-                <label>Host</label>
-                <select v-model="scriptHostId" class="select">
-                  <option value="">Select host...</option>
-                  <option v-for="h in hosts" :key="h.id" :value="h.id">{{ h.name }}</option>
-                </select>
-              </div>
-              <div class="form-row">
-                <label>Required tags (comma-separated)</label>
-                <input v-model="requiredTags" class="input" placeholder="environment, owner" />
-              </div>
-            </template>
+          <div class="sched-banner">
+            <span>⚠</span>
+            <span>Jobs only run while this page is open. For persistent scheduling, use the host's cron.</span>
+          </div>
 
-            <!-- Resource Audit -->
-            <template v-if="activeScript === 'resource-audit'">
-              <h4>Resource Audit</h4>
-              <div class="form-row">
-                <label>Host</label>
-                <select v-model="scriptHostId" class="select">
-                  <option value="">Select host...</option>
-                  <option v-for="h in hosts" :key="h.id" :value="h.id">{{ h.name }}</option>
-                </select>
-              </div>
-              <div class="form-row">
-                <label>Flag CPU usage below (%)</label>
-                <input v-model.number="auditCpuThreshold" type="number" min="1" max="100" class="input input-sm" />
-              </div>
-              <div class="form-row">
-                <label>Flag RAM usage below (%)</label>
-                <input v-model.number="auditRamThreshold" type="number" min="1" max="100" class="input input-sm" />
-              </div>
-            </template>
-
-            <!-- Orphaned Disks -->
-            <template v-if="activeScript === 'orphaned-disks'">
-              <h4>Orphaned Disk Finder</h4>
-              <div class="form-row">
-                <label>Host</label>
-                <select v-model="scriptHostId" class="select">
-                  <option value="">Select host...</option>
-                  <option v-for="h in hosts" :key="h.id" :value="h.id">{{ h.name }}</option>
-                </select>
-              </div>
-              <p class="hint">Scans all storage on all nodes for volumes not attached to any VM.</p>
-            </template>
-
-            <div class="script-run-row">
-              <button class="btn btn-secondary" :disabled="!scriptHostId || scriptRunning" @click="runScript(true)">
-                {{ scriptRunning ? 'Running...' : '👁 Preview (dry-run)' }}
-              </button>
-              <button
-                v-if="activeScript !== 'orphaned-disks' && activeScript !== 'resource-audit'"
-                class="btn btn-danger"
-                :disabled="!scriptHostId || scriptRunning"
-                @click="runScript(false)"
-              >
-                ⚡ Execute
-              </button>
-              <button
-                v-if="activeScript === 'resource-audit' || activeScript === 'orphaned-disks'"
-                class="btn btn-primary"
-                :disabled="!scriptHostId || scriptRunning"
-                @click="runScript(false)"
-              >
-                🔍 Run Audit
+          <!-- Jobs table -->
+          <div class="sched-table-wrap">
+            <div class="sched-table-actions">
+              <button class="btn btn-primary btn-sm" @click="showAddJob = !showAddJob">
+                {{ showAddJob ? 'Cancel' : '+ Add Job' }}
               </button>
             </div>
 
-            <!-- Script Results -->
-            <div class="script-results" v-if="scriptResults">
-              <div class="results-header">
-                <h4>Results</h4>
-                <span class="results-meta" v-if="scriptResults.dry_run">Dry-run — no changes made</span>
-                <button class="btn btn-xs btn-secondary" @click="downloadScriptReport">Download Report</button>
+            <table class="results-table" v-if="scheduledJobs.length > 0">
+              <thead>
+                <tr>
+                  <th>Job Name</th>
+                  <th>Script</th>
+                  <th>Schedule</th>
+                  <th>Enabled</th>
+                  <th>Last Run</th>
+                  <th>Next Run</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="job in scheduledJobs" :key="job.id">
+                  <td>{{ job.name }}</td>
+                  <td>{{ scriptCardLabel(job.script) }}</td>
+                  <td><code>{{ job.cron }}</code></td>
+                  <td>
+                    <button
+                      class="toggle-enabled-btn"
+                      :class="{ enabled: job.enabled }"
+                      @click="toggleJobEnabled(job.id)"
+                    >
+                      {{ job.enabled ? 'On' : 'Off' }}
+                    </button>
+                  </td>
+                  <td>{{ job.lastRun || '—' }}</td>
+                  <td>{{ nextRunText(job.cron) }}</td>
+                  <td>
+                    <div class="sched-job-actions">
+                      <button class="btn btn-xs btn-secondary" @click="runJobNow(job)" :disabled="scRunning">Run Now</button>
+                      <button class="btn btn-xs btn-danger" @click="deleteJob(job.id)">Delete</button>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <div v-else class="empty-list">No scheduled jobs yet. Click "Add Job" to create one.</div>
+          </div>
+
+          <!-- Add Job inline form -->
+          <div v-if="showAddJob" class="add-job-form">
+            <h4>New Scheduled Job</h4>
+
+            <div class="form-row">
+              <label>Job Name</label>
+              <input v-model="newJob.name" class="input" placeholder="e.g. Nightly Backup Snapshot" />
+            </div>
+
+            <div class="form-row">
+              <label>Script</label>
+              <select v-model="newJob.script" class="select">
+                <option value="">Select script...</option>
+                <option v-for="card in scriptCards" :key="card.key" :value="card.key">{{ card.name }}</option>
+              </select>
+            </div>
+
+            <div class="form-row">
+              <label>Host</label>
+              <select v-model="newJob.hostId" class="select">
+                <option value="">Select host...</option>
+                <option v-for="h in hosts" :key="h.id" :value="h.id">{{ h.name }}</option>
+              </select>
+            </div>
+
+            <div class="form-row">
+              <label>Schedule</label>
+              <div class="cron-preset-row">
+                <button class="btn btn-xs btn-secondary" @click="newJob.cron = '0 2 * * *'">Nightly (2am)</button>
+                <button class="btn btn-xs btn-secondary" @click="newJob.cron = '0 3 * * 0'">Weekly (Sun 3am)</button>
+                <button class="btn btn-xs btn-secondary" @click="newJob.cron = '0 * * * *'">Hourly</button>
               </div>
+              <input v-model="newJob.cron" class="input" placeholder="cron expression, e.g. 0 2 * * *" style="margin-top:0.4rem;" />
+              <p class="hint">Format: minute hour day month weekday</p>
+            </div>
 
-              <!-- Cleanup Snapshots results -->
-              <template v-if="activeScript === 'cleanup-snapshots' && scriptResults.findings">
-                <p>Found {{ scriptResults.total_found }} old snapshots</p>
-                <table class="results-table" v-if="scriptResults.findings.length > 0">
-                  <thead><tr><th>VM</th><th>Snapshot</th><th>Age</th><th>Status</th></tr></thead>
-                  <tbody>
-                    <tr v-for="f in scriptResults.findings" :key="`${f.vmid}-${f.snapname}`">
-                      <td>{{ f.vm_name }} ({{ f.vmid }})</td>
-                      <td>{{ f.snapname }}</td>
-                      <td>{{ ageLabel(f.snaptime) }}</td>
-                      <td>
-                        <span v-if="scriptResults.dry_run" class="badge badge-warning">Would delete</span>
-                        <span v-else-if="f.deleted" class="badge badge-success">Deleted</span>
-                        <span v-else-if="f.error" class="badge badge-error">{{ f.error }}</span>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </template>
+            <div class="form-row checkbox-row">
+              <label>
+                <input v-model="newJob.enabled" type="checkbox" />
+                Enabled
+              </label>
+            </div>
 
-              <!-- Tag Compliance results -->
-              <template v-if="activeScript === 'tag-compliance' && scriptResults.findings">
-                <p>{{ scriptResults.non_compliant_count }} non-compliant VMs</p>
-                <table class="results-table" v-if="scriptResults.findings.length > 0">
-                  <thead><tr><th>VM</th><th>Node</th><th>Missing Tags</th><th>Status</th></tr></thead>
-                  <tbody>
-                    <tr v-for="f in scriptResults.findings" :key="f.vmid">
-                      <td>{{ f.vm_name }} ({{ f.vmid }})</td>
-                      <td>{{ f.node }}</td>
-                      <td>{{ f.missing_tags.join(', ') }}</td>
-                      <td>
-                        <span v-if="scriptResults.dry_run" class="badge badge-warning">Not compliant</span>
-                        <span v-else-if="f.fixed" class="badge badge-success">Fixed</span>
-                        <span v-else-if="f.error" class="badge badge-error">{{ f.error }}</span>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </template>
-
-              <!-- Resource Audit results -->
-              <template v-if="activeScript === 'resource-audit' && scriptResults.report">
-                <p>{{ scriptResults.over_provisioned_count }} over-provisioned VMs found</p>
-                <table class="results-table" v-if="scriptResults.report.length > 0">
-                  <thead><tr><th>VM</th><th>Node</th><th>Cores</th><th>CPU Avg</th><th>RAM (MB)</th><th>RAM Avg</th></tr></thead>
-                  <tbody>
-                    <tr v-for="f in scriptResults.report" :key="f.vmid" :class="{ 'row-warn': f.over_provisioned_cpu || f.over_provisioned_ram }">
-                      <td>{{ f.vm_name }}</td>
-                      <td>{{ f.node }}</td>
-                      <td>{{ f.allocated_cores }}</td>
-                      <td :class="{ 'cell-warn': f.over_provisioned_cpu }">{{ f.cpu_avg_pct != null ? f.cpu_avg_pct + '%' : 'N/A' }}</td>
-                      <td>{{ f.allocated_memory_mb }}</td>
-                      <td :class="{ 'cell-warn': f.over_provisioned_ram }">{{ f.mem_avg_pct != null ? f.mem_avg_pct + '%' : 'N/A' }}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </template>
-
-              <!-- Orphaned Disks results -->
-              <template v-if="activeScript === 'orphaned-disks' && scriptResults.orphans">
-                <p>{{ scriptResults.count }} orphaned volumes found</p>
-                <table class="results-table" v-if="scriptResults.orphans.length > 0">
-                  <thead><tr><th>Node</th><th>Storage</th><th>Volume ID</th><th>Format</th><th>Size</th></tr></thead>
-                  <tbody>
-                    <tr v-for="o in scriptResults.orphans" :key="o.volid">
-                      <td>{{ o.node }}</td>
-                      <td>{{ o.storage }}</td>
-                      <td class="monospace">{{ o.volid }}</td>
-                      <td>{{ o.format }}</td>
-                      <td>{{ formatBytes(o.size) }}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </template>
+            <div class="form-row">
+              <button
+                class="btn btn-primary"
+                :disabled="!newJob.name.trim() || !newJob.script || !newJob.cron.trim() || !newJob.hostId"
+                @click="saveJob"
+              >
+                Save Job
+              </button>
             </div>
           </div>
         </div>
@@ -636,7 +806,7 @@
 </template>
 
 <script>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import api from '@/services/api'
 import { useToast } from 'vue-toastification'
 
@@ -666,6 +836,7 @@ export default {
       { key: 'config', label: 'Config' },
       { key: 'migrate', label: 'Migrate' },
       { key: 'scripts', label: 'Scripts' },
+      { key: 'scheduled', label: 'Scheduled' },
     ]
     const activeTab = ref('power')
 
@@ -673,6 +844,68 @@ export default {
     const execMode = ref('parallel')
     const execDelay = ref(0)
     const skipTargetState = ref(true)
+
+    // ── Rolling Restart ───────────────────────────────────────────────────
+    const rollingDelay = ref(30)
+    const rollingGraceful = ref(true)
+    const rollingRunning = ref(false)
+    const rollingResults = ref([])
+    let rollingAborted = false
+
+    const rollingRowClass = (r) => {
+      if (r.status === 'done') return 'row-success'
+      if (r.status === 'error') return 'row-error'
+      if (r.status === 'running') return 'row-running'
+      return ''
+    }
+
+    const startRollingRestart = async () => {
+      if (!hasSelection.value || rollingRunning.value) return
+      rollingAborted = false
+      rollingRunning.value = true
+      rollingResults.value = selectedVms.value.map(v => ({
+        host_id: v.host_id,
+        node: v.node,
+        vmid: v.vmid,
+        name: v.name,
+        status: 'pending',
+        detail: null,
+      }))
+
+      for (let i = 0; i < selectedVms.value.length; i++) {
+        if (rollingAborted) break
+        const vm = selectedVms.value[i]
+        rollingResults.value[i].status = 'running'
+
+        try {
+          if (rollingGraceful.value) {
+            await api.pveVm.shutdown(vm.host_id, vm.node, vm.vmid)
+          } else {
+            await api.pveVm.stop(vm.host_id, vm.node, vm.vmid)
+          }
+          // Wait a moment then start
+          await new Promise(r => setTimeout(r, 3000))
+          await api.pveVm.start(vm.host_id, vm.node, vm.vmid)
+          rollingResults.value[i].status = 'done'
+        } catch (e) {
+          rollingResults.value[i].status = 'error'
+          rollingResults.value[i].detail = e?.response?.data?.detail || e?.message || 'Unknown error'
+        }
+
+        // Delay before next VM (skip delay after last)
+        if (i < selectedVms.value.length - 1 && rollingDelay.value > 0 && !rollingAborted) {
+          await new Promise(r => setTimeout(r, rollingDelay.value * 1000))
+        }
+      }
+
+      rollingRunning.value = false
+      const errors = rollingResults.value.filter(r => r.status === 'error').length
+      if (errors > 0) {
+        toast.warning(`Rolling restart complete: ${rollingResults.value.length - errors} succeeded, ${errors} failed`)
+      } else {
+        toast.success('Rolling restart complete')
+      }
+    }
 
     // ── Snapshot ──────────────────────────────────────────────────────────
     const snapTemplate = ref('bulk-{date}')
@@ -753,7 +986,225 @@ export default {
     const migrateLocalDisks = ref(false)
     const targetNodes = ref([])
 
-    // ── Scripts ───────────────────────────────────────────────────────────
+    // ── Script Cards (new grid) ────────────────────────────────────────────
+    const scriptCards = [
+      { key: 'nightly-snapshot', icon: '📷', name: 'Nightly Snapshot', desc: 'Creates dated snapshots (snap-YYYY-MM-DD) of all running VMs on selected host' },
+      { key: 'cleanup-old-snaps', icon: '🗑', name: 'Cleanup Old Snapshots', desc: 'Deletes snapshots older than N days (default 30)' },
+      { key: 'health-check', icon: '🩺', name: 'VM Health Check', desc: 'Lists VMs that are stopped but have onboot=true' },
+      { key: 'resource-report', icon: '📊', name: 'Resource Report', desc: 'Shows per-node CPU/RAM utilization summary' },
+      { key: 'bulk-tag-updater', icon: '🏷', name: 'Bulk Tag Updater', desc: 'Add or remove a tag from all VMs on selected host' },
+      { key: 'config-standardizer', icon: '⚙', name: 'Config Standardizer', desc: 'Ensure all VMs have onboot=true; supports dry-run' },
+    ]
+
+    const openScriptCard = ref(null)
+    const scHostId = ref('')
+    const scCleanupDays = ref(30)
+    const scTag = ref('')
+    const scTagAction = ref('add')
+    const scDryRun = ref(false)
+    const scRunning = ref(false)
+    const scResults = ref(null)
+    const scResultsKey = ref(null)
+
+    const toggleScriptCard = (key) => {
+      openScriptCard.value = openScriptCard.value === key ? null : key
+      scResults.value = null
+      scResultsKey.value = null
+    }
+
+    const scriptCardLabel = (key) => {
+      const card = scriptCards.find(c => c.key === key)
+      return card ? card.name : key
+    }
+
+    const runScriptCard = async (key) => {
+      if (!scHostId.value) { toast.error('Select a host first'); return }
+      scRunning.value = true
+      scResults.value = null
+      scResultsKey.value = null
+      const hid = Number(scHostId.value)
+
+      try {
+        let res
+        if (key === 'nightly-snapshot') {
+          const today = new Date().toISOString().slice(0, 10)
+          res = await api.vmBulk.scriptNightlySnapshot({
+            host_id: hid,
+            snapname: `snap-${today}`,
+          })
+        } else if (key === 'cleanup-old-snaps') {
+          res = await api.vmBulk.scriptCleanupSnapshots({
+            host_id: hid,
+            older_than_days: scCleanupDays.value,
+            dry_run: false,
+          })
+        } else if (key === 'health-check') {
+          res = await api.vmBulk.scriptVmHealthCheck({ host_id: hid })
+        } else if (key === 'resource-report') {
+          res = await api.vmBulk.scriptResourceAudit({ host_id: hid, cpu_threshold_pct: 0, ram_threshold_pct: 0 })
+          // Remap to expected shape for resource report display
+          if (res.data && res.data.report) {
+            // Build node summary from report data
+            const nodeMap = {}
+            for (const vm of res.data.report) {
+              if (!nodeMap[vm.node]) nodeMap[vm.node] = { node: vm.node, cpu_used: 0, cpu_total: 0, mem_used: 0, mem_total: 0, count: 0 }
+              nodeMap[vm.node].count++
+            }
+            res = { data: { nodes: Object.values(nodeMap) } }
+          }
+        } else if (key === 'bulk-tag-updater') {
+          if (!scTag.value.trim()) { toast.error('Enter a tag'); scRunning.value = false; return }
+          res = await api.vmBulk.scriptBulkTagUpdater({
+            host_id: hid,
+            tag: scTag.value.trim(),
+            action: scTagAction.value,
+          })
+        } else if (key === 'config-standardizer') {
+          res = await api.vmBulk.scriptConfigStandardizer({
+            host_id: hid,
+            dry_run: scDryRun.value,
+          })
+        }
+
+        if (res) {
+          scResults.value = res.data
+          scResultsKey.value = key
+          toast.success('Script completed')
+        }
+      } catch (e) {
+        toast.error('Script failed: ' + (e?.response?.data?.detail || e?.message || 'Unknown error'))
+      } finally {
+        scRunning.value = false
+      }
+    }
+
+    // ── Scheduled Jobs ────────────────────────────────────────────────────
+    const JOBS_KEY = 'depl0y_bulk_jobs'
+    const scheduledJobs = ref([])
+    const showAddJob = ref(false)
+    const newJob = ref({ name: '', script: '', cron: '', enabled: true, hostId: '' })
+    let scheduleTimer = null
+
+    const loadJobs = () => {
+      try { scheduledJobs.value = JSON.parse(localStorage.getItem(JOBS_KEY) || '[]') } catch { scheduledJobs.value = [] }
+    }
+
+    const saveJobs = () => {
+      localStorage.setItem(JOBS_KEY, JSON.stringify(scheduledJobs.value))
+    }
+
+    const saveJob = () => {
+      const job = {
+        id: Date.now().toString(),
+        name: newJob.value.name.trim(),
+        script: newJob.value.script,
+        cron: newJob.value.cron.trim(),
+        enabled: newJob.value.enabled,
+        hostId: newJob.value.hostId,
+        lastRun: null,
+      }
+      scheduledJobs.value.push(job)
+      saveJobs()
+      newJob.value = { name: '', script: '', cron: '', enabled: true, hostId: '' }
+      showAddJob.value = false
+      toast.success(`Job "${job.name}" saved`)
+    }
+
+    const deleteJob = (id) => {
+      scheduledJobs.value = scheduledJobs.value.filter(j => j.id !== id)
+      saveJobs()
+    }
+
+    const toggleJobEnabled = (id) => {
+      const job = scheduledJobs.value.find(j => j.id === id)
+      if (job) { job.enabled = !job.enabled; saveJobs() }
+    }
+
+    const runJobNow = async (job) => {
+      scHostId.value = job.hostId
+      openScriptCard.value = job.script
+      await runScriptCard(job.script)
+      const j = scheduledJobs.value.find(j => j.id === job.id)
+      if (j) { j.lastRun = new Date().toLocaleString(); saveJobs() }
+    }
+
+    // Basic cron next-run computation (minute hour dom month dow)
+    const parseCronField = (field, current, min, max) => {
+      if (field === '*') return null // any value matches
+      const n = parseInt(field, 10)
+      return isNaN(n) ? null : n
+    }
+
+    const nextRunText = (cron) => {
+      if (!cron) return '—'
+      try {
+        const parts = cron.trim().split(/\s+/)
+        if (parts.length < 5) return 'Invalid cron'
+        const [minF, hourF] = parts
+        const now = new Date()
+        const next = new Date(now)
+        next.setSeconds(0, 0)
+
+        const targetMin = parseCronField(minF, now.getMinutes(), 0, 59)
+        const targetHour = parseCronField(hourF, now.getHours(), 0, 23)
+
+        if (targetHour !== null) {
+          next.setHours(targetHour)
+          if (targetMin !== null) {
+            next.setMinutes(targetMin)
+          } else {
+            next.setMinutes(0)
+          }
+          if (next <= now) next.setDate(next.getDate() + 1)
+        } else if (targetMin !== null) {
+          next.setMinutes(targetMin)
+          if (next <= now) next.setHours(next.getHours() + 1)
+        } else {
+          next.setMinutes(next.getMinutes() + 1)
+        }
+
+        return next.toLocaleString()
+      } catch {
+        return '—'
+      }
+    }
+
+    // Tick every minute to check scheduled jobs
+    const checkSchedule = () => {
+      const now = new Date()
+      for (const job of scheduledJobs.value) {
+        if (!job.enabled) continue
+        if (shouldRunNow(job.cron, now)) {
+          // Avoid double-run: check lastRun was not this minute
+          const lastMinute = job.lastRun ? new Date(job.lastRun) : null
+          if (lastMinute && now - lastMinute < 60000) continue
+          runJobNow(job)
+        }
+      }
+    }
+
+    const shouldRunNow = (cron, now) => {
+      try {
+        const parts = cron.trim().split(/\s+/)
+        if (parts.length < 5) return false
+        const [minF, hourF, domF, monF, dowF] = parts
+        const match = (field, val) => {
+          if (field === '*') return true
+          return parseInt(field, 10) === val
+        }
+        return (
+          match(minF, now.getMinutes()) &&
+          match(hourF, now.getHours()) &&
+          match(domF, now.getDate()) &&
+          match(monF, now.getMonth() + 1) &&
+          match(dowF, now.getDay())
+        )
+      } catch { return false }
+    }
+
+    loadJobs()
+
+    // ── Legacy Scripts (kept for backward compat) ─────────────────────────
     const scripts = [
       { key: 'cleanup-snapshots', name: 'Cleanup Old Snapshots', icon: '🗑', desc: 'Delete snapshots older than N days across all VMs' },
       { key: 'tag-compliance', name: 'Tag Compliance', icon: '🏷', desc: 'Ensure all VMs have required tags' },
@@ -806,7 +1257,6 @@ export default {
       loadingVms.value = true
       allVms.value = []
       try {
-        // Load VMs from all hosts using cluster resources
         for (const host of hosts.value) {
           try {
             const res = await api.pveNode.clusterResources(host.id, 'vm')
@@ -904,14 +1354,12 @@ export default {
       return h ? h.name : String(hostId)
     }
 
-    // Build the VMTarget payload
     const buildTargets = () => selectedVms.value.map(v => ({
       host_id: v.host_id,
       node: v.node,
       vmid: v.vmid,
     }))
 
-    // Initialize execution results table from selected VMs
     const initExecResults = () => {
       executionResults.value = selectedVms.value.map(v => ({
         host_id: v.host_id,
@@ -924,7 +1372,6 @@ export default {
       }))
     }
 
-    // Merge API response results into execution table
     const mergeExecResults = (apiResults) => {
       for (const r of apiResults) {
         const idx = executionResults.value.findIndex(
@@ -1003,7 +1450,6 @@ export default {
           vms: buildTargets(),
           older_than_days: snapDeleteDays.value,
         })
-        // Map results differently — each entry has 'deleted' and 'errors' arrays
         for (const r of res.data.results) {
           const idx = executionResults.value.findIndex(
             e => e.host_id === r.host_id && e.node === r.node && e.vmid === r.vmid
@@ -1067,7 +1513,6 @@ export default {
         mergeExecResults(res.data.results)
         const failed = res.data.results.filter(r => r.error)
         if (failed.length > 0) {
-          // Track failed VMs for retry
           cfgFailedVms.value = selectedVms.value.filter(sv =>
             failed.some(f => f.host_id === sv.host_id && f.node === sv.node && f.vmid === sv.vmid)
           )
@@ -1088,7 +1533,6 @@ export default {
       const retryTargets = cfgFailedVms.value
       cfgFailedVms.value = []
 
-      // Init exec results for retry
       executionResults.value = retryTargets.map(v => ({
         host_id: v.host_id,
         node: v.node,
@@ -1163,7 +1607,7 @@ export default {
       }
     }
 
-    // ── Scripts ───────────────────────────────────────────────────────────
+    // ── Legacy script runner ───────────────────────────────────────────────
     const runScript = async (dryRun) => {
       if (!scriptHostId.value) return
       scriptRunning.value = true
@@ -1221,7 +1665,9 @@ export default {
     // ── Execution helpers ─────────────────────────────────────────────────
     const abortExec = () => {
       aborted.value = true
+      rollingAborted = true
       executing.value = false
+      rollingRunning.value = false
       toast.warning('Execution aborted (in-flight operations may still complete)')
     }
 
@@ -1267,6 +1713,12 @@ export default {
     onMounted(async () => {
       await loadHosts()
       await loadVms()
+      scheduleTimer = setInterval(checkSchedule, 60000)
+    })
+
+    onUnmounted(() => {
+      if (scheduleTimer) clearInterval(scheduleTimer)
+      rollingAborted = true
     })
 
     return {
@@ -1274,14 +1726,21 @@ export default {
       search, filterHost, filterStatus, filterTag, filterNode,
       tabs, activeTab, allNodes,
       execMode, execDelay, skipTargetState,
+      rollingDelay, rollingGraceful, rollingRunning, rollingResults,
+      startRollingRestart, rollingRowClass,
       snapTemplate, snapDescription, snapIncludeRam, snapDeleteDays,
       cfgCores, cfgMemory, cfgTagsAdd, cfgTagsRemove, cfgAgent, cfgOnboot, cfgBalloon,
       configPreviewData, previewLoading,
       cfgPresets, showSaveCfgPresetModal, newCfgPresetName, cfgFailedVms,
       openSaveCfgPresetModal, saveCfgPreset, loadCfgPreset,
       migrateHostId, migrateNode, migrateOnline, migrateLocalDisks, targetNodes,
+      scriptCards, openScriptCard, scHostId, scCleanupDays, scTag, scTagAction,
+      scDryRun, scRunning, scResults, scResultsKey,
+      toggleScriptCard, runScriptCard, scriptCardLabel,
       scripts, activeScript, scriptHostId, cleanupDays, requiredTags,
       auditCpuThreshold, auditRamThreshold, scriptRunning, scriptResults,
+      scheduledJobs, showAddJob, newJob,
+      saveJob, deleteJob, toggleJobEnabled, runJobNow, nextRunText,
       executing, executionResults, aborted,
       hasSelection,
       execSuccessCount, execFailCount, execPendingCount, execProgressPct,
@@ -1693,6 +2152,34 @@ export default {
   margin-top: 1rem;
 }
 
+/* ── Rolling Restart ── */
+.rolling-restart-section {
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border, #2d3748);
+}
+
+.rolling-restart-section h4 {
+  margin: 0 0 0.4rem;
+  font-size: 0.95rem;
+}
+
+.rolling-progress {
+  margin-top: 1rem;
+}
+
+.rolling-progress-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+}
+
+.rolling-summary {
+  font-size: 0.8rem;
+  color: var(--text-muted, #6b7280);
+}
+
 /* ── Config preview ── */
 .config-actions {
   display: flex;
@@ -1732,7 +2219,167 @@ export default {
   margin-right: 0.3rem;
 }
 
-/* ── Scripts ── */
+/* ── Script Cards Grid ── */
+.script-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.875rem;
+}
+
+@media (max-width: 1100px) {
+  .script-cards-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 700px) {
+  .script-cards-grid { grid-template-columns: 1fr; }
+}
+
+.script-card-new {
+  border: 1px solid var(--border, #2d3748);
+  border-radius: 0.5rem;
+  padding: 0.875rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  background: rgba(255,255,255,0.02);
+  transition: border-color 0.15s;
+}
+
+.script-card-new:hover {
+  border-color: #3b82f6;
+}
+
+.script-card-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+}
+
+.script-card-icon {
+  font-size: 1.5rem;
+  flex-shrink: 0;
+  line-height: 1.2;
+}
+
+.script-card-name {
+  font-weight: 600;
+  font-size: 0.875rem;
+}
+
+.script-card-desc {
+  font-size: 0.75rem;
+  color: var(--text-muted, #6b7280);
+  line-height: 1.4;
+}
+
+.script-card-config {
+  margin-top: 0.5rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border, #2d3748);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.script-card-run-row {
+  margin-top: 0.5rem;
+}
+
+.radio-group {
+  display: flex;
+  gap: 1rem;
+}
+
+.radio-label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+/* Script card results */
+.sc-results {
+  margin-top: 0.75rem;
+  border-top: 1px solid var(--border, #2d3748);
+  padding-top: 0.75rem;
+}
+
+.sc-results-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+}
+
+/* ── Scheduled Jobs ── */
+.sched-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: rgba(245,158,11,0.1);
+  border: 1px solid rgba(245,158,11,0.3);
+  border-radius: 0.375rem;
+  padding: 0.6rem 0.9rem;
+  font-size: 0.82rem;
+  color: #f59e0b;
+  margin-bottom: 1rem;
+}
+
+.sched-table-wrap {
+  margin-bottom: 1.25rem;
+}
+
+.sched-table-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 0.75rem;
+}
+
+.toggle-enabled-btn {
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid var(--border, #2d3748);
+  background: rgba(107,114,128,0.15);
+  color: #9ca3af;
+  transition: all 0.15s;
+}
+
+.toggle-enabled-btn.enabled {
+  background: rgba(34,197,94,0.15);
+  border-color: rgba(34,197,94,0.4);
+  color: #22c55e;
+}
+
+.sched-job-actions {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.add-job-form {
+  background: rgba(255,255,255,0.02);
+  border: 1px solid var(--border, #2d3748);
+  border-radius: 0.5rem;
+  padding: 1rem;
+  margin-top: 1rem;
+}
+
+.add-job-form h4 {
+  margin: 0 0 0.75rem;
+  font-size: 0.9rem;
+}
+
+.cron-preset-row {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.4rem;
+}
+
+/* ── Legacy script list ── */
 .script-list {
   display: flex;
   flex-direction: column;
@@ -1934,6 +2581,7 @@ export default {
 .btn-secondary { background: rgba(255,255,255,0.08); color: var(--text, #e2e8f0); border: 1px solid var(--border, #2d3748); }
 .btn-secondary:hover:not(:disabled) { background: rgba(255,255,255,0.12); }
 .btn-xs { padding: 0.2rem 0.55rem; font-size: 0.75rem; }
+.btn-sm { padding: 0.3rem 0.7rem; font-size: 0.8rem; }
 
 /* ── Badges ── */
 .badge {

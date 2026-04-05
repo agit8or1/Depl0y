@@ -14,6 +14,15 @@
     </div>
 
     <template v-else>
+      <!-- Breadcrumb -->
+      <nav class="breadcrumb-nav" aria-label="breadcrumb">
+        <router-link to="/proxmox" class="breadcrumb-crumb">All Hosts</router-link>
+        <span class="breadcrumb-sep">›</span>
+        <router-link :to="`/proxmox/${hostId}/cluster`" class="breadcrumb-crumb">{{ hostName || hostId }}</router-link>
+        <span class="breadcrumb-sep">›</span>
+        <span class="breadcrumb-crumb breadcrumb-crumb--current">{{ node }}</span>
+      </nav>
+
       <!-- Header -->
       <div class="page-header mb-2">
         <div class="header-left">
@@ -1358,6 +1367,17 @@ const toast = useToast()
 const hostId = computed(() => route.params.hostId)
 const node = computed(() => route.params.node)
 
+// Host name for breadcrumb
+const hostName = ref(null)
+const fetchHostName = async () => {
+  try {
+    const res = await api.proxmox.getHost(hostId.value)
+    hostName.value = res.data?.name || null
+  } catch {
+    // non-critical — breadcrumb falls back to hostId
+  }
+}
+
 // Core state
 const nodeStatus = ref(null)
 const loadingInit = ref(true)
@@ -2616,6 +2636,7 @@ const formatLoadAvg = (loadavg) => {
 // ── Lifecycle ──────────────────────────────────────────────────────────────────
 
 onMounted(async () => {
+  fetchHostName()
   await loadAll()
   startPolling()
 })
@@ -3305,4 +3326,36 @@ const copySshCommand = () => copyToClipboard(`ssh root@${node}`, { toast: true }
   font-size: 0.875rem;
 }
 .tab-empty svg { opacity: 0.4; }
+
+/* ── Breadcrumb navigation ──────────────────────────────────────────────── */
+.breadcrumb-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  margin-bottom: 0.75rem;
+  flex-wrap: wrap;
+}
+.breadcrumb-crumb {
+  color: var(--text-secondary);
+  text-decoration: none;
+  transition: color 0.15s;
+}
+.breadcrumb-crumb:hover {
+  color: var(--text-primary);
+  text-decoration: underline;
+}
+.breadcrumb-crumb--current {
+  color: var(--text-primary);
+  font-weight: 500;
+  cursor: default;
+}
+.breadcrumb-crumb--current:hover {
+  text-decoration: none;
+}
+.breadcrumb-sep {
+  color: var(--text-muted);
+  user-select: none;
+}
 </style>

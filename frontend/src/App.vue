@@ -1,6 +1,9 @@
 <template>
   <div id="app" class="app-container">
 
+    <!-- Skip-to-content for keyboard users -->
+    <a href="#main-content" class="skip-to-content">Skip to content</a>
+
     <!-- Page-level loading progress bar -->
     <div class="page-loading-bar" :class="{ 'page-loading-bar--active': pageLoading, 'page-loading-bar--done': pageLoadDone }"></div>
 
@@ -61,7 +64,7 @@
         v-if="isAuthenticated && !isFullscreen"
         @toggle-sidebar="sidebarOpen = !sidebarOpen"
       />
-      <main :class="isFullscreen ? 'content-fullscreen' : 'content'">
+      <main id="main-content" :class="isFullscreen ? 'content-fullscreen' : 'content'">
         <router-view v-slot="{ Component }">
           <transition name="page" mode="out-in">
             <component :is="Component" />

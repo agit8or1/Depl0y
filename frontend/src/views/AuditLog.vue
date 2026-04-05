@@ -6,8 +6,81 @@
         <p class="subtitle">Track all user actions and system events</p>
       </div>
       <div class="header-actions">
+        <button class="btn btn-outline" @click="toggleIP" :title="showIP ? 'Hide IP column' : 'Show IP column'">
+          {{ showIP ? 'Hide IP' : 'Show IP' }}
+        </button>
         <button class="btn btn-outline" @click="showReportModal = true">Generate Report</button>
         <button class="btn btn-primary" @click="exportCSV">Export CSV</button>
+      </div>
+    </div>
+
+    <!-- Quick Stats Bar -->
+    <div class="quick-stats-bar">
+      <div class="quick-stat" v-for="qs in quickStats" :key="qs.label" :class="qs.cls">
+        <div class="qs-value">{{ qs.value }}</div>
+        <div class="qs-label">{{ qs.label }}</div>
+      </div>
+    </div>
+
+    <!-- Charts Panel (collapsible) -->
+    <div class="collapsible-panel" :class="{ collapsed: chartsCollapsed }">
+      <button class="panel-toggle" @click="chartsCollapsed = !chartsCollapsed">
+        <span class="panel-title">Top Charts</span>
+        <span class="toggle-icon">{{ chartsCollapsed ? '▶' : '▼' }}</span>
+      </button>
+      <div v-if="!chartsCollapsed" class="charts-panel">
+        <div v-if="statsLoading" class="stats-loading">Loading charts...</div>
+        <div v-else-if="stats" class="charts-grid">
+          <!-- Top Actions -->
+          <div class="chart-card">
+            <div class="chart-title">Top Actions</div>
+            <div v-if="topActionsChart.length" class="hbar-chart">
+              <div v-for="row in topActionsChart" :key="row.label" class="hbar-row">
+                <div class="hbar-label" :title="row.label">{{ row.label }}</div>
+                <div class="hbar-track">
+                  <div class="hbar-fill" :style="{ width: row.pct + '%' }" :class="'action-bar-' + actionClass(row.label)"></div>
+                </div>
+                <div class="hbar-count">{{ row.count }}</div>
+              </div>
+            </div>
+            <div v-else class="chart-empty">No data</div>
+          </div>
+          <!-- Top Users -->
+          <div class="chart-card">
+            <div class="chart-title">Top Users</div>
+            <div v-if="topUsersChart.length" class="hbar-chart">
+              <div v-for="row in topUsersChart" :key="row.label" class="hbar-row">
+                <div class="hbar-label" :title="row.label">{{ row.label }}</div>
+                <div class="hbar-track">
+                  <div class="hbar-fill hbar-fill-user" :style="{ width: row.pct + '%' }"></div>
+                </div>
+                <div class="hbar-count">{{ row.count }}</div>
+              </div>
+            </div>
+            <div v-else class="chart-empty">No data</div>
+          </div>
+          <!-- Events by Day mini-chart -->
+          <div class="chart-card chart-card-wide">
+            <div class="chart-title">Events by Day (30d)</div>
+            <div class="mini-chart">
+              <svg v-if="stats.events_by_day && stats.events_by_day.length" :width="chartWidth" height="60" class="bar-chart-svg">
+                <g v-for="(bar, i) in chartBars" :key="i">
+                  <rect
+                    :x="bar.x"
+                    :y="60 - bar.h"
+                    :width="bar.w - 1"
+                    :height="bar.h"
+                    fill="#3b82f6"
+                    opacity="0.8"
+                    rx="2"
+                  />
+                  <title>{{ bar.date }}: {{ bar.count }}</title>
+                </g>
+              </svg>
+              <span v-else class="text-muted" style="font-size:0.8rem">No data</span>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -31,7 +104,7 @@
           <div class="stat-card-wide">
             <div class="stat-section-title">Events by Day</div>
             <div class="mini-chart">
-              <svg v-if="stats.events_by_day.length" :width="chartWidth" height="60" class="bar-chart-svg">
+              <svg v-if="stats.events_by_day && stats.events_by_day.length" :width="chartWidth" height="60" class="bar-chart-svg">
                 <g v-for="(bar, i) in chartBars" :key="i">
                   <rect
                     :x="bar.x"
@@ -140,6 +213,67 @@
       </div>
     </div>
 
+    <!-- Maintenance Panel (collapsible) -->
+    <div class="collapsible-panel" :class="{ collapsed: maintenanceCollapsed }">
+      <button class="panel-toggle panel-toggle-danger" @click="maintenanceCollapsed = !maintenanceCollapsed">
+        <span class="panel-title">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:4px"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          Maintenance
+        </span>
+        <span class="toggle-icon">{{ maintenanceCollapsed ? '▶' : '▼' }}</span>
+      </button>
+      <div v-if="!maintenanceCollapsed" class="maintenance-panel">
+        <div class="maintenance-row">
+          <div class="maintenance-label">
+            <strong>Delete old entries</strong>
+            <span class="maintenance-hint">
+              Permanently removes audit log entries older than the specified number of days.
+              <span v-if="stats">
+                (Approx. {{ estimatedDeleteCount }} entries may be affected based on current stats.)
+              </span>
+            </span>
+          </div>
+          <div class="maintenance-controls">
+            <div class="cleanup-input-group">
+              <input
+                v-model.number="cleanupDays"
+                type="number"
+                min="1"
+                max="3650"
+                class="filter-input filter-input-sm"
+                placeholder="Days"
+              />
+              <span class="cleanup-unit">days</span>
+            </div>
+            <button
+              class="btn btn-danger"
+              :disabled="cleanupLoading || !cleanupDays || cleanupDays < 1"
+              @click="confirmCleanup"
+            >
+              {{ cleanupLoading ? 'Deleting...' : 'Delete' }}
+            </button>
+          </div>
+        </div>
+        <div v-if="cleanupResult" class="cleanup-result" :class="cleanupResult.ok ? 'cleanup-ok' : 'cleanup-err'">
+          {{ cleanupResult.message }}
+        </div>
+        <!-- Confirm dialog -->
+        <div v-if="showCleanupConfirm" class="confirm-overlay">
+          <div class="confirm-box">
+            <div class="confirm-title">Confirm Deletion</div>
+            <div class="confirm-body">
+              This will permanently delete all audit entries older than <strong>{{ cleanupDays }} days</strong>.
+              This action cannot be undone.
+            </div>
+            <div class="confirm-actions">
+              <button class="btn btn-secondary" @click="showCleanupConfirm = false">Cancel</button>
+              <button class="btn btn-danger" @click="runCleanup">Yes, Delete</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Loading / Error -->
     <div v-if="loading" class="loading-state">
       <span class="spinner"></span> Loading audit logs...
@@ -169,9 +303,10 @@
             <th>Resource ID</th>
             <th>Method</th>
             <th>Path</th>
-            <th>IP Address</th>
+            <th v-if="showIP">IP Address</th>
             <th>Status</th>
             <th>Duration</th>
+            <th class="col-copy"></th>
           </tr>
         </thead>
         <tbody>
@@ -202,7 +337,7 @@
               <td class="col-path">
                 <span class="path-text" :title="log.request_path">{{ truncatePath(log.request_path) }}</span>
               </td>
-              <td class="col-ip">{{ log.ip_address || '—' }}</td>
+              <td v-if="showIP" class="col-ip">{{ log.ip_address || '—' }}</td>
               <td class="col-status">
                 <span v-if="log.response_status" class="status-badge" :class="statusClass(log.response_status)">
                   {{ log.response_status }}
@@ -214,10 +349,21 @@
                 <span v-if="log.duration_ms != null">{{ log.duration_ms }}ms</span>
                 <span v-else class="muted">—</span>
               </td>
+              <td class="col-copy" @click.stop>
+                <button
+                  class="copy-btn"
+                  :class="{ copied: copiedId === log.id }"
+                  @click="copyEntry(log)"
+                  :title="copiedId === log.id ? 'Copied!' : 'Copy as JSON'"
+                >
+                  <svg v-if="copiedId !== log.id" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                  <svg v-else width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                </button>
+              </td>
             </tr>
             <!-- Expanded details row -->
             <tr v-if="expandedRow === log.id" class="expanded-row">
-              <td colspan="11">
+              <td :colspan="showIP ? 13 : 12">
                 <div class="expanded-content">
                   <div class="expanded-grid">
                     <div v-if="log.user_agent" class="expanded-section">
@@ -245,7 +391,7 @@
             </tr>
           </template>
           <tr v-if="logs.length === 0">
-            <td colspan="11" class="empty-state">No audit log entries found.</td>
+            <td :colspan="showIP ? 13 : 12" class="empty-state">No audit log entries found.</td>
           </tr>
         </tbody>
       </table>
@@ -332,10 +478,25 @@ export default {
       perPage: 100,
       expandedRow: null,
       debounceTimer: null,
-      statsCollapsed: false,
+      // Panel collapse state
+      statsCollapsed: true,
       filtersCollapsed: false,
+      chartsCollapsed: false,
+      maintenanceCollapsed: true,
+      // Stats
       stats: null,
       statsLoading: false,
+      // IP column visibility
+      showIP: true,
+      // Copy feedback
+      copiedId: null,
+      copiedTimer: null,
+      // Maintenance / cleanup
+      cleanupDays: 90,
+      cleanupLoading: false,
+      cleanupResult: null,
+      showCleanupConfirm: false,
+      // Report modal
       showReportModal: false,
       reportLoading: false,
       reportPreview: null,
@@ -392,7 +553,7 @@ export default {
       return c
     },
     chartBars() {
-      if (!this.stats || !this.stats.events_by_day.length) return []
+      if (!this.stats || !this.stats.events_by_day || !this.stats.events_by_day.length) return []
       const data = this.stats.events_by_day
       const maxCount = Math.max(...data.map(d => d.count), 1)
       const barW = Math.max(4, Math.floor(this.chartWidth / data.length))
@@ -404,6 +565,64 @@ export default {
         date: d.date,
         count: d.count,
       }))
+    },
+    // Quick stats bar data derived from stats + total
+    quickStats() {
+      const totalEvents = this.stats ? this.stats.total_count : (this.total || 0)
+      // Events in 24h: sum last day from events_by_day if available
+      let events24h = '—'
+      if (this.stats && this.stats.events_by_day && this.stats.events_by_day.length) {
+        const last = this.stats.events_by_day[this.stats.events_by_day.length - 1]
+        if (last) events24h = last.count
+      }
+      const uniqueUsers = this.stats && this.stats.top_users
+        ? this.stats.top_users.length
+        : '—'
+      const uniqueActions = this.stats && this.stats.top_actions
+        ? this.stats.top_actions.length
+        : '—'
+      return [
+        { label: 'Total Events', value: typeof totalEvents === 'number' ? totalEvents.toLocaleString() : '—', cls: '' },
+        { label: 'Events (24h)', value: typeof events24h === 'number' ? events24h.toLocaleString() : events24h, cls: 'qs-highlight' },
+        { label: 'Unique Users', value: typeof uniqueUsers === 'number' ? uniqueUsers.toLocaleString() : uniqueUsers, cls: '' },
+        { label: 'Unique Actions', value: typeof uniqueActions === 'number' ? uniqueActions.toLocaleString() : uniqueActions, cls: '' },
+      ]
+    },
+    // Top Actions horizontal chart data (top 10)
+    topActionsChart() {
+      if (!this.stats || !this.stats.top_actions) return []
+      const data = this.stats.top_actions.slice(0, 10)
+      const max = Math.max(...data.map(d => d.count), 1)
+      return data.map(d => ({
+        label: d.action,
+        count: d.count,
+        pct: Math.round((d.count / max) * 100),
+      }))
+    },
+    // Top Users horizontal chart data (top 10)
+    topUsersChart() {
+      if (!this.stats || !this.stats.top_users) return []
+      const data = this.stats.top_users.slice(0, 10)
+      const max = Math.max(...data.map(d => d.count), 1)
+      return data.map(d => ({
+        label: d.username,
+        count: d.count,
+        pct: Math.round((d.count / max) * 100),
+      }))
+    },
+    // Estimate how many entries would be deleted based on cleanup days
+    estimatedDeleteCount() {
+      if (!this.stats || !this.cleanupDays) return '?'
+      const days = Number(this.cleanupDays)
+      if (!days || days <= 0) return '?'
+      // Use events_by_day to estimate entries older than N days
+      if (this.stats.events_by_day && this.stats.events_by_day.length) {
+        const cutoff = new Date()
+        cutoff.setDate(cutoff.getDate() - days)
+        const old = this.stats.events_by_day.filter(d => new Date(d.date) < cutoff)
+        return old.reduce((s, d) => s + d.count, 0).toLocaleString()
+      }
+      return '?'
     },
   },
   mounted() {
@@ -457,7 +676,7 @@ export default {
         const r = await api.audit.stats({ days: 30 })
         this.stats = r.data
         // Compute chart width based on days
-        if (this.stats.events_by_day.length) {
+        if (this.stats.events_by_day && this.stats.events_by_day.length) {
           this.chartWidth = Math.min(600, Math.max(200, this.stats.events_by_day.length * 10))
         }
       } catch (e) {
@@ -500,6 +719,9 @@ export default {
     toggleRow(id) {
       this.expandedRow = this.expandedRow === id ? null : id
     },
+    toggleIP() {
+      this.showIP = !this.showIP
+    },
     formatDate(iso) {
       if (!iso) return '—'
       return new Date(iso).toLocaleString()
@@ -508,11 +730,12 @@ export default {
       if (!action) return 'action-other'
       const a = action.toLowerCase()
       if (a.includes('create') || a.includes('add') || a.includes('register') || a.includes('deploy')) return 'action-create'
-      if (a.includes('delete') || a.includes('remove') || a.includes('destroy')) return 'action-delete'
+      if (a.includes('delete') || a.includes('remove') || a.includes('destroy') || a.includes('force')) return 'action-delete'
       if (a.includes('update') || a.includes('edit') || a.includes('modify') || a.includes('change') || a === 'modify') return 'action-update'
       if (a.includes('login') || a.includes('logout') || a.includes('auth') || a.includes('token') || a.includes('password') || a.includes('2fa')) return 'action-login'
       if (a.includes('start') || a.includes('stop') || a.includes('reboot') || a.includes('shutdown') || a.includes('power')) return 'action-power'
       if (a.includes('backup') || a.includes('restore') || a.includes('snapshot')) return 'action-backup'
+      if (a.includes('list') || a.includes('read') || a.includes('get') || a.includes('view')) return 'action-read'
       return 'action-other'
     },
     statusClass(status) {
@@ -533,7 +756,32 @@ export default {
       }
       return JSON.stringify(data, null, 2)
     },
-    exportCSV() {
+    // Export CSV via server endpoint with current filters applied
+    async exportCSV() {
+      try {
+        const params = {}
+        if (this.filters.action) params.action = this.filters.action
+        if (this.filters.user_id) params.user_id = this.filters.user_id
+        if (this.filters.from_date) params.from_date = this.filters.from_date
+        if (this.filters.to_date) params.to_date = this.filters.to_date
+        if (this.filters.ip_address) params.ip_address = this.filters.ip_address
+        if (this.filters.resource_types.length === 1) params.resource_type = this.filters.resource_types[0]
+        if (this.filters.success !== '') params.success = this.filters.success === 'true'
+
+        const response = await api.audit.export(params)
+        const blob = new Blob([response.data], { type: 'text/csv;charset=utf-8;' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `audit-log-${new Date().toISOString().slice(0, 10)}.csv`
+        a.click()
+        URL.revokeObjectURL(url)
+      } catch (err) {
+        // Fall back to client-side export if server endpoint unavailable
+        this.exportCSVClientSide()
+      }
+    },
+    exportCSVClientSide() {
       const headers = ['ID', 'Timestamp', 'User', 'Action', 'Resource Type', 'Resource ID',
         'Method', 'Path', 'IP Address', 'Status', 'Duration (ms)', 'Success', 'Details']
       const rows = this.logs.map(l => [
@@ -555,6 +803,50 @@ export default {
       a.download = `audit-log-${new Date().toISOString().slice(0, 10)}.csv`
       a.click()
       URL.revokeObjectURL(url)
+    },
+    // Copy single audit entry as JSON
+    copyEntry(log) {
+      const text = JSON.stringify(log, null, 2)
+      navigator.clipboard.writeText(text).then(() => {
+        this.copiedId = log.id
+        clearTimeout(this.copiedTimer)
+        this.copiedTimer = setTimeout(() => { this.copiedId = null }, 1800)
+      }).catch(() => {
+        // Fallback for older browsers
+        const el = document.createElement('textarea')
+        el.value = text
+        document.body.appendChild(el)
+        el.select()
+        document.execCommand('copy')
+        document.body.removeChild(el)
+        this.copiedId = log.id
+        clearTimeout(this.copiedTimer)
+        this.copiedTimer = setTimeout(() => { this.copiedId = null }, 1800)
+      })
+    },
+    // Maintenance / cleanup
+    confirmCleanup() {
+      if (!this.cleanupDays || this.cleanupDays < 1) return
+      this.cleanupResult = null
+      this.showCleanupConfirm = true
+    },
+    async runCleanup() {
+      this.showCleanupConfirm = false
+      this.cleanupLoading = true
+      this.cleanupResult = null
+      try {
+        const r = await api.audit.cleanup(this.cleanupDays)
+        const deleted = r.data?.deleted ?? r.data?.count ?? '?'
+        this.cleanupResult = { ok: true, message: `Deleted ${deleted} entries older than ${this.cleanupDays} days.` }
+        // Refresh data
+        this.fetchLogs()
+        this.fetchStats()
+      } catch (err) {
+        const msg = err.response?.data?.detail || 'Cleanup failed'
+        this.cleanupResult = { ok: false, message: msg }
+      } finally {
+        this.cleanupLoading = false
+      }
     },
     async previewReport() {
       this.reportLoading = true
@@ -599,7 +891,6 @@ export default {
         const allLogs = r.data.logs || []
 
         if (this.report.format === 'csv') {
-          // CSV export of all logs in range
           const headers = ['ID', 'Timestamp', 'User', 'Action', 'Resource Type', 'Resource ID',
             'Method', 'Path', 'IP Address', 'Status', 'Duration (ms)', 'Success']
           const rows = allLogs.map(l => [
@@ -621,7 +912,6 @@ export default {
           a.click()
           URL.revokeObjectURL(url)
         } else {
-          // HTML report
           const fromLabel = this.report.from_date || 'All time'
           const toLabel = this.report.to_date || 'Now'
 
@@ -730,7 +1020,158 @@ export default {
   align-items: center;
 }
 
-/* Collapsible panels */
+/* ── Quick Stats Bar ── */
+.quick-stats-bar {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+@media (max-width: 700px) {
+  .quick-stats-bar {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.quick-stat {
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 0.85rem 1rem;
+  text-align: center;
+}
+
+.quick-stat.qs-highlight {
+  border-color: rgba(59, 130, 246, 0.4);
+}
+
+.qs-value {
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: #60a5fa;
+  line-height: 1.1;
+}
+
+.qs-highlight .qs-value {
+  color: #34d399;
+}
+
+.qs-label {
+  font-size: 0.72rem;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-top: 0.25rem;
+}
+
+/* ── Charts Panel ── */
+.charts-panel {
+  background: #0f172a;
+  padding: 1rem 1.25rem;
+}
+
+.charts-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+@media (max-width: 900px) {
+  .charts-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.chart-card {
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  padding: 0.85rem 1rem;
+}
+
+.chart-card-wide {
+  grid-column: 1 / -1;
+}
+
+.chart-title {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #64748b;
+  margin-bottom: 0.65rem;
+}
+
+.chart-empty {
+  font-size: 0.8rem;
+  color: #475569;
+  padding: 0.5rem 0;
+}
+
+/* Horizontal bar chart */
+.hbar-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.hbar-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+}
+
+.hbar-label {
+  width: 120px;
+  flex-shrink: 0;
+  color: #94a3b8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 0.75rem;
+}
+
+.hbar-track {
+  flex: 1;
+  height: 8px;
+  background: #0f172a;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.hbar-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.4s ease;
+  background: #3b82f6;
+}
+
+.hbar-fill-user {
+  background: #8b5cf6;
+}
+
+/* Action-colored bars */
+.hbar-fill.action-bar-action-create { background: #22c55e; }
+.hbar-fill.action-bar-action-delete { background: #ef4444; }
+.hbar-fill.action-bar-action-update { background: #eab308; }
+.hbar-fill.action-bar-action-login  { background: #3b82f6; }
+.hbar-fill.action-bar-action-power  { background: #f97316; }
+.hbar-fill.action-bar-action-backup { background: #8b5cf6; }
+.hbar-fill.action-bar-action-read   { background: #6b7280; }
+.hbar-fill.action-bar-action-other  { background: #475569; }
+
+.hbar-count {
+  width: 38px;
+  text-align: right;
+  color: #e2e8f0;
+  font-weight: 600;
+  font-size: 0.75rem;
+  flex-shrink: 0;
+}
+
+/* ── Collapsible panels ── */
 .collapsible-panel {
   border: 1px solid #334155;
   border-radius: 8px;
@@ -757,6 +1198,10 @@ export default {
   background: #263448;
 }
 
+.panel-toggle-danger {
+  border-left: 3px solid rgba(239, 68, 68, 0.5);
+}
+
 .panel-title {
   display: flex;
   align-items: center;
@@ -778,7 +1223,7 @@ export default {
   color: #6b7280;
 }
 
-/* Stats panel */
+/* ── Stats panel ── */
 .stats-panel {
   background: #0f172a;
   padding: 1rem 1.25rem;
@@ -879,7 +1324,123 @@ export default {
   color: #e2e8f0;
 }
 
-/* Filter panel */
+/* ── Maintenance panel ── */
+.maintenance-panel {
+  background: #0f172a;
+  padding: 1rem 1.25rem;
+  position: relative;
+}
+
+.maintenance-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.maintenance-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex: 1;
+  min-width: 200px;
+}
+
+.maintenance-label strong {
+  color: #e2e8f0;
+  font-size: 0.9rem;
+}
+
+.maintenance-hint {
+  font-size: 0.78rem;
+  color: #64748b;
+}
+
+.maintenance-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.cleanup-input-group {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.cleanup-unit {
+  font-size: 0.8rem;
+  color: #6b7280;
+  white-space: nowrap;
+}
+
+.cleanup-result {
+  margin-top: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+}
+
+.cleanup-ok {
+  background: rgba(34, 197, 94, 0.1);
+  border: 1px solid rgba(34, 197, 94, 0.25);
+  color: #4ade80;
+}
+
+.cleanup-err {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  color: #f87171;
+}
+
+/* Inline confirm dialog */
+.confirm-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  border-radius: 0 0 8px 8px;
+}
+
+.confirm-box {
+  background: #1e293b;
+  border: 1px solid #ef4444;
+  border-radius: 8px;
+  padding: 1.25rem 1.5rem;
+  max-width: 400px;
+  width: 90%;
+}
+
+.confirm-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #f87171;
+  margin-bottom: 0.5rem;
+}
+
+.confirm-body {
+  font-size: 0.875rem;
+  color: #94a3b8;
+  margin-bottom: 1rem;
+  line-height: 1.5;
+}
+
+.confirm-body strong {
+  color: #e2e8f0;
+}
+
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+/* ── Filter panel ── */
 .filter-panel {
   background: #0f172a;
   padding: 1rem 1.25rem;
@@ -968,7 +1529,7 @@ export default {
   padding-bottom: 0.1rem;
 }
 
-/* Buttons */
+/* ── Buttons ── */
 .btn {
   padding: 0.45rem 1rem;
   border-radius: 6px;
@@ -1014,7 +1575,17 @@ export default {
   color: #e2e8f0;
 }
 
-/* States */
+.btn-danger {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.25);
+}
+
+/* ── States ── */
 .loading-state,
 .error-state {
   text-align: center;
@@ -1043,7 +1614,7 @@ export default {
   to { transform: rotate(360deg); }
 }
 
-/* Table */
+/* ── Table ── */
 .table-wrapper {
   overflow-x: auto;
   border: 1px solid #334155;
@@ -1092,13 +1663,14 @@ export default {
   background: rgba(239, 68, 68, 0.04);
 }
 
-/* Left border accent */
+/* Left border accent by action */
 .log-row.action-create td:first-child { border-left: 3px solid #22c55e; }
 .log-row.action-delete td:first-child { border-left: 3px solid #ef4444; }
 .log-row.action-update td:first-child { border-left: 3px solid #eab308; }
 .log-row.action-login td:first-child  { border-left: 3px solid #3b82f6; }
 .log-row.action-power td:first-child  { border-left: 3px solid #f97316; }
 .log-row.action-backup td:first-child { border-left: 3px solid #8b5cf6; }
+.log-row.action-read td:first-child   { border-left: 3px solid #475569; }
 .log-row.action-other td:first-child  { border-left: 3px solid #6b7280; }
 
 /* Action badge */
@@ -1113,13 +1685,14 @@ export default {
   white-space: nowrap;
 }
 
-.action-badge.action-create { background: rgba(34, 197, 94, 0.12); color: #4ade80; }
-.action-badge.action-delete { background: rgba(239, 68, 68, 0.12); color: #f87171; }
+.action-badge.action-create { background: rgba(34, 197, 94, 0.12);  color: #4ade80; }
+.action-badge.action-delete { background: rgba(239, 68, 68, 0.15);  color: #f87171; }
 .action-badge.action-update { background: rgba(234, 179, 8, 0.12);  color: #facc15; }
 .action-badge.action-login  { background: rgba(59, 130, 246, 0.12); color: #60a5fa; }
 .action-badge.action-power  { background: rgba(249, 115, 22, 0.12); color: #fb923c; }
 .action-badge.action-backup { background: rgba(139, 92, 246, 0.12); color: #a78bfa; }
-.action-badge.action-other  { background: rgba(107, 114, 128, 0.12);color: #9ca3af; }
+.action-badge.action-read   { background: rgba(107, 114, 128, 0.1); color: #9ca3af; }
+.action-badge.action-other  { background: rgba(107, 114, 128, 0.1); color: #9ca3af; }
 
 /* Method badge */
 .method-badge {
@@ -1155,6 +1728,7 @@ export default {
 
 /* Column widths */
 .col-expand       { width: 28px; padding-left: 0.5rem !important; }
+.col-copy         { width: 34px; padding: 0 0.35rem !important; }
 .col-timestamp    { white-space: nowrap; min-width: 140px; }
 .col-user         { min-width: 90px; }
 .col-action       { min-width: 130px; }
@@ -1182,7 +1756,35 @@ export default {
   padding: 2.5rem 1rem;
 }
 
-/* Expanded row */
+/* Copy button */
+.copy-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 5px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.15s;
+  padding: 0;
+}
+
+.copy-btn:hover {
+  background: #1e293b;
+  border-color: #334155;
+  color: #94a3b8;
+}
+
+.copy-btn.copied {
+  color: #4ade80;
+  border-color: rgba(34, 197, 94, 0.3);
+  background: rgba(34, 197, 94, 0.08);
+}
+
+/* ── Expanded row ── */
 .expanded-row td {
   background: #0a1122;
   padding: 0.75rem 1rem;
@@ -1233,7 +1835,7 @@ export default {
   white-space: pre;
 }
 
-/* Pagination */
+/* ── Pagination ── */
 .pagination {
   display: flex;
   justify-content: space-between;
@@ -1259,7 +1861,7 @@ export default {
   color: #94a3b8;
 }
 
-/* Modal */
+/* ── Modal ── */
 .modal-overlay {
   position: fixed;
   inset: 0;

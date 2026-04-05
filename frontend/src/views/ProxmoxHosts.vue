@@ -277,10 +277,19 @@
     <div class="card">
       <div class="card-header">
         <h3>Cluster Nodes</h3>
-        <button @click="handleRefreshAll" class="btn btn-outline">
-          <span v-if="!loadingNodes">Refresh All</span>
-          <span v-else>Loading...</span>
-        </button>
+        <div class="flex gap-1 align-center">
+          <span class="text-sm text-muted">Sort by:</span>
+          <select v-model="nodesSort" class="form-control form-control-sm" style="width:auto">
+            <option value="name">Name</option>
+            <option value="cpu">CPU Usage</option>
+            <option value="ram">RAM Usage</option>
+            <option value="host">Host</option>
+          </select>
+          <button @click="handleRefreshAll" class="btn btn-outline btn-sm" :disabled="loadingNodes">
+            <span v-if="!loadingNodes">Refresh All</span>
+            <span v-else>Loading...</span>
+          </button>
+        </div>
       </div>
 
       <div v-if="loadingNodes" class="loading-spinner"></div>
@@ -291,7 +300,7 @@
       </div>
 
       <div v-else class="nodes-section">
-        <div v-for="datacenter in datacentersWithNodes" :key="datacenter.id" class="datacenter-section">
+        <div v-for="datacenter in sortedDatacentersWithNodes" :key="datacenter.id" class="datacenter-section">
           <h4 class="datacenter-title">
             {{ getFedSummary(datacenter.id)?.cluster_name || datacenter.name }}
             <span v-if="getFedSummary(datacenter.id)?.cluster_name && getFedSummary(datacenter.id).cluster_name !== datacenter.name" class="datacenter-host-label">({{ datacenter.name }})</span>
@@ -828,6 +837,7 @@ export default {
     const allNodes = ref([])
     const loading = ref(false)
     const loadingNodes = ref(false)
+    const nodesSort = ref('name')
     const saving = ref(false)
     const showAddModal = ref(false)
     const showEditModal = ref(false)
@@ -1330,6 +1340,37 @@ export default {
       }))
     })
 
+    // Sorted version of datacentersWithNodes — applies nodesSort within each datacenter
+    const sortedDatacentersWithNodes = computed(() => {
+      return datacentersWithNodes.value.map(dc => {
+        const nodes = [...dc.nodes]
+        if (nodesSort.value === 'cpu') {
+          nodes.sort((a, b) => {
+            const sa = nodeStats.value[`${dc.id}-${a.node_name}`]
+            const sb = nodeStats.value[`${dc.id}-${b.node_name}`]
+            const pctA = sa?.cpu != null ? sa.cpu * 100 : -1
+            const pctB = sb?.cpu != null ? sb.cpu * 100 : -1
+            return pctB - pctA
+          })
+        } else if (nodesSort.value === 'ram') {
+          nodes.sort((a, b) => {
+            const sa = nodeStats.value[`${dc.id}-${a.node_name}`]
+            const sb = nodeStats.value[`${dc.id}-${b.node_name}`]
+            const pctA = sa?.memory?.total ? (sa.memory.used / sa.memory.total) : -1
+            const pctB = sb?.memory?.total ? (sb.memory.used / sb.memory.total) : -1
+            return pctB - pctA
+          })
+        } else if (nodesSort.value === 'host') {
+          // already grouped by host, just sort by node name
+          nodes.sort((a, b) => (a.node_name || '').localeCompare(b.node_name || ''))
+        } else {
+          // default: name
+          nodes.sort((a, b) => (a.node_name || '').localeCompare(b.node_name || ''))
+        }
+        return { ...dc, nodes }
+      })
+    })
+
     // Helper: retrieve live stats for a node (returns null if still loading)
     const getNodeStat = (hostId, nodeName) => {
       return nodeStats.value[`${hostId}-${nodeName}`] ?? null
@@ -1481,8 +1522,10 @@ export default {
       editAuthMethod,
       useApiToken,
       nodeStats,
+      nodesSort,
       federationSummary,
       datacentersWithNodes,
+      sortedDatacentersWithNodes,
       testing,
       testResults,
       testingAll,

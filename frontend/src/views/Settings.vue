@@ -721,9 +721,6 @@
         <h3>Email / SMTP Configuration</h3>
         <div class="flex gap-2">
           <button @click="resetSmtpDefaults" class="btn btn-outline btn-sm">Reset Defaults</button>
-          <button @click="sendTestEmail" class="btn btn-outline" :disabled="testingEmail || savingSmtp">
-            {{ testingEmail ? 'Sending...' : 'Test Email' }}
-          </button>
           <button @click="saveSmtpSettings" class="btn btn-primary" :disabled="savingSmtp">
             {{ savingSmtp ? 'Saving...' : 'Save' }}
           </button>
@@ -784,10 +781,304 @@
             </div>
           </div>
         </div>
-        <div v-if="testEmailResult" :class="['info-box', testEmailError ? 'alert-danger' : 'alert-success']" style="margin-top:1rem;">
-          {{ testEmailResult }}
+
+        <!-- Send Test Email inline -->
+        <div class="settings-group" style="margin-top:1.5rem; padding-top:1.25rem; border-top:1px solid var(--border-color);">
+          <h5 class="subsection-title">Send Test Email</h5>
+          <p class="text-sm text-muted" style="margin-bottom:0.75rem;">Save your settings first, then send a test email to verify the SMTP configuration.</p>
+          <div class="smtp-test-row">
+            <input
+              v-model="smtpTestAddress"
+              type="email"
+              class="form-control"
+              placeholder="recipient@example.com"
+              style="max-width:280px;"
+            />
+            <button
+              @click="sendTestEmailTo"
+              class="btn btn-outline"
+              :disabled="testingEmail || !smtpTestAddress"
+            >
+              {{ testingEmail ? 'Sending...' : 'Send Test Email' }}
+            </button>
+          </div>
+          <div v-if="testEmailResult" :class="['info-box', testEmailError ? 'alert-danger' : 'alert-success']" style="margin-top:0.75rem;">
+            {{ testEmailResult }}
+          </div>
         </div>
+
         <div v-if="smtpError" class="error-message" style="margin-top:1rem;">{{ smtpError }}</div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         SECURITY (admin only)
+         ═══════════════════════════════════════════════════════════════════ -->
+    <div class="card" v-if="user && user.role === 'admin'">
+      <div class="card-header">
+        <h3>Security</h3>
+        <span class="adv-pill">Admin only</span>
+      </div>
+      <div class="card-body">
+
+        <!-- Password Policy -->
+        <div class="settings-group">
+          <h5 class="subsection-title">Password Policy</h5>
+          <p class="text-sm text-muted" style="margin-bottom:1rem;">Rules enforced when users set or change their password.</p>
+          <div style="max-width:480px;">
+            <div class="form-group">
+              <label class="form-label">
+                Minimum Length: <strong>{{ securityForm.pw_min_length }}</strong>
+              </label>
+              <input
+                type="range"
+                min="8"
+                max="32"
+                step="1"
+                v-model.number="securityForm.pw_min_length"
+                class="appearance-slider"
+                @input="markDirty('security')"
+              />
+              <div class="appearance-slider-labels">
+                <span class="text-xs text-muted">8</span>
+                <span class="text-xs text-muted">32</span>
+              </div>
+            </div>
+          </div>
+          <div class="security-policy-toggles" style="margin-top:1rem;">
+            <div class="toggle-row">
+              <div>
+                <strong>Require Uppercase</strong>
+                <p class="text-sm text-muted">At least one uppercase letter (A-Z)</p>
+              </div>
+              <label class="toggle-switch">
+                <input type="checkbox" v-model="securityForm.pw_require_uppercase" @change="markDirty('security')" />
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+            <div class="toggle-row">
+              <div>
+                <strong>Require Lowercase</strong>
+                <p class="text-sm text-muted">At least one lowercase letter (a-z)</p>
+              </div>
+              <label class="toggle-switch">
+                <input type="checkbox" v-model="securityForm.pw_require_lowercase" @change="markDirty('security')" />
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+            <div class="toggle-row">
+              <div>
+                <strong>Require Numbers</strong>
+                <p class="text-sm text-muted">At least one numeric digit (0-9)</p>
+              </div>
+              <label class="toggle-switch">
+                <input type="checkbox" v-model="securityForm.pw_require_numbers" @change="markDirty('security')" />
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+            <div class="toggle-row">
+              <div>
+                <strong>Require Special Characters</strong>
+                <p class="text-sm text-muted">At least one special character (!@#$%^&amp;* etc.)</p>
+              </div>
+              <label class="toggle-switch">
+                <input type="checkbox" v-model="securityForm.pw_require_special" @change="markDirty('security')" />
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- Session Settings -->
+        <div class="settings-group" style="margin-top:1.75rem;">
+          <h5 class="subsection-title">Session Settings</h5>
+          <p class="text-sm text-muted" style="margin-bottom:1rem;">Session management policies applied at login. Changes take effect on the next login.</p>
+          <div class="settings-form-grid">
+            <div class="form-group">
+              <label class="form-label">Session Timeout</label>
+              <select v-model.number="securityForm.session_timeout_minutes" class="form-control" @change="markDirty('security')">
+                <option :value="15">15 minutes</option>
+                <option :value="30">30 minutes</option>
+                <option :value="60">1 hour</option>
+                <option :value="120">2 hours</option>
+                <option :value="240">4 hours</option>
+                <option :value="480">8 hours (default)</option>
+                <option :value="1440">24 hours</option>
+                <option :value="10080">7 days</option>
+              </select>
+              <p class="text-xs text-muted">How long before an idle session expires</p>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Max Concurrent Sessions</label>
+              <input
+                v-model.number="securityForm.max_sessions"
+                type="number"
+                min="1"
+                max="20"
+                class="form-control"
+                @input="markDirty('security')"
+              />
+              <p class="text-xs text-muted">Maximum simultaneous logins per user (1–20). Set to 0 for unlimited.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- IP Allowlist -->
+        <div class="settings-group" style="margin-top:1.75rem;">
+          <h5 class="subsection-title">IP Allowlist</h5>
+          <p class="text-sm text-muted" style="margin-bottom:0.75rem;">Restrict login access to specific IP ranges. Leave blank to allow all IPs.</p>
+          <div class="toggle-row" style="margin-bottom:0.75rem; max-width:480px;">
+            <div>
+              <strong>Enable IP Allowlist</strong>
+              <p class="text-sm text-muted">Only IPs matching the list below may log in</p>
+            </div>
+            <label class="toggle-switch">
+              <input type="checkbox" v-model="securityForm.ip_allowlist_enabled" @change="markDirty('security')" />
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <div class="form-group" style="max-width:480px;">
+            <label class="form-label">Allowed IPs / CIDRs</label>
+            <textarea
+              v-model="securityForm.ip_allowlist"
+              class="form-control security-ip-textarea"
+              placeholder="192.168.0.0/24&#10;10.0.0.1/32&#10;2001:db8::/32"
+              rows="5"
+              :disabled="!securityForm.ip_allowlist_enabled"
+              @input="markDirty('security')"
+            ></textarea>
+            <p class="text-xs text-muted">One IP address or CIDR block per line. IPv4 and IPv6 supported.</p>
+          </div>
+        </div>
+
+        <div style="margin-top:1.5rem;">
+          <button @click="saveSecuritySettings" class="btn btn-primary" :disabled="savingSecuritySettings">
+            {{ savingSecuritySettings ? 'Saving...' : 'Save Security Settings' }}
+          </button>
+        </div>
+        <div v-if="securitySettingsError" class="error-message" style="margin-top:0.75rem;">{{ securitySettingsError }}</div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         NOTIFICATIONS (all users)
+         ═══════════════════════════════════════════════════════════════════ -->
+    <div class="card">
+      <div class="card-header">
+        <h3>Notifications</h3>
+      </div>
+      <div class="card-body">
+
+        <!-- In-app notifications -->
+        <div class="settings-group">
+          <h5 class="subsection-title">In-App Notifications</h5>
+          <div class="toggle-row">
+            <div>
+              <strong>Enable In-App Notifications</strong>
+              <p class="text-sm text-muted">Show the notification bell and receive alerts inside the app</p>
+            </div>
+            <label class="toggle-switch">
+              <input type="checkbox" v-model="notifPrefs.inapp_enabled" @change="saveNotifPrefs" />
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <div v-if="notifPrefs.inapp_enabled" style="margin-top:0.75rem; padding-left:0.25rem;">
+            <p class="text-sm text-muted" style="margin-bottom:0.5rem;">Receive notifications for:</p>
+            <div class="notif-type-grid">
+              <label class="notif-type-check">
+                <input type="checkbox" v-model="notifPrefs.inapp_info" @change="saveNotifPrefs" />
+                <span>Info</span>
+              </label>
+              <label class="notif-type-check">
+                <input type="checkbox" v-model="notifPrefs.inapp_warning" @change="saveNotifPrefs" />
+                <span>Warning</span>
+              </label>
+              <label class="notif-type-check">
+                <input type="checkbox" v-model="notifPrefs.inapp_error" @change="saveNotifPrefs" />
+                <span>Error</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- Browser notifications -->
+        <div class="settings-group" style="margin-top:1.75rem;">
+          <h5 class="subsection-title">Browser Notifications</h5>
+          <p class="text-sm text-muted" style="margin-bottom:0.75rem;">Native browser push notifications shown even when the tab is in the background.</p>
+          <div class="browser-notif-status">
+            <span v-if="browserNotifPermission === 'granted'" class="badge badge-success">Enabled</span>
+            <span v-else-if="browserNotifPermission === 'denied'" class="badge badge-danger">Blocked by browser</span>
+            <span v-else class="badge badge-warning">Not enabled</span>
+          </div>
+          <div class="action-buttons" style="margin-top:0.75rem;">
+            <button
+              v-if="browserNotifPermission !== 'granted'"
+              @click="requestBrowserNotifPermission"
+              class="btn btn-outline"
+              :disabled="browserNotifPermission === 'denied'"
+            >
+              Enable Browser Notifications
+            </button>
+            <span v-if="browserNotifPermission === 'denied'" class="text-xs text-muted" style="margin-left:0.5rem;">
+              Notifications are blocked. Allow them in your browser site settings.
+            </span>
+          </div>
+          <div v-if="browserNotifPermission === 'granted'" style="margin-top:0.875rem;">
+            <p class="text-sm text-muted" style="margin-bottom:0.5rem;">Show browser notification for:</p>
+            <div class="notif-type-grid">
+              <label class="notif-type-check">
+                <input type="checkbox" v-model="notifPrefs.browser_vm_events" @change="saveNotifPrefs" />
+                <span>VM events (start / stop / error)</span>
+              </label>
+              <label class="notif-type-check">
+                <input type="checkbox" v-model="notifPrefs.browser_task_failures" @change="saveNotifPrefs" />
+                <span>Task failures</span>
+              </label>
+              <label class="notif-type-check">
+                <input type="checkbox" v-model="notifPrefs.browser_security_alerts" @change="saveNotifPrefs" />
+                <span>Security alerts</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- Email notifications (per-user) -->
+        <div class="settings-group" style="margin-top:1.75rem;">
+          <h5 class="subsection-title">Email Notifications</h5>
+          <div class="toggle-row">
+            <div>
+              <strong>Enable Email Notifications</strong>
+              <p class="text-sm text-muted">Receive event summaries by email</p>
+            </div>
+            <label class="toggle-switch">
+              <input type="checkbox" v-model="notifPrefs.email_enabled" @change="saveNotifPrefs" />
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <div v-if="notifPrefs.email_enabled" class="settings-form-grid" style="margin-top:0.875rem; max-width:600px;">
+            <div class="form-group">
+              <label class="form-label">Notification Email Address</label>
+              <input
+                v-model="notifPrefs.email_address"
+                type="email"
+                class="form-control"
+                placeholder="you@example.com"
+                @change="saveNotifPrefs"
+              />
+              <p class="text-xs text-muted">Overrides the SMTP recipient for your personal notifications</p>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Delivery Frequency</label>
+              <select v-model="notifPrefs.email_frequency" class="form-control" @change="saveNotifPrefs">
+                <option value="immediate">Immediate — send per event</option>
+                <option value="digest">Digest — batch every hour</option>
+                <option value="daily">Daily — one summary per day</option>
+              </select>
+              <p class="text-xs text-muted">How often email batches are sent</p>
+            </div>
+          </div>
+        </div>
+
       </div>
     </div>
 
@@ -903,6 +1194,150 @@
           </div>
         </div>
         <div v-if="backupDefaultsError" class="error-message" style="margin-top:1rem;">{{ backupDefaultsError }}</div>
+      </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         SYSTEM TAB (admin only)
+         ═══════════════════════════════════════════════════════════════════ -->
+    <div class="card" v-if="user && user.role === 'admin'">
+      <div class="card-header">
+        <h3>System</h3>
+        <button @click="fetchSystemTab" class="btn btn-outline" :disabled="systemTabLoading">
+          {{ systemTabLoading ? 'Loading...' : 'Refresh' }}
+        </button>
+      </div>
+      <div class="card-body">
+
+        <!-- System info: uptime + version -->
+        <div class="settings-group">
+          <h5 class="subsection-title">System Information</h5>
+          <div v-if="systemTabLoading && !systemTabData" class="loading-message">
+            <div class="loading-spinner"></div>
+            <p>Loading system data...</p>
+          </div>
+          <div v-else class="system-tab-info-grid">
+            <div class="system-tab-info-item">
+              <span class="info-label">API Version</span>
+              <span class="info-value">{{ systemTabData?.version || updateInfo?.current_version || '—' }}</span>
+            </div>
+            <div class="system-tab-info-item">
+              <span class="info-label">System Uptime</span>
+              <span class="info-value">{{ systemTabData ? formatUptime(systemTabData.uptime_seconds) : '—' }}</span>
+            </div>
+            <div class="system-tab-info-item">
+              <span class="info-label">Backend</span>
+              <span class="info-value">FastAPI (Python)</span>
+            </div>
+            <div class="system-tab-info-item">
+              <span class="info-label">Frontend</span>
+              <span class="info-value">Vue 3</span>
+            </div>
+            <div class="system-tab-info-item">
+              <span class="info-label">Database</span>
+              <span class="info-value">SQLite</span>
+            </div>
+            <div class="system-tab-info-item">
+              <span class="info-label">Status</span>
+              <span class="badge badge-success">Running</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Check for updates inline -->
+        <div class="settings-group" style="margin-top:1.75rem;">
+          <h5 class="subsection-title">Software Updates</h5>
+          <div class="system-tab-updates-row">
+            <div class="system-tab-update-info">
+              <p class="text-sm text-muted">
+                <span v-if="updateInfo">
+                  Current: <strong>{{ updateInfo.current_version }}</strong>
+                  &nbsp;&mdash;&nbsp;
+                  Latest: <strong>{{ updateInfo.latest_version }}</strong>
+                  &nbsp;
+                  <span v-if="updateInfo.update_available" class="badge badge-warning" style="margin-left:0.25rem;">Update available</span>
+                  <span v-else-if="!updateInfo.update_available" class="badge badge-success" style="margin-left:0.25rem;">Up to date</span>
+                </span>
+                <span v-else>Click "Check for Updates" to compare against the latest release on GitHub.</span>
+              </p>
+            </div>
+            <div class="action-buttons">
+              <button @click="checkForUpdates" class="btn btn-outline" :disabled="checkingUpdates || applyingUpdate">
+                {{ checkingUpdates ? 'Checking...' : 'Check for Updates' }}
+              </button>
+              <button
+                v-if="updateInfo && updateInfo.update_available && !applyingUpdate && !updateDone"
+                @click="applyUpdate"
+                class="btn btn-success"
+              >
+                Install Update
+              </button>
+            </div>
+          </div>
+          <!-- Live update log -->
+          <div v-if="applyingUpdate || updateLog.length > 0" class="update-terminal" ref="terminalEl" style="margin-top:0.75rem;">
+            <div class="update-terminal__header">
+              <span v-if="applyingUpdate && !updateDone && !updateFailed">
+                <span class="terminal-spinner"></span> Update in progress…
+              </span>
+              <span v-else-if="updateDone" style="color:#4ade80">Update complete — reloading in {{ reloadCountdown }}s</span>
+              <span v-else-if="updateFailed" style="color:#f87171">Update failed</span>
+              <span v-else>Update log</span>
+            </div>
+            <pre class="update-terminal__body" ref="logBodyEl">{{ updateLog.join('\n') }}</pre>
+          </div>
+        </div>
+
+        <!-- Database size + Vacuum inline -->
+        <div class="settings-group" style="margin-top:1.75rem;">
+          <h5 class="subsection-title">Database</h5>
+          <div class="system-tab-db-row">
+            <div class="system-tab-db-info">
+              <span class="text-sm text-muted">Size: </span>
+              <span class="adv-dbsize-val">{{ systemTabData ? formatBytes(systemTabData.db_size_bytes) : '—' }}</span>
+              <span class="text-xs text-muted" style="margin-left:0.75rem;" v-if="systemTabData">
+                ({{ systemTabData.user_count }} users, {{ systemTabData.vm_count }} VMs, {{ systemTabData.host_count }} hosts)
+              </span>
+            </div>
+            <div class="action-buttons">
+              <button @click="runDbVacuum" class="btn btn-outline" :disabled="runningVacuum">
+                {{ runningVacuum ? 'Running...' : 'Vacuum DB' }}
+              </button>
+              <button @click="runDbCheck" class="btn btn-outline" :disabled="runningDbCheck">
+                {{ runningDbCheck ? 'Checking...' : 'Integrity Check' }}
+              </button>
+            </div>
+          </div>
+          <div v-if="vacuumResult" :class="['info-box', vacuumResult.success ? 'alert-success' : 'alert-danger']" style="margin-top:0.75rem;">
+            <span v-if="vacuumResult.success">
+              VACUUM complete. Freed {{ formatBytes(vacuumResult.freed_bytes) }}
+              ({{ formatBytes(vacuumResult.size_before_bytes) }} &rarr; {{ formatBytes(vacuumResult.size_after_bytes) }})
+            </span>
+            <span v-else>{{ vacuumResult.message }}</span>
+          </div>
+          <div v-if="dbCheckResult" :class="['info-box', dbCheckResult.ok ? 'alert-success' : 'alert-danger']" style="margin-top:0.75rem;">
+            Integrity check: <strong>{{ dbCheckResult.ok ? 'OK' : 'FAILED' }}</strong>
+            <span v-if="!dbCheckResult.ok"> — {{ dbCheckResult.results.join(', ') }}</span>
+          </div>
+        </div>
+
+        <!-- Log Level selector -->
+        <div class="settings-group" style="margin-top:1.75rem;">
+          <h5 class="subsection-title">Log Level</h5>
+          <p class="text-sm text-muted" style="margin-bottom:0.75rem;">Controls backend logging verbosity. Changes take effect after the next restart.</p>
+          <div class="system-tab-loglevel-row">
+            <select v-model="logLevelSetting" class="form-control" style="max-width:240px;">
+              <option value="DEBUG">DEBUG (most verbose)</option>
+              <option value="INFO">INFO</option>
+              <option value="WARNING">WARNING</option>
+              <option value="ERROR">ERROR (least verbose)</option>
+            </select>
+            <button @click="saveLogLevel" class="btn btn-primary" :disabled="savingLogLevel">
+              {{ savingLogLevel ? 'Saving...' : 'Save' }}
+            </button>
+          </div>
+        </div>
+
       </div>
     </div>
 
@@ -3281,6 +3716,165 @@ export default {
       }
     }
 
+    // ── SMTP test-to-address ────────────────────────────────────────────────
+    const smtpTestAddress = ref('')
+
+    const sendTestEmailTo = async () => {
+      testingEmail.value = true
+      testEmailResult.value = null
+      testEmailError.value = false
+      try {
+        // Save smtp_to temporarily to the backend, send, then restore. Simpler: just save smtp_to from input.
+        // The backend /test-email reads smtp_to from DB, so we update it first if user provided an address.
+        if (smtpTestAddress.value) {
+          await api.system.updateSettings({ smtp_to: smtpTestAddress.value })
+        }
+        const res = await api.system.testEmail()
+        testEmailResult.value = res.data.message || `Test email sent to ${smtpTestAddress.value}`
+        toast.success('Test email sent!')
+      } catch (error) {
+        testEmailError.value = true
+        testEmailResult.value = error.response?.data?.detail || 'Failed to send test email'
+        toast.error(testEmailResult.value)
+      } finally {
+        testingEmail.value = false
+        setTimeout(() => { testEmailResult.value = null }, 8000)
+      }
+    }
+
+    // ── Security Settings ────────────────────────────────────────────────────
+    const securityForm = ref({
+      pw_min_length: 8,
+      pw_require_uppercase: false,
+      pw_require_lowercase: false,
+      pw_require_numbers: false,
+      pw_require_special: false,
+      session_timeout_minutes: 480,
+      max_sessions: 0,
+      ip_allowlist_enabled: false,
+      ip_allowlist: '',
+    })
+    const savingSecuritySettings = ref(false)
+    const securitySettingsError = ref(null)
+
+    const fetchSecuritySettings = async () => {
+      try {
+        const res = await api.system.getSettings()
+        const s = res.data
+        securityForm.value.pw_min_length = parseInt(s.pw_min_length) || 8
+        securityForm.value.pw_require_uppercase = (s.pw_require_uppercase || 'false') === 'true'
+        securityForm.value.pw_require_lowercase = (s.pw_require_lowercase || 'false') === 'true'
+        securityForm.value.pw_require_numbers = (s.pw_require_numbers || 'false') === 'true'
+        securityForm.value.pw_require_special = (s.pw_require_special || 'false') === 'true'
+        securityForm.value.session_timeout_minutes = parseInt(s.session_timeout_minutes) || 480
+        securityForm.value.max_sessions = parseInt(s.max_sessions) || 0
+        securityForm.value.ip_allowlist_enabled = (s.ip_allowlist_enabled || 'false') === 'true'
+        // Convert comma-separated to newline-separated for textarea
+        securityForm.value.ip_allowlist = (s.ip_allowlist || '').split(',').map(e => e.trim()).filter(Boolean).join('\n')
+      } catch { /* non-admin, ignore */ }
+    }
+
+    const saveSecuritySettings = async () => {
+      savingSecuritySettings.value = true
+      securitySettingsError.value = null
+      try {
+        // Convert newline-separated back to comma-separated for storage
+        const ipList = securityForm.value.ip_allowlist
+          .split('\n').map(e => e.trim()).filter(Boolean).join(',')
+        await api.system.updateSettings({
+          pw_min_length: String(securityForm.value.pw_min_length),
+          pw_require_uppercase: String(securityForm.value.pw_require_uppercase),
+          pw_require_lowercase: String(securityForm.value.pw_require_lowercase),
+          pw_require_numbers: String(securityForm.value.pw_require_numbers),
+          pw_require_special: String(securityForm.value.pw_require_special),
+          session_timeout_minutes: String(securityForm.value.session_timeout_minutes),
+          max_sessions: String(securityForm.value.max_sessions),
+          ip_allowlist_enabled: String(securityForm.value.ip_allowlist_enabled),
+          ip_allowlist: ipList,
+        })
+        toast.success('Security settings saved')
+        clearDirty('security')
+      } catch (error) {
+        securitySettingsError.value = error.response?.data?.detail || 'Failed to save security settings'
+        toast.error('Failed to save security settings')
+      } finally {
+        savingSecuritySettings.value = false
+      }
+    }
+
+    // ── Notification Preferences (per-user, localStorage-backed) ────────────
+    const _NOTIF_PREFS_KEY = 'depl0y_notif_prefs'
+    const _loadNotifPrefs = () => {
+      try {
+        const raw = localStorage.getItem(_NOTIF_PREFS_KEY)
+        if (raw) return JSON.parse(raw)
+      } catch { /* ignore */ }
+      return {}
+    }
+    const notifPrefs = ref({
+      inapp_enabled: true,
+      inapp_info: true,
+      inapp_warning: true,
+      inapp_error: true,
+      browser_vm_events: false,
+      browser_task_failures: true,
+      browser_security_alerts: true,
+      email_enabled: false,
+      email_address: '',
+      email_frequency: 'immediate',
+      ..._loadNotifPrefs(),
+    })
+
+    const saveNotifPrefs = () => {
+      localStorage.setItem(_NOTIF_PREFS_KEY, JSON.stringify(notifPrefs.value))
+      toast.success('Notification preferences saved')
+    }
+
+    const browserNotifPermission = ref(
+      typeof Notification !== 'undefined' ? Notification.permission : 'unsupported'
+    )
+
+    const requestBrowserNotifPermission = async () => {
+      if (typeof Notification === 'undefined') {
+        toast.error('Browser notifications are not supported in this browser')
+        return
+      }
+      const result = await Notification.requestPermission()
+      browserNotifPermission.value = result
+      if (result === 'granted') {
+        toast.success('Browser notifications enabled')
+        new Notification('Depl0y', { body: 'Browser notifications are now enabled!' })
+      } else if (result === 'denied') {
+        toast.error('Browser notifications blocked — allow them in site settings')
+      }
+    }
+
+    // ── System Tab (uptime, version, DB size, updates) ──────────────────────
+    const systemTabData = ref(null)
+    const systemTabLoading = ref(false)
+
+    const formatUptime = (seconds) => {
+      if (!seconds && seconds !== 0) return '—'
+      const d = Math.floor(seconds / 86400)
+      const h = Math.floor((seconds % 86400) / 3600)
+      const m = Math.floor((seconds % 3600) / 60)
+      const s = Math.floor(seconds % 60)
+      if (d > 0) return `${d}d ${h}h ${m}m`
+      if (h > 0) return `${h}h ${m}m`
+      if (m > 0) return `${m}m ${s}s`
+      return `${s}s`
+    }
+
+    const fetchSystemTab = async () => {
+      systemTabLoading.value = true
+      try {
+        const res = await api.system.getDiagnostics()
+        systemTabData.value = res.data
+      } catch { /* ignore */ } finally {
+        systemTabLoading.value = false
+      }
+    }
+
     // ── Advanced tab ─────────────────────────────────────────────────────────
     const advMetrics = ref(null)
     const advMetricsLoading = ref(false)
@@ -3461,6 +4055,8 @@ export default {
       fetchNotifRules()
       fetchGeneralSettings()
       fetchSystemHealth()
+      fetchSecuritySettings()
+      fetchSystemTab()
     })
 
     return {
@@ -3690,6 +4286,24 @@ export default {
       advExportSettings,
       advImportSettings,
       advDoRestart,
+      // SMTP test address
+      smtpTestAddress,
+      sendTestEmailTo,
+      // Security
+      securityForm,
+      savingSecuritySettings,
+      securitySettingsError,
+      saveSecuritySettings,
+      // Notifications preferences
+      notifPrefs,
+      saveNotifPrefs,
+      browserNotifPermission,
+      requestBrowserNotifPermission,
+      // System tab
+      systemTabData,
+      systemTabLoading,
+      formatUptime,
+      fetchSystemTab,
     }
   }
 }
@@ -5247,5 +5861,134 @@ export default {
 .btn-sm {
   padding: 0.3rem 0.75rem;
   font-size: 0.8rem;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   SMTP — Send Test Email row
+   ══════════════════════════════════════════════════════════════════════════ */
+.smtp-test-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Security Settings
+   ══════════════════════════════════════════════════════════════════════════ */
+.security-policy-toggles {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  max-width: 540px;
+}
+
+.security-ip-textarea {
+  font-family: monospace;
+  font-size: 0.85rem;
+  resize: vertical;
+  min-height: 100px;
+}
+
+.security-ip-textarea:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Notification Preferences
+   ══════════════════════════════════════════════════════════════════════════ */
+.notif-type-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.notif-type-check {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.375rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 0.375rem;
+  cursor: pointer;
+  font-size: 0.875rem;
+  transition: border-color 0.15s, background 0.15s;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.notif-type-check:hover {
+  border-color: var(--accent-color, #3b82f6);
+  background: rgba(59, 130, 246, 0.05);
+}
+
+.notif-type-check input[type="checkbox"] {
+  accent-color: var(--accent-color, #3b82f6);
+  width: 0.95rem;
+  height: 0.95rem;
+  cursor: pointer;
+}
+
+.browser-notif-status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   System Tab
+   ══════════════════════════════════════════════════════════════════════════ */
+.system-tab-info-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 0.625rem;
+  margin-top: 0.5rem;
+}
+
+.system-tab-info-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.75rem 1rem;
+  background: var(--background);
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+}
+
+.system-tab-updates-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  flex-wrap: wrap;
+  justify-content: space-between;
+}
+
+.system-tab-update-info {
+  flex: 1;
+  min-width: 200px;
+}
+
+.system-tab-db-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  padding: 0.5rem 0;
+}
+
+.system-tab-db-info {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+}
+
+.system-tab-loglevel-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
 }
 </style>

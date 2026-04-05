@@ -15,8 +15,8 @@
             <span class="welcome-text">Add your first Proxmox host to get started.</span>
           </div>
           <button class="btn btn-primary btn-sm welcome-action" @click="openWizardFromBanner">Add Host</button>
-          <button class="welcome-dismiss" @click="dismissWelcomeBanner" title="Dismiss">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <button class="welcome-dismiss" @click="dismissWelcomeBanner" title="Dismiss" aria-label="Dismiss welcome banner">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
               <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
             </svg>
           </button>
@@ -137,8 +137,8 @@
         />
         <span v-if="searchLoading" class="qs-spinner"></span>
         <kbd v-if="!searchFocused && !searchQuery" class="qs-kbd">/</kbd>
-        <button v-if="searchQuery" class="qs-clear" @click="clearSearch">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <button v-if="searchQuery" class="qs-clear" @click="clearSearch" aria-label="Clear search">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
             <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
           </svg>
         </button>
@@ -207,20 +207,20 @@
         <span class="last-updated" :title="lastUpdatedAt ? 'Last updated: ' + lastUpdatedAt : ''">
           {{ lastUpdatedSeconds }}s ago
         </span>
-        <button class="btn-icon" title="Refresh dashboard" @click="refreshAll" :class="{ 'btn-icon--spinning': globalRefreshing }">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <button class="btn-icon" title="Refresh dashboard" aria-label="Refresh dashboard" @click="refreshAll" :class="{ 'btn-icon--spinning': globalRefreshing }">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
             <polyline points="23 4 23 10 17 10"/>
             <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
           </svg>
         </button>
-        <button class="btn-icon" title="Customize Widgets" @click="showCustomize = !showCustomize">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <button class="btn-icon" title="Customize Widgets" aria-label="Customize widgets" @click="showCustomize = !showCustomize">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
             <circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/>
           </svg>
         </button>
-        <button class="btn-icon" title="Add Widget" @click="showPicker = true">+</button>
-        <button class="btn-icon" title="Reset Layout" @click="resetLayout">↺</button>
-        <button class="btn-icon" title="Keyboard shortcuts (?)" @click="showShortcutsHint = !showShortcutsHint">
+        <button class="btn-icon" title="Add Widget" aria-label="Add widget" @click="showPicker = true">+</button>
+        <button class="btn-icon" title="Reset Layout" aria-label="Reset layout" @click="resetLayout">↺</button>
+        <button class="btn-icon" title="Keyboard shortcuts (?)" aria-label="Show keyboard shortcuts" @click="showShortcutsHint = !showShortcutsHint">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="12" cy="12" r="10"/>
             <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
@@ -235,8 +235,8 @@
       <div v-if="showShortcutsHint" class="shortcuts-hint-panel">
         <div class="shp-header">
           <span class="shp-title">Dashboard Shortcuts</span>
-          <button class="shp-close" @click="showShortcutsHint = false">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <button class="shp-close" @click="showShortcutsHint = false" aria-label="Close shortcuts panel">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
               <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
             </svg>
           </button>
@@ -339,18 +339,19 @@
             <button
               class="wc-btn"
               title="Refresh widget"
+              aria-label="Refresh widget"
               @click.stop="refreshWidget(widget)"
               :class="{ 'wc-spinning': widgetRefreshing.has(widget.id) }"
             >
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
                 <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
               </svg>
             </button>
-            <button class="wc-btn" :title="widget.collapsed ? 'Expand' : 'Collapse'" @click.stop="toggleCollapse(widget)">
+            <button class="wc-btn" :title="widget.collapsed ? 'Expand' : 'Collapse'" :aria-label="widget.collapsed ? 'Expand widget' : 'Collapse widget'" @click.stop="toggleCollapse(widget)">
               {{ widget.collapsed ? '▲' : '▼' }}
             </button>
-            <button class="wc-btn" title="Settings" @click.stop="openSettings(widget)">⚙</button>
-            <button class="wc-btn wc-remove" title="Remove" @click.stop="removeWidget(widget)">×</button>
+            <button class="wc-btn" title="Settings" aria-label="Widget settings" @click.stop="openSettings(widget)">⚙</button>
+            <button class="wc-btn wc-remove" title="Remove" aria-label="Remove widget" @click.stop="removeWidget(widget)">×</button>
           </div>
         </div>
 
@@ -403,8 +404,8 @@
         <span class="afp-title">Recent Activity</span>
         <div class="afp-header-right">
           <span v-if="activityLastUpdated" class="afp-ts">{{ activityAgoText }}</span>
-          <button class="afp-refresh" @click="fetchActivity" :disabled="activityLoading" title="Refresh activity">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" :class="{ 'spinning': activityLoading }">
+          <button class="afp-refresh" @click="fetchActivity" :disabled="activityLoading" title="Refresh activity" aria-label="Refresh activity feed">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" :class="{ 'spinning': activityLoading }" aria-hidden="true">
               <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
             </svg>
           </button>
@@ -447,11 +448,11 @@
 
     <!-- Widget picker modal -->
     <transition name="modal-fade">
-      <div v-if="showPicker" class="modal-overlay" @click.self="showPicker = false">
+      <div v-if="showPicker" class="modal-overlay" @click.self="showPicker = false" role="dialog" aria-modal="true" aria-label="Add Widget">
         <div class="modal-box picker-modal">
           <div class="modal-header">
             <h3>Add Widget</h3>
-            <button class="modal-close" @click="showPicker = false">×</button>
+            <button class="modal-close" @click="showPicker = false" aria-label="Close dialog">×</button>
           </div>
           <div class="picker-grid">
             <button
@@ -472,11 +473,11 @@
 
     <!-- Widget settings modal -->
     <transition name="modal-fade">
-      <div v-if="settingsWidget" class="modal-overlay" @click.self="settingsWidget = null">
+      <div v-if="settingsWidget" class="modal-overlay" @click.self="settingsWidget = null" role="dialog" aria-modal="true" :aria-label="widgetMeta(settingsWidget.type).label + ' Settings'">
         <div class="modal-box settings-modal">
           <div class="modal-header">
             <h3>{{ widgetMeta(settingsWidget.type).label }} — Settings</h3>
-            <button class="modal-close" @click="settingsWidget = null">×</button>
+            <button class="modal-close" @click="settingsWidget = null" aria-label="Close dialog">×</button>
           </div>
           <div class="settings-body">
             <p class="settings-hint">Widget ID: {{ settingsWidget.id }}</p>

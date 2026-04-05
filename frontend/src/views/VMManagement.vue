@@ -157,14 +157,14 @@
       </div>
 
       <!-- Quick Edit Drawer -->
-      <div v-if="showQuickEdit" class="fleet-drawer-overlay" @click.self="closeQuickEdit">
+      <div v-if="showQuickEdit" class="fleet-drawer-overlay" @click.self="closeQuickEdit" role="dialog" aria-modal="true" :aria-label="'Quick Edit VM ' + (quickEditVM?.vmid || '')">
         <div class="fleet-drawer" @click.stop>
           <div class="fleet-drawer-header">
             <div>
               <h3>Quick Edit — VM {{ quickEditVM?.vmid }}</h3>
               <span class="text-muted text-sm">{{ quickEditVM?.name }}</span>
             </div>
-            <button @click="closeQuickEdit" class="btn-close-sm">×</button>
+            <button @click="closeQuickEdit" class="btn-close-sm" aria-label="Close quick edit panel">×</button>
           </div>
           <div class="fleet-drawer-body">
             <div class="form-group">
@@ -198,11 +198,11 @@
       </div>
 
       <!-- Batch Tag Modal -->
-      <div v-if="showBatchTagModal" class="modal-overlay" @click.self="!batchTagRunning && closeBatchTagModal()">
+      <div v-if="showBatchTagModal" class="modal-overlay" @click.self="!batchTagRunning && closeBatchTagModal()" role="dialog" aria-modal="true" :aria-label="batchTagMode === 'add' ? 'Add Tag to VMs' : 'Remove Tag from VMs'">
         <div class="modal-content" @click.stop style="max-width:480px;">
           <div class="modal-header">
             <h3>{{ batchTagMode === 'add' ? 'Add Tag to' : 'Remove Tag from' }} {{ fleetSelectedKeys.size }} VMs</h3>
-            <button @click="closeBatchTagModal" class="btn-close-sm" :disabled="batchTagRunning">×</button>
+            <button @click="closeBatchTagModal" class="btn-close-sm" :disabled="batchTagRunning" aria-label="Close dialog">×</button>
           </div>
           <div class="modal-body">
             <div v-if="!batchTagDone">
@@ -246,11 +246,11 @@
       </div>
 
       <!-- Batch Notes Modal -->
-      <div v-if="showBatchNotesModal" class="modal-overlay" @click.self="!batchNotesRunning && closeBatchNotesModal()">
+      <div v-if="showBatchNotesModal" class="modal-overlay" @click.self="!batchNotesRunning && closeBatchNotesModal()" role="dialog" aria-modal="true" aria-label="Batch Notes">
         <div class="modal-content" @click.stop style="max-width:520px;">
           <div class="modal-header">
             <h3>Batch Notes — {{ fleetSelectedKeys.size }} VMs</h3>
-            <button @click="closeBatchNotesModal" class="btn-close-sm" :disabled="batchNotesRunning">×</button>
+            <button @click="closeBatchNotesModal" class="btn-close-sm" :disabled="batchNotesRunning" aria-label="Close dialog">×</button>
           </div>
           <div class="modal-body">
             <div v-if="!batchNotesDone">
@@ -449,7 +449,7 @@
                           <span :class="['badge', liveLog[vm.vmid].status === 'completed' ? 'badge-success' : liveLog[vm.vmid].status === 'failed' ? 'badge-danger' : 'badge-warning']">
                             {{ liveLog[vm.vmid].status }}
                           </span>
-                          <button @click="closeLiveLog(vm.vmid)" class="btn-close-sm" title="Dismiss">×</button>
+                          <button @click="closeLiveLog(vm.vmid)" class="btn-close-sm" title="Dismiss" aria-label="Dismiss live log">×</button>
                         </div>
                       </div>
                       <pre class="live-log-output" :id="`livelog-${vm.vmid}`">{{ liveLog[vm.vmid].output || 'Starting…' }}</pre>
@@ -511,11 +511,11 @@
     </div>
 
     <!-- SSH Credentials Modal -->
-    <div v-if="credModal.show" class="modal-overlay" @click="credModal.show = false">
+    <div v-if="credModal.show" class="modal-overlay" @click="credModal.show = false" role="dialog" aria-modal="true" :aria-label="'SSH Credentials — ' + (credModal.vm?.name || '')">
       <div class="cred-modal" @click.stop>
         <div class="cred-modal-header">
           <h3>SSH Credentials — {{ credModal.vm?.name }}</h3>
-          <button @click="credModal.show = false" class="btn-close-sm">×</button>
+          <button @click="credModal.show = false" class="btn-close-sm" aria-label="Close dialog">×</button>
         </div>
         <div class="cred-modal-body">
           <p class="cred-note">These credentials are used to SSH into the VM for update and security scan operations.</p>
@@ -2572,10 +2572,20 @@ export default {
   font-size: 0.875rem;
   background: var(--card-bg, #fff);
   color: var(--text-primary);
-  outline: none;
 }
 
-.search-input:focus { border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59,130,246,0.15); }
+.search-input::placeholder {
+  color: var(--text-muted, #8fa3b8);
+  opacity: 1;
+}
+
+.search-input:focus { border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59,130,246,0.15); outline: none; }
+
+.search-input:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 0;
+  border-color: #3b82f6;
+}
 
 /* Table */
 .table-wrapper { overflow-x: auto; }
@@ -2888,7 +2898,7 @@ export default {
   display: inline-block;
   font-size: 0.65rem;
   background: var(--bg-secondary, #e8e8e8);
-  color: var(--text-secondary, #666);
+  color: var(--text-secondary, #4a5568);
   border-radius: 3px;
   padding: 0 4px;
   margin-left: 4px;
@@ -3029,6 +3039,12 @@ export default {
   color: var(--text-secondary);
   padding: 0 0.25rem;
   line-height: 1;
+  border-radius: 0.25rem;
+}
+
+.btn-close-sm:focus-visible {
+  outline: 2px solid var(--accent-color, #3b82f6);
+  outline-offset: 2px;
 }
 
 .cred-modal-body {

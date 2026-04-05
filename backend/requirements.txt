@@ -53,3 +53,4 @@ httpx==0.25.2
 weasyprint==66.0
 markdown==3.10
 apscheduler>=3.10.4
+geoip2==4.8.0

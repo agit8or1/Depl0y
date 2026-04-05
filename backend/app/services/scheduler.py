@@ -129,6 +129,74 @@ def run_auto_security_scans():
         db.close()
 
 
+def run_bmc_poll():
+    """Poll all configured BMC servers every 2 minutes and update status cache."""
+    from app.core.database import SessionLocal
+    from app.models.database import ProxmoxHost, PBSServer, StandaloneBMC
+    from app.core.security import decrypt_data
+    from app.services.idrac import RedfishClient
+    from app.api.idrac import bmc_status_cache
+
+    db = SessionLocal()
+    try:
+        servers = []
+        for h in db.query(ProxmoxHost).filter(ProxmoxHost.idrac_hostname.isnot(None)).all():
+            servers.append(("pve", h.id, h))
+        for s in db.query(PBSServer).filter(PBSServer.idrac_hostname.isnot(None)).all():
+            servers.append(("pbs", s.id, s))
+        for b in db.query(StandaloneBMC).filter(StandaloneBMC.is_active == True).all():
+            servers.append(("standalone", b.id, b))
+
+        for stype, sid, obj in servers:
+            key = f"{stype}:{sid}"
+            try:
+                pw = decrypt_data(obj.idrac_password)
+                client = RedfishClient(
+                    hostname=obj.idrac_hostname,
+                    username=obj.idrac_username,
+                    password=pw,
+                    port=obj.idrac_port or 443,
+                    bmc_type=obj.idrac_type or "idrac",
+                )
+                info = client.get_system_info()
+                # Also grab quick thermal + power data for dashboard gauges
+                max_temp_c = None
+                consumed_watts = None
+                try:
+                    thermal = client.get_thermal()
+                    temps = [t.get("reading_celsius") for t in thermal.get("temperatures", []) if t.get("reading_celsius") is not None]
+                    if temps:
+                        max_temp_c = max(temps)
+                except Exception:
+                    pass
+                try:
+                    power = client.get_power_usage()
+                    consumed_watts = (power.get("power_control") or [{}])[0].get("consumed_watts")
+                except Exception:
+                    pass
+                bmc_status_cache[key] = {
+                    "power_state": info.get("power_state"),
+                    "health": info.get("health"),
+                    "model": info.get("model"),
+                    "last_polled": datetime.utcnow().isoformat(),
+                    "error": None,
+                    "max_temp_c": max_temp_c,
+                    "consumed_watts": consumed_watts,
+                }
+            except Exception as e:
+                bmc_status_cache[key] = {
+                    "power_state": None,
+                    "health": None,
+                    "model": None,
+                    "last_polled": datetime.utcnow().isoformat(),
+                    "error": str(e),
+                }
+    except Exception as e:
+        logger.error(f"BMC poll job error: {e}")
+    finally:
+        db.close()
+
+
 # ── public API ────────────────────────────────────────────────────────────────
 
 def start_scheduler(update_hours: int = 24, scan_hours: int = 24):
@@ -148,9 +216,15 @@ def start_scheduler(update_hours: int = 24, scan_hours: int = 24):
         id="auto_security_scans",
         max_instances=1,
     )
+    _scheduler.add_job(
+        run_bmc_poll,
+        IntervalTrigger(minutes=2),
+        id="bmc_poll",
+        max_instances=1,
+    )
     _scheduler.start()
     _started = True
-    logger.info(f"Scheduler started — update checks every {update_hours}h, security scans every {scan_hours}h")
+    logger.info(f"Scheduler started — update checks every {update_hours}h, security scans every {scan_hours}h, BMC poll every 2m")
 
 
 def reschedule(update_hours: int = 24, scan_hours: int = 24):
@@ -175,3 +249,4 @@ def reschedule(update_hours: int = 24, scan_hours: int = 24):
         max_instances=1,
     )
     logger.info(f"Rescheduled — update checks every {update_hours}h, security scans every {scan_hours}h")
+    # bmc_poll is always 2 minutes, no need to reschedule it

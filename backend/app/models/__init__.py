@@ -5,6 +5,8 @@ from .database import (
     UserRole,
     ProxmoxHost,
     ProxmoxNode,
+    PBSServer,
+    StandaloneBMC,
     ISOImage,
     CloudImage,
     VirtualMachine,
@@ -21,6 +23,14 @@ from .database import (
     ScanStatus,
     ScanSeverity,
 )
+from .security import (
+    FailedLoginAttempt,
+    AccountLockout,
+    TokenBlacklist,
+    SecurityEvent,
+    IPBanList,
+    GeoIPRule,
+)
 
 __all__ = [
     "Base",
@@ -28,6 +38,8 @@ __all__ = [
     "UserRole",
     "ProxmoxHost",
     "ProxmoxNode",
+    "PBSServer",
+    "StandaloneBMC",
     "ISOImage",
     "CloudImage",
     "VirtualMachine",
@@ -43,4 +55,10 @@ __all__ = [
     "ScanType",
     "ScanStatus",
     "ScanSeverity",
+    "FailedLoginAttempt",
+    "AccountLockout",
+    "TokenBlacklist",
+    "SecurityEvent",
+    "IPBanList",
+    "GeoIPRule",
 ]

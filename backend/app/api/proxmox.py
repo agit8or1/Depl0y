@@ -27,6 +27,13 @@ class ProxmoxHostCreate(BaseModel):
     api_token_id: Optional[str] = None  # e.g., "mytoken" or "root@pam!mytoken"
     api_token_secret: Optional[str] = None
     verify_ssl: bool = False
+    # iDRAC / iLO out-of-band management (optional)
+    idrac_hostname: Optional[str] = None
+    idrac_port: Optional[int] = 443
+    idrac_username: Optional[str] = None
+    idrac_password: Optional[str] = None
+    idrac_type: Optional[str] = None  # "idrac", "ilo"
+    idrac_use_ssh: Optional[bool] = False
 
 
 class ProxmoxHostUpdate(BaseModel):
@@ -39,6 +46,13 @@ class ProxmoxHostUpdate(BaseModel):
     api_token_secret: Optional[str] = None
     verify_ssl: Optional[bool] = None
     is_active: Optional[bool] = None
+    # iDRAC / iLO fields
+    idrac_hostname: Optional[str] = None
+    idrac_port: Optional[int] = None
+    idrac_username: Optional[str] = None
+    idrac_password: Optional[str] = None
+    idrac_type: Optional[str] = None
+    idrac_use_ssh: Optional[bool] = None
 
 
 class ProxmoxHostResponse(BaseModel):
@@ -52,6 +66,12 @@ class ProxmoxHostResponse(BaseModel):
     last_poll: Optional[datetime]
     created_at: datetime
     updated_at: datetime
+    # iDRAC / iLO info (no password)
+    idrac_hostname: Optional[str] = None
+    idrac_port: Optional[int] = None
+    idrac_username: Optional[str] = None
+    idrac_type: Optional[str] = None
+    idrac_use_ssh: Optional[bool] = None
 
     class Config:
         from_attributes = True
@@ -116,6 +136,9 @@ async def create_proxmox_host(
     # Encrypt API token secret if provided
     encrypted_token_secret = encrypt_data(host_data.api_token_secret) if host_data.api_token_secret else None
 
+    # Encrypt iDRAC password if provided
+    encrypted_idrac_password = encrypt_data(host_data.idrac_password) if host_data.idrac_password else None
+
     # Create new host
     new_host = ProxmoxHost(
         name=host_data.name,
@@ -126,6 +149,11 @@ async def create_proxmox_host(
         api_token_id=host_data.api_token_id,
         api_token_secret=encrypted_token_secret,
         verify_ssl=host_data.verify_ssl,
+        idrac_hostname=host_data.idrac_hostname,
+        idrac_port=host_data.idrac_port,
+        idrac_username=host_data.idrac_username,
+        idrac_password=encrypted_idrac_password,
+        idrac_type=host_data.idrac_type,
     )
 
     db.add(new_host)
@@ -207,6 +235,20 @@ async def update_proxmox_host(
 
     if host_data.is_active is not None:
         host.is_active = host_data.is_active
+
+    # iDRAC / iLO fields
+    if host_data.idrac_hostname is not None:
+        host.idrac_hostname = host_data.idrac_hostname or None
+    if host_data.idrac_port is not None:
+        host.idrac_port = host_data.idrac_port
+    if host_data.idrac_username is not None:
+        host.idrac_username = host_data.idrac_username or None
+    if host_data.idrac_password is not None:
+        host.idrac_password = encrypt_data(host_data.idrac_password) if host_data.idrac_password else None
+    if host_data.idrac_type is not None:
+        host.idrac_type = host_data.idrac_type or None
+    if host_data.idrac_use_ssh is not None:
+        host.idrac_use_ssh = host_data.idrac_use_ssh
 
     host.updated_at = datetime.utcnow()
     db.commit()

@@ -26,7 +26,7 @@ def get_app_version():
         # Fallback to hardcoded version if database query fails
         pass
 
-    return "1.6.0"  # VM import: OVA/OVF/VMDK/VHD upload + VMware ESXi/vCenter direct import
+    return "1.6.1"  # iDRAC/iLO dashboard: Redfish-first, charts, clickable alerts, model auto-detect
 
 
 class Settings(BaseSettings):

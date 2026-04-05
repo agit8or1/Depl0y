@@ -1,5 +1,5 @@
 """Authentication API routes"""
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, EmailStr
@@ -110,32 +110,132 @@ async def require_operator(current_user: User = Depends(get_current_user)) -> Us
     return current_user
 
 
-@router.post("/login", response_model=Token)
-async def login(credentials: LoginRequest, db: Session = Depends(get_db)):
-    """Login endpoint with timing attack protection"""
-    import time
+def _get_brute_force_setting(db: Session, key: str, default: int) -> int:
+    """Helper to read brute force settings from SystemSettings."""
+    from app.models.database import SystemSettings
+    row = db.query(SystemSettings).filter(SystemSettings.key == key).first()
+    try:
+        return int(row.value) if row else default
+    except (TypeError, ValueError):
+        return default
 
-    # NOTE: Rate limiting middleware is implemented but not yet executing
-    # See RELEASE_v1.3.8.md known issues section
-    # Manual rate limiting code removed to fix login functionality
+
+def _record_failed_login(db: Session, username: str, ip_address: str, user_agent: str):
+    """Record a failed login attempt and lock the account if threshold exceeded."""
+    from app.models.security import FailedLoginAttempt, AccountLockout, SecurityEvent
+    from datetime import timedelta
+
+    attempt = FailedLoginAttempt(
+        username=username,
+        ip_address=ip_address,
+        user_agent=user_agent or "",
+        success=False,
+    )
+    db.add(attempt)
+
+    enabled = _get_brute_force_setting(db, "brute_force_enabled", 1)
+    if not enabled:
+        db.commit()
+        return
+
+    max_attempts = _get_brute_force_setting(db, "brute_force_max_attempts", 5)
+    lockout_minutes = _get_brute_force_setting(db, "brute_force_lockout_minutes", 15)
+
+    # Count recent failed attempts within the lockout window
+    window_start = datetime.utcnow() - timedelta(minutes=lockout_minutes)
+    recent_count = (
+        db.query(FailedLoginAttempt)
+        .filter(
+            FailedLoginAttempt.username == username,
+            FailedLoginAttempt.success == False,
+            FailedLoginAttempt.attempted_at >= window_start,
+        )
+        .count()
+    )
+    # +1 for the attempt we just added (not yet flushed)
+    recent_count += 1
+
+    if recent_count >= max_attempts:
+        locked_until = datetime.utcnow() + timedelta(minutes=lockout_minutes)
+        existing = db.query(AccountLockout).filter(AccountLockout.username == username).first()
+        if existing:
+            existing.locked_at = datetime.utcnow()
+            existing.locked_until = locked_until
+            existing.failed_attempts = recent_count
+            existing.reason = f"Too many failed login attempts ({recent_count})"
+        else:
+            lockout = AccountLockout(
+                username=username,
+                locked_until=locked_until,
+                reason=f"Too many failed login attempts ({recent_count})",
+                failed_attempts=recent_count,
+            )
+            db.add(lockout)
+
+        event = SecurityEvent(
+            event_type="account_locked",
+            severity="high",
+            username=username,
+            ip_address=ip_address,
+            user_agent=user_agent or "",
+            details=f"Account locked after {recent_count} failed attempts",
+        )
+        db.add(event)
+
+    db.commit()
+
+
+def _check_account_lockout(db: Session, username: str) -> Optional[str]:
+    """Return a lockout message if the account is currently locked, else None."""
+    from app.models.security import AccountLockout
+    lockout = db.query(AccountLockout).filter(AccountLockout.username == username).first()
+    if lockout is None:
+        return None
+    if lockout.locked_until > datetime.utcnow():
+        remaining = int((lockout.locked_until - datetime.utcnow()).total_seconds() / 60) + 1
+        return f"Account locked. Try again in {remaining} minute(s)."
+    # Lockout has expired — remove it
+    db.delete(lockout)
+    db.commit()
+    return None
+
+
+def _clear_failed_attempts(db: Session, username: str):
+    """Remove failed login records after a successful login."""
+    from app.models.security import FailedLoginAttempt
+    db.query(FailedLoginAttempt).filter(FailedLoginAttempt.username == username).delete()
+    db.commit()
+
+
+@router.post("/login", response_model=Token)
+async def login(credentials: LoginRequest, request: Request, db: Session = Depends(get_db)):
+    """Login endpoint with brute-force protection and timing attack mitigation."""
+    import time
+    import random
+
+    client_ip = request.client.host if request.client else "unknown"
+    user_agent = request.headers.get("user-agent", "")
+
+    # ── Brute-force: check if account is locked ──────────────────────────
+    lockout_msg = _check_account_lockout(db, credentials.username)
+    if lockout_msg:
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=lockout_msg)
 
     user = db.query(User).filter(User.username == credentials.username).first()
 
-    # SECURITY: Prevent timing attacks by always performing password verification
-    # Use a dummy hash for non-existent users to ensure constant-time operation
+    # SECURITY: always perform bcrypt verification to prevent timing attacks
     if user:
         password_valid = verify_password(credentials.password, user.hashed_password)
     else:
-        # Perform dummy verification with a fake hash to prevent timing attacks
         dummy_hash = get_password_hash("dummy_password_for_timing_protection")
         verify_password(credentials.password, dummy_hash)
         password_valid = False
 
-    # Add small random delay to further mitigate timing attacks (1-50ms)
-    import random
+    # Small random delay to further mitigate timing attacks (1-50ms)
     time.sleep(random.uniform(0.001, 0.05))
 
     if not user or not password_valid:
+        _record_failed_login(db, credentials.username, client_ip, user_agent)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
@@ -151,18 +251,19 @@ async def login(credentials: LoginRequest, db: Session = Depends(get_db)):
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="2FA code required",
             )
-
         if not verify_totp_code(user.totp_secret, credentials.totp_code):
+            _record_failed_login(db, credentials.username, client_ip, user_agent)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid 2FA code",
             )
 
-    # Update last login
+    # Successful login — clear lockout state
+    _clear_failed_attempts(db, credentials.username)
+
     user.last_login = datetime.utcnow()
     db.commit()
 
-    # Create tokens
     access_token = create_access_token(data={"sub": user.username})
     refresh_token = create_refresh_token(data={"sub": user.username})
 

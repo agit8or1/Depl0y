@@ -96,6 +96,14 @@ class ProxmoxHost(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
+    # iDRAC / iLO out-of-band management
+    idrac_hostname = Column(String(255), nullable=True)
+    idrac_port = Column(Integer, default=443, nullable=True)
+    idrac_username = Column(String(100), nullable=True)
+    idrac_password = Column(String(255), nullable=True)  # Encrypted
+    idrac_type = Column(String(20), nullable=True)  # "idrac", "ilo", or None
+    idrac_use_ssh = Column(Boolean, default=False, nullable=True)
+
     # Relationships
     nodes = relationship("ProxmoxNode", back_populates="host", cascade="all, delete-orphan")
     vms = relationship("VirtualMachine", back_populates="proxmox_host")
@@ -374,6 +382,50 @@ class VmScanCache(Base):
     __table_args__ = (UniqueConstraint("vm_id", "scan_type", name="uq_vm_scan_cache"),)
 
     vm = relationship("VirtualMachine")
+
+
+class StandaloneBMC(Base):
+    """Standalone iDRAC/iLO entry not tied to a Proxmox host or PBS server"""
+    __tablename__ = "standalone_bmc"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), unique=True, nullable=False)
+    description = Column(String(500), nullable=True)
+    idrac_hostname = Column(String(255), nullable=False)
+    idrac_port = Column(Integer, default=443, nullable=False)
+    idrac_username = Column(String(100), nullable=False)
+    idrac_password = Column(String(255), nullable=False)  # Encrypted
+    idrac_type = Column(String(20), nullable=False, default="idrac")  # "idrac" or "ilo"
+    idrac_use_ssh = Column(Boolean, default=False, nullable=True)
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class PBSServer(Base):
+    """Proxmox Backup Server configuration"""
+    __tablename__ = "pbs_servers"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), unique=True, nullable=False)
+    hostname = Column(String(255), nullable=False)
+    port = Column(Integer, default=8007, nullable=False)
+    username = Column(String(100), nullable=False)  # e.g. "root@pam"
+    password = Column(String(255), nullable=True)   # Encrypted
+    api_token_id = Column(String(100), nullable=True)
+    api_token_secret = Column(String(255), nullable=True)  # Encrypted
+    verify_ssl = Column(Boolean, default=False, nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    # iDRAC / iLO out-of-band management
+    idrac_hostname = Column(String(255), nullable=True)
+    idrac_port = Column(Integer, default=443, nullable=True)
+    idrac_username = Column(String(100), nullable=True)
+    idrac_password = Column(String(255), nullable=True)  # Encrypted
+    idrac_type = Column(String(20), nullable=True)  # "idrac", "ilo", or None
+    idrac_use_ssh = Column(Boolean, default=False, nullable=True)
 
 
 class LLMDeployment(Base):

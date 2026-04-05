@@ -41,9 +41,19 @@
         <span>Linux VM Security</span>
       </router-link>
 
+      <router-link v-if="isAdmin" to="/security" class="nav-item">
+        <span class="icon">🔒</span>
+        <span>Security</span>
+      </router-link>
+
       <router-link to="/proxmox" class="nav-item">
         <span class="icon">🌐</span>
         <span>Proxmox Hosts</span>
+      </router-link>
+
+      <router-link v-if="isOperator" to="/idrac" class="nav-item">
+        <span class="icon">🖧</span>
+        <span>iDRAC / iLO</span>
       </router-link>
 
       <a href="https://github.com/agit8or1/Depl0y/issues" target="_blank" rel="noopener noreferrer" class="nav-item">
@@ -100,7 +110,7 @@ export default {
     const authStore = useAuthStore()
     const isAdmin = computed(() => authStore.isAdmin)
     const isOperator = computed(() => authStore.isOperator || authStore.isAdmin)
-    const appVersion = ref('1.1.0') // Fallback version
+    const appVersion = ref('1.6.1') // Fallback version
     const linuxAgentEnabled = ref(false)
 
     // Fetch version from API

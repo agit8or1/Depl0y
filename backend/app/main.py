@@ -5,9 +5,10 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from app.core.config import settings
 from app.core.database import init_db
-from app.api import auth, users, proxmox, vms, isos, cloud_images, updates, dashboard, bug_report, logs, docs, setup, system_updates, ha, system, llm, vm_agent, vm_import
+from app.api import auth, users, proxmox, vms, isos, cloud_images, updates, dashboard, bug_report, logs, docs, setup, system_updates, ha, system, llm, vm_agent, security, idrac, pbs
 from app.middleware.security import SecurityHeadersMiddleware
 from app.middleware.rate_limit import RateLimitMiddleware
+from app.middleware.ip_filter import IPFilterMiddleware
 import logging
 from logging.handlers import RotatingFileHandler
 import os
@@ -46,6 +47,9 @@ app.add_middleware(SecurityHeadersMiddleware)
 
 # Add rate limiting middleware
 app.add_middleware(RateLimitMiddleware, requests_per_minute=100)
+
+# Add IP filter + GeoIP middleware (runs after rate limiting)
+app.add_middleware(IPFilterMiddleware)
 
 
 # Add validation error handler for debugging
@@ -126,7 +130,9 @@ app.include_router(ha.router, prefix=f"{settings.API_V1_PREFIX}/ha", tags=["High
 app.include_router(system.router, prefix=f"{settings.API_V1_PREFIX}/system", tags=["System"])
 app.include_router(llm.router, prefix=f"{settings.API_V1_PREFIX}/llm", tags=["LLM Deployment"])
 app.include_router(vm_agent.router, prefix=f"{settings.API_V1_PREFIX}/vm-agent", tags=["VM Agent"])
-app.include_router(vm_import.router, prefix=f"{settings.API_V1_PREFIX}/vm-import", tags=["VM Import"])
+app.include_router(security.router, prefix=f"{settings.API_V1_PREFIX}/security", tags=["Security"])
+app.include_router(idrac.router, prefix=f"{settings.API_V1_PREFIX}/idrac", tags=["iDRAC/iLO"])
+app.include_router(pbs.router, prefix=f"{settings.API_V1_PREFIX}/pbs", tags=["PBS Servers"])
 
 
 if __name__ == "__main__":

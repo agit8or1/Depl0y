@@ -27,6 +27,7 @@
               <th>Datacenter Name</th>
               <th>Hostname</th>
               <th>Username</th>
+              <th>iDRAC/iLO</th>
               <th>Status</th>
               <th>Last Poll</th>
               <th>Actions</th>
@@ -37,6 +38,13 @@
               <td>{{ host.name }}</td>
               <td>{{ host.hostname }}:{{ host.port }}</td>
               <td>{{ host.username }}</td>
+              <td>
+                <span v-if="host.idrac_hostname" class="text-sm">
+                  <span class="badge badge-info">{{ host.idrac_type?.toUpperCase() }}</span>
+                  {{ host.idrac_hostname }}
+                </span>
+                <span v-else class="text-muted text-sm">—</span>
+              </td>
               <td>
                 <span :class="['badge', host.is_active ? 'badge-success' : 'badge-danger']">
                   {{ host.is_active ? 'Active' : 'Inactive' }}
@@ -50,6 +58,7 @@
                 <div class="flex gap-1">
                   <button @click="testConnection(host.id)" class="btn btn-outline btn-sm">Test</button>
                   <button @click="pollHost(host.id)" class="btn btn-outline btn-sm">Poll</button>
+                  <button @click="openEdit(host)" class="btn btn-outline btn-sm">Edit</button>
                   <button @click="deleteHost(host.id)" class="btn btn-danger btn-sm">Delete</button>
                 </div>
               </td>
@@ -113,6 +122,80 @@
             </div>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- Edit Host Modal -->
+    <div v-if="showEditModal" class="modal" @click="showEditModal = false">
+      <div class="modal-content" @click.stop>
+        <div class="modal-header">
+          <h3>Edit Host — {{ editHost.name }}</h3>
+          <button @click="showEditModal = false" class="btn-close">×</button>
+        </div>
+        <form @submit.prevent="saveEdit" class="modal-body">
+          <div class="form-group">
+            <label class="form-label">Name</label>
+            <input v-model="editHost.name" class="form-control" required />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Hostname / IP</label>
+            <input v-model="editHost.hostname" class="form-control" required />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Port</label>
+            <input v-model.number="editHost.port" type="number" class="form-control" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">
+              <input v-model="editHost.is_active" type="checkbox" />
+              Active
+            </label>
+          </div>
+          <div class="form-group">
+            <label class="form-label">
+              <input v-model="editHost.verify_ssl" type="checkbox" />
+              Verify SSL Certificate
+            </label>
+          </div>
+
+          <!-- iDRAC / iLO -->
+          <div class="auth-section mt-1">
+            <h5 class="section-subtitle">iDRAC / iLO</h5>
+            <div class="form-group">
+              <label class="form-label">BMC Type</label>
+              <select v-model="editHost.idrac_type" class="form-control">
+                <option value="">None</option>
+                <option value="idrac">Dell iDRAC</option>
+                <option value="ilo">HPE iLO</option>
+              </select>
+            </div>
+            <div v-if="editHost.idrac_type">
+              <div class="form-group">
+                <label class="form-label">BMC Hostname / IP</label>
+                <input v-model="editHost.idrac_hostname" class="form-control" placeholder="192.168.1.10" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">BMC Port</label>
+                <input v-model.number="editHost.idrac_port" type="number" class="form-control" placeholder="443" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">BMC Username</label>
+                <input v-model="editHost.idrac_username" class="form-control" placeholder="root or administrator" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">BMC Password <span class="text-muted text-sm">(leave blank to keep current)</span></label>
+                <input v-model="editHost.idrac_password" type="password" autocomplete="new-password" class="form-control" />
+              </div>
+            </div>
+          </div>
+
+          <div class="flex gap-1 mt-2">
+            <button type="submit" class="btn btn-primary" :disabled="saving">
+              {{ saving ? 'Saving...' : 'Save Changes' }}
+            </button>
+            <button type="button" @click="showEditModal = false" class="btn btn-outline">Cancel</button>
+          </div>
+        </form>
       </div>
     </div>
 
@@ -190,6 +273,40 @@
             </label>
           </div>
 
+          <!-- iDRAC / iLO section -->
+          <div class="auth-section mt-1">
+            <h5 class="section-subtitle">iDRAC / iLO (Optional)</h5>
+            <p class="text-sm text-muted">Configure out-of-band management for hardware control (power, sensors, event log).</p>
+
+            <div class="form-group">
+              <label class="form-label">BMC Type</label>
+              <select v-model="newHost.idrac_type" class="form-control">
+                <option value="">None</option>
+                <option value="idrac">Dell iDRAC</option>
+                <option value="ilo">HPE iLO</option>
+              </select>
+            </div>
+
+            <div v-if="newHost.idrac_type">
+              <div class="form-group">
+                <label class="form-label">BMC Hostname / IP</label>
+                <input v-model="newHost.idrac_hostname" class="form-control" placeholder="192.168.1.10 or idrac.server.local" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">BMC Port</label>
+                <input v-model.number="newHost.idrac_port" type="number" class="form-control" placeholder="443" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">BMC Username</label>
+                <input v-model="newHost.idrac_username" class="form-control" placeholder="root or administrator" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">BMC Password</label>
+                <input v-model="newHost.idrac_password" type="password" autocomplete="new-password" class="form-control" />
+              </div>
+            </div>
+          </div>
+
           <div class="flex gap-1 mt-2">
             <button type="submit" class="btn btn-primary" :disabled="saving">
               {{ saving ? 'Adding...' : 'Add Host' }}
@@ -219,7 +336,15 @@ export default {
     const loadingNodes = ref(false)
     const saving = ref(false)
     const showAddModal = ref(false)
+    const showEditModal = ref(false)
     const useApiToken = ref(false)
+
+    const editHost = ref({
+      id: null, name: '', hostname: '', port: 8006,
+      is_active: true, verify_ssl: false,
+      idrac_type: '', idrac_hostname: '', idrac_port: 443,
+      idrac_username: '', idrac_password: '',
+    })
 
     const newHost = ref({
       name: '',
@@ -229,7 +354,12 @@ export default {
       password: '',
       api_token_id: '',
       api_token_secret: '',
-      verify_ssl: false
+      verify_ssl: false,
+      idrac_type: '',
+      idrac_hostname: '',
+      idrac_port: 443,
+      idrac_username: '',
+      idrac_password: '',
     })
 
     const fetchHosts = async () => {
@@ -268,7 +398,12 @@ export default {
           password: '',
           api_token_id: '',
           api_token_secret: '',
-          verify_ssl: false
+          verify_ssl: false,
+          idrac_type: '',
+          idrac_hostname: '',
+          idrac_port: 443,
+          idrac_username: '',
+          idrac_password: '',
         }
         await fetchHosts()
       } catch (error) {
@@ -344,6 +479,46 @@ export default {
       return `${days}d ${hours}h ${minutes}m`
     }
 
+    const openEdit = (host) => {
+      editHost.value = {
+        id: host.id,
+        name: host.name,
+        hostname: host.hostname,
+        port: host.port,
+        is_active: host.is_active,
+        verify_ssl: host.verify_ssl,
+        idrac_type: host.idrac_type || '',
+        idrac_hostname: host.idrac_hostname || '',
+        idrac_port: host.idrac_port || 443,
+        idrac_username: host.idrac_username || '',
+        idrac_password: '',
+      }
+      showEditModal.value = true
+    }
+
+    const saveEdit = async () => {
+      saving.value = true
+      try {
+        const data = { ...editHost.value }
+        // Don't send empty password (would clear existing)
+        if (!data.idrac_password) delete data.idrac_password
+        // Clear iDRAC fields if type removed
+        if (!data.idrac_type) {
+          data.idrac_hostname = ''
+          data.idrac_username = ''
+          data.idrac_password = ''
+        }
+        await api.proxmox.updateHost(editHost.value.id, data)
+        toast.success('Host updated')
+        showEditModal.value = false
+        await fetchHosts()
+      } catch (error) {
+        console.error('Failed to update host:', error)
+      } finally {
+        saving.value = false
+      }
+    }
+
     const deleteHost = async (hostId) => {
       if (!confirm('Are you sure you want to delete this Proxmox host?')) return
 
@@ -379,10 +554,14 @@ export default {
       loadingNodes,
       saving,
       showAddModal,
+      showEditModal,
+      editHost,
       useApiToken,
       newHost,
       datacentersWithNodes,
       addHost,
+      openEdit,
+      saveEdit,
       testConnection,
       pollHost,
       refreshAllNodes,

@@ -34,4 +34,5 @@ def init_db():
     Initialize database tables
     """
     from app.models.database import Base
+    import app.models.security  # ensure security tables are registered  # noqa: F401
     Base.metadata.create_all(bind=engine)

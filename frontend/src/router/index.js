@@ -127,6 +127,18 @@ const router = createRouter({
       meta: { requiresAuth: true, requiresAdmin: true }
     },
     {
+      path: '/security',
+      name: 'Security',
+      component: () => import('@/views/Security.vue'),
+      meta: { requiresAuth: true, requiresAdmin: true }
+    },
+    {
+      path: '/idrac',
+      name: 'IDracManagement',
+      component: () => import('@/views/IDracManagement.vue'),
+      meta: { requiresAuth: true, requiresOperator: true }
+    },
+    {
       path: '/:pathMatch(.*)*',
       name: 'NotFound',
       component: () => import('@/views/NotFound.vue')

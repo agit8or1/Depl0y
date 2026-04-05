@@ -1,7 +1,7 @@
 """Security-related database models"""
 from sqlalchemy import Column, Integer, String, DateTime, Boolean, Text
 from sqlalchemy.sql import func
-from app.core.database import Base
+from app.models.database import Base
 
 
 class FailedLoginAttempt(Base):
@@ -54,3 +54,30 @@ class SecurityEvent(Base):
     user_agent = Column(String(500))
     details = Column(Text)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+
+class IPBanList(Base):
+    """IP ban/allow list for access control"""
+    __tablename__ = "ip_ban_list"
+
+    id = Column(Integer, primary_key=True, index=True)
+    ip_address = Column(String(50), nullable=False, index=True)  # Single IP or CIDR range
+    list_type = Column(String(10), nullable=False)  # "ban" or "allow"
+    reason = Column(String(500), nullable=True)
+    created_by = Column(Integer, nullable=True)  # user_id
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    expires_at = Column(DateTime(timezone=True), nullable=True)  # NULL = permanent
+    is_active = Column(Boolean, default=True, nullable=False)
+
+
+class GeoIPRule(Base):
+    """GeoIP-based access control rules"""
+    __tablename__ = "geoip_rules"
+
+    id = Column(Integer, primary_key=True, index=True)
+    country_code = Column(String(2), nullable=False, index=True)  # ISO 3166-1 alpha-2
+    country_name = Column(String(100), nullable=False)
+    action = Column(String(10), nullable=False)  # "block" or "allow"
+    created_by = Column(Integer, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    is_active = Column(Boolean, default=True, nullable=False)

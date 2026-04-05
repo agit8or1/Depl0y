@@ -19,6 +19,285 @@
       </button>
     </div>
 
+    <!-- ── FLEET TAB ── -->
+    <div v-if="activeTab === 'fleet'">
+      <div class="card">
+        <div class="card-header">
+          <h3>Proxmox VM Fleet</h3>
+          <button @click="loadFleetVMs" class="btn btn-outline" :disabled="fleetLoading">
+            {{ fleetLoading ? 'Loading…' : 'Refresh' }}
+          </button>
+        </div>
+
+        <!-- Quick Filters -->
+        <div class="fleet-quick-filters">
+          <span class="fleet-qf-label">Quick filter:</span>
+          <button :class="['fleet-qf-btn', fleetQuickFilter === '' ? 'active' : '']" @click="fleetQuickFilter = ''">All</button>
+          <button :class="['fleet-qf-btn fleet-qf-warning', fleetQuickFilter === 'no-backups' ? 'active' : '']" @click="fleetQuickFilter = fleetQuickFilter === 'no-backups' ? '' : 'no-backups'">No Backups</button>
+          <button :class="['fleet-qf-btn fleet-qf-info', fleetQuickFilter === 'has-snapshots' ? 'active' : '']" @click="fleetQuickFilter = fleetQuickFilter === 'has-snapshots' ? '' : 'has-snapshots'">Has Snapshots</button>
+          <button :class="['fleet-qf-btn fleet-qf-success', fleetQuickFilter === 'protected' ? 'active' : '']" @click="fleetQuickFilter = fleetQuickFilter === 'protected' ? '' : 'protected'">Protected</button>
+          <button :class="['fleet-qf-btn fleet-qf-danger', fleetQuickFilter === 'high-cpu' ? 'active' : '']" @click="fleetQuickFilter = fleetQuickFilter === 'high-cpu' ? '' : 'high-cpu'">High CPU (&gt;80%)</button>
+          <button :class="['fleet-qf-btn fleet-qf-danger', fleetQuickFilter === 'high-ram' ? 'active' : '']" @click="fleetQuickFilter = fleetQuickFilter === 'high-ram' ? '' : 'high-ram'">High RAM (&gt;80%)</button>
+        </div>
+
+        <!-- Toolbar -->
+        <div class="table-toolbar">
+          <input v-model="fleetSearch" class="search-input" placeholder="Search by name, VMID, node, tag…" />
+          <span class="text-sm text-muted">{{ filteredFleetVMs.length }} of {{ fleetVMs.length }} VMs</span>
+          <template v-if="fleetSelectedKeys.size > 0">
+            <span class="fleet-sel-count">{{ fleetSelectedKeys.size }} selected</span>
+            <button class="btn btn-sm btn-outline" @click="openBatchTagModal('add')">+ Tag</button>
+            <button class="btn btn-sm btn-outline" @click="openBatchTagModal('remove')">- Tag</button>
+            <button class="btn btn-sm btn-outline" @click="openBatchNotesModal">Notes</button>
+            <button class="btn btn-sm btn-secondary" @click="clearFleetSelection">Clear</button>
+          </template>
+        </div>
+
+        <div v-if="fleetLoading" class="loading-row">
+          <div class="loading-spinner"></div>
+          <span>Loading fleet data (fetching configs &amp; snapshots)…</span>
+        </div>
+        <div v-else-if="fleetError" class="empty-state">
+          <p class="text-danger">{{ fleetError }}</p>
+          <button @click="loadFleetVMs" class="btn btn-outline btn-sm">Retry</button>
+        </div>
+        <div v-else-if="!fleetVMs.length" class="empty-state">
+          <p>No Proxmox hosts configured, or no VMs found.</p>
+          <button @click="loadFleetVMs" class="btn btn-outline btn-sm">Load Fleet</button>
+        </div>
+        <div v-else-if="!filteredFleetVMs.length" class="empty-state">
+          <p>No VMs match the current filter.</p>
+          <button @click="fleetSearch = ''; fleetQuickFilter = ''" class="btn btn-outline btn-sm">Clear Filters</button>
+        </div>
+
+        <div v-else class="table-wrapper">
+          <table class="mgmt-table fleet-table">
+            <thead>
+              <tr>
+                <th class="cb-col-fleet">
+                  <input type="checkbox"
+                    :checked="fleetAllSelected"
+                    :indeterminate.prop="fleetSomeSelected && !fleetAllSelected"
+                    @change="toggleFleetSelectAll"
+                  />
+                </th>
+                <th class="th-sortable" @click="fleetSortBy('vmid')">VMID <span class="sort-icon">{{ fleetSortIcon('vmid') }}</span></th>
+                <th class="th-sortable" @click="fleetSortBy('name')">Name <span class="sort-icon">{{ fleetSortIcon('name') }}</span></th>
+                <th class="th-sortable" @click="fleetSortBy('status')">Status <span class="sort-icon">{{ fleetSortIcon('status') }}</span></th>
+                <th class="th-sortable" @click="fleetSortBy('node')">Node <span class="sort-icon">{{ fleetSortIcon('node') }}</span></th>
+                <th>Resources</th>
+                <th>Tags</th>
+                <th>Snapshots</th>
+                <th>Lock</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="vm in filteredFleetVMs" :key="fleetVmKey(vm)"
+                :class="{ 'row-fleet-selected': fleetSelectedKeys.has(fleetVmKey(vm)) }">
+                <td class="cb-col-fleet">
+                  <input type="checkbox"
+                    :checked="fleetSelectedKeys.has(fleetVmKey(vm))"
+                    @change="toggleFleetSelect(vm)"
+                  />
+                </td>
+                <td><strong>{{ vm.vmid }}</strong></td>
+                <td>
+                  <div style="display:flex;flex-direction:column;gap:2px;">
+                    <span class="fleet-vm-name">{{ vm.name || '(no name)' }}</span>
+                    <span v-if="vm.description" class="fleet-vm-desc text-muted text-sm">{{ vm.description.slice(0, 60) }}{{ vm.description.length > 60 ? '…' : '' }}</span>
+                  </div>
+                </td>
+                <td>
+                  <span :class="['badge', vm.status === 'running' ? 'badge-success' : vm.status === 'stopped' ? 'badge-danger' : 'badge-warning']">
+                    {{ vm.status }}
+                  </span>
+                  <span v-if="vm.isProtected" class="fleet-badge-pill fleet-badge-protect" title="Protection enabled">
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:middle;"><path d="M12 2L4 7v5c0 5.25 3.4 10.16 8 11.36C16.6 22.16 20 17.25 20 12V7l-8-5z"/></svg>
+                  </span>
+                </td>
+                <td class="text-sm">{{ vm.node }}</td>
+                <td class="text-sm">
+                  <span>{{ vm.cpus }}C / {{ fleetFormatBytes(vm.maxmem) }}</span>
+                  <div v-if="vm.status === 'running'" class="fleet-usage-bars">
+                    <div class="fleet-bar-wrap" title="CPU usage">
+                      <div class="fleet-bar" :style="{ width: Math.round((vm.cpu || 0) * 100) + '%', background: (vm.cpu || 0) > 0.8 ? '#ef4444' : '#3b82f6' }"></div>
+                    </div>
+                    <div class="fleet-bar-wrap" title="RAM usage">
+                      <div class="fleet-bar" :style="{ width: (vm.maxmem > 0 ? Math.round(vm.mem / vm.maxmem * 100) : 0) + '%', background: (vm.maxmem > 0 && vm.mem / vm.maxmem > 0.8) ? '#ef4444' : '#10b981' }"></div>
+                    </div>
+                  </div>
+                </td>
+                <td>
+                  <div class="vm-tags" style="max-width:140px;">
+                    <span v-for="tag in fleetParseTags(vm.tags)" :key="tag" class="fleet-tag-pill">{{ tag }}</span>
+                    <span v-if="!fleetParseTags(vm.tags).length" class="text-muted text-sm">—</span>
+                  </div>
+                </td>
+                <td class="text-sm text-center">
+                  <span v-if="vm.snapshotCount > 0" class="fleet-snap-count">{{ vm.snapshotCount }}</span>
+                  <span v-else class="text-muted">—</span>
+                </td>
+                <td class="text-sm text-center">
+                  <span v-if="vm.isLocked" class="fleet-badge-pill fleet-badge-lock" title="VM is locked">
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                    Locked
+                  </span>
+                  <span v-else class="text-muted">—</span>
+                </td>
+                <td>
+                  <div style="display:flex;gap:0.3rem;flex-wrap:wrap;">
+                    <button class="btn btn-sm btn-outline" @click="openQuickEdit(vm)" title="Quick Edit">Edit</button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Quick Edit Drawer -->
+      <div v-if="showQuickEdit" class="fleet-drawer-overlay" @click.self="closeQuickEdit">
+        <div class="fleet-drawer" @click.stop>
+          <div class="fleet-drawer-header">
+            <div>
+              <h3>Quick Edit — VM {{ quickEditVM?.vmid }}</h3>
+              <span class="text-muted text-sm">{{ quickEditVM?.name }}</span>
+            </div>
+            <button @click="closeQuickEdit" class="btn-close-sm">×</button>
+          </div>
+          <div class="fleet-drawer-body">
+            <div class="form-group">
+              <label class="form-label">Name</label>
+              <input v-model="quickEditForm.name" class="form-control" placeholder="VM name" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Description / Notes</label>
+              <textarea v-model="quickEditForm.description" class="form-control" rows="5" placeholder="Notes, IP, purpose…"></textarea>
+            </div>
+            <div class="form-group fleet-toggle-row">
+              <label class="toggle-check-label">
+                <input type="checkbox" v-model="quickEditForm.onboot" />
+                Start at boot
+              </label>
+            </div>
+            <div class="form-group fleet-toggle-row">
+              <label class="toggle-check-label">
+                <input type="checkbox" v-model="quickEditForm.protection" />
+                Enable protection (prevent accidental delete)
+              </label>
+            </div>
+          </div>
+          <div class="fleet-drawer-footer">
+            <button @click="closeQuickEdit" class="btn btn-outline">Cancel</button>
+            <button @click="saveQuickEdit" class="btn btn-primary" :disabled="quickEditSaving">
+              {{ quickEditSaving ? 'Saving…' : 'Save Changes' }}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Batch Tag Modal -->
+      <div v-if="showBatchTagModal" class="modal-overlay" @click.self="!batchTagRunning && closeBatchTagModal()">
+        <div class="modal-content" @click.stop style="max-width:480px;">
+          <div class="modal-header">
+            <h3>{{ batchTagMode === 'add' ? 'Add Tag to' : 'Remove Tag from' }} {{ fleetSelectedKeys.size }} VMs</h3>
+            <button @click="closeBatchTagModal" class="btn-close-sm" :disabled="batchTagRunning">×</button>
+          </div>
+          <div class="modal-body">
+            <div v-if="!batchTagDone">
+              <div class="form-group">
+                <label class="form-label">Tag <span class="text-danger">*</span></label>
+                <input v-model="batchTagValue" class="form-control"
+                  :placeholder="batchTagMode === 'add' ? 'e.g. production' : 'e.g. old-tag'"
+                  :disabled="batchTagRunning"
+                  @input="batchTagValue = batchTagValue.toLowerCase().replace(/[^a-z0-9\-_]/g, '')"
+                />
+                <small class="text-muted">Lowercase letters, numbers, hyphens, underscores only</small>
+              </div>
+            </div>
+            <div v-if="batchTagResults.length > 0" class="bulk-results-table">
+              <div class="bulk-results-header"><span>VMID</span><span>Name</span><span>Node</span><span>Result</span></div>
+              <div v-for="r in batchTagResults" :key="r.key" class="bulk-results-row">
+                <span><strong>{{ r.vmid }}</strong></span>
+                <span>{{ r.name || '—' }}</span>
+                <span class="text-muted text-sm">{{ r.node }}</span>
+                <span>
+                  <span v-if="r.status === 'pending'" class="text-muted text-sm">Waiting…</span>
+                  <span v-else-if="r.status === 'running'" class="text-sm" style="color:#3b82f6;">Running…</span>
+                  <span v-else-if="r.status === 'success'" class="badge badge-success">OK</span>
+                  <span v-else-if="r.status === 'error'" class="badge badge-danger" :title="r.error">Failed</span>
+                </span>
+              </div>
+            </div>
+            <div v-if="batchTagDone" class="bulk-done-summary">
+              {{ batchTagResults.filter(r => r.status === 'success').length }} succeeded,
+              {{ batchTagResults.filter(r => r.status === 'error').length }} failed.
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button v-if="!batchTagDone" @click="closeBatchTagModal" class="btn btn-outline" :disabled="batchTagRunning">Cancel</button>
+            <button v-if="!batchTagDone" @click="runBatchTag" class="btn btn-primary" :disabled="batchTagRunning || !batchTagValue.trim()">
+              {{ batchTagRunning ? 'Running…' : (batchTagMode === 'add' ? 'Add Tag' : 'Remove Tag') }}
+            </button>
+            <button v-if="batchTagDone" @click="closeBatchTagModal" class="btn btn-outline">Close</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Batch Notes Modal -->
+      <div v-if="showBatchNotesModal" class="modal-overlay" @click.self="!batchNotesRunning && closeBatchNotesModal()">
+        <div class="modal-content" @click.stop style="max-width:520px;">
+          <div class="modal-header">
+            <h3>Batch Notes — {{ fleetSelectedKeys.size }} VMs</h3>
+            <button @click="closeBatchNotesModal" class="btn-close-sm" :disabled="batchNotesRunning">×</button>
+          </div>
+          <div class="modal-body">
+            <div v-if="!batchNotesDone">
+              <div class="form-group">
+                <label class="form-label">Mode</label>
+                <select v-model="batchNotesMode" class="form-control" :disabled="batchNotesRunning">
+                  <option value="replace">Replace existing description</option>
+                  <option value="append">Append to existing description</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Notes / Description</label>
+                <textarea v-model="batchNotesText" class="form-control" rows="5"
+                  placeholder="Enter notes to apply to all selected VMs"
+                  :disabled="batchNotesRunning"></textarea>
+              </div>
+            </div>
+            <div v-if="batchNotesResults.length > 0" class="bulk-results-table">
+              <div class="bulk-results-header"><span>VMID</span><span>Name</span><span>Node</span><span>Result</span></div>
+              <div v-for="r in batchNotesResults" :key="r.key" class="bulk-results-row">
+                <span><strong>{{ r.vmid }}</strong></span>
+                <span>{{ r.name || '—' }}</span>
+                <span class="text-muted text-sm">{{ r.node }}</span>
+                <span>
+                  <span v-if="r.status === 'pending'" class="text-muted text-sm">Waiting…</span>
+                  <span v-else-if="r.status === 'running'" class="text-sm" style="color:#3b82f6;">Running…</span>
+                  <span v-else-if="r.status === 'success'" class="badge badge-success">OK</span>
+                  <span v-else-if="r.status === 'error'" class="badge badge-danger" :title="r.error">Failed</span>
+                </span>
+              </div>
+            </div>
+            <div v-if="batchNotesDone" class="bulk-done-summary">
+              {{ batchNotesResults.filter(r => r.status === 'success').length }} succeeded,
+              {{ batchNotesResults.filter(r => r.status === 'error').length }} failed.
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button v-if="!batchNotesDone" @click="closeBatchNotesModal" class="btn btn-outline" :disabled="batchNotesRunning">Cancel</button>
+            <button v-if="!batchNotesDone" @click="runBatchNotes" class="btn btn-primary" :disabled="batchNotesRunning || !batchNotesText.trim()">
+              {{ batchNotesRunning ? 'Running…' : 'Apply Notes' }}
+            </button>
+            <button v-if="batchNotesDone" @click="closeBatchNotesModal" class="btn btn-outline">Close</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- ── UPDATES TAB ── -->
     <div v-if="activeTab === 'updates'">
       <div class="card">
@@ -987,7 +1266,7 @@ export default {
   setup() {
     const toast = useToast()
 
-    const activeTab = ref('updates')
+    const activeTab = ref('fleet')
     const vms = ref([])          // Proxmox live VMs (display)
     const managedVMs = ref([])   // Depl0y DB VMs (for update/credential operations)
     const loadingVMs = ref(false)
@@ -1353,6 +1632,7 @@ export default {
     }
 
     const tabs = computed(() => [
+      { id: 'fleet', label: 'Fleet', icon: '🖥', badge: null },
       { id: 'updates', label: 'Updates', icon: '🔄', badge: null },
       { id: 'security', label: 'Security Scan', icon: '🔒', badge: null },
       { id: 'monitoring', label: 'Monitoring', icon: '📊', badge: null },
@@ -1869,6 +2149,311 @@ export default {
       loadScheduleAndCache()
     })
 
+    // ── FLEET TAB ───────────────────────────────────────────────────────────
+    // Proxmox hosts + VMs for the fleet table
+    const fleetVMs = ref([])
+    const fleetLoading = ref(false)
+    const fleetError = ref(null)
+
+    const fleetSearch = ref('')
+    const fleetSortKey = ref('vmid')
+    const fleetSortDir = ref('asc')
+
+    // Quick filter presets
+    const fleetQuickFilter = ref('')  // '', 'no-backups', 'has-snapshots', 'protected', 'high-cpu', 'high-ram'
+
+    const loadFleetVMs = async () => {
+      fleetLoading.value = true
+      fleetError.value = null
+      try {
+        const hostsResp = await api.proxmox.listHosts()
+        const hosts = hostsResp.data || []
+        if (!hosts.length) { fleetVMs.value = []; return }
+
+        const results = []
+        await Promise.allSettled(hosts.map(async (host) => {
+          try {
+            const resResp = await api.pveNode.clusterResources(host.id, 'vm')
+            const items = Array.isArray(resResp.data) ? resResp.data : (resResp.data?.data || [])
+            await Promise.allSettled(items.filter(i => !i.type || i.type === 'qemu').map(async (item) => {
+              let snapshotCount = 0
+              let isProtected = false
+              let isLocked = false
+              let configData = null
+              let description = ''
+              let notes = ''
+              try {
+                const cfgResp = await api.pveVm.getConfig(host.id, item.node, item.vmid)
+                configData = cfgResp.data || {}
+                isProtected = !!configData.protection
+                isLocked = !!(configData.lock)
+                description = configData.description || ''
+                notes = configData.description || ''
+              } catch {}
+              try {
+                const snapResp = await api.pveVm.listSnapshots(host.id, item.node, item.vmid)
+                const snaps = Array.isArray(snapResp.data) ? snapResp.data : []
+                snapshotCount = snaps.filter(s => s.name !== 'current').length
+              } catch {}
+              results.push({
+                hostId: host.id,
+                hostName: host.name || host.host || String(host.id),
+                node: item.node,
+                vmid: item.vmid,
+                name: item.name || '',
+                status: item.status || 'unknown',
+                cpus: item.cpus || 0,
+                maxmem: item.maxmem || 0,
+                mem: item.mem || 0,
+                maxdisk: item.maxdisk || 0,
+                uptime: item.uptime || 0,
+                cpu: item.cpu || 0,   // current CPU usage fraction
+                tags: item.tags || '',
+                description,
+                notes,
+                snapshotCount,
+                isProtected,
+                isLocked,
+                lastBackup: null,   // not available from cluster resources
+                _busy: false,
+                _selected: false,
+              })
+            }))
+          } catch (err) {
+            console.warn('Fleet load failed for host', host.id, err)
+          }
+        }))
+        fleetVMs.value = results
+      } catch (err) {
+        fleetError.value = 'Failed to load hosts'
+      } finally {
+        fleetLoading.value = false
+      }
+    }
+
+    const fleetSortBy = (key) => {
+      if (fleetSortKey.value === key) fleetSortDir.value = fleetSortDir.value === 'asc' ? 'desc' : 'asc'
+      else { fleetSortKey.value = key; fleetSortDir.value = 'asc' }
+    }
+    const fleetSortIcon = (key) => {
+      if (fleetSortKey.value !== key) return '↕'
+      return fleetSortDir.value === 'asc' ? '↑' : '↓'
+    }
+
+    const filteredFleetVMs = computed(() => {
+      let list = fleetVMs.value
+      // quick filter
+      if (fleetQuickFilter.value === 'no-backups') list = list.filter(v => !v.lastBackup)
+      else if (fleetQuickFilter.value === 'has-snapshots') list = list.filter(v => v.snapshotCount > 0)
+      else if (fleetQuickFilter.value === 'protected') list = list.filter(v => v.isProtected)
+      else if (fleetQuickFilter.value === 'high-cpu') list = list.filter(v => (v.cpu || 0) > 0.8)
+      else if (fleetQuickFilter.value === 'high-ram') list = list.filter(v => v.maxmem > 0 && v.mem / v.maxmem > 0.8)
+
+      if (fleetSearch.value.trim()) {
+        const q = fleetSearch.value.trim().toLowerCase()
+        list = list.filter(v =>
+          (v.name || '').toLowerCase().includes(q) ||
+          String(v.vmid).includes(q) ||
+          (v.node || '').toLowerCase().includes(q) ||
+          (v.tags || '').toLowerCase().includes(q)
+        )
+      }
+      const key = fleetSortKey.value
+      const dir = fleetSortDir.value
+      return [...list].sort((a, b) => {
+        let av = a[key] ?? ''; let bv = b[key] ?? ''
+        if (typeof av === 'string') { av = av.toLowerCase(); bv = bv.toLowerCase() }
+        if (dir === 'asc') return av > bv ? 1 : av < bv ? -1 : 0
+        return av < bv ? 1 : av > bv ? -1 : 0
+      })
+    })
+
+    // Fleet selection
+    const fleetSelectedKeys = ref(new Set())
+    const fleetVmKey = (vm) => `${vm.hostId}:${vm.node}:${vm.vmid}`
+    const toggleFleetSelect = (vm) => {
+      const k = fleetVmKey(vm)
+      const s = new Set(fleetSelectedKeys.value)
+      if (s.has(k)) s.delete(k); else s.add(k)
+      fleetSelectedKeys.value = s
+    }
+    const fleetAllSelected = computed(() =>
+      filteredFleetVMs.value.length > 0 && filteredFleetVMs.value.every(v => fleetSelectedKeys.value.has(fleetVmKey(v)))
+    )
+    const fleetSomeSelected = computed(() => filteredFleetVMs.value.some(v => fleetSelectedKeys.value.has(fleetVmKey(v))))
+    const toggleFleetSelectAll = () => {
+      const s = new Set(fleetSelectedKeys.value)
+      if (fleetAllSelected.value) filteredFleetVMs.value.forEach(v => s.delete(fleetVmKey(v)))
+      else filteredFleetVMs.value.forEach(v => s.add(fleetVmKey(v)))
+      fleetSelectedKeys.value = s
+    }
+    const clearFleetSelection = () => { fleetSelectedKeys.value = new Set() }
+    const fleetSelectedVMs = computed(() => fleetVMs.value.filter(v => fleetSelectedKeys.value.has(fleetVmKey(v))))
+
+    // ── Quick Edit Drawer ───────────────────────────────────────────────────
+    const showQuickEdit = ref(false)
+    const quickEditVM = ref(null)
+    const quickEditForm = ref({ name: '', description: '', onboot: false, protection: false })
+    const quickEditSaving = ref(false)
+
+    const openQuickEdit = (vm) => {
+      quickEditVM.value = vm
+      quickEditForm.value = {
+        name: vm.name || '',
+        description: vm.description || '',
+        onboot: false,
+        protection: vm.isProtected || false,
+      }
+      // Try to get onboot from config (may already be in vm object)
+      showQuickEdit.value = true
+    }
+
+    const closeQuickEdit = () => {
+      showQuickEdit.value = false
+      quickEditVM.value = null
+    }
+
+    const saveQuickEdit = async () => {
+      if (!quickEditVM.value) return
+      quickEditSaving.value = true
+      const vm = quickEditVM.value
+      try {
+        const payload = {}
+        if (quickEditForm.value.name !== vm.name) payload.name = quickEditForm.value.name
+        payload.description = quickEditForm.value.description
+        payload.onboot = quickEditForm.value.onboot ? 1 : 0
+        payload.protection = quickEditForm.value.protection ? 1 : 0
+        await api.pveVm.updateConfig(vm.hostId, vm.node, vm.vmid, payload)
+        // Update local data
+        vm.name = quickEditForm.value.name || vm.name
+        vm.description = quickEditForm.value.description
+        vm.isProtected = quickEditForm.value.protection
+        toast.success(`VM ${vm.vmid} updated`)
+        closeQuickEdit()
+      } catch (err) {
+        toast.error(`Failed to update VM: ${err.response?.data?.detail || err.message}`)
+      } finally {
+        quickEditSaving.value = false
+      }
+    }
+
+    // ── Batch Tag Operations ────────────────────────────────────────────────
+    const showBatchTagModal = ref(false)
+    const batchTagMode = ref('add')  // 'add' or 'remove'
+    const batchTagValue = ref('')
+    const batchTagRunning = ref(false)
+    const batchTagResults = ref([])
+    const batchTagDone = ref(false)
+
+    const openBatchTagModal = (mode) => {
+      batchTagMode.value = mode
+      batchTagValue.value = ''
+      batchTagResults.value = []
+      batchTagDone.value = false
+      showBatchTagModal.value = true
+    }
+
+    const runBatchTag = async () => {
+      const tag = batchTagValue.value.trim()
+      if (!tag) return
+      const vmsToTag = fleetSelectedVMs.value
+      batchTagRunning.value = true
+      batchTagResults.value = vmsToTag.map(v => ({ key: fleetVmKey(v), vmid: v.vmid, name: v.name, node: v.node, hostId: v.hostId, status: 'pending', error: null }))
+      for (let i = 0; i < batchTagResults.value.length; i++) {
+        batchTagResults.value[i] = { ...batchTagResults.value[i], status: 'running' }
+        const r = batchTagResults.value[i]
+        try {
+          const cfgRes = await api.pveVm.getConfig(r.hostId, r.node, r.vmid)
+          const current = cfgRes.data?.tags || ''
+          let arr = current ? current.split(';').map(t => t.trim()).filter(Boolean) : []
+          if (batchTagMode.value === 'add') { if (!arr.includes(tag)) arr.push(tag) }
+          else { arr = arr.filter(t => t !== tag) }
+          await api.pveVm.updateConfig(r.hostId, r.node, r.vmid, { tags: arr.join(';') })
+          // update local
+          const vm = fleetVMs.value.find(v => fleetVmKey(v) === r.key)
+          if (vm) vm.tags = arr.join(';')
+          batchTagResults.value[i] = { ...batchTagResults.value[i], status: 'success' }
+        } catch (err) {
+          const msg = err.response?.data?.detail || err.message
+          batchTagResults.value[i] = { ...batchTagResults.value[i], status: 'error', error: msg }
+        }
+        if (i < batchTagResults.value.length - 1) await new Promise(r => setTimeout(r, 200))
+      }
+      batchTagRunning.value = false
+      batchTagDone.value = true
+    }
+
+    const closeBatchTagModal = () => {
+      showBatchTagModal.value = false
+      batchTagResults.value = []
+      batchTagDone.value = false
+    }
+
+    // ── Batch Notes ─────────────────────────────────────────────────────────
+    const showBatchNotesModal = ref(false)
+    const batchNotesText = ref('')
+    const batchNotesMode = ref('append')  // 'replace' or 'append'
+    const batchNotesRunning = ref(false)
+    const batchNotesDone = ref(false)
+    const batchNotesResults = ref([])
+
+    const openBatchNotesModal = () => {
+      batchNotesText.value = ''
+      batchNotesMode.value = 'append'
+      batchNotesResults.value = []
+      batchNotesDone.value = false
+      showBatchNotesModal.value = true
+    }
+
+    const runBatchNotes = async () => {
+      const text = batchNotesText.value.trim()
+      const vmsToNote = fleetSelectedVMs.value
+      batchNotesRunning.value = true
+      batchNotesResults.value = vmsToNote.map(v => ({ key: fleetVmKey(v), vmid: v.vmid, name: v.name, node: v.node, hostId: v.hostId, status: 'pending', error: null }))
+      for (let i = 0; i < batchNotesResults.value.length; i++) {
+        batchNotesResults.value[i] = { ...batchNotesResults.value[i], status: 'running' }
+        const r = batchNotesResults.value[i]
+        try {
+          let finalDesc = text
+          if (batchNotesMode.value === 'append') {
+            const cfgRes = await api.pveVm.getConfig(r.hostId, r.node, r.vmid)
+            const existing = cfgRes.data?.description || ''
+            finalDesc = existing ? `${existing}\n${text}` : text
+          }
+          await api.pveVm.updateConfig(r.hostId, r.node, r.vmid, { description: finalDesc })
+          const vm = fleetVMs.value.find(v => fleetVmKey(v) === r.key)
+          if (vm) vm.description = finalDesc
+          batchNotesResults.value[i] = { ...batchNotesResults.value[i], status: 'success' }
+        } catch (err) {
+          const msg = err.response?.data?.detail || err.message
+          batchNotesResults.value[i] = { ...batchNotesResults.value[i], status: 'error', error: msg }
+        }
+        if (i < batchNotesResults.value.length - 1) await new Promise(r => setTimeout(r, 200))
+      }
+      batchNotesRunning.value = false
+      batchNotesDone.value = true
+    }
+
+    const closeBatchNotesModal = () => {
+      showBatchNotesModal.value = false
+      batchNotesResults.value = []
+      batchNotesDone.value = false
+    }
+
+    // Fleet helpers
+    const fleetFormatBytes = (bytes) => {
+      if (!bytes) return '—'
+      const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
+      const i = Math.floor(Math.log(bytes) / Math.log(1024))
+      return Math.round((bytes / Math.pow(1024, i)) * 100) / 100 + ' ' + sizes[i]
+    }
+    const fleetFormatUptime = (secs) => {
+      if (!secs || secs <= 0) return '—'
+      const d = Math.floor(secs / 86400), h = Math.floor((secs % 86400) / 3600), m = Math.floor((secs % 3600) / 60)
+      if (d > 0) return `${d}d ${h}h`; if (h > 0) return `${h}h ${m}m`; return `${m}m`
+    }
+    const fleetParseTags = (t) => { if (!t) return []; return t.split(';').map(x => x.trim()).filter(Boolean) }
+
     return {
       activeTab, tabs, vms, loadingVMs, loadingMonitor,
       expandedVM, updatingVM, updateAction, updateChecks,
@@ -1896,6 +2481,17 @@ export default {
       // Unmanaged VMs
       unmanagedVMs, loadingUnmanaged, unmanagedExpanded, loadUnmanagedVMs,
       adoptingVMs, adoptVm,
+      // Fleet tab
+      fleetVMs, fleetLoading, fleetError, fleetSearch, fleetSortKey, fleetSortDir,
+      fleetQuickFilter, loadFleetVMs, filteredFleetVMs, fleetSortBy, fleetSortIcon,
+      fleetSelectedKeys, fleetVmKey, toggleFleetSelect, fleetAllSelected, fleetSomeSelected,
+      toggleFleetSelectAll, clearFleetSelection, fleetSelectedVMs,
+      showQuickEdit, quickEditVM, quickEditForm, quickEditSaving, openQuickEdit, closeQuickEdit, saveQuickEdit,
+      showBatchTagModal, batchTagMode, batchTagValue, batchTagRunning, batchTagResults, batchTagDone,
+      openBatchTagModal, runBatchTag, closeBatchTagModal,
+      showBatchNotesModal, batchNotesText, batchNotesMode, batchNotesRunning, batchNotesDone, batchNotesResults,
+      openBatchNotesModal, runBatchNotes, closeBatchNotesModal,
+      fleetFormatBytes, fleetFormatUptime, fleetParseTags,
     }
   }
 }
@@ -2675,5 +3271,222 @@ export default {
   border: 1px solid rgba(59, 130, 246, 0.3);
   border-radius: 0.5rem;
   padding: 0.85rem 1rem;
+}
+
+/* ── Fleet Tab ────────────────────────────────────────────────────────────── */
+.fleet-quick-filters {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  padding: 0.6rem 1rem;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--background, #f8fafc);
+}
+
+.fleet-qf-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin-right: 0.25rem;
+}
+
+.fleet-qf-btn {
+  padding: 0.2rem 0.65rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  border-radius: 9999px;
+  border: 1.5px solid var(--border-color, #e2e8f0);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+
+.fleet-qf-btn:hover,
+.fleet-qf-btn.active { background: var(--primary-color, #3b82f6); color: #fff; border-color: var(--primary-color, #3b82f6); }
+.fleet-qf-warning.active,
+.fleet-qf-warning:hover { background: #f59e0b; border-color: #f59e0b; color: #fff; }
+.fleet-qf-success.active,
+.fleet-qf-success:hover { background: #10b981; border-color: #10b981; color: #fff; }
+.fleet-qf-danger.active,
+.fleet-qf-danger:hover { background: #ef4444; border-color: #ef4444; color: #fff; }
+.fleet-qf-info.active,
+.fleet-qf-info:hover { background: #6366f1; border-color: #6366f1; color: #fff; }
+
+.fleet-sel-count {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--primary-color, #3b82f6);
+}
+
+.fleet-table { width: 100%; }
+.fleet-table th, .fleet-table td { white-space: nowrap; }
+
+.cb-col-fleet { width: 2rem; text-align: center; }
+
+.row-fleet-selected td { background-color: rgba(59, 130, 246, 0.06); }
+
+.fleet-vm-name { font-weight: 600; }
+.fleet-vm-desc { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.fleet-badge-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 0.1rem 0.4rem;
+  border-radius: 9999px;
+  margin-left: 4px;
+}
+
+.fleet-badge-protect { background: rgba(16, 185, 129, 0.12); color: #059669; }
+.fleet-badge-lock { background: rgba(239, 68, 68, 0.12); color: #dc2626; }
+
+.fleet-snap-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(99, 102, 241, 0.12);
+  color: #4f46e5;
+  font-size: 0.72rem;
+  font-weight: 700;
+  border-radius: 9999px;
+  min-width: 22px;
+  height: 20px;
+  padding: 0 6px;
+}
+
+/* Usage mini-bars */
+.fleet-usage-bars { display: flex; flex-direction: column; gap: 2px; margin-top: 3px; }
+.fleet-bar-wrap { height: 4px; background: var(--border-color, #e2e8f0); border-radius: 2px; width: 80px; overflow: hidden; }
+.fleet-bar { height: 100%; border-radius: 2px; transition: width 0.3s; }
+
+.fleet-tag-pill {
+  display: inline-block;
+  font-size: 0.62rem;
+  font-weight: 600;
+  padding: 0.1rem 0.35rem;
+  border-radius: 9999px;
+  background: rgba(59, 130, 246, 0.1);
+  color: #2563eb;
+  white-space: nowrap;
+}
+
+/* Quick Edit Drawer */
+.fleet-drawer-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.35);
+  z-index: 500;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.fleet-drawer {
+  width: 380px;
+  max-width: 95vw;
+  background: var(--surface, #fff);
+  box-shadow: -4px 0 24px rgba(0,0,0,0.15);
+  display: flex;
+  flex-direction: column;
+  animation: slideInRight 0.2s ease;
+}
+
+@keyframes slideInRight {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+.fleet-drawer-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 1.25rem 1.5rem 0.75rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.fleet-drawer-header h3 { margin: 0; font-size: 1.1rem; }
+
+.fleet-drawer-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem 1.5rem;
+}
+
+.fleet-drawer-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding: 0.75rem 1.5rem;
+  border-top: 1px solid var(--border-color);
+}
+
+.fleet-toggle-row { margin-top: 0.75rem; }
+
+.toggle-check-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+/* Modal shared (reuse from above) */
+.modal-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.5);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 600;
+}
+
+.modal-content {
+  background: var(--surface, #fff);
+  border-radius: 0.5rem;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+  max-width: 500px; width: 90%;
+  max-height: 90vh; overflow-y: auto;
+}
+
+.modal-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 1rem 1.5rem; border-bottom: 1px solid var(--border-color);
+}
+
+.modal-header h3 { margin: 0; font-size: 1.1rem; }
+.modal-body { padding: 1.25rem 1.5rem; }
+.modal-footer {
+  display: flex; justify-content: flex-end; gap: 0.5rem;
+  padding: 0.75rem 1.5rem; border-top: 1px solid var(--border-color);
+}
+
+.bulk-results-table {
+  border: 1px solid var(--border-color, #e2e8f0);
+  border-radius: 0.375rem; overflow: hidden; margin-top: 1rem;
+}
+.bulk-results-header, .bulk-results-row {
+  display: grid; grid-template-columns: 60px 1fr 80px 80px;
+  gap: 0.5rem; padding: 0.4rem 0.75rem; align-items: center;
+  font-size: 0.82rem;
+}
+.bulk-results-header {
+  font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--text-muted); background: var(--background);
+  border-bottom: 1px solid var(--border-color, #e2e8f0);
+}
+.bulk-results-row { border-bottom: 1px solid var(--border-color, #e2e8f0); }
+.bulk-results-row:last-child { border-bottom: none; }
+.bulk-done-summary { margin-top: 0.75rem; font-size: 0.875rem; font-weight: 600; color: var(--text-primary); }
+
+.form-label { display: block; font-size: 0.82rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 0.35rem; }
+.text-danger { color: #dc2626; }
+
+@media (max-width: 768px) {
+  .fleet-drawer { width: 100vw; }
+  .fleet-quick-filters { flex-wrap: wrap; }
 }
 </style>

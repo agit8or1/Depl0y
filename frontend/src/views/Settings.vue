@@ -156,26 +156,179 @@
     <div class="card">
       <div class="card-header">
         <h3>Appearance</h3>
-        <p>Customise how Depl0y looks</p>
+        <p>Customise how Depl0y looks and feels</p>
       </div>
       <div class="card-body">
+
+        <!-- Theme Selector -->
         <div class="settings-group">
           <h5 class="subsection-title">Theme</h5>
-          <p class="text-sm text-muted">Choose between light, dark, or system preference.</p>
-          <div class="theme-options" style="margin-top: 0.75rem;">
+          <p class="text-sm text-muted">Choose between light, dark, or follow your operating system preference.</p>
+          <div class="appearance-theme-cards">
             <button
               v-for="opt in themeOptions"
               :key="opt.value"
-              :class="['theme-option-btn', currentTheme === opt.value ? 'theme-option-btn--active' : '']"
+              :class="['appearance-theme-card', currentTheme === opt.value ? 'appearance-theme-card--active' : '']"
               @click="setTheme(opt.value)"
             >
-              <span class="theme-option-icon">{{ opt.icon }}</span>
-              <span class="theme-option-label">{{ opt.label }}</span>
+              <!-- Preview thumbnail -->
+              <div :class="['appearance-theme-preview', 'appearance-theme-preview--' + opt.value]">
+                <div class="atp-sidebar"></div>
+                <div class="atp-content">
+                  <div class="atp-header"></div>
+                  <div class="atp-row"></div>
+                  <div class="atp-row atp-row--short"></div>
+                  <div class="atp-row"></div>
+                </div>
+              </div>
+              <div class="appearance-theme-card-footer">
+                <span class="appearance-theme-card-label">{{ opt.label }}</span>
+                <span v-if="currentTheme === opt.value" class="appearance-theme-check">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                </span>
+              </div>
             </button>
           </div>
-          <p class="text-xs text-muted" style="margin-top: 0.5rem;">
-            Current: <strong>{{ themeOptions.find(t => t.value === currentTheme)?.label }}</strong>
-          </p>
+        </div>
+
+        <!-- Accent Color -->
+        <div class="settings-group" style="margin-top: 1.75rem;">
+          <h5 class="subsection-title">Accent Color</h5>
+          <p class="text-sm text-muted">Sets the primary interactive color used for buttons, active states, and links.</p>
+          <div class="appearance-accent-row">
+            <button
+              v-for="swatch in accentSwatches"
+              :key="swatch.value"
+              :class="['appearance-swatch', currentAccent === swatch.value ? 'appearance-swatch--active' : '']"
+              :style="{ background: swatch.value }"
+              :title="swatch.label"
+              @click="setAccentColor(swatch.value)"
+            >
+              <svg v-if="currentAccent === swatch.value" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            </button>
+            <div class="appearance-custom-color">
+              <label class="appearance-custom-label" title="Custom hex color">
+                <span class="appearance-custom-swatch" :style="{ background: currentAccent }"></span>
+                <input
+                  type="color"
+                  :value="currentAccent"
+                  @input="e => setAccentColor(e.target.value)"
+                  class="appearance-color-input"
+                  title="Pick a custom accent color"
+                />
+              </label>
+              <input
+                v-model="accentHexInput"
+                @change="applyAccentHex"
+                @keyup.enter="applyAccentHex"
+                class="form-control appearance-hex-input"
+                placeholder="#3b82f6"
+                maxlength="7"
+                spellcheck="false"
+              />
+            </div>
+          </div>
+          <!-- Preview button -->
+          <div class="appearance-accent-preview" style="margin-top: 1rem;">
+            <button class="btn btn-primary" style="pointer-events: none;">Primary Button</button>
+            <a href="#" class="appearance-accent-link" @click.prevent style="color: var(--accent-color);">Accent Link</a>
+            <span class="badge" :style="{ background: currentAccent + '22', color: currentAccent, border: '1px solid ' + currentAccent + '44' }">Active Badge</span>
+          </div>
+        </div>
+
+        <!-- Sidebar Settings -->
+        <div class="settings-group" style="margin-top: 1.75rem;">
+          <h5 class="subsection-title">Sidebar</h5>
+          <p class="text-sm text-muted">Configure sidebar width and display options.</p>
+
+          <div style="margin-top: 0.875rem; max-width: 420px;">
+            <label class="form-label">
+              Width: <strong>{{ sidebarWidthValue }}px</strong>
+            </label>
+            <input
+              type="range"
+              min="200"
+              max="320"
+              step="5"
+              v-model.number="sidebarWidthValue"
+              @input="applySidebarWidth"
+              class="appearance-slider"
+            />
+            <div class="appearance-slider-labels">
+              <span class="text-xs text-muted">200px</span>
+              <span class="text-xs text-muted">320px</span>
+            </div>
+          </div>
+
+          <div class="toggle-row" style="margin-top: 1rem; max-width: 520px;">
+            <div>
+              <strong>Compact mode</strong>
+              <p class="text-sm text-muted">Collapse sidebar to icons only; labels appear as tooltips</p>
+            </div>
+            <label class="toggle-switch">
+              <input type="checkbox" v-model="sidebarCompact" @change="applySidebarCompact" />
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+
+          <div class="toggle-row" style="max-width: 520px;">
+            <div>
+              <strong>Show section labels</strong>
+              <p class="text-sm text-muted">Display category headings above navigation groups</p>
+            </div>
+            <label class="toggle-switch">
+              <input type="checkbox" v-model="sidebarShowLabels" @change="applySidebarLabels" />
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Table Density -->
+        <div class="settings-group" style="margin-top: 1.75rem;">
+          <h5 class="subsection-title">Table Density</h5>
+          <p class="text-sm text-muted">Controls how much vertical padding rows have in tables and lists.</p>
+          <div class="appearance-radio-group" style="margin-top: 0.75rem;">
+            <label
+              v-for="opt in densityOptions"
+              :key="opt.value"
+              :class="['appearance-radio-card', tableDensity === opt.value ? 'appearance-radio-card--active' : '']"
+            >
+              <input
+                type="radio"
+                :value="opt.value"
+                v-model="tableDensity"
+                @change="applyTableDensity"
+                class="appearance-radio-input"
+              />
+              <div class="appearance-radio-preview">
+                <div v-for="i in 3" :key="i" :class="['appearance-density-row', 'appearance-density-row--' + opt.value]"></div>
+              </div>
+              <span class="appearance-radio-label">{{ opt.label }}</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Font Size -->
+        <div class="settings-group" style="margin-top: 1.75rem;">
+          <h5 class="subsection-title">Font Size</h5>
+          <p class="text-sm text-muted">Base font size used throughout the interface.</p>
+          <div class="appearance-radio-group" style="margin-top: 0.75rem;">
+            <label
+              v-for="opt in fontSizeOptions"
+              :key="opt.value"
+              :class="['appearance-radio-card', fontSize === opt.value ? 'appearance-radio-card--active' : '']"
+            >
+              <input
+                type="radio"
+                :value="opt.value"
+                v-model="fontSize"
+                @change="applyFontSize"
+                class="appearance-radio-input"
+              />
+              <span :class="['appearance-font-preview', 'appearance-font-preview--' + opt.value]">Aa</span>
+              <span class="appearance-radio-label">{{ opt.label }}</span>
+            </label>
+          </div>
         </div>
 
         <!-- Language Selector -->
@@ -195,6 +348,7 @@
             </select>
           </div>
         </div>
+
       </div>
     </div>
 
@@ -1879,6 +2033,101 @@ export default {
       }
     }
 
+    // ── Accent color ────────────────────────────────────────────────────────
+    const ACCENT_SWATCHES = [
+      { value: '#3b82f6', label: 'Blue' },
+      { value: '#8b5cf6', label: 'Purple' },
+      { value: '#10b981', label: 'Green' },
+      { value: '#06b6d4', label: 'Teal' },
+      { value: '#f97316', label: 'Orange' },
+      { value: '#ef4444', label: 'Red' },
+      { value: '#ec4899', label: 'Pink' },
+      { value: '#6366f1', label: 'Indigo' },
+    ]
+    const accentSwatches = ACCENT_SWATCHES
+    const currentAccent = ref(localStorage.getItem('depl0y_accent_color') || '#3b82f6')
+    const accentHexInput = ref(currentAccent.value)
+
+    const _applyAccent = (color) => {
+      const root = document.documentElement
+      root.style.setProperty('--accent-color', color)
+      root.style.setProperty('--accent-hover', color)
+    }
+
+    const setAccentColor = (color) => {
+      currentAccent.value = color
+      accentHexInput.value = color
+      localStorage.setItem('depl0y_accent_color', color)
+      _applyAccent(color)
+      toast.success('Accent color updated')
+    }
+
+    const applyAccentHex = () => {
+      const raw = accentHexInput.value.trim()
+      const hex = raw.startsWith('#') ? raw : '#' + raw
+      // Validate 3 or 6 digit hex
+      if (/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(hex)) {
+        setAccentColor(hex)
+      } else {
+        accentHexInput.value = currentAccent.value
+        toast.error('Invalid hex color — use format #rrggbb')
+      }
+    }
+
+    // ── Sidebar settings ─────────────────────────────────────────────────────
+    const sidebarWidthValue = ref(Number(localStorage.getItem('depl0y_sidebar_width')) || 250)
+    const sidebarCompact = ref(localStorage.getItem('depl0y_sidebar_compact') === 'true')
+    const sidebarShowLabels = ref(localStorage.getItem('depl0y_sidebar_show_labels') !== 'false')
+
+    const applySidebarWidth = () => {
+      const w = sidebarWidthValue.value
+      document.documentElement.style.setProperty('--sidebar-width', w + 'px')
+      localStorage.setItem('depl0y_sidebar_width', String(w))
+    }
+
+    const applySidebarCompact = () => {
+      document.documentElement.setAttribute('data-sidebar-compact', String(sidebarCompact.value))
+      localStorage.setItem('depl0y_sidebar_compact', String(sidebarCompact.value))
+      toast.success(sidebarCompact.value ? 'Compact mode enabled' : 'Compact mode disabled')
+    }
+
+    const applySidebarLabels = () => {
+      document.documentElement.setAttribute('data-sidebar-labels', String(sidebarShowLabels.value))
+      localStorage.setItem('depl0y_sidebar_show_labels', String(sidebarShowLabels.value))
+      toast.success('Sidebar labels ' + (sidebarShowLabels.value ? 'shown' : 'hidden'))
+    }
+
+    // ── Table density ────────────────────────────────────────────────────────
+    const densityOptions = [
+      { value: 'comfortable', label: 'Comfortable' },
+      { value: 'compact', label: 'Compact' },
+      { value: 'spacious', label: 'Spacious' },
+    ]
+    const tableDensity = ref(localStorage.getItem('depl0y_table_density') || 'comfortable')
+
+    const applyTableDensity = () => {
+      document.documentElement.setAttribute('data-density', tableDensity.value)
+      localStorage.setItem('depl0y_table_density', tableDensity.value)
+      toast.success('Table density set to ' + tableDensity.value)
+    }
+
+    // ── Font size ────────────────────────────────────────────────────────────
+    const fontSizeOptions = [
+      { value: 'small', label: 'Small' },
+      { value: 'medium', label: 'Medium' },
+      { value: 'large', label: 'Large' },
+    ]
+    const fontSize = ref(localStorage.getItem('depl0y_font_size') || 'medium')
+
+    const applyFontSize = () => {
+      const fontSizeMap = { small: '12px', medium: '14px', large: '16px' }
+      const px = fontSizeMap[fontSize.value] || '14px'
+      document.documentElement.setAttribute('data-font-size', fontSize.value)
+      document.documentElement.style.setProperty('--font-size-base', px)
+      localStorage.setItem('depl0y_font_size', fontSize.value)
+      toast.success('Font size set to ' + fontSize.value)
+    }
+
     // ── Language / i18n ─────────────────────────────────────────────────────
     const currentLocale = ref(getCurrentLocale())
 
@@ -3219,6 +3468,27 @@ export default {
       themeOptions,
       currentTheme,
       setTheme,
+      // Accent color
+      accentSwatches,
+      currentAccent,
+      accentHexInput,
+      setAccentColor,
+      applyAccentHex,
+      // Sidebar
+      sidebarWidthValue,
+      sidebarCompact,
+      sidebarShowLabels,
+      applySidebarWidth,
+      applySidebarCompact,
+      applySidebarLabels,
+      // Table density
+      densityOptions,
+      tableDensity,
+      applyTableDensity,
+      // Font size
+      fontSizeOptions,
+      fontSize,
+      applyFontSize,
       // Language
       currentLocale,
       handleLocaleChange,
@@ -3532,6 +3802,384 @@ export default {
 
 .theme-option-label {
   font-size: 0.875rem;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Appearance — Theme Cards
+   ══════════════════════════════════════════════════════════════════════════ */
+.appearance-theme-cards {
+  display: flex;
+  gap: 1rem;
+  margin-top: 0.875rem;
+  flex-wrap: wrap;
+}
+
+.appearance-theme-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border: 2px solid var(--border-color);
+  border-radius: 0.75rem;
+  overflow: hidden;
+  cursor: pointer;
+  background: var(--surface);
+  transition: border-color 0.15s, box-shadow 0.15s;
+  padding: 0;
+  width: 130px;
+  flex-shrink: 0;
+}
+
+.appearance-theme-card:hover {
+  border-color: var(--accent-color, #3b82f6);
+  box-shadow: 0 0 0 3px rgba(59,130,246,0.12);
+}
+
+.appearance-theme-card--active {
+  border-color: var(--accent-color, #3b82f6);
+  box-shadow: 0 0 0 3px rgba(59,130,246,0.18);
+}
+
+/* Theme preview thumbnails */
+.appearance-theme-preview {
+  display: flex;
+  height: 72px;
+  width: 100%;
+  overflow: hidden;
+}
+
+.atp-sidebar {
+  width: 28%;
+  height: 100%;
+  flex-shrink: 0;
+}
+
+.atp-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 6px 6px 6px 4px;
+}
+
+.atp-header {
+  height: 10px;
+  border-radius: 3px;
+  margin-bottom: 2px;
+}
+
+.atp-row {
+  height: 8px;
+  border-radius: 3px;
+}
+
+.atp-row--short {
+  width: 60%;
+}
+
+/* Dark preview */
+.appearance-theme-preview--dark {
+  background: #1a2332;
+}
+.appearance-theme-preview--dark .atp-sidebar {
+  background: #111827;
+}
+.appearance-theme-preview--dark .atp-header {
+  background: #3b82f6;
+}
+.appearance-theme-preview--dark .atp-row {
+  background: #2d3748;
+}
+
+/* Light preview */
+.appearance-theme-preview--light {
+  background: #f1f5f9;
+}
+.appearance-theme-preview--light .atp-sidebar {
+  background: #ffffff;
+  border-right: 1px solid #e2e8f0;
+}
+.appearance-theme-preview--light .atp-header {
+  background: #3b82f6;
+}
+.appearance-theme-preview--light .atp-row {
+  background: #e2e8f0;
+}
+
+/* System preview — half dark, half light */
+.appearance-theme-preview--system {
+  background: linear-gradient(to right, #1a2332 50%, #f1f5f9 50%);
+}
+.appearance-theme-preview--system .atp-sidebar {
+  background: linear-gradient(to right, #111827 50%, #ffffff 50%);
+}
+.appearance-theme-preview--system .atp-header {
+  background: #3b82f6;
+}
+.appearance-theme-preview--system .atp-row {
+  background: linear-gradient(to right, #2d3748 50%, #e2e8f0 50%);
+}
+
+.appearance-theme-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0.75rem;
+}
+
+.appearance-theme-card-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.appearance-theme-check {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  background: var(--accent-color, #3b82f6);
+  color: white;
+  border-radius: 50%;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Appearance — Accent Color
+   ══════════════════════════════════════════════════════════════════════════ */
+.appearance-accent-row {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  margin-top: 0.875rem;
+  flex-wrap: wrap;
+}
+
+.appearance-swatch {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.15s, box-shadow 0.15s;
+  flex-shrink: 0;
+}
+
+.appearance-swatch:hover {
+  transform: scale(1.15);
+  box-shadow: 0 0 0 2px var(--border-color);
+}
+
+.appearance-swatch--active {
+  border-color: var(--text-primary);
+  box-shadow: 0 0 0 2px var(--text-primary);
+}
+
+.appearance-custom-color {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: 0.25rem;
+}
+
+.appearance-custom-label {
+  position: relative;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+}
+
+.appearance-custom-swatch {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 2px solid var(--border-color);
+  display: block;
+  cursor: pointer;
+}
+
+.appearance-color-input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.appearance-custom-label:hover .appearance-custom-swatch {
+  border-color: var(--text-muted);
+}
+
+/* Make the color input cover the swatch so clicking the swatch opens it */
+.appearance-custom-label {
+  position: relative;
+  width: 30px;
+  height: 30px;
+}
+.appearance-color-input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.appearance-hex-input {
+  width: 100px !important;
+  font-family: monospace;
+  font-size: 0.8rem !important;
+  padding: 0.3rem 0.5rem !important;
+  letter-spacing: 0.05em;
+}
+
+.appearance-accent-preview {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.appearance-accent-link {
+  font-size: 0.875rem;
+  font-weight: 500;
+  text-decoration: underline;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Appearance — Sidebar slider
+   ══════════════════════════════════════════════════════════════════════════ */
+.appearance-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--border-color);
+  outline: none;
+  cursor: pointer;
+  margin-top: 0.5rem;
+}
+
+.appearance-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent-color, #3b82f6);
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.25);
+  transition: transform 0.15s;
+}
+
+.appearance-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+}
+
+.appearance-slider::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent-color, #3b82f6);
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.25);
+}
+
+.appearance-slider-labels {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 0.25rem;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Appearance — Radio cards (density & font size)
+   ══════════════════════════════════════════════════════════════════════════ */
+.appearance-radio-group {
+  display: flex;
+  gap: 0.875rem;
+  flex-wrap: wrap;
+}
+
+.appearance-radio-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.875rem 1.25rem;
+  border: 2px solid var(--border-color);
+  border-radius: 0.625rem;
+  cursor: pointer;
+  background: var(--surface);
+  transition: border-color 0.15s, background 0.15s;
+  user-select: none;
+  min-width: 100px;
+}
+
+.appearance-radio-card:hover {
+  border-color: var(--accent-color, #3b82f6);
+  background: var(--background);
+}
+
+.appearance-radio-card--active {
+  border-color: var(--accent-color, #3b82f6);
+  background: rgba(59,130,246,0.07);
+}
+
+.appearance-radio-input {
+  display: none;
+}
+
+.appearance-radio-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* Density preview rows */
+.appearance-density-row {
+  width: 72px;
+  background: var(--border-color);
+  border-radius: 2px;
+  margin: 0 auto;
+}
+
+.appearance-density-row--comfortable {
+  height: 6px;
+  margin-bottom: 4px;
+}
+
+.appearance-density-row--compact {
+  height: 4px;
+  margin-bottom: 2px;
+}
+
+.appearance-density-row--spacious {
+  height: 8px;
+  margin-bottom: 7px;
+}
+
+/* Font size preview */
+.appearance-font-preview {
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1;
+}
+
+.appearance-font-preview--small {
+  font-size: 0.75rem;
+}
+
+.appearance-font-preview--medium {
+  font-size: 1rem;
+}
+
+.appearance-font-preview--large {
+  font-size: 1.35rem;
 }
 
 /* ── Profile ──────────────────────────────────────────────────────────────── */

@@ -251,6 +251,39 @@ export default {
       }
     }
 
+    // ── Appearance: apply all stored settings ─────────────────────────────────
+    const applyAppearanceSettings = () => {
+      const root = document.documentElement
+
+      // Accent color
+      const accentColor = localStorage.getItem('depl0y_accent_color')
+      if (accentColor) {
+        root.style.setProperty('--accent-color', accentColor)
+        // Derive a slightly darker hover shade
+        root.style.setProperty('--accent-hover', accentColor)
+      }
+
+      // Font size
+      const fontSize = localStorage.getItem('depl0y_font_size') || 'medium'
+      root.setAttribute('data-font-size', fontSize)
+      const fontSizeMap = { small: '12px', medium: '14px', large: '16px' }
+      root.style.setProperty('--font-size-base', fontSizeMap[fontSize] || '14px')
+
+      // Sidebar width
+      const sidebarWidth = localStorage.getItem('depl0y_sidebar_width')
+      if (sidebarWidth) {
+        root.style.setProperty('--sidebar-width', sidebarWidth + 'px')
+      }
+
+      // Sidebar compact mode
+      const sidebarCompact = localStorage.getItem('depl0y_sidebar_compact') === 'true'
+      root.setAttribute('data-sidebar-compact', String(sidebarCompact))
+
+      // Table density
+      const density = localStorage.getItem('depl0y_table_density') || 'comfortable'
+      root.setAttribute('data-density', density)
+    }
+
     // ── Global keyboard handler ───────────────────────────────────────────────
     const onGlobalKeydown = (e) => {
       // Ignore when typing in an input / textarea / contenteditable
@@ -347,7 +380,8 @@ export default {
       window.addEventListener('keydown', onGlobalKeydown)
       window.addEventListener('online', onOnline)
       window.addEventListener('offline', onOffline)
-      applyTheme(localStorage.getItem('depl0y_theme') || 'light')
+      applyTheme(localStorage.getItem('depl0y_theme') || 'dark')
+      applyAppearanceSettings()
     })
 
     onBeforeUnmount(() => {

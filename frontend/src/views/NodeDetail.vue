@@ -457,36 +457,78 @@
           </div>
         </div>
 
-        <!-- Available Updates -->
+        <!-- Available Updates (Enhanced) -->
         <div class="card">
           <div class="card-header">
             <h3>
               Available Updates
               <span v-if="aptUpdates.length > 0" class="badge badge-warning ml-1">{{ aptUpdates.length }}</span>
             </h3>
-            <div class="flex gap-1">
+            <div class="flex gap-1 flex-wrap">
               <button
                 @click="refreshPackageList"
                 class="btn btn-outline btn-sm"
                 :disabled="refreshingPackages">
                 {{ refreshingPackages ? 'Refreshing...' : 'Refresh Package List' }}
               </button>
-              <button
-                v-if="aptUpdates.length > 0"
-                @click="upgradeAllPackages"
-                class="btn btn-primary btn-sm"
-                :disabled="upgradingAll">
-                {{ upgradingAll ? 'Starting upgrade...' : 'Upgrade All' }}
-              </button>
               <button @click="loadAptUpdates" class="btn btn-outline btn-sm" :disabled="loadingAptUpdates">
-                {{ loadingAptUpdates ? 'Loading...' : 'Reload' }}
+                {{ loadingAptUpdates ? 'Loading...' : 'Reload List' }}
               </button>
+              <template v-if="aptUpdates.length > 0">
+                <button
+                  @click="upgradeSelectedPackages"
+                  class="btn btn-outline btn-sm"
+                  :disabled="upgradingSelected || selectedPackages.size === 0">
+                  {{ upgradingSelected ? 'Starting...' : `Update Selected (${selectedPackages.size})` }}
+                </button>
+                <button
+                  @click="upgradeAllPackages"
+                  class="btn btn-primary btn-sm"
+                  :disabled="upgradingAll">
+                  {{ upgradingAll ? 'Starting...' : 'Update All' }}
+                </button>
+              </template>
             </div>
           </div>
 
+          <!-- Active upgrade task progress -->
           <div v-if="upgradeTaskUpid" class="info-banner text-sm">
-            Task running: <code>{{ upgradeTaskUpid }}</code> — see Tasks tab for progress.
-            <button @click="upgradeTaskUpid = null" class="btn-inline-close">×</button>
+            <span>
+              Task <code>{{ upgradeTaskUpid.slice(0, 30) }}...</code>
+              <span v-if="upgradeTaskStatus" :class="upgradeTaskStatus === 'OK' ? 'badge badge-success ml-1' : upgradeTaskStatus === 'running' ? 'badge badge-warning ml-1' : 'badge badge-danger ml-1'">
+                {{ upgradeTaskStatus || 'running' }}
+              </span>
+            </span>
+            <button @click="dismissUpgradeTask" class="btn-inline-close">×</button>
+          </div>
+
+          <!-- Task log output for active upgrade -->
+          <div v-if="upgradeTaskUpid && upgradeTaskLog.length" class="apt-task-log">
+            <div class="apt-task-log__header">
+              <span class="text-sm text-muted">Upgrade output</span>
+              <button @click="upgradeTaskLog = []" class="btn-inline-close">×</button>
+            </div>
+            <pre class="apt-task-log__body">{{ upgradeTaskLog.join('\n') }}</pre>
+          </div>
+
+          <!-- Package search + select-all controls -->
+          <div v-if="!loadingAptUpdates && aptUpdates.length > 0" class="apt-controls">
+            <div class="apt-search">
+              <input
+                v-model="aptSearchQuery"
+                class="form-control form-control-sm"
+                placeholder="Filter packages..."
+                style="min-width:200px"
+              />
+            </div>
+            <div class="flex gap-1 align-center">
+              <button @click="selectAllPackages" class="btn btn-outline btn-sm">Select All</button>
+              <button @click="deselectAllPackages" class="btn btn-outline btn-sm">Deselect All</button>
+              <span class="text-sm text-muted">
+                {{ selectedPackages.size }} / {{ filteredAptUpdates.length }} selected
+                <template v-if="aptSearchQuery"> (filtered from {{ aptUpdates.length }})</template>
+              </span>
+            </div>
           </div>
 
           <SkeletonLoader v-if="loadingAptUpdates" type="table" :count="5" />
@@ -497,6 +539,15 @@
             <table class="table">
               <thead>
                 <tr>
+                  <th style="width:36px">
+                    <input
+                      type="checkbox"
+                      :checked="allFilteredSelected"
+                      :indeterminate.prop="someFilteredSelected && !allFilteredSelected"
+                      @change="toggleAllFiltered"
+                      title="Select / deselect all visible packages"
+                    />
+                  </th>
                   <th>Package</th>
                   <th>Current Version</th>
                   <th>New Version</th>
@@ -506,7 +557,23 @@
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="pkg in aptUpdates" :key="pkg.Package || pkg.package">
+                <tr v-if="filteredAptUpdates.length === 0">
+                  <td colspan="7" class="text-muted text-center">No packages match filter</td>
+                </tr>
+                <tr
+                  v-for="pkg in filteredAptUpdates"
+                  :key="pkg.Package || pkg.package"
+                  :class="selectedPackages.has(pkg.Package || pkg.package) ? 'apt-row--selected' : ''"
+                  @click="togglePackage(pkg.Package || pkg.package)"
+                  style="cursor:pointer"
+                >
+                  <td @click.stop>
+                    <input
+                      type="checkbox"
+                      :checked="selectedPackages.has(pkg.Package || pkg.package)"
+                      @change="togglePackage(pkg.Package || pkg.package)"
+                    />
+                  </td>
                   <td><code class="text-sm">{{ pkg.Package || pkg.package }}</code></td>
                   <td class="text-sm text-muted">{{ pkg.OldVersion || pkg.old_version || pkg.current_version || '—' }}</td>
                   <td class="text-sm">
@@ -898,15 +965,106 @@
       <!-- ─── Terminal Tab ─── -->
       <div v-if="activeTab === 'terminal'">
         <div class="card">
-          <div class="card-header"><h3>Node Shell</h3></div>
-          <div class="card-body text-center">
-            <p class="text-muted mb-2">
-              Open an interactive terminal session on node <strong>{{ node }}</strong>.
-            </p>
-            <button @click="openTerminal" class="btn btn-primary mb-2">Open Node Shell</button>
-            <p class="text-sm text-muted mt-2">
-              Terminal URL: <code>/proxmox/{{ hostId }}/nodes/{{ node }}/terminal</code>
-            </p>
+          <div class="card-header">
+            <h3>
+              Node Shell — {{ node }}
+              <span
+                :class="termConnected ? 'badge badge-success ml-1' : (termConnecting ? 'badge badge-warning ml-1' : 'badge badge-danger ml-1')"
+                style="font-size:0.7rem">
+                {{ termConnected ? 'Connected' : (termConnecting ? 'Connecting...' : 'Disconnected') }}
+              </span>
+            </h3>
+            <div class="flex gap-1">
+              <button
+                v-if="!termConnected && !termConnecting"
+                @click="connectTerminal"
+                class="btn btn-primary btn-sm">
+                Connect
+              </button>
+              <button
+                v-if="termConnected || termConnecting"
+                @click="disconnectTerminal"
+                class="btn btn-outline btn-sm">
+                Disconnect
+              </button>
+              <button @click="clearTerminal" class="btn btn-outline btn-sm">Clear</button>
+              <button @click="openTerminalWindow" class="btn btn-outline btn-sm" title="Open in new window">
+                Pop Out
+              </button>
+            </div>
+          </div>
+
+          <!-- SSH fallback notice when WS unavailable -->
+          <div v-if="termWsUnavailable" class="info-banner text-sm" style="gap:1rem;flex-direction:column;align-items:flex-start">
+            <div>
+              <strong>WebSocket terminal unavailable</strong> — connect directly via SSH instead:
+            </div>
+            <div class="flex gap-1 align-center">
+              <code class="ssh-cmd">ssh root@{{ node }}</code>
+              <button @click="copyToClipboard('ssh root@' + node, { toast: true })" class="btn btn-outline btn-sm">Copy</button>
+            </div>
+            <div class="text-muted" style="font-size:0.8rem">
+              Note: The Proxmox node terminal requires the PVE termproxy WebSocket. Make sure your browser can reach
+              <code>{{ pveWsOrigin }}</code>
+            </div>
+          </div>
+
+          <!-- Terminal output window -->
+          <div class="term-wrapper" ref="termWrapperRef">
+            <div
+              class="term-output"
+              ref="termOutputRef"
+              @click="focusTermInput"
+            >
+              <div v-for="(line, i) in termLines" :key="i" class="term-line" v-html="line"></div>
+              <div v-if="termLines.length === 0 && !termConnected" class="term-placeholder">
+                Click <strong>Connect</strong> to open a shell session on {{ node }}
+              </div>
+            </div>
+          </div>
+
+          <!-- Input row -->
+          <div class="term-input-row">
+            <span class="term-prompt">$</span>
+            <input
+              ref="termInputRef"
+              v-model="termInput"
+              class="term-input"
+              placeholder="Type a command and press Enter..."
+              :disabled="!termConnected"
+              @keydown.enter="sendTermCommand"
+              @keydown.up.prevent="termHistoryUp"
+              @keydown.down.prevent="termHistoryDown"
+              @keydown.ctrl.c.prevent="sendCtrlC"
+              spellcheck="false"
+              autocomplete="off"
+              autocorrect="off"
+            />
+            <button
+              @click="sendTermCommand"
+              class="btn btn-outline btn-sm"
+              :disabled="!termConnected || !termInput">
+              Send
+            </button>
+          </div>
+        </div>
+
+        <!-- SSH Connect Info Panel -->
+        <div class="card mt-2">
+          <div class="card-header"><h3>SSH Connection Info</h3></div>
+          <div class="card-body">
+            <div class="flex gap-2 flex-wrap align-center">
+              <div>
+                <span class="text-sm text-muted">Command:</span>
+                <code class="ssh-cmd ml-1">ssh root@{{ node }}</code>
+              </div>
+              <button @click="copyToClipboard('ssh root@' + node, { toast: true })" class="btn btn-outline btn-sm">
+                Copy SSH Command
+              </button>
+              <button @click="openTerminal" class="btn btn-outline btn-sm">
+                Open PVE Terminal Page
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -1161,7 +1319,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Line } from 'vue-chartjs'
 import {
@@ -1268,7 +1426,27 @@ const loadingAptUpdates = ref(false)
 const loadingAptVersions = ref(false)
 const refreshingPackages = ref(false)
 const upgradingAll = ref(false)
+const upgradingSelected = ref(false)
 const upgradeTaskUpid = ref(null)
+const upgradeTaskStatus = ref(null)
+const upgradeTaskLog = ref([])
+const aptSearchQuery = ref('')
+const selectedPackages = ref(new Set())
+let upgradeTaskPollInterval = null
+
+// Terminal
+const termConnected = ref(false)
+const termConnecting = ref(false)
+const termWsUnavailable = ref(false)
+const termLines = ref([])
+const termInput = ref('')
+const termHistory = ref([])
+const termHistoryIndex = ref(-1)
+const termOutputRef = ref(null)
+const termInputRef = ref(null)
+const termWrapperRef = ref(null)
+let termWs = null
+let termTicket = null
 
 // Hardware (PCI / USB)
 const pciDevices = ref([])
@@ -1530,6 +1708,9 @@ const switchTab = (tab) => {
   if (tab === 'overview') { loadNodeStatus(); loadRrd() }
   if (tab === 'updates') { loadAptUpdates(); loadAptVersions() }
   if (tab === 'hardware') { loadPciDevices(); loadUsbDevices() }
+  if (tab === 'terminal') { /* auto-connect on tab switch */ }
+  // Disconnect terminal when leaving tab
+  if (tab !== 'terminal' && termConnected.value) disconnectTerminal()
 }
 
 // ── Polling ────────────────────────────────────────────────────────────────────
@@ -1928,11 +2109,59 @@ const certExpiryLabel = (notafter) => {
 
 // ── APT / Updates ──────────────────────────────────────────────────────────────
 
+const filteredAptUpdates = computed(() => {
+  const q = aptSearchQuery.value.trim().toLowerCase()
+  if (!q) return aptUpdates.value
+  return aptUpdates.value.filter(pkg => {
+    const name = (pkg.Package || pkg.package || '').toLowerCase()
+    const desc = (pkg.Description || pkg.description || '').toLowerCase()
+    const section = (pkg.Section || pkg.section || '').toLowerCase()
+    return name.includes(q) || desc.includes(q) || section.includes(q)
+  })
+})
+
+const allFilteredSelected = computed(() => {
+  if (filteredAptUpdates.value.length === 0) return false
+  return filteredAptUpdates.value.every(pkg => selectedPackages.value.has(pkg.Package || pkg.package))
+})
+
+const someFilteredSelected = computed(() => {
+  return filteredAptUpdates.value.some(pkg => selectedPackages.value.has(pkg.Package || pkg.package))
+})
+
+const toggleAllFiltered = () => {
+  const newSet = new Set(selectedPackages.value)
+  if (allFilteredSelected.value) {
+    filteredAptUpdates.value.forEach(pkg => newSet.delete(pkg.Package || pkg.package))
+  } else {
+    filteredAptUpdates.value.forEach(pkg => newSet.add(pkg.Package || pkg.package))
+  }
+  selectedPackages.value = newSet
+}
+
+const togglePackage = (name) => {
+  const newSet = new Set(selectedPackages.value)
+  if (newSet.has(name)) newSet.delete(name)
+  else newSet.add(name)
+  selectedPackages.value = newSet
+}
+
+const selectAllPackages = () => {
+  selectedPackages.value = new Set(aptUpdates.value.map(p => p.Package || p.package))
+}
+
+const deselectAllPackages = () => {
+  selectedPackages.value = new Set()
+}
+
 const loadAptUpdates = async () => {
   loadingAptUpdates.value = true
   try {
     const res = await api.pveNode.aptListUpdates(hostId.value, node.value)
     aptUpdates.value = res.data || []
+    // Clear selection for packages no longer present
+    const names = new Set(aptUpdates.value.map(p => p.Package || p.package))
+    selectedPackages.value = new Set([...selectedPackages.value].filter(n => names.has(n)))
   } catch (e) {
     console.warn('APT updates failed', e)
     aptUpdates.value = []
@@ -1954,14 +2183,59 @@ const loadAptVersions = async () => {
   }
 }
 
+const startUpgradeTaskPolling = (upid) => {
+  upgradeTaskStatus.value = 'running'
+  upgradeTaskLog.value = []
+  let logOffset = 0
+  if (upgradeTaskPollInterval) clearInterval(upgradeTaskPollInterval)
+  upgradeTaskPollInterval = setInterval(async () => {
+    try {
+      // Fetch log lines since last offset
+      const logRes = await api.pveNode.taskLog(hostId.value, node.value, encodeURIComponent(upid))
+      const lines = logRes.data?.lines || []
+      if (lines.length > logOffset) {
+        upgradeTaskLog.value = [...upgradeTaskLog.value, ...lines.slice(logOffset)]
+        logOffset = lines.length
+      }
+      // Fetch task status
+      const statusRes = await api.pveNode.taskStatus(hostId.value, node.value, encodeURIComponent(upid))
+      const taskStatus = statusRes.data?.status
+      if (taskStatus && taskStatus !== 'running') {
+        upgradeTaskStatus.value = taskStatus
+        clearInterval(upgradeTaskPollInterval)
+        upgradeTaskPollInterval = null
+        // Reload updates after a moment
+        setTimeout(loadAptUpdates, 3000)
+        if (taskStatus === 'OK') {
+          toast.success('Package upgrade completed successfully')
+        } else {
+          toast.error(`Package upgrade finished with status: ${taskStatus}`)
+        }
+      }
+    } catch (e) {
+      console.warn('Task poll error', e)
+    }
+  }, 2500)
+}
+
+const dismissUpgradeTask = () => {
+  if (upgradeTaskPollInterval) clearInterval(upgradeTaskPollInterval)
+  upgradeTaskUpid.value = null
+  upgradeTaskStatus.value = null
+  upgradeTaskLog.value = []
+}
+
 const refreshPackageList = async () => {
   if (!confirm('This will run apt-get update on the node. Continue?')) return
   refreshingPackages.value = true
   try {
     const res = await api.pveNode.aptRefreshPackages(hostId.value, node.value)
     toast.info('Package list refresh started')
-    upgradeTaskUpid.value = res.data?.upid || null
-    // Reload the updates list after a short delay
+    const upid = res.data?.upid
+    if (upid) {
+      upgradeTaskUpid.value = upid
+      startUpgradeTaskPolling(upid)
+    }
     setTimeout(() => loadAptUpdates(), 4000)
   } catch (e) {
     toast.error('Failed to refresh package list: ' + (e?.response?.data?.detail || e.message || 'Unknown error'))
@@ -1976,14 +2250,42 @@ const upgradeAllPackages = async () => {
   upgradingAll.value = true
   try {
     const res = await api.pveNode.aptUpgradeAll(hostId.value, node.value)
-    toast.success('Package upgrade started — check Tasks tab for progress')
-    upgradeTaskUpid.value = res.data?.upid || null
-    setTimeout(() => loadAptUpdates(), 10000)
+    toast.success('Package upgrade started')
+    const upid = res.data?.upid
+    if (upid) {
+      upgradeTaskUpid.value = upid
+      startUpgradeTaskPolling(upid)
+    }
   } catch (e) {
     toast.error('Failed to start upgrade: ' + (e?.response?.data?.detail || e.message || 'Unknown error'))
     console.error(e)
   } finally {
     upgradingAll.value = false
+  }
+}
+
+const upgradeSelectedPackages = async () => {
+  const pkgs = Array.from(selectedPackages.value)
+  if (pkgs.length === 0) {
+    toast.warning('No packages selected')
+    return
+  }
+  if (!confirm(`Upgrade ${pkgs.length} selected package(s)? Continue?`)) return
+  upgradingSelected.value = true
+  try {
+    const res = await api.pveNode.aptUpgradeSelected(hostId.value, node.value, pkgs)
+    toast.success(`Upgrade of ${pkgs.length} package(s) started`)
+    const upid = res.data?.upid
+    if (upid) {
+      upgradeTaskUpid.value = upid
+      startUpgradeTaskPolling(upid)
+    }
+    selectedPackages.value = new Set()
+  } catch (e) {
+    toast.error('Failed to start upgrade: ' + (e?.response?.data?.detail || e.message || 'Unknown error'))
+    console.error(e)
+  } finally {
+    upgradingSelected.value = false
   }
 }
 
@@ -2101,6 +2403,144 @@ const saveEditNetworkIface = async () => {
 
 // ── Terminal ───────────────────────────────────────────────────────────────────
 
+const pveWsOrigin = computed(() => {
+  // Best-effort: derive the Proxmox WS origin from node name
+  return `wss://${node.value}:8006`
+})
+
+const termAppendLine = (text, cls = '') => {
+  // Convert ANSI escape sequences to basic HTML; sanitize angle-brackets
+  const safe = String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+  const wrapped = cls ? `<span class="${cls}">${safe}</span>` : safe
+  termLines.value.push(wrapped)
+  nextTick(() => {
+    if (termOutputRef.value) {
+      termOutputRef.value.scrollTop = termOutputRef.value.scrollHeight
+    }
+  })
+}
+
+const connectTerminal = async () => {
+  if (termConnected.value || termConnecting.value) return
+  termConnecting.value = true
+  termWsUnavailable.value = false
+  termAppendLine(`Connecting to node ${node.value}...`, 'term-info')
+
+  try {
+    const res = await api.pveNode.nodeTermproxy(hostId.value, node.value)
+    termTicket = res.data
+    const { ticket, port, host: pveHost, pve_port: pvePort } = termTicket
+
+    // Build WebSocket URL pointing at the Proxmox node
+    const wsProto = window.location.protocol === 'https:' ? 'wss' : 'ws'
+    const wsHost = pveHost || node.value
+    const wsPort = pvePort || 8006
+    const wsUrl = `${wsProto}://${wsHost}:${wsPort}/api2/json/nodes/${node.value}/termproxy`
+
+    termAppendLine(`Got ticket — opening WebSocket to ${wsHost}:${wsPort}`, 'term-info')
+
+    const ws = new WebSocket(wsUrl)
+    termWs = ws
+
+    ws.onopen = () => {
+      // Proxmox termproxy handshake: send ticket as first message
+      ws.send(JSON.stringify({ password: ticket }))
+      termConnected.value = true
+      termConnecting.value = false
+      termAppendLine('Connected. Type commands below.', 'term-success')
+    }
+
+    ws.onmessage = (evt) => {
+      const data = evt.data
+      if (typeof data === 'string') {
+        // Split on newlines so each line is a separate entry
+        data.split('\n').forEach(line => {
+          if (line !== '') termAppendLine(line)
+        })
+      }
+    }
+
+    ws.onerror = () => {
+      termConnecting.value = false
+      termConnected.value = false
+      termWsUnavailable.value = true
+      termAppendLine('WebSocket connection failed. See SSH info below.', 'term-error')
+    }
+
+    ws.onclose = (evt) => {
+      termConnected.value = false
+      termConnecting.value = false
+      termAppendLine(`Connection closed (code ${evt.code}).`, 'term-info')
+    }
+  } catch (e) {
+    termConnecting.value = false
+    termWsUnavailable.value = true
+    termAppendLine('Failed to get terminal ticket: ' + (e?.response?.data?.detail || e.message || 'Unknown error'), 'term-error')
+  }
+}
+
+const disconnectTerminal = () => {
+  if (termWs) {
+    termWs.close()
+    termWs = null
+  }
+  termConnected.value = false
+  termConnecting.value = false
+}
+
+const clearTerminal = () => {
+  termLines.value = []
+}
+
+const sendTermCommand = () => {
+  const cmd = termInput.value
+  if (!cmd || !termConnected.value || !termWs) return
+  // Echo locally
+  termAppendLine(`$ ${cmd}`, 'term-cmd')
+  // Save to history
+  termHistory.value.unshift(cmd)
+  if (termHistory.value.length > 100) termHistory.value.pop()
+  termHistoryIndex.value = -1
+  // Send via WebSocket
+  termWs.send(cmd + '\n')
+  termInput.value = ''
+}
+
+const sendCtrlC = () => {
+  if (termConnected.value && termWs) {
+    termWs.send('\x03')
+    termAppendLine('^C', 'term-info')
+    termInput.value = ''
+  }
+}
+
+const focusTermInput = () => {
+  termInputRef.value?.focus()
+}
+
+const termHistoryUp = () => {
+  if (termHistory.value.length === 0) return
+  termHistoryIndex.value = Math.min(termHistoryIndex.value + 1, termHistory.value.length - 1)
+  termInput.value = termHistory.value[termHistoryIndex.value]
+}
+
+const termHistoryDown = () => {
+  if (termHistoryIndex.value <= 0) {
+    termHistoryIndex.value = -1
+    termInput.value = ''
+    return
+  }
+  termHistoryIndex.value--
+  termInput.value = termHistory.value[termHistoryIndex.value]
+}
+
+const openTerminalWindow = () => {
+  window.open(`/proxmox/${hostId.value}/nodes/${node.value}/terminal`, '_blank', 'width=900,height=600')
+}
+
 const openTerminal = () => {
   router.push(`/proxmox/${hostId.value}/nodes/${node.value}/terminal`)
 }
@@ -2122,6 +2562,8 @@ onMounted(async () => {
 
 onUnmounted(() => {
   if (pollInterval) clearInterval(pollInterval)
+  if (upgradeTaskPollInterval) clearInterval(upgradeTaskPollInterval)
+  disconnectTerminal()
 })
 
 // ── Copy helpers ──────────────────────────────────────────────────────────
@@ -2606,4 +3048,137 @@ const copySshCommand = () => copyToClipboard(`ssh root@${node}`, { toast: true }
     grid-template-columns: 1fr !important;
   }
 }
+
+/* ── Terminal ──────────────────────────────────────────────────────────── */
+
+.term-wrapper {
+  background: #0d1117;
+  border-top: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.term-output {
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: #c9d1d9;
+  padding: 0.75rem 1rem;
+  min-height: 300px;
+  max-height: 520px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  cursor: text;
+}
+
+.term-line {
+  display: block;
+  min-height: 1.25rem;
+}
+
+.term-placeholder {
+  color: #6e7681;
+  font-style: italic;
+  padding: 2rem 0;
+  text-align: center;
+}
+
+.term-info  { color: #58a6ff; }
+.term-success { color: #3fb950; }
+.term-error { color: #f85149; }
+.term-cmd   { color: #d2a8ff; }
+
+.term-input-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: #0d1117;
+  border-top: 1px solid #30363d;
+}
+
+.term-prompt {
+  color: #3fb950;
+  font-family: monospace;
+  font-weight: bold;
+  font-size: 0.9rem;
+  flex-shrink: 0;
+}
+
+.term-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #c9d1d9;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 0.82rem;
+  caret-color: #c9d1d9;
+  padding: 0;
+  min-width: 0;
+}
+
+.term-input::placeholder { color: #6e7681; }
+
+.term-input:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.ssh-cmd {
+  background: var(--background);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 0.2rem 0.5rem;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+}
+
+/* ── APT Controls ──────────────────────────────────────────────────────── */
+
+.apt-controls {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.625rem 1rem;
+  border-bottom: 1px solid var(--border-color);
+  flex-wrap: wrap;
+}
+
+.apt-search {
+  flex: 1;
+  min-width: 200px;
+  max-width: 340px;
+}
+
+.apt-row--selected {
+  background: rgba(59, 130, 246, 0.06);
+}
+
+.apt-task-log {
+  background: #0d1117;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.apt-task-log__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.4rem 1rem;
+  border-bottom: 1px solid #30363d;
+}
+
+.apt-task-log__body {
+  margin: 0;
+  padding: 0.75rem 1rem;
+  font-size: 0.78rem;
+  color: #9ca3af;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 220px;
+  overflow-y: auto;
+  font-family: 'Consolas', 'Monaco', monospace;
+}
+
+.flex-wrap { flex-wrap: wrap; }
 </style>

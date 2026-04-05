@@ -154,10 +154,16 @@
     <div v-if="activeTab === 'all'" class="card">
       <div class="card-header">
         <h3>All Proxmox VMs</h3>
-        <span class="refresh-countdown" v-if="!allLoading">Auto-refresh in {{ allCountdown }}s</span>
-        <button @click="fetchAllProxmoxVMs(true)" class="btn btn-secondary" :disabled="allLoading">
-          {{ allLoading ? 'Refreshing…' : 'Refresh' }}
-        </button>
+        <div style="display:flex;align-items:center;gap:0.5rem;">
+          <span class="refresh-countdown" v-if="!allLoading">Auto-refresh in {{ allCountdown }}s</span>
+          <button @click="exportCSV" class="btn btn-outline btn-sm" title="Export visible VMs as CSV">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:3px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Export CSV
+          </button>
+          <button @click="fetchAllProxmoxVMs(true)" class="btn btn-secondary" :disabled="allLoading">
+            {{ allLoading ? 'Refreshing…' : 'Refresh' }}
+          </button>
+        </div>
       </div>
 
       <!-- Search / Filter Bar -->
@@ -193,11 +199,119 @@
             <button class="btn btn-sm btn-outline" title="Save current filter as preset" @click="openSavePresetModal">Save</button>
           </div>
 
+          <!-- Column Visibility Toggle -->
+          <div class="col-toggle-wrap" style="position:relative;">
+            <button class="btn btn-sm btn-outline" @click="showColMenu = !showColMenu" title="Toggle columns">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:3px;"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+              Columns
+            </button>
+            <div v-if="showColMenu" class="col-menu" @click.stop>
+              <div class="col-menu-header">Toggle Columns</div>
+              <label v-for="col in allColumns" :key="col.key" class="col-menu-item">
+                <input type="checkbox" v-model="visibleColumns[col.key]" @change="saveColumnPrefs" />
+                {{ col.label }}
+              </label>
+            </div>
+          </div>
+
+          <!-- Group by Node toggle -->
+          <label class="toggle-label">
+            <input type="checkbox" v-model="groupByNode" @change="saveColumnPrefs" />
+            Group by node
+          </label>
+
           <span class="filter-count">Showing {{ filteredAllVMs.length }} of {{ allVMs.length }} VM{{ allVMs.length !== 1 ? 's' : '' }}</span>
         </div>
         <button v-if="allSearch || allStatusFilter || activeTagFilters.size > 0" @click="allSearch = ''; allStatusFilter = ''; activeTagFilters = new Set()" class="btn btn-sm btn-secondary">
           Clear
         </button>
+      </div>
+
+      <!-- Advanced Filter Panel -->
+      <div class="adv-filter-bar">
+        <button class="adv-filter-toggle" @click="showAdvFilter = !showAdvFilter">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:4px;"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+          Advanced Filters
+          <span v-if="advFilterCount > 0" class="adv-filter-badge">{{ advFilterCount }}</span>
+          <span class="adv-filter-arrow">{{ showAdvFilter ? '▲' : '▼' }}</span>
+        </button>
+        <div v-if="showAdvFilter" class="adv-filter-panel">
+          <div class="adv-filter-grid">
+            <!-- Filter by Host -->
+            <div class="adv-filter-field">
+              <label>Host</label>
+              <select v-model="advFilter.hostId" class="form-control">
+                <option value="">All hosts</option>
+                <option v-for="h in uniqueHosts" :key="h.id" :value="h.id">{{ h.name }}</option>
+              </select>
+            </div>
+            <!-- Filter by Node -->
+            <div class="adv-filter-field">
+              <label>Node</label>
+              <select v-model="advFilter.node" class="form-control">
+                <option value="">All nodes</option>
+                <option v-for="n in uniqueNodes" :key="n" :value="n">{{ n }}</option>
+              </select>
+            </div>
+            <!-- Filter by OS type -->
+            <div class="adv-filter-field">
+              <label>OS Type</label>
+              <select v-model="advFilter.osType" class="form-control">
+                <option value="">Any OS</option>
+                <option value="linux">Linux</option>
+                <option value="windows">Windows</option>
+                <option value="bsd">BSD</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <!-- CPU cores -->
+            <div class="adv-filter-field">
+              <label>Min CPUs</label>
+              <input v-model.number="advFilter.minCpus" type="number" min="0" class="form-control" placeholder="0" />
+            </div>
+            <!-- RAM range -->
+            <div class="adv-filter-field">
+              <label>Min RAM (GB)</label>
+              <input v-model.number="advFilter.minRamGb" type="number" min="0" step="0.5" class="form-control" placeholder="0" />
+            </div>
+            <div class="adv-filter-field">
+              <label>Max RAM (GB)</label>
+              <input v-model.number="advFilter.maxRamGb" type="number" min="0" step="0.5" class="form-control" placeholder="∞" />
+            </div>
+          </div>
+
+          <!-- Tag multi-select -->
+          <div class="adv-filter-tags" v-if="allTagList.length > 0">
+            <label class="adv-filter-tags-label">Filter by tags (must have all selected):</label>
+            <div class="adv-filter-tag-pills">
+              <button
+                v-for="tag in allTagList"
+                :key="tag"
+                :class="['tag-filter-pill', activeTagFilters.has(tag) ? 'tag-filter-pill-active' : '']"
+                :style="activeTagFilters.has(tag) ? { backgroundColor: tagColor(tag), color: '#fff', borderColor: tagColor(tag) } : { borderColor: tagColor(tag), color: tagColor(tag) }"
+                @click="toggleTagFilter(tag)"
+              >{{ tag }}</button>
+              <button v-if="activeTagFilters.size > 0" class="btn btn-sm btn-secondary" @click="activeTagFilters = new Set()">Clear tags</button>
+            </div>
+          </div>
+
+          <div style="display:flex;gap:0.5rem;margin-top:0.75rem;">
+            <button @click="clearAdvFilter" class="btn btn-sm btn-outline">Clear Advanced Filters</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Classic Tag Filter Pills (shown when adv panel is closed and tags exist) -->
+      <div v-if="!showAdvFilter && allTagList.length > 0" class="tag-filter-bar">
+        <span class="tag-filter-label">Filter by tag:</span>
+        <button
+          v-for="tag in allTagList"
+          :key="tag"
+          :class="['tag-filter-pill', activeTagFilters.has(tag) ? 'tag-filter-pill-active' : '']"
+          :style="activeTagFilters.has(tag) ? { backgroundColor: tagColor(tag), color: '#fff', borderColor: tagColor(tag) } : { borderColor: tagColor(tag), color: tagColor(tag) }"
+          @click="toggleTagFilter(tag)"
+        >{{ tag }}</button>
+        <button v-if="activeTagFilters.size > 0" class="btn btn-sm btn-secondary" @click="activeTagFilters = new Set()">Clear tags</button>
       </div>
 
       <!-- Save Preset Modal -->
@@ -221,19 +335,6 @@
         </div>
       </div>
 
-      <!-- Tag Filter Pills -->
-      <div v-if="allTagList.length > 0" class="tag-filter-bar">
-        <span class="tag-filter-label">Filter by tag:</span>
-        <button
-          v-for="tag in allTagList"
-          :key="tag"
-          :class="['tag-filter-pill', activeTagFilters.has(tag) ? 'tag-filter-pill-active' : '']"
-          :style="activeTagFilters.has(tag) ? { backgroundColor: tagColor(tag), color: '#fff', borderColor: tagColor(tag) } : { borderColor: tagColor(tag), color: tagColor(tag) }"
-          @click="toggleTagFilter(tag)"
-        >{{ tag }}</button>
-        <button v-if="activeTagFilters.size > 0" class="btn btn-sm btn-secondary" @click="activeTagFilters = new Set()">Clear tags</button>
-      </div>
-
       <SkeletonLoader v-if="allLoading" type="table" :count="8" />
 
       <div v-else-if="allError" class="text-center text-muted" style="padding: 2rem;">
@@ -251,7 +352,8 @@
         <button @click="allSearch = ''; allStatusFilter = ''" class="btn btn-sm btn-secondary mt-1">Clear Filters</button>
       </div>
 
-      <div v-else class="table-container" style="position:relative;">
+      <!-- Flat table -->
+      <div v-else-if="!groupByNode" class="table-container" style="position:relative;">
         <table class="table">
           <thead>
             <tr>
@@ -280,19 +382,26 @@
                 Node
                 <span class="sort-indicator" v-if="allSortField === 'node'">{{ allSortDirection === 'asc' ? '▲' : '▼' }}</span>
               </th>
-              <th @click="allSortBy('hostName')" class="sortable">
+              <th @click="allSortBy('hostName')" class="sortable" v-if="visibleColumns.host">
                 Host
                 <span class="sort-indicator" v-if="allSortField === 'hostName'">{{ allSortDirection === 'asc' ? '▲' : '▼' }}</span>
               </th>
-              <th>CPU / Memory</th>
-              <th v-if="anyVmHasTags">Tags</th>
+              <th v-if="visibleColumns.resources">CPU / Memory</th>
+              <th v-if="visibleColumns.uptime" @click="allSortBy('uptime')" class="sortable">
+                Uptime
+                <span class="sort-indicator" v-if="allSortField === 'uptime'">{{ allSortDirection === 'asc' ? '▲' : '▼' }}</span>
+              </th>
+              <th v-if="visibleColumns.ip">IP Address</th>
+              <th v-if="visibleColumns.tags && anyVmHasTags">Tags</th>
               <th>Actions</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="vm in filteredAllVMs" :key="`${vm.hostId}-${vm.node}-${vm.vmid}`"
-              :class="{ 'row-selected': selectedVmKeys.has(vmKey(vm)) }">
-              <td class="cb-col">
+              :class="{ 'row-selected': selectedVmKeys.has(vmKey(vm)), 'row-clickable': true }"
+              @click.exact="navigateToVM(vm)"
+            >
+              <td class="cb-col" @click.stop>
                 <input
                   type="checkbox"
                   :checked="selectedVmKeys.has(vmKey(vm))"
@@ -301,11 +410,7 @@
               </td>
               <td><strong>{{ vm.vmid }}</strong></td>
               <td>
-                <a
-                  class="vm-name-link"
-                  @click="navigateToVM(vm)"
-                  style="cursor: pointer;"
-                >
+                <a class="vm-name-link" @click.stop="navigateToVM(vm)" style="cursor: pointer;">
                   {{ vm.name || '(no name)' }}
                 </a>
               </td>
@@ -317,11 +422,13 @@
               <td>
                 <span class="badge badge-info">{{ vm.node }}</span>
               </td>
-              <td class="text-sm">{{ vm.hostName }}</td>
-              <td class="text-sm">
+              <td v-if="visibleColumns.host" class="text-sm">{{ vm.hostName }}</td>
+              <td v-if="visibleColumns.resources" class="text-sm">
                 {{ vm.cpus || '?' }} CPU / {{ formatBytes(vm.maxmem) }} RAM
               </td>
-              <td v-if="anyVmHasTags">
+              <td v-if="visibleColumns.uptime" class="text-sm mono">{{ formatUptime(vm.uptime) }}</td>
+              <td v-if="visibleColumns.ip" class="text-sm mono">{{ extractIP(vm) }}</td>
+              <td v-if="visibleColumns.tags && anyVmHasTags">
                 <div class="vm-tags">
                   <TagBadge
                     v-for="tag in parseTags(vm.tags)"
@@ -332,7 +439,7 @@
                   <span v-if="!parseTags(vm.tags).length" class="text-muted text-sm">—</span>
                 </div>
               </td>
-              <td>
+              <td @click.stop>
                 <div class="flex gap-1" style="align-items: center;">
                   <button
                     v-if="vm.status === 'running'"
@@ -382,55 +489,104 @@
         <!-- Bulk Action Bar -->
         <div v-if="selectedVmKeys.size > 0" class="bulk-action-bar">
           <span class="bulk-count">{{ selectedVmKeys.size }} VM{{ selectedVmKeys.size !== 1 ? 's' : '' }} selected</span>
-          <button
-            class="btn btn-primary btn-sm"
-            @click="bulkAction('start')"
-            :disabled="bulkRunning"
-          >
-            Start Selected
-          </button>
-          <button
-            class="btn btn-warning btn-sm"
-            @click="bulkAction('shutdown')"
-            :disabled="bulkRunning"
-          >
-            Shutdown Selected
-          </button>
-          <button
-            class="btn btn-danger btn-sm"
-            @click="bulkAction('stop')"
-            :disabled="bulkRunning"
-          >
-            Stop Selected
-          </button>
-          <button
-            class="btn btn-outline btn-sm"
-            @click="openBulkSnapshotModal"
-            :disabled="bulkRunning"
-            title="Create snapshot on all selected VMs"
-          >
-            Snapshot All
-          </button>
-          <button
-            class="btn btn-outline btn-sm"
-            @click="openBulkTagModal"
-            :disabled="bulkRunning"
-            title="Apply tag to all selected VMs"
-          >
-            Tag All
-          </button>
-          <button
-            class="btn btn-danger btn-sm"
-            @click="openBulkDeleteModal"
-            :disabled="bulkRunning"
-            title="Delete all selected VMs"
-          >
-            Delete All
-          </button>
+          <button class="btn btn-primary btn-sm" @click="bulkAction('start')" :disabled="bulkRunning">Start Selected</button>
+          <button class="btn btn-warning btn-sm" @click="bulkAction('shutdown')" :disabled="bulkRunning">Shutdown Selected</button>
+          <button class="btn btn-danger btn-sm" @click="bulkAction('stop')" :disabled="bulkRunning">Stop Selected</button>
+          <button class="btn btn-outline btn-sm" @click="openBulkSnapshotModal" :disabled="bulkRunning" title="Create snapshot on all selected VMs">Snapshot All</button>
+          <button class="btn btn-outline btn-sm" @click="openBulkTagModal" :disabled="bulkRunning" title="Apply tag to all selected VMs">Tag All</button>
+          <button class="btn btn-danger btn-sm" @click="openBulkDeleteModal" :disabled="bulkRunning" title="Delete all selected VMs">Delete All</button>
+          <a href="#" class="bulk-clear-link" @click.prevent="clearSelection">Clear Selection</a>
+        </div>
+      </div>
+
+      <!-- Grouped by node view -->
+      <div v-else class="table-container" style="position:relative;">
+        <div v-for="(group, nodeName) in groupedVMs" :key="nodeName" class="node-group">
+          <div class="node-group-header">
+            <span class="node-group-name">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:5px;"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/></svg>
+              {{ nodeName }}
+            </span>
+            <span class="node-group-count">{{ group.length }} VM{{ group.length !== 1 ? 's' : '' }}</span>
+          </div>
+          <table class="table node-group-table">
+            <thead>
+              <tr>
+                <th class="cb-col">
+                  <input type="checkbox"
+                    :checked="group.every(vm => selectedVmKeys.has(vmKey(vm)))"
+                    @change="toggleGroupSelect(group, $event)"
+                  />
+                </th>
+                <th>VMID</th>
+                <th>Name</th>
+                <th>Status</th>
+                <th v-if="visibleColumns.host">Host</th>
+                <th v-if="visibleColumns.resources">CPU / Memory</th>
+                <th v-if="visibleColumns.uptime">Uptime</th>
+                <th v-if="visibleColumns.ip">IP Address</th>
+                <th v-if="visibleColumns.tags && anyVmHasTags">Tags</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="vm in group" :key="`${vm.hostId}-${vm.node}-${vm.vmid}`"
+                :class="{ 'row-selected': selectedVmKeys.has(vmKey(vm)), 'row-clickable': true }"
+                @click.exact="navigateToVM(vm)"
+              >
+                <td class="cb-col" @click.stop>
+                  <input type="checkbox" :checked="selectedVmKeys.has(vmKey(vm))" @change="toggleSelectVm(vm)" />
+                </td>
+                <td><strong>{{ vm.vmid }}</strong></td>
+                <td>
+                  <a class="vm-name-link" @click.stop="navigateToVM(vm)" style="cursor:pointer;">{{ vm.name || '(no name)' }}</a>
+                </td>
+                <td>
+                  <span :class="['badge', getStatusBadgeClass(vm.status)]">{{ vm.status }}</span>
+                </td>
+                <td v-if="visibleColumns.host" class="text-sm">{{ vm.hostName }}</td>
+                <td v-if="visibleColumns.resources" class="text-sm">{{ vm.cpus || '?' }} CPU / {{ formatBytes(vm.maxmem) }} RAM</td>
+                <td v-if="visibleColumns.uptime" class="text-sm mono">{{ formatUptime(vm.uptime) }}</td>
+                <td v-if="visibleColumns.ip" class="text-sm mono">{{ extractIP(vm) }}</td>
+                <td v-if="visibleColumns.tags && anyVmHasTags">
+                  <div class="vm-tags">
+                    <TagBadge v-for="tag in parseTags(vm.tags)" :key="tag" :tag="tag" small />
+                    <span v-if="!parseTags(vm.tags).length" class="text-muted text-sm">—</span>
+                  </div>
+                </td>
+                <td @click.stop>
+                  <div class="flex gap-1">
+                    <button v-if="vm.status === 'running'" @click="allShutdownVM(vm)" class="btn btn-warning btn-sm" :disabled="vm._busy">Shutdown</button>
+                    <button v-if="vm.status === 'running'" @click="allStopVM(vm)" class="btn btn-danger btn-sm" :disabled="vm._busy">Stop</button>
+                    <button v-if="vm.status !== 'running'" @click="allStartVM(vm)" class="btn btn-primary btn-sm" :disabled="vm._busy">Start</button>
+                    <button class="btn btn-outline btn-sm" @click="openTagEditor(vm)">Tags</button>
+                    <button class="btn btn-outline btn-sm btn-console" @click="openConsole(vm)">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:2px;"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                      Console
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Bulk Action Bar (grouped view) -->
+        <div v-if="selectedVmKeys.size > 0" class="bulk-action-bar">
+          <span class="bulk-count">{{ selectedVmKeys.size }} VM{{ selectedVmKeys.size !== 1 ? 's' : '' }} selected</span>
+          <button class="btn btn-primary btn-sm" @click="bulkAction('start')" :disabled="bulkRunning">Start Selected</button>
+          <button class="btn btn-warning btn-sm" @click="bulkAction('shutdown')" :disabled="bulkRunning">Shutdown Selected</button>
+          <button class="btn btn-danger btn-sm" @click="bulkAction('stop')" :disabled="bulkRunning">Stop Selected</button>
+          <button class="btn btn-outline btn-sm" @click="openBulkSnapshotModal" :disabled="bulkRunning">Snapshot All</button>
+          <button class="btn btn-outline btn-sm" @click="openBulkTagModal" :disabled="bulkRunning">Tag All</button>
+          <button class="btn btn-danger btn-sm" @click="openBulkDeleteModal" :disabled="bulkRunning">Delete All</button>
           <a href="#" class="bulk-clear-link" @click.prevent="clearSelection">Clear Selection</a>
         </div>
       </div>
     </div>
+
+    <!-- Column visibility click-outside handler -->
+    <div v-if="showColMenu" class="col-menu-overlay" @click="showColMenu = false"></div>
 
     <!-- Delete Confirmation Modal -->
     <div v-if="showDeleteConfirmModal" class="modal-overlay" @click="closeDeleteModal">
@@ -491,14 +647,8 @@
                 placeholder="Optional description" :disabled="bulkRunning" />
             </div>
           </div>
-          <!-- Progress Table -->
           <div v-if="bulkOpResults.length > 0" class="bulk-results-table">
-            <div class="bulk-results-header">
-              <span>VMID</span>
-              <span>Name</span>
-              <span>Node</span>
-              <span>Result</span>
-            </div>
+            <div class="bulk-results-header"><span>VMID</span><span>Name</span><span>Node</span><span>Result</span></div>
             <div v-for="r in bulkOpResults" :key="r.key" class="bulk-results-row">
               <span><strong>{{ r.vmid }}</strong></span>
               <span>{{ r.name || '—' }}</span>
@@ -518,8 +668,7 @@
         </div>
         <div class="modal-footer">
           <button v-if="!bulkOpDone" @click="showBulkSnapshotModal = false" class="btn btn-secondary" :disabled="bulkRunning">Cancel</button>
-          <button v-if="!bulkOpDone" @click="runBulkSnapshot" class="btn btn-primary"
-            :disabled="bulkRunning || !bulkSnapName.trim()">
+          <button v-if="!bulkOpDone" @click="runBulkSnapshot" class="btn btn-primary" :disabled="bulkRunning || !bulkSnapName.trim()">
             {{ bulkRunning ? 'Running…' : 'Create Snapshots' }}
           </button>
           <button v-if="bulkOpDone" @click="closeBulkModal" class="btn btn-secondary">Close</button>
@@ -547,14 +696,8 @@
               <small class="text-muted">Lowercase letters, numbers, hyphens, and underscores only.</small>
             </div>
           </div>
-          <!-- Progress Table -->
           <div v-if="bulkOpResults.length > 0" class="bulk-results-table">
-            <div class="bulk-results-header">
-              <span>VMID</span>
-              <span>Name</span>
-              <span>Node</span>
-              <span>Result</span>
-            </div>
+            <div class="bulk-results-header"><span>VMID</span><span>Name</span><span>Node</span><span>Result</span></div>
             <div v-for="r in bulkOpResults" :key="r.key" class="bulk-results-row">
               <span><strong>{{ r.vmid }}</strong></span>
               <span>{{ r.name || '—' }}</span>
@@ -574,8 +717,7 @@
         </div>
         <div class="modal-footer">
           <button v-if="!bulkOpDone" @click="showBulkTagModal = false" class="btn btn-secondary" :disabled="bulkRunning">Cancel</button>
-          <button v-if="!bulkOpDone" @click="runBulkTag" class="btn btn-primary"
-            :disabled="bulkRunning || !bulkTagValue.trim()">
+          <button v-if="!bulkOpDone" @click="runBulkTag" class="btn btn-primary" :disabled="bulkRunning || !bulkTagValue.trim()">
             {{ bulkRunning ? 'Running…' : 'Apply Tag' }}
           </button>
           <button v-if="bulkOpDone" @click="closeBulkModal" class="btn btn-secondary">Close</button>
@@ -650,14 +792,8 @@
                 placeholder="Type DELETE to confirm" :disabled="bulkRunning" />
             </div>
           </div>
-          <!-- Progress Table -->
           <div v-if="bulkOpResults.length > 0" class="bulk-results-table">
-            <div class="bulk-results-header">
-              <span>VMID</span>
-              <span>Name</span>
-              <span>Node</span>
-              <span>Result</span>
-            </div>
+            <div class="bulk-results-header"><span>VMID</span><span>Name</span><span>Node</span><span>Result</span></div>
             <div v-for="r in bulkOpResults" :key="r.key" class="bulk-results-row">
               <span><strong>{{ r.vmid }}</strong></span>
               <span>{{ r.name || '—' }}</span>
@@ -697,6 +833,9 @@ import { useToast } from 'vue-toastification'
 import SkeletonLoader from '@/components/SkeletonLoader.vue'
 import TagBadge from '@/components/TagBadge.vue'
 import { tagColor as _tagColor } from '@/utils/tagColors'
+
+const COL_PREFS_KEY = 'depl0y_vm_col_prefs'
+const DEFAULT_COLS = { host: true, resources: true, uptime: true, ip: true, tags: true }
 
 export default {
   name: 'VirtualMachines',
@@ -755,17 +894,9 @@ export default {
       vms.value.sort((a, b) => {
         let aVal = a[sortField.value]
         let bVal = b[sortField.value]
-
-        if (typeof aVal === 'string') {
-          aVal = aVal.toLowerCase()
-          bVal = bVal.toLowerCase()
-        }
-
-        if (sortDirection.value === 'asc') {
-          return aVal > bVal ? 1 : aVal < bVal ? -1 : 0
-        } else {
-          return aVal < bVal ? 1 : aVal > bVal ? -1 : 0
-        }
+        if (typeof aVal === 'string') { aVal = aVal.toLowerCase(); bVal = bVal.toLowerCase() }
+        if (sortDirection.value === 'asc') return aVal > bVal ? 1 : aVal < bVal ? -1 : 0
+        else return aVal < bVal ? 1 : aVal > bVal ? -1 : 0
       })
     }
 
@@ -775,7 +906,6 @@ export default {
         toast.success(`VM ${vmid} started successfully`)
         setTimeout(fetchVMs, 1000)
       } catch (error) {
-        console.error('Failed to start VM:', error)
         toast.error('Failed to start VM')
       }
     }
@@ -786,22 +916,17 @@ export default {
         toast.success(`VM ${vmid} stopped successfully`)
         setTimeout(fetchVMs, 1000)
       } catch (error) {
-        console.error('Failed to stop VM:', error)
         toast.error('Failed to stop VM')
       }
     }
 
     const powerOffVM = async (vmid, node) => {
-      if (!confirm(`Are you sure you want to power off VM ${vmid}? This is equivalent to pulling the power plug.`)) {
-        return
-      }
-
+      if (!confirm(`Are you sure you want to power off VM ${vmid}? This is equivalent to pulling the power plug.`)) return
       try {
         await api.vms.powerOffByVmid(vmid, node)
         toast.success(`VM ${vmid} powered off successfully`)
         setTimeout(fetchVMs, 1000)
       } catch (error) {
-        console.error('Failed to power off VM:', error)
         toast.error('Failed to power off VM')
       }
     }
@@ -812,7 +937,6 @@ export default {
         toast.success(`VM ${vmid} restarting...`)
         setTimeout(fetchVMs, 1000)
       } catch (error) {
-        console.error('Failed to restart VM:', error)
         toast.error('Failed to restart VM')
       }
     }
@@ -834,32 +958,24 @@ export default {
         toast.error('VM ID confirmation does not match')
         return
       }
-
       try {
         await api.vms.deleteByVmid(vmToDelete.value.vmid, vmToDelete.value.node)
         toast.success(`VM ${vmToDelete.value.vmid} deleted successfully`)
         closeDeleteModal()
         fetchVMs()
       } catch (error) {
-        console.error('Failed to delete VM:', error)
         toast.error(`Failed to delete VM: ${error.response?.data?.detail || error.message}`)
       }
     }
 
     const filteredVMs = computed(() => {
       let list = vms.value
-
-      // Route query status filter (from dashboard clicks)
       if (statusFilter.value) {
         list = list.filter(vm => vm.status.toLowerCase() === statusFilter.value.toLowerCase())
       }
-
-      // Inline status dropdown
       if (managedStatusFilter.value) {
         list = list.filter(vm => vm.status.toLowerCase() === managedStatusFilter.value.toLowerCase())
       }
-
-      // Free-text search across name, VMID, and node
       if (managedSearch.value.trim()) {
         const q = managedSearch.value.trim().toLowerCase()
         list = list.filter(vm =>
@@ -868,7 +984,6 @@ export default {
           (vm.node || '').toLowerCase().includes(q)
         )
       }
-
       return list
     })
 
@@ -900,6 +1015,67 @@ export default {
     const allStatusFilter = ref(savedFilter.status || '')
     const allSortField = ref('vmid')
     const allSortDirection = ref('asc')
+
+    // Column visibility
+    function loadColumnPrefs() {
+      try { return { ...DEFAULT_COLS, ...JSON.parse(localStorage.getItem(COL_PREFS_KEY) || '{}') } } catch { return { ...DEFAULT_COLS } }
+    }
+    const visibleColumns = ref(loadColumnPrefs())
+    const groupByNode = ref(false)
+    const showColMenu = ref(false)
+    const allColumns = [
+      { key: 'host', label: 'Host' },
+      { key: 'resources', label: 'CPU / Memory' },
+      { key: 'uptime', label: 'Uptime' },
+      { key: 'ip', label: 'IP Address' },
+      { key: 'tags', label: 'Tags' },
+    ]
+    function saveColumnPrefs() {
+      localStorage.setItem(COL_PREFS_KEY, JSON.stringify({ ...visibleColumns.value, groupByNode: groupByNode.value }))
+    }
+    // Restore groupByNode from prefs
+    try {
+      const saved = JSON.parse(localStorage.getItem(COL_PREFS_KEY) || '{}')
+      if (saved.groupByNode !== undefined) groupByNode.value = saved.groupByNode
+    } catch {}
+
+    // Advanced filter
+    const showAdvFilter = ref(false)
+    const advFilter = ref({ hostId: '', node: '', osType: '', minCpus: null, minRamGb: null, maxRamGb: null })
+    const advFilterCount = computed(() => {
+      let c = 0
+      if (advFilter.value.hostId) c++
+      if (advFilter.value.node) c++
+      if (advFilter.value.osType) c++
+      if (advFilter.value.minCpus) c++
+      if (advFilter.value.minRamGb) c++
+      if (advFilter.value.maxRamGb) c++
+      if (activeTagFilters.value.size > 0) c += activeTagFilters.value.size
+      return c
+    })
+    const clearAdvFilter = () => {
+      advFilter.value = { hostId: '', node: '', osType: '', minCpus: null, minRamGb: null, maxRamGb: null }
+      activeTagFilters.value = new Set()
+    }
+
+    const uniqueHosts = computed(() => {
+      const map = new Map()
+      allVMs.value.forEach(vm => { if (!map.has(vm.hostId)) map.set(vm.hostId, { id: vm.hostId, name: vm.hostName }) })
+      return [...map.values()]
+    })
+    const uniqueNodes = computed(() => [...new Set(allVMs.value.map(v => v.node))].sort())
+
+    // OS type detection from VM name
+    const detectOsType = (name) => {
+      if (!name) return 'other'
+      const n = name.toLowerCase()
+      if (n.includes('win') || n.includes('server')) return 'windows'
+      if (n.includes('bsd') || n.includes('freebsd') || n.includes('openbsd')) return 'bsd'
+      if (n.includes('ubuntu') || n.includes('debian') || n.includes('centos') || n.includes('fedora') ||
+          n.includes('rhel') || n.includes('alma') || n.includes('rocky') || n.includes('linux') ||
+          n.includes('arch') || n.includes('suse') || n.includes('oracle')) return 'linux'
+      return 'other'
+    }
 
     // Persist filter changes to sessionStorage
     watch([allSearch, allStatusFilter], () => {
@@ -956,11 +1132,7 @@ export default {
       try {
         const hostsResp = await api.proxmox.listHosts()
         const hosts = hostsResp.data
-
-        if (!hosts || hosts.length === 0) {
-          allVMs.value = []
-          return
-        }
+        if (!hosts || hosts.length === 0) { allVMs.value = []; return }
 
         const results = []
         await Promise.allSettled(
@@ -968,10 +1140,8 @@ export default {
             try {
               const resResp = await api.pveNode.clusterResources(host.id, 'vm')
               const resources = resResp.data
-              // clusterResources may return { data: [...] } or directly an array
               const items = Array.isArray(resources) ? resources : (resources.data || [])
               items.forEach((item) => {
-                // Only include qemu VMs (not lxc containers)
                 if (item.type && item.type !== 'qemu') return
                 results.push({
                   hostId: host.id,
@@ -983,7 +1153,12 @@ export default {
                   cpus: item.cpus,
                   maxmem: item.maxmem,
                   mem: item.mem,
+                  maxdisk: item.maxdisk,
+                  uptime: item.uptime || 0,
                   tags: item.tags || '',
+                  description: item.description || '',
+                  netin: item.netin,
+                  netout: item.netout,
                   _busy: false,
                 })
               })
@@ -992,7 +1167,6 @@ export default {
             }
           })
         )
-
         allVMs.value = results
       } catch (err) {
         console.error('Failed to fetch Proxmox hosts:', err)
@@ -1028,7 +1202,7 @@ export default {
         )
       }
 
-      // Tag filter — AND logic: VM must have ALL active tag filters
+      // Tag filter
       if (activeTagFilters.value.size > 0) {
         const required = [...activeTagFilters.value]
         list = list.filter(vm => {
@@ -1036,6 +1210,15 @@ export default {
           return required.every(t => vmTags.includes(t))
         })
       }
+
+      // Advanced filters
+      const af = advFilter.value
+      if (af.hostId) list = list.filter(vm => vm.hostId === af.hostId)
+      if (af.node) list = list.filter(vm => vm.node === af.node)
+      if (af.osType) list = list.filter(vm => detectOsType(vm.name) === af.osType)
+      if (af.minCpus) list = list.filter(vm => (vm.cpus || 0) >= af.minCpus)
+      if (af.minRamGb) list = list.filter(vm => (vm.maxmem || 0) >= af.minRamGb * 1024 * 1024 * 1024)
+      if (af.maxRamGb) list = list.filter(vm => (vm.maxmem || 0) <= af.maxRamGb * 1024 * 1024 * 1024)
 
       // Sort
       const field = allSortField.value
@@ -1048,6 +1231,49 @@ export default {
         return aVal < bVal ? 1 : aVal > bVal ? -1 : 0
       })
     })
+
+    // Grouped by node
+    const groupedVMs = computed(() => {
+      const groups = {}
+      filteredAllVMs.value.forEach(vm => {
+        const key = vm.node || 'unknown'
+        if (!groups[key]) groups[key] = []
+        groups[key].push(vm)
+      })
+      return groups
+    })
+
+    const toggleGroupSelect = (group, event) => {
+      const allSelected = group.every(vm => selectedVmKeys.value.has(vmKey(vm)))
+      const newSet = new Set(selectedVmKeys.value)
+      if (allSelected) {
+        group.forEach(vm => newSet.delete(vmKey(vm)))
+      } else {
+        group.forEach(vm => newSet.add(vmKey(vm)))
+      }
+      selectedVmKeys.value = newSet
+    }
+
+    // Export CSV
+    const exportCSV = () => {
+      const cols = ['vmid', 'name', 'status', 'node', 'hostName', 'cpus', 'maxmem', 'uptime', 'tags']
+      const header = cols.join(',')
+      const rows = filteredAllVMs.value.map(vm =>
+        cols.map(c => {
+          const v = vm[c] ?? ''
+          const s = String(v).replace(/"/g, '""')
+          return `"${s}"`
+        }).join(',')
+      )
+      const csv = [header, ...rows].join('\n')
+      const blob = new Blob([csv], { type: 'text/csv' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `vms-export-${new Date().toISOString().slice(0, 10)}.csv`
+      a.click()
+      URL.revokeObjectURL(url)
+    }
 
     const navigateToVM = (vm) => {
       router.push(`/proxmox/${vm.hostId}/nodes/${vm.node}/vms/${vm.vmid}`)
@@ -1065,7 +1291,6 @@ export default {
         toast.success(`VM ${vm.vmid} started`)
         setTimeout(fetchAllProxmoxVMs, 2000)
       } catch (err) {
-        console.error('Failed to start VM:', err)
         toast.error(`Failed to start VM ${vm.vmid}`)
       } finally {
         vm._busy = false
@@ -1080,7 +1305,6 @@ export default {
         toast.success(`VM ${vm.vmid} stopped`)
         setTimeout(fetchAllProxmoxVMs, 2000)
       } catch (err) {
-        console.error('Failed to stop VM:', err)
         toast.error(`Failed to stop VM ${vm.vmid}`)
       } finally {
         vm._busy = false
@@ -1094,7 +1318,6 @@ export default {
         toast.success(`VM ${vm.vmid} shutdown initiated`)
         setTimeout(fetchAllProxmoxVMs, 2000)
       } catch (err) {
-        console.error('Failed to shutdown VM:', err)
         toast.error(`Failed to shutdown VM ${vm.vmid}`)
       } finally {
         vm._busy = false
@@ -1110,11 +1333,8 @@ export default {
     const toggleSelectVm = (vm) => {
       const key = vmKey(vm)
       const newSet = new Set(selectedVmKeys.value)
-      if (newSet.has(key)) {
-        newSet.delete(key)
-      } else {
-        newSet.add(key)
-      }
+      if (newSet.has(key)) newSet.delete(key)
+      else newSet.add(key)
       selectedVmKeys.value = newSet
     }
 
@@ -1129,45 +1349,32 @@ export default {
 
     const toggleSelectAll = () => {
       if (allPageSelected.value) {
-        // deselect all visible
         const newSet = new Set(selectedVmKeys.value)
         filteredAllVMs.value.forEach(vm => newSet.delete(vmKey(vm)))
         selectedVmKeys.value = newSet
       } else {
-        // select all visible
         const newSet = new Set(selectedVmKeys.value)
         filteredAllVMs.value.forEach(vm => newSet.add(vmKey(vm)))
         selectedVmKeys.value = newSet
       }
     }
 
-    const clearSelection = () => {
-      selectedVmKeys.value = new Set()
-    }
+    const clearSelection = () => { selectedVmKeys.value = new Set() }
 
     const bulkAction = async (action) => {
       const vmsToAct = allVMs.value.filter(vm => selectedVmKeys.value.has(vmKey(vm)))
       if (vmsToAct.length === 0) return
-
       const actionFn = {
         start: (vm) => api.pveVm.start(vm.hostId, vm.node, vm.vmid),
         shutdown: (vm) => api.pveVm.shutdown(vm.hostId, vm.node, vm.vmid),
         stop: (vm) => api.pveVm.stop(vm.hostId, vm.node, vm.vmid),
       }[action]
-
       bulkRunning.value = true
       for (let i = 0; i < vmsToAct.length; i++) {
         const vm = vmsToAct[i]
         toast.info(`${action.charAt(0).toUpperCase() + action.slice(1)}ing VM ${vm.vmid}... (${i + 1}/${vmsToAct.length})`)
-        try {
-          await actionFn(vm)
-        } catch (err) {
-          console.error(`Bulk ${action} failed for VM ${vm.vmid}:`, err)
-          toast.error(`Failed to ${action} VM ${vm.vmid}`)
-        }
-        if (i < vmsToAct.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 300))
-        }
+        try { await actionFn(vm) } catch (err) { toast.error(`Failed to ${action} VM ${vm.vmid}`) }
+        if (i < vmsToAct.length - 1) await new Promise(r => setTimeout(r, 300))
       }
       bulkRunning.value = false
       clearSelection()
@@ -1185,9 +1392,7 @@ export default {
     const bulkOpResults = ref([])
     const bulkOpDone = ref(false)
 
-    const selectedVmObjects = computed(() =>
-      allVMs.value.filter(vm => selectedVmKeys.value.has(vmKey(vm)))
-    )
+    const selectedVmObjects = computed(() => allVMs.value.filter(vm => selectedVmKeys.value.has(vmKey(vm))))
 
     const openBulkSnapshotModal = () => {
       const now = new Date()
@@ -1199,19 +1404,8 @@ export default {
       showBulkSnapshotModal.value = true
     }
 
-    const openBulkTagModal = () => {
-      bulkTagValue.value = ''
-      bulkOpResults.value = []
-      bulkOpDone.value = false
-      showBulkTagModal.value = true
-    }
-
-    const openBulkDeleteModal = () => {
-      bulkDeleteConfirm.value = ''
-      bulkOpResults.value = []
-      bulkOpDone.value = false
-      showBulkDeleteModal.value = true
-    }
+    const openBulkTagModal = () => { bulkTagValue.value = ''; bulkOpResults.value = []; bulkOpDone.value = false; showBulkTagModal.value = true }
+    const openBulkDeleteModal = () => { bulkDeleteConfirm.value = ''; bulkOpResults.value = []; bulkOpDone.value = false; showBulkDeleteModal.value = true }
 
     const closeBulkModal = () => {
       showBulkSnapshotModal.value = false
@@ -1224,13 +1418,7 @@ export default {
     const initBulkResults = () => {
       const vmsToAct = allVMs.value.filter(vm => selectedVmKeys.value.has(vmKey(vm)))
       bulkOpResults.value = vmsToAct.map(vm => ({
-        key: vmKey(vm),
-        vmid: vm.vmid,
-        name: vm.name,
-        node: vm.node,
-        hostId: vm.hostId,
-        status: 'pending',
-        error: null,
+        key: vmKey(vm), vmid: vm.vmid, name: vm.name, node: vm.node, hostId: vm.hostId, status: 'pending', error: null,
       }))
       return vmsToAct
     }
@@ -1243,10 +1431,7 @@ export default {
         const r = bulkOpResults.value[i]
         bulkOpResults.value[i] = { ...r, status: 'running' }
         try {
-          await api.pveVm.createSnapshot(r.hostId, r.node, r.vmid, {
-            snapname: bulkSnapName.value.trim(),
-            description: bulkSnapDescription.value.trim(),
-          })
+          await api.pveVm.createSnapshot(r.hostId, r.node, r.vmid, { snapname: bulkSnapName.value.trim(), description: bulkSnapDescription.value.trim() })
           bulkOpResults.value[i] = { ...bulkOpResults.value[i], status: 'success' }
           toast.success(`Snapshot created on VM ${r.vmid}`)
         } catch (err) {
@@ -1254,9 +1439,7 @@ export default {
           bulkOpResults.value[i] = { ...bulkOpResults.value[i], status: 'error', error: msg }
           toast.error(`Failed to snapshot VM ${r.vmid}: ${msg}`)
         }
-        if (i < bulkOpResults.value.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 300))
-        }
+        if (i < bulkOpResults.value.length - 1) await new Promise(r => setTimeout(r, 300))
       }
       bulkRunning.value = false
       bulkOpDone.value = true
@@ -1274,9 +1457,7 @@ export default {
           const configRes = await api.pveVm.getConfig(r.hostId, r.node, r.vmid)
           const currentTags = configRes.data?.tags || ''
           const tagsArr = currentTags ? currentTags.split(';').map(t => t.trim()).filter(Boolean) : []
-          if (!tagsArr.includes(tag)) {
-            tagsArr.push(tag)
-          }
+          if (!tagsArr.includes(tag)) tagsArr.push(tag)
           await api.pveVm.updateConfig(r.hostId, r.node, r.vmid, { tags: tagsArr.join(';') })
           bulkOpResults.value[i] = { ...bulkOpResults.value[i], status: 'success' }
         } catch (err) {
@@ -1284,9 +1465,7 @@ export default {
           bulkOpResults.value[i] = { ...bulkOpResults.value[i], status: 'error', error: msg }
           toast.error(`Failed to tag VM ${r.vmid}: ${msg}`)
         }
-        if (i < bulkOpResults.value.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 200))
-        }
+        if (i < bulkOpResults.value.length - 1) await new Promise(r => setTimeout(r, 200))
       }
       bulkRunning.value = false
       bulkOpDone.value = true
@@ -1302,12 +1481,7 @@ export default {
         const vm = allVMs.value.find(v => vmKey(v) === r.key)
         if (vm?.status === 'running') {
           bulkOpResults.value[i] = { ...r, status: 'stopping' }
-          try {
-            await api.pveVm.stop(r.hostId, r.node, r.vmid)
-            await new Promise(resolve => setTimeout(resolve, 3000))
-          } catch (err) {
-            console.warn(`Failed to stop VM ${r.vmid} before delete:`, err)
-          }
+          try { await api.pveVm.stop(r.hostId, r.node, r.vmid); await new Promise(r => setTimeout(r, 3000)) } catch {}
         }
         bulkOpResults.value[i] = { ...bulkOpResults.value[i], status: 'running' }
         try {
@@ -1319,9 +1493,7 @@ export default {
           bulkOpResults.value[i] = { ...bulkOpResults.value[i], status: 'error', error: msg }
           toast.error(`Failed to delete VM ${r.vmid}: ${msg}`)
         }
-        if (i < bulkOpResults.value.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 500))
-        }
+        if (i < bulkOpResults.value.length - 1) await new Promise(r => setTimeout(r, 500))
       }
       bulkRunning.value = false
       bulkOpDone.value = true
@@ -1332,18 +1504,13 @@ export default {
     // ── Tags helpers ────────────────────────────────────────────────────────
     const parseTags = (tagsStr) => {
       if (!tagsStr) return []
-      // PVE tags are semicolon-separated
       return tagsStr.split(';').map(t => t.trim()).filter(Boolean)
     }
 
-    // Use shared deterministic tag color utility
     const tagColor = _tagColor
-
     const anyVmHasTags = computed(() => allVMs.value.some(vm => vm.tags))
 
-    // ── Tag filter bar ──────────────────────────────────────────────────────
     const activeTagFilters = ref(new Set())
-
     const allTagList = computed(() => {
       const tagSet = new Set()
       allVMs.value.forEach(vm => parseTags(vm.tags).forEach(t => tagSet.add(t)))
@@ -1394,10 +1561,7 @@ export default {
       tagEditorSaving.value = true
       const vm = tagEditorVm.value
       try {
-        await api.pveVm.updateConfig(vm.hostId, vm.node, vm.vmid, {
-          tags: tagEditorTags.value.join(';'),
-        })
-        // Update local data immediately
+        await api.pveVm.updateConfig(vm.hostId, vm.node, vm.vmid, { tags: tagEditorTags.value.join(';') })
         vm.tags = tagEditorTags.value.join(';')
         toast.success(`Tags saved for VM ${vm.vmid}`)
         closeTagEditor()
@@ -1409,6 +1573,25 @@ export default {
       }
     }
 
+    // ── IP extraction ───────────────────────────────────────────────────────
+    const extractIP = (vm) => {
+      // Try to find an IP-like string in description or name
+      const text = vm.description || vm.name || ''
+      const match = text.match(/\b(\d{1,3}\.){3}\d{1,3}\b/)
+      return match ? match[0] : '—'
+    }
+
+    // ── Uptime formatting ────────────────────────────────────────────────────
+    const formatUptime = (seconds) => {
+      if (!seconds || seconds <= 0) return '—'
+      const d = Math.floor(seconds / 86400)
+      const h = Math.floor((seconds % 86400) / 3600)
+      const m = Math.floor((seconds % 3600) / 60)
+      if (d > 0) return `${d}d ${h}h`
+      if (h > 0) return `${h}h ${m}m`
+      return `${m}m`
+    }
+
     // ── Shared helpers ─────────────────────────────────────────────────────
     const formatBytes = (bytes) => {
       if (!bytes) return '0 B'
@@ -1418,13 +1601,7 @@ export default {
     }
 
     const getStatusBadgeClass = (status) => {
-      const classMap = {
-        running: 'badge-success',
-        stopped: 'badge-danger',
-        paused: 'badge-warning',
-        suspended: 'badge-warning',
-        unknown: 'badge-secondary'
-      }
+      const classMap = { running: 'badge-success', stopped: 'badge-danger', paused: 'badge-warning', suspended: 'badge-warning', unknown: 'badge-secondary' }
       return classMap[(status || '').toLowerCase()] || 'badge-info'
     }
 
@@ -1434,22 +1611,17 @@ export default {
     let allInterval = null
     let allTickInterval = null
 
-    const resetAllCountdown = (intervalSecs) => {
-      allCountdown.value = intervalSecs
-    }
+    const resetAllCountdown = (intervalSecs) => { allCountdown.value = intervalSecs }
 
     const startAllIntervals = (intervalSecs) => {
       clearInterval(allInterval)
       clearInterval(allTickInterval)
-
       resetAllCountdown(intervalSecs)
-
       allInterval = setInterval(() => {
         if (document.visibilityState === 'hidden') return
         if (activeTab.value === 'all') fetchAllProxmoxVMs()
         resetAllCountdown(intervalSecs)
       }, intervalSecs * 1000)
-
       allTickInterval = setInterval(() => {
         if (document.visibilityState === 'hidden') return
         if (allCountdown.value > 0) allCountdown.value--
@@ -1457,24 +1629,17 @@ export default {
     }
 
     const handleVisibilityChange = () => {
-      // Resume tick immediately when page becomes visible again
-      if (document.visibilityState === 'visible' && activeTab.value === 'all') {
-        fetchAllProxmoxVMs()
-      }
+      if (document.visibilityState === 'visible' && activeTab.value === 'all') fetchAllProxmoxVMs()
     }
 
     onMounted(() => {
       fetchVMs()
-
       const intervalSecs = parseInt(localStorage.getItem('depl0y_refresh_interval') || '30', 10)
-
       managedInterval = setInterval(() => {
         if (document.visibilityState === 'hidden') return
         if (activeTab.value === 'managed') fetchVMs()
       }, intervalSecs * 1000)
-
       startAllIntervals(intervalSecs)
-
       document.addEventListener('visibilitychange', handleVisibilityChange)
     })
 
@@ -1486,104 +1651,31 @@ export default {
     })
 
     return {
-      // tab
-      activeTab,
-      switchTab,
-      // managed tab
-      vms,
-      loading,
-      sortField,
-      sortDirection,
-      statusFilter,
-      managedSearch,
-      managedStatusFilter,
-      filteredVMs,
-      showDeleteConfirmModal,
-      vmToDelete,
-      deleteConfirmInput,
-      sortBy,
-      startVM,
-      stopVM,
-      powerOffVM,
-      restartVM,
-      showDeleteModal,
-      closeDeleteModal,
-      deleteVM,
-      clearFilter,
-      // all proxmox tab
-      allVMs,
-      allLoading,
-      allError,
-      allSearch,
-      allStatusFilter,
-      allSortField,
-      allSortDirection,
-      filteredAllVMs,
-      fetchAllProxmoxVMs,
-      allSortBy,
-      navigateToVM,
-      allStartVM,
-      allStopVM,
-      allShutdownVM,
-      allCountdown,
-      openConsole,
-      // presets
-      savedFilterPresets,
-      showSavePresetModal,
-      newPresetName,
-      savePreset,
-      applyPreset,
-      openSavePresetModal,
-      // shared
-      formatBytes,
-      getStatusBadgeClass,
-      // tags
-      parseTags,
-      tagColor,
-      anyVmHasTags,
-      // tag filter bar
-      activeTagFilters,
-      allTagList,
-      toggleTagFilter,
-      // inline tag editor
-      showTagEditorModal,
-      tagEditorVm,
-      tagEditorTags,
-      tagEditorInput,
-      tagEditorSaving,
-      openTagEditor,
-      closeTagEditor,
-      addTagFromEditor,
-      removeTagFromEditor,
-      saveTagEditor,
-      // bulk selection
-      selectedVmKeys,
-      bulkRunning,
-      vmKey,
-      toggleSelectVm,
-      allPageSelected,
-      somePageSelected,
-      toggleSelectAll,
-      clearSelection,
-      bulkAction,
-      // bulk ops
-      showBulkSnapshotModal,
-      showBulkTagModal,
-      showBulkDeleteModal,
-      bulkSnapName,
-      bulkSnapDescription,
-      bulkTagValue,
-      bulkDeleteConfirm,
-      bulkOpResults,
-      bulkOpDone,
-      selectedVmObjects,
-      openBulkSnapshotModal,
-      openBulkTagModal,
-      openBulkDeleteModal,
-      closeBulkModal,
-      runBulkSnapshot,
-      runBulkTag,
-      runBulkDelete,
+      activeTab, switchTab,
+      vms, loading, sortField, sortDirection, statusFilter, managedSearch, managedStatusFilter,
+      filteredVMs, showDeleteConfirmModal, vmToDelete, deleteConfirmInput,
+      sortBy, startVM, stopVM, powerOffVM, restartVM,
+      showDeleteModal, closeDeleteModal, deleteVM, clearFilter,
+      allVMs, allLoading, allError, allSearch, allStatusFilter, allSortField, allSortDirection,
+      filteredAllVMs, groupedVMs, fetchAllProxmoxVMs, allSortBy,
+      navigateToVM, allStartVM, allStopVM, allShutdownVM, allCountdown, openConsole,
+      exportCSV,
+      savedFilterPresets, showSavePresetModal, newPresetName, savePreset, applyPreset, openSavePresetModal,
+      visibleColumns, allColumns, showColMenu, groupByNode, saveColumnPrefs,
+      showAdvFilter, advFilter, advFilterCount, clearAdvFilter, uniqueHosts, uniqueNodes,
+      formatBytes, getStatusBadgeClass, formatUptime, extractIP,
+      parseTags, tagColor, anyVmHasTags,
+      activeTagFilters, allTagList, toggleTagFilter,
+      showTagEditorModal, tagEditorVm, tagEditorTags, tagEditorInput, tagEditorSaving,
+      openTagEditor, closeTagEditor, addTagFromEditor, removeTagFromEditor, saveTagEditor,
+      selectedVmKeys, bulkRunning, vmKey, toggleSelectVm,
+      allPageSelected, somePageSelected, toggleSelectAll, clearSelection, bulkAction,
+      showBulkSnapshotModal, showBulkTagModal, showBulkDeleteModal,
+      bulkSnapName, bulkSnapDescription, bulkTagValue, bulkDeleteConfirm,
+      bulkOpResults, bulkOpDone, selectedVmObjects,
+      openBulkSnapshotModal, openBulkTagModal, openBulkDeleteModal, closeBulkModal,
+      runBulkSnapshot, runBulkTag, runBulkDelete,
+      toggleGroupSelect,
     }
   }
 }
@@ -1611,45 +1703,23 @@ export default {
   transition: color 0.15s, border-color 0.15s;
 }
 
-.tab-btn:hover {
-  color: var(--text-primary, #1e293b);
-}
-
-.tab-btn-active {
-  color: var(--primary-color, #3b82f6);
-  border-bottom-color: var(--primary-color, #3b82f6);
-}
+.tab-btn:hover { color: var(--text-primary, #1e293b); }
+.tab-btn-active { color: var(--primary-color, #3b82f6); border-bottom-color: var(--primary-color, #3b82f6); }
 
 /* ── VM name link ─────────────────────────────────────────────────────────── */
-.vm-name-link {
-  color: var(--primary-color, #3b82f6);
-  text-decoration: none;
-}
+.vm-name-link { color: var(--primary-color, #3b82f6); text-decoration: none; }
+.vm-name-link:hover { text-decoration: underline; }
 
-.vm-name-link:hover {
-  text-decoration: underline;
-}
+/* ── Clickable row ────────────────────────────────────────────────────────── */
+.row-clickable { cursor: pointer; transition: background 0.1s; }
+.row-clickable:hover td { background-color: rgba(59, 130, 246, 0.04); }
 
-/* ── Existing styles (unchanged) ──────────────────────────────────────────── */
-.btn-sm {
-  padding: 0.25rem 0.5rem;
-  font-size: 0.875rem;
-}
-
-.sortable {
-  cursor: pointer;
-  user-select: none;
-}
-
-.sortable:hover {
-  background-color: var(--background);
-}
-
-.sort-indicator {
-  margin-left: 0.25rem;
-  font-size: 0.75rem;
-  opacity: 0.7;
-}
+/* ── Existing styles ──────────────────────────────────────────────────────── */
+.btn-sm { padding: 0.25rem 0.5rem; font-size: 0.875rem; }
+.sortable { cursor: pointer; user-select: none; }
+.sortable:hover { background-color: var(--background); }
+.sort-indicator { margin-left: 0.25rem; font-size: 0.75rem; opacity: 0.7; }
+.mono { font-family: 'Fira Mono', 'Consolas', monospace; }
 
 .filter-bar {
   display: flex;
@@ -1660,471 +1730,293 @@ export default {
   border-bottom: 1px solid var(--border);
 }
 
-.filter-info {
+.filter-info { display: flex; align-items: center; gap: 0.5rem; }
+.filter-count { font-size: 0.875rem; color: var(--text-muted); margin-left: 0.25rem; }
+.filter-actions { display: flex; align-items: center; gap: 0.5rem; }
+.preset-wrap { display: flex; align-items: center; gap: 0.35rem; }
+
+/* ── Column visibility dropdown ───────────────────────────────────────────── */
+.col-toggle-wrap { position: relative; }
+.col-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  background: var(--surface);
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 0.375rem;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+  z-index: 200;
+  min-width: 170px;
+  padding: 0.25rem 0;
+}
+.col-menu-header {
+  padding: 0.4rem 0.75rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border, #e2e8f0);
+  margin-bottom: 0.25rem;
+}
+.col-menu-item {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  padding: 0.3rem 0.75rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+  color: var(--text-primary);
+  transition: background 0.1s;
 }
+.col-menu-item:hover { background: var(--background); }
+.col-menu-overlay { position: fixed; inset: 0; z-index: 199; }
 
-.filter-label {
-  font-size: 0.875rem;
-  color: var(--text-muted);
-}
-
-.filter-count {
-  font-size: 0.875rem;
-  color: var(--text-muted);
-  margin-left: 0.25rem;
-}
-
-.filter-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.preset-wrap {
+/* ── Group by node toggle ──────────────────────────────────────────────────── */
+.toggle-label {
   display: flex;
   align-items: center;
   gap: 0.35rem;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
 }
 
-/* Delete Confirmation Modal */
-.modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: rgba(0, 0, 0, 0.5);
+/* ── Advanced filter panel ──────────────────────────────────────────────────── */
+.adv-filter-bar {
+  border-bottom: 1px solid var(--border, #e2e8f0);
+  background: var(--background);
+}
+.adv-filter-toggle {
   display: flex;
   align-items: center;
+  gap: 0.3rem;
+  padding: 0.45rem 1rem;
+  background: none;
+  border: none;
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color 0.12s;
+}
+.adv-filter-toggle:hover { color: var(--primary-color, #3b82f6); }
+.adv-filter-badge {
+  display: inline-flex;
+  align-items: center;
   justify-content: center;
+  background: var(--primary-color, #3b82f6);
+  color: #fff;
+  border-radius: 9999px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+}
+.adv-filter-arrow { margin-left: auto; font-size: 0.65rem; opacity: 0.6; }
+.adv-filter-panel {
+  padding: 0.75rem 1rem 1rem;
+  border-top: 1px solid var(--border, #e2e8f0);
+  animation: slideDown 0.15s ease;
+}
+@keyframes slideDown { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
+.adv-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+.adv-filter-field label {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 0.25rem;
+}
+.adv-filter-tags-label {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 0.4rem;
+}
+.adv-filter-tag-pills { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+
+/* ── Node group ──────────────────────────────────────────────────────────── */
+.node-group { margin-bottom: 1.5rem; }
+.node-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 1rem;
+  background: var(--background);
+  border-top: 1px solid var(--border, #e2e8f0);
+  border-bottom: 1px solid var(--border, #e2e8f0);
+}
+.node-group-name { font-size: 0.85rem; font-weight: 700; color: var(--text-primary); }
+.node-group-count { font-size: 0.75rem; color: var(--text-muted); }
+.node-group-table { margin-bottom: 0; }
+
+/* ── Modals ───────────────────────────────────────────────────────────────── */
+.modal-overlay {
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex; align-items: center; justify-content: center;
   z-index: 1000;
 }
-
 .modal-content {
   background-color: var(--surface);
   border-radius: 0.5rem;
   box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
-  max-width: 500px;
-  width: 90%;
-  max-height: 90vh;
-  overflow-y: auto;
+  max-width: 500px; width: 90%;
+  max-height: 90vh; overflow-y: auto;
 }
-
 .modal-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 1rem 1.5rem;
-  border-bottom: 1px solid var(--border-color);
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 1rem 1.5rem; border-bottom: 1px solid var(--border-color);
 }
-
-.modal-header h3 {
-  margin: 0;
-  font-size: 1.25rem;
-  color: var(--text-primary);
-}
-
+.modal-header h3 { margin: 0; font-size: 1.25rem; color: var(--text-primary); }
 .btn-close {
-  background: none;
-  border: none;
-  font-size: 2rem;
-  line-height: 1;
-  color: var(--text-secondary);
-  cursor: pointer;
-  padding: 0;
-  width: 2rem;
-  height: 2rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  background: none; border: none; font-size: 2rem; line-height: 1;
+  color: var(--text-secondary); cursor: pointer; padding: 0;
+  width: 2rem; height: 2rem; display: flex; align-items: center; justify-content: center;
 }
-
-.btn-close:hover {
-  color: var(--text-primary);
-}
-
-.modal-body {
-  padding: 1.5rem;
-}
-
+.btn-close:hover { color: var(--text-primary); }
+.modal-body { padding: 1.5rem; }
 .modal-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.5rem;
-  padding: 1rem 1.5rem;
-  border-top: 1px solid var(--border-color);
+  display: flex; justify-content: flex-end; gap: 0.5rem;
+  padding: 1rem 1.5rem; border-top: 1px solid var(--border-color);
 }
 
-.text-danger {
-  color: #991b1b;
-  font-weight: 500;
-}
-
-.text-muted {
-  color: #475569;
-}
-
-.mb-1 {
-  margin-bottom: 0.5rem;
-}
-
-.mb-2 {
-  margin-bottom: 1rem;
-}
-
-.form-group {
-  margin-top: 1rem;
-}
-
-.form-group label {
-  display: block;
-  margin-bottom: 0.5rem;
-  font-weight: 500;
-  color: var(--text-primary);
-}
-
+.text-danger { color: #991b1b; font-weight: 500; }
+.text-muted { color: #475569; }
+.mb-1 { margin-bottom: 0.5rem; }
+.mb-2 { margin-bottom: 1rem; }
+.form-group { margin-top: 1rem; }
+.form-group label { display: block; margin-bottom: 0.5rem; font-weight: 500; color: var(--text-primary); }
 .form-control {
-  width: 100%;
-  padding: 0.5rem;
+  width: 100%; padding: 0.5rem;
   border: 1px solid var(--border-color);
   border-radius: 0.375rem;
   background-color: var(--background);
-  color: var(--text-primary);
-  font-size: 1rem;
+  color: var(--text-primary); font-size: 1rem;
 }
+.form-control:focus { outline: none; border-color: var(--primary-color); }
+.btn-secondary { background-color: var(--secondary-color); color: white; }
+.btn-secondary:hover { opacity: 0.9; }
 
-.form-control:focus {
-  outline: none;
-  border-color: var(--primary-color);
-}
-
-.btn-secondary {
-  background-color: var(--secondary-color);
-  color: white;
-}
-
-.btn-secondary:hover {
-  opacity: 0.9;
-}
-
-.refresh-countdown {
-  font-size: 0.75rem;
-  color: var(--text-muted, #64748b);
-  margin-right: 0.5rem;
-}
+/* ── Refresh countdown ────────────────────────────────────────────────────── */
+.refresh-countdown { font-size: 0.75rem; color: var(--text-muted, #64748b); margin-right: 0.5rem; }
 
 /* ── Checkbox column ─────────────────────────────────────────────────────── */
-.cb-col {
-  width: 2rem;
-  text-align: center;
-  padding-left: 0.5rem;
-  padding-right: 0.25rem;
-}
-
-/* ── Selected row highlight ───────────────────────────────────────────────── */
-.row-selected td {
-  background-color: rgba(59, 130, 246, 0.07);
-}
+.cb-col { width: 2rem; text-align: center; padding-left: 0.5rem; padding-right: 0.25rem; }
+.row-selected td { background-color: rgba(59, 130, 246, 0.07); }
 
 /* ── Bulk action bar ─────────────────────────────────────────────────────── */
 .bulk-action-bar {
-  position: sticky;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  flex-wrap: wrap;
+  position: sticky; bottom: 0; left: 0; right: 0;
+  display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;
   padding: 0.6rem 1rem;
   background: var(--surface);
   border-top: 2px solid var(--primary-color, #3b82f6);
   box-shadow: 0 -4px 16px rgba(0,0,0,0.15);
   z-index: 10;
 }
-
-.bulk-count {
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin-right: 0.25rem;
-}
-
-.bulk-clear-link {
-  font-size: 0.8rem;
-  color: var(--text-secondary);
-  text-decoration: underline;
-  margin-left: auto;
-}
-
-.bulk-clear-link:hover {
-  color: var(--text-primary);
-}
+.bulk-count { font-size: 0.85rem; font-weight: 600; color: var(--text-primary); margin-right: 0.25rem; }
+.bulk-clear-link { font-size: 0.8rem; color: var(--text-secondary); text-decoration: underline; margin-left: auto; }
+.bulk-clear-link:hover { color: var(--text-primary); }
 
 /* ── VM Tags ──────────────────────────────────────────────────────────────── */
-.vm-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.25rem;
-}
-
-.vm-tag-pill {
-  display: inline-block;
-  font-size: 0.65rem;
-  font-weight: 600;
-  padding: 0.1rem 0.4rem;
-  border-radius: 9999px;
-  color: #fff;
-  white-space: nowrap;
-  letter-spacing: 0.02em;
-  text-transform: lowercase;
-}
+.vm-tags { display: flex; flex-wrap: wrap; gap: 0.25rem; }
 
 /* ── Tag Filter Bar ───────────────────────────────────────────────────────── */
 .tag-filter-bar {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.4rem;
+  display: flex; align-items: center; flex-wrap: wrap; gap: 0.4rem;
   padding: 0.5rem 1rem;
   border-bottom: 1px solid var(--border, #e2e8f0);
   background: var(--background);
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
+  overflow-x: auto; -webkit-overflow-scrolling: touch;
 }
-
 .tag-filter-label {
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--text-muted, #64748b);
-  white-space: nowrap;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  margin-right: 0.25rem;
+  font-size: 0.75rem; font-weight: 600; color: var(--text-muted, #64748b);
+  white-space: nowrap; text-transform: uppercase; letter-spacing: 0.04em; margin-right: 0.25rem;
 }
-
 .tag-filter-pill {
-  display: inline-block;
-  font-size: 0.7rem;
-  font-weight: 600;
-  padding: 0.2rem 0.6rem;
-  border-radius: 9999px;
-  border: 1.5px solid transparent;
-  background: transparent;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: background 0.12s, color 0.12s;
+  display: inline-block; font-size: 0.7rem; font-weight: 600;
+  padding: 0.2rem 0.6rem; border-radius: 9999px;
+  border: 1.5px solid transparent; background: transparent;
+  cursor: pointer; white-space: nowrap; transition: background 0.12s, color 0.12s;
   letter-spacing: 0.02em;
 }
+.tag-filter-pill:hover { opacity: 0.8; }
+.tag-filter-pill-active { font-weight: 700; }
 
-.tag-filter-pill:hover {
-  opacity: 0.8;
-}
-
-.tag-filter-pill-active {
-  font-weight: 700;
-}
-
-/* ── Bulk Op Results Table ──────────────────────────────────────────────────── */
+/* ── Bulk results ─────────────────────────────────────────────────────────── */
 .bulk-results-table {
-  border: 1px solid var(--border, #e2e8f0);
-  border-radius: 0.375rem;
-  overflow: hidden;
-  margin-top: 1rem;
+  border: 1px solid var(--border, #e2e8f0); border-radius: 0.375rem;
+  overflow: hidden; margin-top: 1rem;
 }
-
 .bulk-results-header {
-  display: grid;
-  grid-template-columns: 70px 1fr 80px 90px;
-  gap: 0.5rem;
-  padding: 0.4rem 0.75rem;
-  background: var(--background);
+  display: grid; grid-template-columns: 70px 1fr 80px 90px; gap: 0.5rem;
+  padding: 0.4rem 0.75rem; background: var(--background);
   border-bottom: 1px solid var(--border, #e2e8f0);
-  font-size: 0.72rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text-muted, #64748b);
+  font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted, #64748b);
 }
-
 .bulk-results-row {
-  display: grid;
-  grid-template-columns: 70px 1fr 80px 90px;
-  gap: 0.5rem;
-  padding: 0.45rem 0.75rem;
-  align-items: center;
-  font-size: 0.875rem;
+  display: grid; grid-template-columns: 70px 1fr 80px 90px; gap: 0.5rem;
+  padding: 0.45rem 0.75rem; align-items: center; font-size: 0.875rem;
   border-bottom: 1px solid var(--border, #e2e8f0);
 }
+.bulk-results-row:last-child { border-bottom: none; }
+.bulk-done-summary { margin-top: 0.75rem; font-size: 0.875rem; font-weight: 600; color: var(--text-primary); }
 
-.bulk-results-row:last-child {
-  border-bottom: none;
-}
-
-.bulk-done-summary {
-  margin-top: 0.75rem;
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-/* ── Bulk Delete List ─────────────────────────────────────────────────────── */
 .bulk-delete-list {
-  list-style: none;
-  padding: 0;
-  margin: 0.5rem 0 1rem 0;
-  max-height: 200px;
-  overflow-y: auto;
-  border: 1px solid var(--border, #e2e8f0);
-  border-radius: 0.375rem;
+  list-style: none; padding: 0; margin: 0.5rem 0 1rem 0;
+  max-height: 200px; overflow-y: auto;
+  border: 1px solid var(--border, #e2e8f0); border-radius: 0.375rem;
 }
-
-.bulk-delete-list li {
-  padding: 0.4rem 0.75rem;
-  font-size: 0.875rem;
-  border-bottom: 1px solid var(--border, #e2e8f0);
-}
-
-.bulk-delete-list li:last-child {
-  border-bottom: none;
-}
-
+.bulk-delete-list li { padding: 0.4rem 0.75rem; font-size: 0.875rem; border-bottom: 1px solid var(--border, #e2e8f0); }
+.bulk-delete-list li:last-child { border-bottom: none; }
 .ml-1 { margin-left: 0.25rem; }
 .mt-2 { margin-top: 1rem; }
 
 /* ── Console button ──────────────────────────────────────────────────────── */
-.btn-console {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.2rem;
-}
-
-/* ── Mobile Responsive ──────────────────────────────────────────────────── */
-@media (max-width: 768px) {
-  /* Filter bar: stack on mobile */
-  .filter-bar {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.5rem;
-  }
-
-  .filter-bar .filter-info {
-    width: 100%;
-  }
-
-  .filter-bar input.form-control,
-  .filter-bar select.form-control {
-    width: 100% !important;
-  }
-
-  /* VM table: card layout on mobile */
-  .table-container table thead {
-    display: none;
-  }
-
-  .table-container table tr {
-    display: block;
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    margin-bottom: 0.5rem;
-    background: var(--surface);
-    overflow: hidden;
-  }
-
-  .table-container table tr.row-selected {
-    border-color: var(--primary-color);
-  }
-
-  .table-container table td {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 0.4rem 0.75rem;
-    border-top: 1px solid var(--border-color);
-    border-bottom: none;
-  }
-
-  .table-container table td:first-child {
-    border-top: none;
-  }
-
-  .table-container table td::before {
-    content: attr(data-label);
-    font-weight: 600;
-    color: var(--text-secondary);
-    font-size: 0.72rem;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    flex-shrink: 0;
-    margin-right: 0.5rem;
-  }
-
-  /* Bulk action bar: full-width on mobile */
-  .bulk-action-bar {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    flex-direction: column;
-    align-items: stretch;
-    padding: 0.75rem 1rem;
-    gap: 0.4rem;
-  }
-
-  .bulk-action-bar .btn {
-    justify-content: center;
-  }
-
-  .bulk-clear-link {
-    text-align: center;
-    margin-left: 0;
-  }
-
-  /* Tab bar: scrollable on mobile */
-  .tab-bar {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    white-space: nowrap;
-    flex-wrap: nowrap;
-  }
-}
+.btn-console { display: inline-flex; align-items: center; gap: 0.2rem; }
 
 /* ── Empty state ── */
 .empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 0.75rem;
-  padding: 3.5rem 1.5rem;
-  text-align: center;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 0.75rem; padding: 3.5rem 1.5rem; text-align: center;
 }
-
 .empty-icon-wrap {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 80px;
-  height: 80px;
-  border-radius: 50%;
-  background: var(--background);
-  border: 2px dashed var(--border-color);
-  color: var(--text-muted);
+  display: flex; align-items: center; justify-content: center;
+  width: 80px; height: 80px; border-radius: 50%;
+  background: var(--background); border: 2px dashed var(--border-color); color: var(--text-muted);
 }
+.empty-title { font-size: 1rem; font-weight: 600; color: var(--text-primary); margin: 0; }
+.empty-subtitle { font-size: 0.875rem; color: var(--text-secondary); margin: 0; }
 
-.empty-title {
-  font-size: 1rem;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin: 0;
-}
-
-.empty-subtitle {
-  font-size: 0.875rem;
-  color: var(--text-secondary);
-  margin: 0;
+/* ── Mobile ──────────────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .filter-bar { flex-direction: column; align-items: flex-start; gap: 0.5rem; }
+  .filter-bar .filter-info { width: 100%; }
+  .filter-bar input.form-control, .filter-bar select.form-control { width: 100% !important; }
+  .table-container table thead { display: none; }
+  .table-container table tr { display: block; border: 1px solid var(--border-color); border-radius: 8px; margin-bottom: 0.5rem; background: var(--surface); overflow: hidden; }
+  .table-container table tr.row-selected { border-color: var(--primary-color); }
+  .table-container table td { display: flex; justify-content: space-between; align-items: center; padding: 0.4rem 0.75rem; border-top: 1px solid var(--border-color); border-bottom: none; }
+  .table-container table td:first-child { border-top: none; }
+  .table-container table td::before { content: attr(data-label); font-weight: 600; color: var(--text-secondary); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; flex-shrink: 0; margin-right: 0.5rem; }
+  .bulk-action-bar { position: fixed; bottom: 0; left: 0; right: 0; flex-direction: column; align-items: stretch; padding: 0.75rem 1rem; gap: 0.4rem; }
+  .bulk-action-bar .btn { justify-content: center; }
+  .bulk-clear-link { text-align: center; margin-left: 0; }
+  .tab-bar { overflow-x: auto; -webkit-overflow-scrolling: touch; white-space: nowrap; flex-wrap: nowrap; }
+  .adv-filter-grid { grid-template-columns: 1fr 1fr; }
 }
 </style>

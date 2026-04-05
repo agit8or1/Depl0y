@@ -1812,16 +1812,32 @@ def apt_refresh_packages(host_id: int, node: str, db: Session = Depends(get_db),
 
 
 @router.post("/{host_id}/nodes/{node}/apt/upgrade")
-def apt_upgrade_all(host_id: int, node: str, db: Session = Depends(get_db),
+def apt_upgrade_all(host_id: int, node: str, data: dict = Body(default={}),
+                    db: Session = Depends(get_db),
                     current_user=Depends(require_admin)):
-    """Upgrade all packages on a node (dist-upgrade)."""
+    """Upgrade packages on a node.
+
+    If 'packages' is provided in the request body (list of package names),
+    only those packages are upgraded. Otherwise all packages are upgraded
+    (dist-upgrade).
+    """
     host = _get_host(host_id, db)
+    packages: Optional[List[str]] = data.get("packages")
     try:
-        upid = _pve(host).nodes(node).apt.upgrade.post()
+        kwargs: Dict[str, Any] = {}
+        if packages:
+            # Proxmox API accepts a space-separated package list
+            kwargs["packages"] = " ".join(packages)
+        upid = _pve(host).nodes(node).apt.upgrade.post(**kwargs)
         pve_cache.clear_prefix(f"pve:{host_id}:nodes/{node}/apt")
+        label = (
+            f"APT upgrade {len(packages)} package(s) on {node}"
+            if packages
+            else f"APT upgrade all packages on {node}"
+        )
         task_tracker.register(
             upid, host_id, node,
-            f"APT upgrade all packages on {node}",
+            label,
             user_id=getattr(current_user, "id", None),
             task_type="aptupgrade",
         )

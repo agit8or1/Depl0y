@@ -46,7 +46,10 @@
       <div class="card">
         <div class="card-header">
           <h3>Backup Schedules</h3>
-          <button @click="openCreateModal" class="btn btn-primary">+ New Schedule</button>
+          <div class="flex gap-1">
+            <button @click="openQuickBackupModal" class="btn btn-outline">Quick Backup</button>
+            <button @click="openCreateModal" class="btn btn-primary">+ New Schedule</button>
+          </div>
         </div>
 
         <div v-if="loadingSchedules" class="loading-spinner"></div>
@@ -863,82 +866,487 @@
       </div>
     </div>
 
-    <!-- Create / Edit Schedule Modal -->
+    <!-- Create / Edit Schedule Modal — 4-step wizard -->
     <div v-if="scheduleModal.show" class="modal" @click="closeScheduleModal">
-      <div class="modal-content" @click.stop>
+      <div class="modal-content modal-content--wide sched-wizard" @click.stop>
         <div class="modal-header">
-          <h3>{{ scheduleModal.editing ? 'Edit Schedule' : 'Create Backup Schedule' }}</h3>
+          <div>
+            <h3 style="margin:0;">{{ scheduleModal.editing ? 'Edit Schedule' : 'Create Backup Schedule' }}</h3>
+            <p class="text-muted text-sm" style="margin:0.2rem 0 0;">{{ schedWizardStepTitle }}</p>
+          </div>
           <button @click="closeScheduleModal" class="btn-close">&#215;</button>
         </div>
-        <form @submit.prevent="saveSchedule" class="modal-body">
-          <div class="form-row">
+
+        <!-- Step indicator -->
+        <div class="sched-wizard-steps" v-if="!scheduleModal.editing">
+          <div
+            v-for="(lbl, idx) in ['Scope', 'Storage & Timing', 'Options', 'Review']"
+            :key="idx"
+            :class="['sw-step', schedWizardStep === idx + 1 ? 'sw-step--active' : schedWizardStep > idx + 1 ? 'sw-step--done' : '']"
+          >
+            <span class="sw-step-num">{{ idx + 1 }}</span>
+            <span class="sw-step-label">{{ lbl }}</span>
+          </div>
+        </div>
+
+        <div class="modal-body">
+
+          <!-- ── Edit mode: single flat form ── -->
+          <form v-if="scheduleModal.editing" @submit.prevent="saveSchedule">
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Node</label>
+                <select v-model="scheduleForm.node" class="form-control">
+                  <option value="">All nodes</option>
+                  <option v-for="n in clusterNodes" :key="n.node || n.name" :value="n.node || n.name">{{ n.node || n.name }}</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Storage <span class="required">*</span></label>
+                <input v-model="scheduleForm.storage" class="form-control" required />
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Schedule (cron) <span class="required">*</span></label>
+                <input v-model="scheduleForm.schedule" class="form-control" required />
+              </div>
+              <div class="form-group">
+                <label class="form-label">VM IDs</label>
+                <input v-model="scheduleForm.vmid" class="form-control" placeholder='all or 100,101' />
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Compression</label>
+                <select v-model="scheduleForm.compress" class="form-control">
+                  <option value="zstd">zstd (recommended)</option>
+                  <option value="lzo">lzo</option>
+                  <option value="gzip">gzip</option>
+                  <option value="0">none</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Mode</label>
+                <select v-model="scheduleForm.mode" class="form-control">
+                  <option value="snapshot">snapshot</option>
+                  <option value="suspend">suspend</option>
+                  <option value="stop">stop</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Keep Last</label>
+                <input v-model.number="scheduleForm['keep-last']" type="number" min="0" class="form-control" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">Keep Daily</label>
+                <input v-model.number="scheduleForm['keep-daily']" type="number" min="0" class="form-control" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">Keep Weekly</label>
+                <input v-model.number="scheduleForm['keep-weekly']" type="number" min="0" class="form-control" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">Keep Monthly</label>
+                <input v-model.number="scheduleForm['keep-monthly']" type="number" min="0" class="form-control" />
+              </div>
+            </div>
             <div class="form-group">
-              <label class="form-label">Node</label>
-              <select v-model="scheduleForm.node" class="form-control">
-                <option value="">All nodes</option>
-                <option v-for="n in clusterNodes" :key="n.node || n.name" :value="n.node || n.name">
-                  {{ n.node || n.name }}
+              <label class="form-label">Comment</label>
+              <input v-model="scheduleForm.comment" class="form-control" placeholder="Optional description" />
+            </div>
+            <div class="flex gap-1 mt-2">
+              <button type="submit" class="btn btn-primary" :disabled="savingSchedule">
+                {{ savingSchedule ? 'Saving...' : 'Save Changes' }}
+              </button>
+              <button type="button" @click="closeScheduleModal" class="btn btn-outline">Cancel</button>
+            </div>
+          </form>
+
+          <!-- ── Create wizard steps ── -->
+          <template v-else>
+
+            <!-- Step 1: Scope -->
+            <div v-if="schedWizardStep === 1">
+              <div class="form-group">
+                <label class="form-label">Backup Scope</label>
+                <div class="scope-options">
+                  <label :class="['scope-opt', scheduleForm.scopeType === 'all' ? 'scope-opt--active' : '']">
+                    <input type="radio" v-model="scheduleForm.scopeType" value="all" />
+                    <div class="scope-opt-body">
+                      <strong>All VMs on host</strong>
+                      <span class="text-muted text-xs">Back up every VM and container on the selected host</span>
+                    </div>
+                  </label>
+                  <label :class="['scope-opt', scheduleForm.scopeType === 'nodes' ? 'scope-opt--active' : '']">
+                    <input type="radio" v-model="scheduleForm.scopeType" value="nodes" />
+                    <div class="scope-opt-body">
+                      <strong>Specific nodes</strong>
+                      <span class="text-muted text-xs">Back up all VMs on selected nodes only</span>
+                    </div>
+                  </label>
+                  <label :class="['scope-opt', scheduleForm.scopeType === 'vmids' ? 'scope-opt--active' : '']">
+                    <input type="radio" v-model="scheduleForm.scopeType" value="vmids" />
+                    <div class="scope-opt-body">
+                      <strong>Specific VMIDs</strong>
+                      <span class="text-muted text-xs">Back up only the listed VM/CT IDs</span>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              <!-- Node multi-select -->
+              <div v-if="scheduleForm.scopeType === 'nodes'" class="form-group">
+                <label class="form-label">Select Nodes <span class="required">*</span></label>
+                <div class="node-checklist">
+                  <label v-for="n in clusterNodes" :key="n.node || n.name" class="node-check-item">
+                    <input
+                      type="checkbox"
+                      :value="n.node || n.name"
+                      v-model="scheduleForm.selectedNodes"
+                    />
+                    <span>{{ n.node || n.name }}</span>
+                  </label>
+                </div>
+                <div class="text-xs text-muted mt-1">Proxmox backup schedules execute per-node; one schedule will be created per selected node.</div>
+              </div>
+
+              <!-- VMID list input -->
+              <div v-if="scheduleForm.scopeType === 'vmids'" class="form-group">
+                <label class="form-label">VM / CT IDs <span class="required">*</span></label>
+                <div class="vmid-tag-input" @click="$refs.vmidInput.focus()">
+                  <span
+                    v-for="(id, idx) in scheduleForm.vmidList"
+                    :key="idx"
+                    class="vmid-tag"
+                  >
+                    {{ id }}
+                    <button type="button" @click.stop="removeVmidTag(idx)" class="vmid-tag-remove">×</button>
+                  </span>
+                  <input
+                    ref="vmidInput"
+                    v-model="vmidTagInput"
+                    @keydown.enter.prevent="addVmidTag"
+                    @keydown.comma.prevent="addVmidTag"
+                    @keydown.tab.prevent="addVmidTag"
+                    @keydown.backspace="onVmidBackspace"
+                    class="vmid-tag-text-input"
+                    placeholder="Type VMID + Enter"
+                  />
+                </div>
+                <div class="text-xs text-muted mt-1">Press Enter or comma to add each VMID.</div>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">Comment</label>
+                <input v-model="scheduleForm.comment" class="form-control" placeholder="Optional description for this schedule" />
+              </div>
+            </div>
+
+            <!-- Step 2: Storage & Timing -->
+            <div v-if="schedWizardStep === 2">
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label">Node (for storage list) <span class="required">*</span></label>
+                  <select v-model="scheduleForm.storageNode" class="form-control" @change="fetchSchedStorages">
+                    <option value="">Select node...</option>
+                    <option v-for="n in clusterNodes" :key="n.node || n.name" :value="n.node || n.name">{{ n.node || n.name }}</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Storage <span class="required">*</span></label>
+                  <select v-model="scheduleForm.storage" class="form-control" :disabled="loadingSchedStorages || !scheduleForm.storageNode">
+                    <option value="">{{ loadingSchedStorages ? 'Loading...' : 'Select storage...' }}</option>
+                    <option v-for="s in schedStorages" :key="s.storage" :value="s.storage">
+                      {{ s.storage }}{{ s.type ? ` (${s.type})` : '' }}
+                    </option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">Schedule Preset</label>
+                <div class="cron-presets">
+                  <button
+                    type="button"
+                    v-for="preset in cronPresets"
+                    :key="preset.label"
+                    :class="['cron-preset-btn', scheduleForm.schedule === preset.value ? 'cron-preset-btn--active' : '']"
+                    @click="scheduleForm.schedule = preset.value; scheduleForm.cronCustom = false"
+                  >{{ preset.label }}</button>
+                  <button
+                    type="button"
+                    :class="['cron-preset-btn', scheduleForm.cronCustom ? 'cron-preset-btn--active' : '']"
+                    @click="scheduleForm.cronCustom = true"
+                  >Custom</button>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">Cron Expression <span class="required">*</span></label>
+                <input
+                  v-model="scheduleForm.schedule"
+                  class="form-control"
+                  placeholder="e.g. 0 2 * * *"
+                  :readonly="!scheduleForm.cronCustom && !scheduleModal.editing"
+                  @input="scheduleForm.cronCustom = true"
+                />
+                <div class="text-xs text-muted mt-1">Format: minute hour day-of-month month day-of-week</div>
+              </div>
+
+              <div class="sched-retention-row">
+                <div class="form-group">
+                  <label class="form-label">Keep Last</label>
+                  <input v-model.number="scheduleForm['keep-last']" type="number" min="0" class="form-control" placeholder="e.g. 3" />
+                  <span class="form-hint">Most recent N</span>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Keep Daily</label>
+                  <input v-model.number="scheduleForm['keep-daily']" type="number" min="0" class="form-control" placeholder="e.g. 7" />
+                  <span class="form-hint">1/day for N days</span>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Keep Weekly</label>
+                  <input v-model.number="scheduleForm['keep-weekly']" type="number" min="0" class="form-control" placeholder="e.g. 4" />
+                  <span class="form-hint">1/week for N weeks</span>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Keep Monthly</label>
+                  <input v-model.number="scheduleForm['keep-monthly']" type="number" min="0" class="form-control" placeholder="e.g. 3" />
+                  <span class="form-hint">1/month for N months</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Step 3: Options -->
+            <div v-if="schedWizardStep === 3">
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label">Compression</label>
+                  <select v-model="scheduleForm.compress" class="form-control">
+                    <option value="zstd">zstd (recommended)</option>
+                    <option value="lzo">lzo (fast)</option>
+                    <option value="gzip">gzip (compatible)</option>
+                    <option value="0">none</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Mode</label>
+                  <select v-model="scheduleForm.mode" class="form-control">
+                    <option value="snapshot">snapshot (live, no downtime)</option>
+                    <option value="suspend">suspend (pause then backup)</option>
+                    <option value="stop">stop (shut down then backup)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label">Email Notification</label>
+                  <select v-model="scheduleForm.mailnotification" class="form-control">
+                    <option value="never">Disabled</option>
+                    <option value="failure">On failure only</option>
+                    <option value="always">Always</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Email Address</label>
+                  <input
+                    v-model="scheduleForm.mailto"
+                    type="email"
+                    class="form-control"
+                    placeholder="admin@example.com"
+                    :disabled="scheduleForm.mailnotification === 'never'"
+                  />
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label">Bandwidth Limit (KB/s)</label>
+                <input
+                  v-model.number="scheduleForm.bwlimit"
+                  type="number"
+                  min="0"
+                  class="form-control"
+                  placeholder="0 = unlimited"
+                  style="max-width:200px;"
+                />
+                <div class="text-xs text-muted mt-1">Throttle I/O bandwidth. 0 or blank = unlimited.</div>
+              </div>
+            </div>
+
+            <!-- Step 4: Review -->
+            <div v-if="schedWizardStep === 4">
+              <div class="review-sections">
+                <div class="review-section">
+                  <div class="review-section-title">Scope</div>
+                  <div class="review-row">
+                    <span>Type</span>
+                    <span>{{ { all: 'All VMs on host', nodes: 'Specific nodes', vmids: 'Specific VMIDs' }[scheduleForm.scopeType] }}</span>
+                  </div>
+                  <div v-if="scheduleForm.scopeType === 'nodes'" class="review-row">
+                    <span>Nodes</span><span>{{ scheduleForm.selectedNodes.join(', ') || '—' }}</span>
+                  </div>
+                  <div v-if="scheduleForm.scopeType === 'vmids'" class="review-row">
+                    <span>VMIDs</span><span>{{ scheduleForm.vmidList.join(', ') || '—' }}</span>
+                  </div>
+                  <div v-if="scheduleForm.comment" class="review-row">
+                    <span>Comment</span><span>{{ scheduleForm.comment }}</span>
+                  </div>
+                </div>
+
+                <div class="review-section">
+                  <div class="review-section-title">Storage & Timing</div>
+                  <div class="review-row"><span>Storage</span><span>{{ scheduleForm.storage || '—' }}</span></div>
+                  <div class="review-row"><span>Schedule</span><code>{{ scheduleForm.schedule || '—' }}</code></div>
+                  <div class="review-row" v-if="scheduleForm['keep-last']"><span>Keep Last</span><span>{{ scheduleForm['keep-last'] }}</span></div>
+                  <div class="review-row" v-if="scheduleForm['keep-daily']"><span>Keep Daily</span><span>{{ scheduleForm['keep-daily'] }}</span></div>
+                  <div class="review-row" v-if="scheduleForm['keep-weekly']"><span>Keep Weekly</span><span>{{ scheduleForm['keep-weekly'] }}</span></div>
+                  <div class="review-row" v-if="scheduleForm['keep-monthly']"><span>Keep Monthly</span><span>{{ scheduleForm['keep-monthly'] }}</span></div>
+                </div>
+
+                <div class="review-section">
+                  <div class="review-section-title">Options</div>
+                  <div class="review-row"><span>Compression</span><span>{{ scheduleForm.compress }}</span></div>
+                  <div class="review-row"><span>Mode</span><span>{{ scheduleForm.mode }}</span></div>
+                  <div class="review-row"><span>Email</span><span>{{ scheduleForm.mailnotification === 'never' ? 'Disabled' : scheduleForm.mailnotification }}</span></div>
+                  <div v-if="scheduleForm.bwlimit" class="review-row"><span>Bandwidth</span><span>{{ scheduleForm.bwlimit }} KB/s</span></div>
+                </div>
+              </div>
+
+              <div v-if="scheduleForm.scopeType === 'nodes' && scheduleForm.selectedNodes.length > 1" class="info-box mt-2">
+                <strong>{{ scheduleForm.selectedNodes.length }} schedules</strong> will be created — one for each selected node.
+              </div>
+            </div>
+
+          </template>
+        </div>
+
+        <!-- Footer -->
+        <div class="sched-wizard-footer">
+          <button
+            v-if="!scheduleModal.editing && schedWizardStep > 1"
+            type="button"
+            @click="schedWizardStep--"
+            class="btn btn-outline"
+            :disabled="savingSchedule"
+          >Back</button>
+          <span style="flex:1;" />
+          <template v-if="!scheduleModal.editing">
+            <button
+              v-if="schedWizardStep < 4"
+              type="button"
+              @click="schedWizardNext"
+              class="btn btn-primary"
+              :disabled="!schedWizardCanNext"
+            >Next</button>
+            <button
+              v-else
+              type="button"
+              @click="saveSchedule"
+              class="btn btn-primary"
+              :disabled="savingSchedule"
+            >{{ savingSchedule ? 'Creating...' : 'Create Schedule' }}</button>
+          </template>
+          <button type="button" @click="closeScheduleModal" class="btn btn-outline">{{ scheduleModal.editing ? 'Cancel' : 'Cancel' }}</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Quick Backup Modal -->
+    <div v-if="quickBackupModal.show" class="modal" @click="closeQuickBackupModal">
+      <div class="modal-content" @click.stop>
+        <div class="modal-header">
+          <h3>Quick Backup</h3>
+          <button @click="closeQuickBackupModal" class="btn-close">&#215;</button>
+        </div>
+        <div class="modal-body">
+          <!-- Task progress after start -->
+          <div v-if="quickBackupModal.upid" class="restore-progress mb-2">
+            <div class="restore-progress-header">
+              <strong>Backup Task</strong>
+              <span :class="['task-status-badge', `task-status-badge--${quickBackupModal.taskStatus || 'running'}`]">
+                {{ quickBackupModal.taskStatus || 'running' }}
+              </span>
+            </div>
+            <code class="upid-code">{{ quickBackupModal.upid }}</code>
+            <div v-if="quickBackupModal.taskStatus === 'running'" class="progress-bar-wrap mt-1">
+              <div class="progress-bar progress-bar--animated"></div>
+            </div>
+            <div v-if="quickBackupModal.taskLog.length > 0" class="quick-backup-log mt-1">
+              <div class="quick-backup-log-title text-xs text-muted">Task output:</div>
+              <pre class="task-log-pre" style="max-height:200px;">{{ quickBackupModal.taskLog.join('\n') }}</pre>
+            </div>
+            <div v-if="quickBackupModal.taskStatus === 'stopped'" class="text-sm text-success mt-1">
+              Backup completed successfully.
+            </div>
+          </div>
+
+          <!-- Form (hidden once task started) -->
+          <form v-if="!quickBackupModal.upid" @submit.prevent="submitQuickBackup">
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Node <span class="required">*</span></label>
+                <select v-model="quickBackupForm.node" class="form-control" required @change="fetchQuickBackupNodeData">
+                  <option value="">Select node...</option>
+                  <option v-for="n in clusterNodes" :key="n.node || n.name" :value="n.node || n.name">{{ n.node || n.name }}</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Storage <span class="required">*</span></label>
+                <select v-model="quickBackupForm.storage" class="form-control" required :disabled="loadingQuickBackupData || !quickBackupForm.node">
+                  <option value="">{{ loadingQuickBackupData ? 'Loading...' : 'Select storage...' }}</option>
+                  <option v-for="s in quickBackupStorages" :key="s.storage" :value="s.storage">{{ s.storage }}{{ s.type ? ` (${s.type})` : '' }}</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">VM / Container</label>
+              <select v-model="quickBackupForm.vmid" class="form-control" :disabled="loadingQuickBackupData || !quickBackupForm.node">
+                <option value="">All VMs and containers on node</option>
+                <option v-for="vm in quickBackupVMs" :key="vm.vmid" :value="String(vm.vmid)">
+                  {{ vm.vmid }} — {{ vm.name || '(unnamed)' }} [{{ vm.type || 'qemu' }}]
                 </option>
               </select>
             </div>
-            <div class="form-group">
-              <label class="form-label">Storage <span class="required">*</span></label>
-              <input v-model="scheduleForm.storage" class="form-control" placeholder="e.g. local" required />
+
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Compression</label>
+                <select v-model="quickBackupForm.compress" class="form-control">
+                  <option value="zstd">zstd (recommended)</option>
+                  <option value="lzo">lzo</option>
+                  <option value="gzip">gzip</option>
+                  <option value="0">none</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Mode</label>
+                <select v-model="quickBackupForm.mode" class="form-control">
+                  <option value="snapshot">snapshot</option>
+                  <option value="suspend">suspend</option>
+                  <option value="stop">stop</option>
+                </select>
+              </div>
             </div>
-          </div>
 
-          <div class="form-group">
-            <label class="form-label">Schedule (cron) <span class="required">*</span></label>
-            <input
-              v-model="scheduleForm.schedule"
-              class="form-control"
-              placeholder="e.g. 0 2 * * *"
-              required
-            />
-            <div class="text-xs text-muted mt-1">Standard cron format: minute hour day month weekday</div>
-          </div>
+            <div v-if="quickBackupModal.error" class="error-banner mt-1">{{ quickBackupModal.error }}</div>
 
-          <div class="form-group">
-            <label class="form-label">Comment</label>
-            <input v-model="scheduleForm.comment" class="form-control" placeholder="Optional description" />
-          </div>
-
-          <div class="form-group">
-            <label class="form-label">VM IDs</label>
-            <input
-              v-model="scheduleForm.vmid"
-              class="form-control"
-              placeholder='Comma-separated IDs or "all"'
-            />
-          </div>
-
-          <div class="form-row">
-            <div class="form-group">
-              <label class="form-label">Compression</label>
-              <select v-model="scheduleForm.compress" class="form-control">
-                <option value="zstd">zstd</option>
-                <option value="lzo">lzo</option>
-                <option value="gzip">gzip</option>
-                <option value="0">none</option>
-              </select>
+            <div class="flex gap-1 mt-2">
+              <button type="submit" class="btn btn-primary" :disabled="quickBackupModal.running">
+                {{ quickBackupModal.running ? 'Starting...' : 'Start Backup Now' }}
+              </button>
+              <button type="button" @click="closeQuickBackupModal" class="btn btn-outline">Cancel</button>
             </div>
-            <div class="form-group">
-              <label class="form-label">Mode</label>
-              <select v-model="scheduleForm.mode" class="form-control">
-                <option value="snapshot">snapshot</option>
-                <option value="suspend">suspend</option>
-                <option value="stop">stop</option>
-              </select>
-            </div>
-          </div>
+          </form>
 
-          <div class="flex gap-1 mt-2">
-            <button type="submit" class="btn btn-primary" :disabled="savingSchedule">
-              {{ savingSchedule ? 'Saving...' : (scheduleModal.editing ? 'Save Changes' : 'Create Schedule') }}
-            </button>
-            <button type="button" @click="closeScheduleModal" class="btn btn-outline">Cancel</button>
+          <div v-if="quickBackupModal.upid" class="flex gap-1 mt-2">
+            <button @click="closeQuickBackupModal" class="btn btn-outline">Close</button>
           </div>
-        </form>
+        </div>
       </div>
     </div>
 
@@ -1415,16 +1823,203 @@ const loadingSchedules = ref(false)
 const savingSchedule = ref(false)
 
 const scheduleModal = ref({ show: false, editing: false, editId: null })
+const schedWizardStep = ref(1)
+
+const cronPresets = [
+  { label: 'Nightly 2am', value: '0 2 * * *' },
+  { label: 'Every 6h', value: '0 */6 * * *' },
+  { label: 'Weekly Sunday', value: '0 2 * * 0' },
+  { label: 'Weekly Monday', value: '0 2 * * 1' },
+]
+
 const emptyScheduleForm = () => ({
   node: '',
   storage: '',
+  storageNode: '',
   schedule: '0 2 * * *',
+  cronCustom: false,
   comment: '',
   vmid: 'all',
   compress: 'zstd',
   mode: 'snapshot',
+  mailnotification: 'never',
+  mailto: '',
+  bwlimit: null,
+  'keep-last': null,
+  'keep-daily': null,
+  'keep-weekly': null,
+  'keep-monthly': null,
+  // wizard scope
+  scopeType: 'all',
+  selectedNodes: [],
+  vmidList: [],
 })
 const scheduleForm = ref(emptyScheduleForm())
+
+// For VMID tag input
+const vmidTagInput = ref('')
+
+function addVmidTag() {
+  const val = vmidTagInput.value.trim().replace(/,/g, '')
+  if (val && /^\d+$/.test(val)) {
+    if (!scheduleForm.value.vmidList.includes(val)) {
+      scheduleForm.value.vmidList.push(val)
+    }
+  }
+  vmidTagInput.value = ''
+}
+
+function removeVmidTag(idx) {
+  scheduleForm.value.vmidList.splice(idx, 1)
+}
+
+function onVmidBackspace() {
+  if (!vmidTagInput.value && scheduleForm.value.vmidList.length > 0) {
+    scheduleForm.value.vmidList.pop()
+  }
+}
+
+// Storage list for schedule wizard step 2
+const schedStorages = ref([])
+const loadingSchedStorages = ref(false)
+
+async function fetchSchedStorages() {
+  const node = scheduleForm.value.storageNode
+  if (!node) { schedStorages.value = []; return }
+  loadingSchedStorages.value = true
+  try {
+    const res = await api.pveNode.listStorage(hostId.value, node)
+    schedStorages.value = res.data || []
+  } catch (e) {
+    schedStorages.value = []
+  } finally {
+    loadingSchedStorages.value = false
+  }
+}
+
+const schedWizardStepTitle = computed(() => {
+  if (scheduleModal.value.editing) return 'Edit schedule settings'
+  const titles = ['Select backup scope', 'Configure storage and timing', 'Set backup options', 'Review and create']
+  return titles[(schedWizardStep.value - 1)] || ''
+})
+
+const schedWizardCanNext = computed(() => {
+  if (schedWizardStep.value === 1) {
+    if (scheduleForm.value.scopeType === 'nodes') return scheduleForm.value.selectedNodes.length > 0
+    if (scheduleForm.value.scopeType === 'vmids') return scheduleForm.value.vmidList.length > 0
+    return true
+  }
+  if (schedWizardStep.value === 2) {
+    return !!(scheduleForm.value.storage && scheduleForm.value.schedule)
+  }
+  return true
+})
+
+function schedWizardNext() {
+  if (schedWizardCanNext.value) schedWizardStep.value++
+}
+
+// Quick Backup modal state
+const quickBackupModal = ref({ show: false, running: false, error: null, upid: null, taskStatus: null, taskLog: [] })
+const quickBackupForm = ref({ node: '', storage: '', vmid: '', compress: 'zstd', mode: 'snapshot' })
+const quickBackupStorages = ref([])
+const quickBackupVMs = ref([])
+const loadingQuickBackupData = ref(false)
+let quickBackupPollTimer = null
+
+function openQuickBackupModal() {
+  quickBackupForm.value = { node: '', storage: '', vmid: '', compress: 'zstd', mode: 'snapshot' }
+  quickBackupModal.value = { show: true, running: false, error: null, upid: null, taskStatus: null, taskLog: [] }
+  quickBackupStorages.value = []
+  quickBackupVMs.value = []
+}
+
+function closeQuickBackupModal() {
+  stopQuickBackupPoll()
+  quickBackupModal.value = { show: false, running: false, error: null, upid: null, taskStatus: null, taskLog: [] }
+}
+
+async function fetchQuickBackupNodeData() {
+  const node = quickBackupForm.value.node
+  quickBackupForm.value.storage = ''
+  quickBackupForm.value.vmid = ''
+  quickBackupStorages.value = []
+  quickBackupVMs.value = []
+  if (!node) return
+  loadingQuickBackupData.value = true
+  try {
+    const [storRes, vmRes] = await Promise.all([
+      api.pveNode.listStorage(hostId.value, node),
+      api.pveNode.nodeVms(hostId.value, node),
+    ])
+    quickBackupStorages.value = storRes.data || []
+    const vms = (vmRes.data?.vms || []).map(v => ({ ...v, type: 'qemu' }))
+    const cts = (vmRes.data?.containers || []).map(c => ({ ...c, type: 'lxc' }))
+    quickBackupVMs.value = [...vms, ...cts].sort((a, b) => a.vmid - b.vmid)
+  } catch (e) {
+    console.error('Failed to load quick backup node data:', e)
+  } finally {
+    loadingQuickBackupData.value = false
+  }
+}
+
+async function submitQuickBackup() {
+  if (!quickBackupForm.value.node) { toast.error('Please select a node'); return }
+  if (!quickBackupForm.value.storage) { toast.error('Please select a storage'); return }
+  quickBackupModal.value.running = true
+  quickBackupModal.value.error = null
+  try {
+    const payload = {
+      storage: quickBackupForm.value.storage,
+      compress: quickBackupForm.value.compress,
+      mode: quickBackupForm.value.mode,
+    }
+    if (quickBackupForm.value.vmid) payload.vmid = quickBackupForm.value.vmid
+    const res = await api.pveNode.runBackup(hostId.value, quickBackupForm.value.node, payload)
+    const upid = res.data?.upid || res.data
+    toast.success('Backup started')
+    quickBackupModal.value.upid = upid
+    quickBackupModal.value.taskStatus = 'running'
+    startQuickBackupPoll(quickBackupForm.value.node, upid)
+  } catch (err) {
+    console.error('Quick backup failed:', err)
+    quickBackupModal.value.error = err.response?.data?.detail || 'Failed to start backup'
+  } finally {
+    quickBackupModal.value.running = false
+  }
+}
+
+function startQuickBackupPoll(node, upid) {
+  stopQuickBackupPoll()
+  pollQuickBackupStatus(node, upid)
+  quickBackupPollTimer = setInterval(() => pollQuickBackupStatus(node, upid), 3000)
+}
+
+function stopQuickBackupPoll() {
+  if (quickBackupPollTimer) { clearInterval(quickBackupPollTimer); quickBackupPollTimer = null }
+}
+
+async function pollQuickBackupStatus(node, upid) {
+  try {
+    const [statusRes, logRes] = await Promise.all([
+      api.pveNode.taskStatus(hostId.value, node, encodeURIComponent(upid)),
+      api.pveNode.taskLog(hostId.value, node, upid).catch(() => ({ data: { lines: [] } })),
+    ])
+    const data = statusRes.data || {}
+    quickBackupModal.value.taskStatus = data.status || 'running'
+    quickBackupModal.value.taskLog = logRes.data?.lines || []
+    if (data.status === 'stopped') {
+      stopQuickBackupPoll()
+      if (data.exitstatus === 'OK') {
+        toast.success('Backup completed successfully')
+      } else {
+        toast.error(`Backup finished with status: ${data.exitstatus}`)
+      }
+    }
+  } catch (e) {
+    console.warn('Quick backup poll error:', e)
+  }
+}
 
 // Run backup
 const clusterNodes = ref([])
@@ -1987,18 +2582,29 @@ async function fetchClusterNodes() {
 
 function openCreateModal() {
   scheduleForm.value = emptyScheduleForm()
+  schedWizardStep.value = 1
+  schedStorages.value = []
   scheduleModal.value = { show: true, editing: false, editId: null }
 }
 
 function openEditModal(sched) {
   scheduleForm.value = {
+    ...emptyScheduleForm(),
     node: sched.node || '',
     storage: sched.storage || '',
+    storageNode: sched.node || '',
     schedule: sched.schedule || sched.dow || '',
     comment: sched.comment || '',
     vmid: sched.vmid || 'all',
     compress: sched.compress || 'zstd',
     mode: sched.mode || 'snapshot',
+    mailnotification: sched.mailnotification || 'never',
+    mailto: sched.mailto || '',
+    bwlimit: sched.bwlimit || null,
+    'keep-last': sched['keep-last'] || null,
+    'keep-daily': sched['keep-daily'] || null,
+    'keep-weekly': sched['keep-weekly'] || null,
+    'keep-monthly': sched['keep-monthly'] || null,
   }
   scheduleModal.value = { show: true, editing: true, editId: sched.id }
 }
@@ -2009,19 +2615,58 @@ function closeScheduleModal() {
 
 async function saveSchedule() {
   savingSchedule.value = true
-  const payload = { ...scheduleForm.value }
-  Object.keys(payload).forEach(k => { if (payload[k] === '') delete payload[k] })
+
+  // Build payload — strip internal wizard-only fields and empty values
+  const wizardOnlyFields = ['scopeType', 'selectedNodes', 'vmidList', 'storageNode', 'cronCustom']
+  const buildPayload = () => {
+    const p = {}
+    for (const [k, v] of Object.entries(scheduleForm.value)) {
+      if (wizardOnlyFields.includes(k)) continue
+      if (v === '' || v === null || v === undefined) continue
+      p[k] = v
+    }
+    return p
+  }
+
+  // Determine vmid value from scope
+  if (!scheduleModal.value.editing) {
+    if (scheduleForm.value.scopeType === 'all') {
+      delete scheduleForm.value.vmid
+    } else if (scheduleForm.value.scopeType === 'vmids') {
+      scheduleForm.value.vmid = scheduleForm.value.vmidList.join(',')
+    }
+    // For 'nodes' scope: we'll loop below
+  }
 
   try {
     if (scheduleModal.value.editing) {
+      const payload = buildPayload()
       await api.pveNode.updateBackupSchedule(hostId.value, scheduleModal.value.editId, payload)
       toast.success('Schedule updated')
+      closeScheduleModal()
+      await fetchSchedules()
+    } else if (scheduleForm.value.scopeType === 'nodes' && scheduleForm.value.selectedNodes.length > 1) {
+      // Create one schedule per selected node
+      let created = 0
+      for (const node of scheduleForm.value.selectedNodes) {
+        scheduleForm.value.node = node
+        const payload = buildPayload()
+        await api.pveNode.createBackupSchedule(hostId.value, payload)
+        created++
+      }
+      toast.success(`${created} schedules created`)
+      closeScheduleModal()
+      await fetchSchedules()
     } else {
+      if (scheduleForm.value.scopeType === 'nodes' && scheduleForm.value.selectedNodes.length === 1) {
+        scheduleForm.value.node = scheduleForm.value.selectedNodes[0]
+      }
+      const payload = buildPayload()
       await api.pveNode.createBackupSchedule(hostId.value, payload)
       toast.success('Schedule created')
+      closeScheduleModal()
+      await fetchSchedules()
     }
-    closeScheduleModal()
-    await fetchSchedules()
   } catch (err) {
     console.error('Failed to save schedule:', err)
     toast.error('Failed to save schedule')
@@ -2698,6 +3343,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   stopTaskPolling()
+  stopQuickBackupPoll()
 })
 </script>
 
@@ -3215,6 +3861,271 @@ onUnmounted(() => {
     flex-direction: column;
     align-items: flex-start;
     gap: 0.5rem;
+  }
+}
+
+/* ── Schedule creation wizard ────────────────────────────────────── */
+.sched-wizard {
+  max-width: 780px;
+}
+
+.sched-wizard-steps {
+  display: flex;
+  gap: 0;
+  padding: 0.75rem 1.5rem;
+  border-bottom: 1px solid var(--border-color);
+  overflow-x: auto;
+}
+
+.sw-step {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.sw-step--active {
+  background: rgba(99,102,241,.15);
+  color: var(--primary-color, #6366f1);
+}
+
+.sw-step--done { color: #4ade80; }
+
+.sw-step-num {
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 50%;
+  background: var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.sw-step--active .sw-step-num { background: var(--primary-color, #6366f1); color: #fff; }
+.sw-step--done .sw-step-num   { background: #22c55e; color: #fff; }
+
+.sched-wizard-footer {
+  padding: 0.875rem 1.5rem;
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+/* Scope options */
+.scope-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.scope-opt {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border-color);
+  border-radius: 0.375rem;
+  cursor: pointer;
+  transition: background 0.1s, border-color 0.1s;
+}
+
+.scope-opt:hover { background: rgba(255,255,255,.03); }
+
+.scope-opt--active {
+  background: rgba(99,102,241,.08);
+  border-color: rgba(99,102,241,.4);
+}
+
+.scope-opt input[type="radio"] { margin-top: 0.1rem; flex-shrink: 0; }
+
+.scope-opt-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+/* Node checklist */
+.node-checklist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+.node-check-item {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 9999px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: background 0.1s;
+}
+
+.node-check-item:hover { background: rgba(255,255,255,.04); }
+.node-check-item input[type="checkbox"] { cursor: pointer; }
+
+/* VMID tag input */
+.vmid-tag-input {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  padding: 0.35rem 0.5rem;
+  background: var(--bg-secondary, rgba(255,255,255,.04));
+  border: 1px solid var(--border-color);
+  border-radius: 0.375rem;
+  cursor: text;
+  min-height: 2.4rem;
+  align-items: center;
+}
+
+.vmid-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  background: rgba(99,102,241,.15);
+  color: var(--primary-color, #6366f1);
+  border-radius: 9999px;
+  padding: 0.1rem 0.4rem 0.1rem 0.6rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.vmid-tag-remove {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: inherit;
+  opacity: 0.7;
+  font-size: 0.9rem;
+  line-height: 1;
+  padding: 0;
+}
+
+.vmid-tag-remove:hover { opacity: 1; }
+
+.vmid-tag-text-input {
+  flex: 1;
+  min-width: 80px;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  padding: 0.15rem 0.25rem;
+}
+
+/* Cron presets */
+.cron-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.75rem;
+}
+
+.cron-preset-btn {
+  padding: 0.3rem 0.75rem;
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: 9999px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  transition: background 0.1s, border-color 0.1s, color 0.1s;
+}
+
+.cron-preset-btn:hover {
+  background: rgba(255,255,255,.04);
+  color: var(--text-primary);
+}
+
+.cron-preset-btn--active {
+  background: rgba(99,102,241,.15);
+  border-color: rgba(99,102,241,.5);
+  color: var(--primary-color, #6366f1);
+}
+
+/* Retention row in step 2 */
+.sched-retention-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.form-hint {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--text-muted, #888);
+  margin-top: 0.2rem;
+}
+
+/* Review sections in step 4 */
+.review-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.review-section {
+  background: var(--bg-secondary, rgba(255,255,255,.02));
+  border: 1px solid var(--border-color);
+  border-radius: 0.375rem;
+  overflow: hidden;
+}
+
+.review-section-title {
+  padding: 0.4rem 0.875rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted, #888);
+  border-bottom: 1px solid var(--border-color);
+  background: rgba(0,0,0,.1);
+}
+
+.review-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.35rem 0.875rem;
+  font-size: 0.875rem;
+  border-bottom: 1px solid rgba(255,255,255,.04);
+  gap: 1rem;
+}
+
+.review-row:last-child { border-bottom: none; }
+.review-row > span:first-child { color: var(--text-secondary); flex-shrink: 0; }
+.review-row code { font-size: 0.8rem; background: rgba(0,0,0,.15); padding: 0.1rem 0.3rem; border-radius: 3px; }
+
+.info-box {
+  padding: 0.75rem 1rem;
+  background: rgba(59,130,246,.08);
+  border: 1px solid rgba(59,130,246,.25);
+  border-radius: 0.375rem;
+  color: #60a5fa;
+  font-size: 0.875rem;
+}
+
+/* Quick backup log */
+.quick-backup-log-title {
+  margin-bottom: 0.25rem;
+}
+
+@media (max-width: 640px) {
+  .sched-retention-row {
+    grid-template-columns: 1fr 1fr;
   }
 }
 

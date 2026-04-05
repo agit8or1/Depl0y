@@ -8,8 +8,10 @@
 :root {
   --sidebar-width: 250px;
   --header-height: 60px;
-  --primary-color: #2563eb;
-  --primary-hover: #1d4ed8;
+  --accent-color: #3b82f6;
+  --accent-hover: #2563eb;
+  --primary-color: var(--accent-color);
+  --primary-hover: var(--accent-hover);
   --secondary-color: #10b981;
   --danger-color: #dc2626;
   --warning-color: #f59e0b;
@@ -21,12 +23,16 @@
   --border-color: #e2e8f0;
   --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1);
   --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1);
+  --font-size-base: 14px;
+  /* Table density padding */
+  --table-cell-padding-v: 0.5rem;
+  --table-cell-padding-h: 0.875rem;
 }
 
 /* ── Light Theme (default / explicit) ───────────────────────────────────── */
 [data-theme="light"] {
-  --primary-color: #2563eb;
-  --primary-hover: #1d4ed8;
+  --primary-color: var(--accent-color);
+  --primary-hover: var(--accent-hover);
   --secondary-color: #059669;
   --danger-color: #dc2626;
   --warning-color: #d97706;
@@ -42,8 +48,8 @@
 
 /* ── Dark Theme ─────────────────────────────────────────────────────────── */
 [data-theme="dark"] {
-  --primary-color: #3b82f6;
-  --primary-hover: #2563eb;
+  --primary-color: var(--accent-color);
+  --primary-hover: var(--accent-hover);
   --secondary-color: #10b981;
   --danger-color: #ef4444;
   --warning-color: #f59e0b;
@@ -59,7 +65,7 @@
 
 body {
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-  font-size: 14px;
+  font-size: var(--font-size-base, 14px);
   color: var(--text-primary);
   background-color: var(--background);
   line-height: 1.5;
@@ -234,7 +240,7 @@ select.form-control {
 
 .table th {
   background-color: var(--background);
-  padding: 0.5rem 0.875rem;
+  padding: var(--table-cell-padding-v, 0.5rem) var(--table-cell-padding-h, 0.875rem);
   text-align: left;
   font-weight: 700;
   color: var(--text-primary);
@@ -244,7 +250,7 @@ select.form-control {
 }
 
 .table td {
-  padding: 0.5rem 0.875rem;
+  padding: var(--table-cell-padding-v, 0.5rem) var(--table-cell-padding-h, 0.875rem);
   border-top: 1px solid var(--border-color);
   font-size: 0.875rem;
   color: var(--text-primary);
@@ -666,4 +672,47 @@ select.form-control {
 
 .modal-content {
   z-index: 1001;
+}
+
+/* ── Table density ───────────────────────────────────────────────────────── */
+[data-density="comfortable"] {
+  --table-cell-padding-v: 0.5rem;
+  --table-cell-padding-h: 0.875rem;
+}
+
+[data-density="compact"] {
+  --table-cell-padding-v: 0.25rem;
+  --table-cell-padding-h: 0.625rem;
+}
+
+[data-density="spacious"] {
+  --table-cell-padding-v: 0.875rem;
+  --table-cell-padding-h: 1.25rem;
+}
+
+/* ── Font size scale ─────────────────────────────────────────────────────── */
+[data-font-size="small"] {
+  --font-size-base: 12px;
+}
+
+[data-font-size="medium"] {
+  --font-size-base: 14px;
+}
+
+[data-font-size="large"] {
+  --font-size-base: 16px;
+}
+
+/* ── Sidebar compact mode ────────────────────────────────────────────────── */
+[data-sidebar-compact="true"] .sidebar-nav-label {
+  display: none;
+}
+
+[data-sidebar-compact="true"] .sidebar-section-label {
+  opacity: 0;
+  pointer-events: none;
+  height: 0;
+  overflow: hidden;
+  margin: 0;
+  padding: 0;
 }

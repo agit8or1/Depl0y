@@ -735,7 +735,8 @@ export default {
     // APT / Package updates
     aptListUpdates: (h, node) => api.get(`/pve-node/${h}/nodes/${node}/apt/update`),
     aptRefreshPackages: (h, node) => api.post(`/pve-node/${h}/nodes/${node}/apt/update`),
-    aptUpgradeAll: (h, node) => api.post(`/pve-node/${h}/nodes/${node}/apt/upgrade`),
+    aptUpgradeAll: (h, node) => api.post(`/pve-node/${h}/nodes/${node}/apt/upgrade`, {}),
+    aptUpgradeSelected: (h, node, packages) => api.post(`/pve-node/${h}/nodes/${node}/apt/upgrade`, { packages }),
     aptInstalledVersions: (h, node) => api.get(`/pve-node/${h}/nodes/${node}/apt/versions`),
     // Hardware
     listPciDevices: (h, node) => api.get(`/pve-node/${h}/nodes/${node}/hardware/pci`),
@@ -905,6 +906,15 @@ export default {
     getByTag: (hostId, tag) => api.get(`/pve-vm/${hostId}/tags/${encodeURIComponent(tag)}/vms`),
     addTag: (hostId, node, vmid, tag) => api.post(`/pve-vm/${hostId}/${node}/${vmid}/tags`, { tag }),
     removeTag: (hostId, node, vmid, tag) => api.delete(`/pve-vm/${hostId}/${node}/${vmid}/tags/${encodeURIComponent(tag)}`),
+    // Client-side helper: read-modify-write tags via config endpoint
+    patchTags: async (hostId, node, vmid, addTags = [], removeTags = []) => {
+      const cfgRes = await api.get(`/pve-vm/${hostId}/${node}/${vmid}/config`)
+      const current = cfgRes.data?.tags || ''
+      let arr = current ? current.split(';').map(t => t.trim()).filter(Boolean) : []
+      addTags.forEach(t => { if (!arr.includes(t)) arr.push(t) })
+      removeTags.forEach(t => { arr = arr.filter(x => x !== t) })
+      return api.put(`/pve-vm/${hostId}/${node}/${vmid}/config`, { tags: arr.join(';') })
+    },
   },
 
   // VM Groups — local logical groups stored in Depl0y DB

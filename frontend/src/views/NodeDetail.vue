@@ -1,9 +1,16 @@
 <template>
   <div class="node-detail-page">
     <SkeletonLoader v-if="loadingInit" type="stat" :count="4" />
-    <div v-else-if="!nodeStatus" class="text-center text-muted mt-4">
-      <p>Failed to load node information.</p>
-      <button @click="loadAll" class="btn btn-outline mt-2">Retry</button>
+    <div v-else-if="!nodeStatus" class="node-error-state">
+      <div class="node-error-state__icon">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      </div>
+      <h4 class="node-error-state__title">Failed to load node information</h4>
+      <p class="node-error-state__sub">{{ nodeLoadError || 'Could not reach the Proxmox API for this node.' }}</p>
+      <button @click="loadAll" class="btn btn-outline">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:4px;"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.5"/></svg>
+        Retry
+      </button>
     </div>
 
     <template v-else>
@@ -143,6 +150,15 @@
             </button>
           </div>
           <SkeletonLoader v-if="loadingGuests" type="table" :count="5" />
+          <div v-else-if="guestsError" class="tab-error-banner">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            <span>{{ guestsError }}</span>
+            <button @click="loadGuests" class="btn btn-sm btn-outline">Retry</button>
+          </div>
+          <div v-else-if="guests.length === 0" class="tab-empty">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/></svg>
+            <p>No VMs or containers found on this node.</p>
+          </div>
           <div v-else class="table-container">
             <table class="table">
               <thead>
@@ -1345,6 +1361,7 @@ const node = computed(() => route.params.node)
 // Core state
 const nodeStatus = ref(null)
 const loadingInit = ref(true)
+const nodeLoadError = ref(null)
 const activeTab = ref('overview')
 
 // RRD
@@ -1354,6 +1371,7 @@ const rrdTimeframe = ref('hour')
 // Guests
 const guests = ref([])
 const loadingGuests = ref(false)
+const guestsError = ref(null)
 const guestActioning = ref({})
 
 // Storage
@@ -1605,16 +1623,39 @@ const bytesChartOptions = {
   }
 }
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+const NODE_TIMEOUT_MS = 10_000
+
+function withNodeTimeout(promise, ms = NODE_TIMEOUT_MS) {
+  let timer
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error('timeout')), ms)
+  })
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer))
+}
+
+async function retryOnce(fn) {
+  try {
+    return await fn()
+  } catch (e) {
+    await new Promise(r => setTimeout(r, 1000))
+    return fn()
+  }
+}
+
 // ── Data Loading ──────────────────────────────────────────────────────────────
 
 const loadNodeStatus = async () => {
-  const res = await api.pveNode.nodeStatus(hostId.value, node.value)
+  const res = await withNodeTimeout(api.pveNode.nodeStatus(hostId.value, node.value))
   nodeStatus.value = res.data
 }
 
 const loadRrd = async () => {
   try {
-    const res = await api.pveNode.nodeRrdData(hostId.value, node.value, { timeframe: rrdTimeframe.value, cf: 'AVERAGE' })
+    const res = await withNodeTimeout(
+      api.pveNode.nodeRrdData(hostId.value, node.value, { timeframe: rrdTimeframe.value, cf: 'AVERAGE' })
+    )
     rrdData.value = res.data
   } catch (e) {
     console.warn('RRD failed', e)
@@ -1623,17 +1664,20 @@ const loadRrd = async () => {
 
 const loadGuests = async () => {
   loadingGuests.value = true
+  guestsError.value = null
   try {
-    const [vmRes, ctRes] = await Promise.all([
+    const [vmRes, ctRes] = await retryOnce(() => Promise.all([
       api.pveNode.nodeVms(hostId.value, node.value).catch(() => ({ data: [] })),
       api.pveNode.listContainers(hostId.value, node.value).catch(() => ({ data: [] })),
-    ])
+    ]))
     guests.value = [
       ...(vmRes.data || []).map(v => ({ ...v, type: 'qemu' })),
       ...(ctRes.data || []).map(c => ({ ...c, type: 'lxc' })),
     ].sort((a, b) => a.vmid - b.vmid)
   } catch (e) {
     console.warn('Guests load failed', e)
+    guestsError.value = e.response?.data?.detail || e.message || 'Failed to load guests'
+    toast.error('Failed to load guests for this node')
   } finally {
     loadingGuests.value = false
   }
@@ -1642,10 +1686,11 @@ const loadGuests = async () => {
 const loadStorage = async () => {
   loadingStorage.value = true
   try {
-    const res = await api.pveNode.listStorage(hostId.value, node.value)
+    const res = await retryOnce(() => api.pveNode.listStorage(hostId.value, node.value))
     storageList.value = res.data || []
   } catch (e) {
     console.warn('Storage failed', e)
+    toast.error('Failed to load storage pools')
   } finally {
     loadingStorage.value = false
   }
@@ -1654,10 +1699,11 @@ const loadStorage = async () => {
 const loadNetwork = async () => {
   loadingNetwork.value = true
   try {
-    const res = await api.pveNode.listNetwork(hostId.value, node.value)
+    const res = await retryOnce(() => api.pveNode.listNetwork(hostId.value, node.value))
     networkIfaces.value = res.data || []
   } catch (e) {
     console.warn('Network failed', e)
+    toast.error('Failed to load network interfaces')
   } finally {
     loadingNetwork.value = false
   }
@@ -1666,7 +1712,7 @@ const loadNetwork = async () => {
 const loadTasks = async () => {
   loadingTasks.value = true
   try {
-    const res = await api.pveNode.listTasks(hostId.value, node.value, { limit: 50 })
+    const res = await retryOnce(() => api.pveNode.listTasks(hostId.value, node.value, { limit: 50 }))
     tasks.value = (res.data || []).map(t => ({
       ...t,
       _expanded: false,
@@ -1676,6 +1722,7 @@ const loadTasks = async () => {
     }))
   } catch (e) {
     console.warn('Tasks failed', e)
+    toast.error('Failed to load task history')
   } finally {
     loadingTasks.value = false
   }
@@ -1683,14 +1730,27 @@ const loadTasks = async () => {
 
 const loadAll = async () => {
   loadingInit.value = true
-  try {
-    await loadNodeStatus()
-    await loadRrd()
-  } catch (e) {
-    console.error('Failed to load node detail', e)
-  } finally {
-    loadingInit.value = false
+  nodeLoadError.value = null
+  let lastErr = null
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      await loadNodeStatus()
+      await loadRrd()
+      lastErr = null
+      break
+    } catch (e) {
+      lastErr = e
+      if (attempt < 2) await new Promise(r => setTimeout(r, 1500))
+    }
   }
+  if (lastErr) {
+    console.error('Failed to load node detail', lastErr)
+    nodeLoadError.value = lastErr.message === 'timeout'
+      ? 'Request timed out — the node may be unreachable'
+      : (lastErr.response?.data?.detail || lastErr.message || 'Unknown error')
+    toast.error(`Failed to load node ${node.value}`)
+  }
+  loadingInit.value = false
 }
 
 // ── Tab Management ─────────────────────────────────────────────────────────────
@@ -3181,4 +3241,68 @@ const copySshCommand = () => copyToClipboard(`ssh root@${node}`, { toast: true }
 }
 
 .flex-wrap { flex-wrap: wrap; }
+
+/* ── Node error / empty states ─────────────────────────────────────────── */
+.node-error-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.85rem;
+  padding: 4rem 1.5rem;
+  text-align: center;
+}
+
+.node-error-state__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: rgba(239, 68, 68, 0.08);
+  border: 2px dashed rgba(239, 68, 68, 0.3);
+  color: #ef4444;
+}
+
+.node-error-state__title {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.node-error-state__sub {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  margin: 0;
+  max-width: 400px;
+}
+
+/* ── Tab-level error banner ─────────────────────────────────────────────── */
+.tab-error-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.75rem 1rem;
+  background: rgba(239, 68, 68, 0.06);
+  border-bottom: 1px solid rgba(239, 68, 68, 0.2);
+  font-size: 0.875rem;
+  color: var(--text-primary);
+}
+.tab-error-banner svg { color: #ef4444; flex-shrink: 0; }
+.tab-error-banner .btn { margin-left: auto; flex-shrink: 0; }
+
+/* ── Tab-level empty state ──────────────────────────────────────────────── */
+.tab-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 2.5rem 1rem;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+.tab-empty svg { opacity: 0.4; }
 </style>

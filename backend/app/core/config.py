@@ -93,6 +93,11 @@ class Settings(BaseSettings):
     DEFAULT_QEMU_AGENT_INSTALL: bool = True
     DEFAULT_LINUX_PARTITION_SCHEME: str = "single"  # single or custom
 
+    # Rate limiting
+    RATE_LIMIT_ENABLED: bool = True
+    RATE_LIMIT_DEFAULT: int = 100  # requests per minute per IP (general)
+    RATE_LIMIT_AUTH: int = 10      # requests per minute per IP (auth endpoints)
+
     # Logging
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
     LOG_FILE: str = os.getenv("LOG_FILE", "/var/log/depl0y/app.log")

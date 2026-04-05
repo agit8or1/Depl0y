@@ -1,8 +1,11 @@
 """Audit log API"""
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from typing import Optional
 from datetime import datetime, timedelta
+import csv
+import io
 from app.core.database import get_db
 from app.api.auth import get_current_user, require_admin
 from app.models import User
@@ -83,15 +86,33 @@ async def get_audit_stats(
     current_user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    """Get audit log statistics for the specified period"""
+    """
+    Get audit log statistics (admin only).
+
+    Returns:
+    - total_events: all-time total
+    - events_per_action: top 10 action types by volume
+    - events_per_user: top 10 users by event volume
+    - events_last_24h / events_last_7d / events_last_30d: windowed counts
+    - failed_count: failed events in the selected period
+    - events_by_day: daily breakdown for the selected period
+    """
     from app.models.database import AuditLog
     from sqlalchemy import func, desc
 
-    since = datetime.utcnow() - timedelta(days=days)
+    now = datetime.utcnow()
+    since = now - timedelta(days=days)
+
     base_query = db.query(AuditLog).filter(AuditLog.timestamp >= since)
 
+    total_events = db.query(AuditLog).count()
     total_count = base_query.count()
     failed_count = base_query.filter(AuditLog.success == False).count()
+
+    # Windowed counts
+    events_last_24h = db.query(AuditLog).filter(AuditLog.timestamp >= now - timedelta(hours=24)).count()
+    events_last_7d = db.query(AuditLog).filter(AuditLog.timestamp >= now - timedelta(days=7)).count()
+    events_last_30d = db.query(AuditLog).filter(AuditLog.timestamp >= now - timedelta(days=30)).count()
 
     # Events by day (last N days)
     events_by_day_raw = (
@@ -106,7 +127,7 @@ async def get_audit_stats(
     )
     events_by_day = [{"date": str(r.day), "count": r.count} for r in events_by_day_raw]
 
-    # Top 5 users
+    # Top 10 users by event count
     top_users_raw = (
         db.query(
             AuditLog.user_id,
@@ -115,16 +136,16 @@ async def get_audit_stats(
         .filter(AuditLog.timestamp >= since, AuditLog.user_id.isnot(None))
         .group_by(AuditLog.user_id)
         .order_by(desc("count"))
-        .limit(5)
+        .limit(10)
         .all()
     )
     from app.models.database import User as UserModel
-    top_users = []
+    events_per_user = []
     for r in top_users_raw:
         u = db.query(UserModel).filter(UserModel.id == r.user_id).first()
-        top_users.append({"username": u.username if u else f"user#{r.user_id}", "count": r.count})
+        events_per_user.append({"username": u.username if u else f"user#{r.user_id}", "count": r.count})
 
-    # Top 5 actions
+    # Top 10 action types
     top_actions_raw = (
         db.query(
             AuditLog.action,
@@ -133,18 +154,25 @@ async def get_audit_stats(
         .filter(AuditLog.timestamp >= since)
         .group_by(AuditLog.action)
         .order_by(desc("count"))
-        .limit(5)
+        .limit(10)
         .all()
     )
-    top_actions = [{"action": r.action, "count": r.count} for r in top_actions_raw]
+    events_per_action = [{"action": r.action, "count": r.count} for r in top_actions_raw]
 
     return {
+        "total_events": total_events,
         "total_count": total_count,
         "failed_count": failed_count,
+        "events_last_24h": events_last_24h,
+        "events_last_7d": events_last_7d,
+        "events_last_30d": events_last_30d,
+        "events_per_action": events_per_action,
+        "events_per_user": events_per_user,
         "events_by_day": events_by_day,
-        "top_users": top_users,
-        "top_actions": top_actions,
         "period_days": days,
+        # Legacy keys kept for backward compatibility
+        "top_users": events_per_user,
+        "top_actions": events_per_action,
     }
 
 
@@ -204,6 +232,126 @@ async def get_audit_feed(
             "icon": _action_icon(l.action),
         })
     return feed
+
+
+@router.get("/export")
+async def export_audit_csv(
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
+    action: Optional[str] = None,
+    user_id: Optional[int] = None,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """
+    Export audit log as a CSV file (admin only).
+
+    Optional filters: from_date, to_date (ISO format), action, user_id.
+    Returns a streaming CSV download.
+    """
+    from app.models.database import AuditLog
+    from sqlalchemy import desc
+
+    query = db.query(AuditLog).order_by(desc(AuditLog.timestamp))
+    if action:
+        query = query.filter(AuditLog.action.ilike(f"%{action}%"))
+    if user_id:
+        query = query.filter(AuditLog.user_id == user_id)
+    if from_date:
+        try:
+            dt = datetime.fromisoformat(from_date)
+            query = query.filter(AuditLog.timestamp >= dt)
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid from_date: {from_date}")
+    if to_date:
+        try:
+            dt = datetime.fromisoformat(to_date)
+            if "T" not in to_date:
+                dt = dt.replace(hour=23, minute=59, second=59)
+            query = query.filter(AuditLog.timestamp <= dt)
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid to_date: {to_date}")
+
+    logs = query.all()
+
+    def _generate_csv():
+        output = io.StringIO()
+        writer = csv.writer(output, quoting=csv.QUOTE_ALL)
+        # Header row
+        writer.writerow([
+            "id", "timestamp", "user_id", "username", "action",
+            "resource_type", "resource_id", "ip_address",
+            "http_method", "request_path", "response_status",
+            "duration_ms", "success", "details",
+        ])
+        yield output.getvalue()
+        output.seek(0)
+        output.truncate(0)
+
+        for log in logs:
+            writer.writerow([
+                log.id,
+                log.timestamp.isoformat() if log.timestamp else "",
+                log.user_id or "",
+                log.user.username if log.user else "system",
+                log.action or "",
+                log.resource_type or "",
+                log.resource_id or "",
+                log.ip_address or "",
+                log.http_method or "",
+                log.request_path or "",
+                log.response_status or "",
+                log.duration_ms or "",
+                log.success,
+                str(log.details) if log.details else "",
+            ])
+            yield output.getvalue()
+            output.seek(0)
+            output.truncate(0)
+
+    filename = f"audit_export_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.csv"
+    return StreamingResponse(
+        _generate_csv(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.delete("/cleanup")
+async def cleanup_audit_log(
+    days: int = Query(..., ge=1, description="Delete audit entries older than this many days"),
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """
+    Delete audit log entries older than *days* days (admin only).
+
+    Returns the number of deleted rows.
+    """
+    from app.models.database import AuditLog
+
+    cutoff = datetime.utcnow() - timedelta(days=days)
+    deleted = (
+        db.query(AuditLog)
+        .filter(AuditLog.timestamp < cutoff)
+        .delete(synchronize_session=False)
+    )
+    db.commit()
+
+    # Audit the cleanup action itself
+    try:
+        log_audit_event(
+            db,
+            action="audit_cleanup",
+            user_id=current_user.id,
+            resource_type="system",
+            details={"deleted_count": deleted, "older_than_days": days},
+            success=True,
+        )
+    except Exception:
+        pass
+
+    return {"deleted": deleted, "older_than_days": days}
 
 
 def log_audit_event(

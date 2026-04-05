@@ -5,6 +5,7 @@ export default {
   'nav.section.infrastructure': 'Infrastructure',
   'nav.section.admin': 'Administration',
   'nav.section.account': 'Compte',
+  'nav.section.favorites': 'Favoris',
 
   // Navigation — links
   'nav.dashboard': 'Tableau de bord',
@@ -29,6 +30,11 @@ export default {
   'nav.idrac': 'iDRAC / iLO',
   'nav.network': 'Gestion réseau',
   'nav.sdn': 'SDN / VNets',
+  'nav.firewall': 'Pare-feu',
+  'nav.ceph': 'Stockage Ceph',
+  'nav.pve_users': 'Utilisateurs PVE',
+  'nav.vm_search': 'Recherche VM',
+  'nav.cluster': 'Vue d\'ensemble du cluster',
   'nav.images': 'Images',
   'nav.proxmox_hosts': 'Hôtes Proxmox',
   'nav.storage_management': 'Gestion du stockage',
@@ -72,12 +78,23 @@ export default {
   'common.disabled': 'Désactivé',
   'common.error': 'Erreur',
   'common.success': 'Succès',
+  'common.warning': 'Avertissement',
+  'common.info': 'Info',
+  'common.none': 'Aucun',
+  'common.unknown': 'Inconnu',
   'common.actions': 'Actions',
   'common.status': 'Statut',
   'common.name': 'Nom',
+  'common.description': 'Description',
+  'common.type': 'Type',
+  'common.size': 'Taille',
+  'common.date': 'Date',
   'common.copy': 'Copier',
   'common.copied': 'Copié',
+  'common.check': 'Vérifier',
   'common.checking': 'Vérification...',
+  'common.verifying': 'Vérification en cours...',
+  'common.updating': 'Mise à jour...',
 
   // Status
   'status.running': 'En cours',
@@ -109,6 +126,8 @@ export default {
   'vm.memory': 'Mémoire',
   'vm.disk': 'Disque',
   'vm.network': 'Réseau',
+  'vm.ip_address': 'Adresse IP',
+  'vm.os_type': 'Type de système d\'exploitation',
   'vm.uptime': 'Temps de fonctionnement',
 
   // Login
@@ -130,16 +149,27 @@ export default {
   'login.use_authenticator': 'Utiliser l\'application d\'authentification à la place',
   'login.back_to_login': 'Retour à la connexion',
 
-  // Settings
+  // Settings — General
   'settings.language': 'Langue',
   'settings.language_label': 'Langue de l\'interface',
   'settings.language_hint': 'Sélectionnez la langue de l\'interface Depl0y. Prend effet immédiatement.',
   'settings.language_en': 'English (EN)',
   'settings.language_de': 'Deutsch (DE)',
   'settings.language_fr': 'Français (FR)',
+
+  // Settings — Appearance
   'settings.appearance': 'Apparence',
   'settings.appearance_subtitle': 'Personnalisez l\'aspect de Depl0y',
   'settings.theme': 'Thème',
   'settings.theme_hint': 'Choisissez entre clair, sombre ou préférence système.',
+
+  // Settings — General section
   'settings.general': 'Paramètres généraux',
+  'settings.app_name': 'Nom de l\'application',
+  'settings.app_url': 'URL de l\'application',
+  'settings.default_language': 'Langue par défaut',
+  'settings.default_timezone': 'Fuseau horaire par défaut',
+  'settings.session_timeout': 'Délai d\'expiration de session (minutes)',
+  'settings.max_login_attempts': 'Tentatives de connexion maximales avant verrouillage',
+  'settings.lockout_duration': 'Durée de verrouillage (minutes)',
 }

@@ -3,8 +3,12 @@ import { useToast } from 'vue-toastification'
 
 const toast = useToast()
 
+// Global request timeout: 30 seconds
+const REQUEST_TIMEOUT_MS = 30_000
+
 const api = axios.create({
   baseURL: '/api/v1',
+  timeout: REQUEST_TIMEOUT_MS,
   headers: {
     'Content-Type': 'application/json'
   }
@@ -53,6 +57,7 @@ api.interceptors.response.use(
       } catch (refreshError) {
         localStorage.removeItem('access_token')
         localStorage.removeItem('refresh_token')
+        toast.error('Session expired — please log in again')
         window.location.href = '/login'
         return Promise.reject(refreshError)
       }
@@ -60,6 +65,7 @@ api.interceptors.response.use(
       // No refresh token available — go to login
       localStorage.removeItem('access_token')
       localStorage.removeItem('refresh_token')
+      toast.error('Session expired — please log in again')
       window.location.href = '/login'
       return Promise.reject(error)
     }
@@ -78,6 +84,12 @@ api.interceptors.response.use(
                            originalRequest?.url?.includes('/auth/2fa')
     if (isAuthEndpoint) return Promise.reject(error)
 
+    // Request timeout (ECONNABORTED or code === 'ECONNABORTED')
+    if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+      toast.error('Request timed out — the server is taking too long to respond')
+      return Promise.reject(error)
+    }
+
     // Network error — no response received
     if (!error.response) {
       toast.error('Network error — check your connection')
@@ -86,7 +98,13 @@ api.interceptors.response.use(
 
     // 403 — permission denied
     if (status === 403) {
-      toast.error("You don't have permission to do this")
+      toast.error("Permission denied — you don't have access to this resource")
+      return Promise.reject(error)
+    }
+
+    // 503 — service unavailable
+    if (status === 503) {
+      toast.error('Service unavailable — the backend or Proxmox host may be temporarily down. Please try again shortly.')
       return Promise.reject(error)
     }
 
@@ -105,7 +123,7 @@ api.interceptors.response.use(
       return Promise.reject(error)
     }
 
-    // 5xx — server errors
+    // 5xx — server errors (excluding 503 handled above)
     if (status >= 500) {
       toast.error('Server error — please try again')
       return Promise.reject(error)
@@ -751,6 +769,9 @@ export default {
     log: (params) => api.get('/audit/', { params }),  // alias — GET /audit/?limit=N
     feed: (params) => api.get('/audit/feed', { params }),
     stats: (params) => api.get('/audit/stats', { params }),
+    getStats: (params) => api.get('/audit/stats', { params }),
+    export: (params) => api.get('/audit/export', { params, responseType: 'blob' }),
+    cleanup: (days) => api.delete('/audit/cleanup', { params: { days } }),
   },
 
   // PBS Management

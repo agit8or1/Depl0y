@@ -77,8 +77,8 @@ app.add_middleware(
 # Add security headers middleware
 app.add_middleware(SecurityHeadersMiddleware)
 
-# Add rate limiting middleware
-app.add_middleware(RateLimitMiddleware, requests_per_minute=100)
+# Add rate limiting middleware (default rpm driven by config)
+app.add_middleware(RateLimitMiddleware, requests_per_minute=settings.RATE_LIMIT_DEFAULT)
 
 # Add IP filter + GeoIP middleware (runs after rate limiting)
 app.add_middleware(IPFilterMiddleware)

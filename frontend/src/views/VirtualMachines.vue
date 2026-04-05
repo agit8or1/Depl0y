@@ -23,6 +23,13 @@
         <router-link to="/vms/create" class="btn btn-primary">+ Create VM</router-link>
       </div>
 
+      <!-- Managed tab error banner -->
+      <div v-if="managedError" class="error-banner-inline">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <span>{{ managedError }}</span>
+        <button @click="fetchVMs" class="btn btn-sm btn-outline" style="margin-left:auto">Retry</button>
+      </div>
+
       <!-- Search + Filter Bar -->
       <div class="filter-bar">
         <div class="filter-info" style="flex-wrap: wrap; gap: 0.5rem;">
@@ -32,8 +39,9 @@
             placeholder="Search by name, VMID, node…"
             class="form-control"
             style="width: 220px;"
+            :disabled="loading"
           />
-          <select v-model="managedStatusFilter" class="form-control" style="width: 140px;">
+          <select v-model="managedStatusFilter" class="form-control" style="width: 140px;" :disabled="loading">
             <option value="">All statuses</option>
             <option value="running">Running</option>
             <option value="stopped">Stopped</option>
@@ -48,7 +56,7 @@
 
       <SkeletonLoader v-if="loading" type="table" :count="8" />
 
-      <div v-else-if="filteredVMs.length === 0 && vms.length === 0" class="empty-state">
+      <div v-else-if="filteredVMs.length === 0 && vms.length === 0 && !managedError" class="empty-state">
         <div class="empty-icon-wrap">
           <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
         </div>
@@ -57,7 +65,7 @@
         <router-link to="/vms/create" class="btn btn-primary">+ Create VM</router-link>
       </div>
 
-      <div v-else-if="filteredVMs.length === 0" class="empty-state">
+      <div v-else-if="filteredVMs.length === 0 && !managedError" class="empty-state">
         <div class="empty-icon-wrap">
           <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         </div>
@@ -335,21 +343,45 @@
         </div>
       </div>
 
+      <!-- All tab error banner -->
+      <div v-if="allError" class="error-banner-inline" style="margin: 0.75rem 1rem;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <span>{{ allError }}</span>
+        <button @click="fetchAllProxmoxVMs(true)" class="btn btn-sm btn-outline" style="margin-left:auto">Retry</button>
+      </div>
+
+      <!-- Partial failure / timeout warning -->
+      <div v-if="allPartialFailedHosts.length > 0 && !allError" class="warning-banner-inline" style="margin: 0.5rem 1rem;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        <span>
+          <strong>{{ allPartialFailedHosts.length }} host{{ allPartialFailedHosts.length !== 1 ? 's' : '' }} unreachable:</strong>
+          {{ allPartialFailedHosts.join(', ') }} — results may be incomplete.
+        </span>
+      </div>
+      <div v-if="allTimeoutWarning && !allError" class="warning-banner-inline" style="margin: 0.5rem 1rem;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        <span>Some hosts are responding slowly — data shown may be incomplete.</span>
+        <button @click="allTimeoutWarning = false" class="btn-inline-close-sm">×</button>
+      </div>
+
       <SkeletonLoader v-if="allLoading" type="table" :count="8" />
 
-      <div v-else-if="allError" class="text-center text-muted" style="padding: 2rem;">
-        <p class="text-danger">{{ allError }}</p>
-        <button @click="fetchAllProxmoxVMs" class="btn btn-secondary btn-sm mt-1">Retry</button>
+      <div v-else-if="!allError && allVMs.length === 0" class="empty-state-flat">
+        <div class="empty-icon-wrap">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+        </div>
+        <h4 class="empty-title">No Proxmox VMs found</h4>
+        <p class="empty-subtitle">Make sure at least one Proxmox host is configured and reachable.</p>
+        <button @click="fetchAllProxmoxVMs(true)" class="btn btn-outline btn-sm">Refresh</button>
       </div>
 
-      <div v-else-if="allVMs.length === 0" class="text-center text-muted" style="padding: 2rem;">
-        <p>No Proxmox VMs found.</p>
-        <p class="text-sm">Make sure at least one Proxmox host is configured and reachable.</p>
-      </div>
-
-      <div v-else-if="filteredAllVMs.length === 0" class="text-center text-muted" style="padding: 2rem;">
-        <p>No VMs match your search.</p>
-        <button @click="allSearch = ''; allStatusFilter = ''" class="btn btn-sm btn-secondary mt-1">Clear Filters</button>
+      <div v-else-if="!allError && filteredAllVMs.length === 0 && allVMs.length > 0" class="empty-state-flat">
+        <div class="empty-icon-wrap">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        </div>
+        <h4 class="empty-title">No VMs match your filters</h4>
+        <p class="empty-subtitle">Try adjusting the search, status, or advanced filters.</p>
+        <button @click="allSearch = ''; allStatusFilter = ''; activeTagFilters = new Set()" class="btn btn-outline btn-sm">Clear Filters</button>
       </div>
 
       <!-- Flat table -->
@@ -858,6 +890,7 @@ export default {
     // ── Depl0y Managed tab ─────────────────────────────────────────────────
     const vms = ref([])
     const loading = ref(false)
+    const managedError = ref(null)
     const sortField = ref('vmid')
     const sortDirection = ref('asc')
     const statusFilter = ref(route.query.status || null)
@@ -869,15 +902,26 @@ export default {
 
     const fetchVMs = async () => {
       loading.value = true
-      try {
-        const response = await api.vms.list()
-        vms.value = response.data
-        sortVMs()
-      } catch (error) {
-        console.error('Failed to fetch VMs:', error)
-      } finally {
-        loading.value = false
+      managedError.value = null
+      let lastErr = null
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          const response = await api.vms.list()
+          vms.value = response.data
+          sortVMs()
+          lastErr = null
+          break
+        } catch (error) {
+          lastErr = error
+          if (attempt < 2) await new Promise(r => setTimeout(r, 1000))
+        }
       }
+      if (lastErr) {
+        console.error('Failed to fetch VMs:', lastErr)
+        managedError.value = lastErr.response?.data?.detail || lastErr.message || 'Failed to load VMs'
+        toast.error('Failed to load virtual machines')
+      }
+      loading.value = false
     }
 
     const sortBy = (field) => {
@@ -1001,6 +1045,9 @@ export default {
     // ── All Proxmox VMs tab ────────────────────────────────────────────────
     const ALL_FILTER_KEY = 'depl0y_all_vms_filter'
     const PRESETS_KEY = 'depl0y_vm_filter_presets'
+    const ALL_LOAD_TIMEOUT_MS = 10_000
+    const allPartialFailedHosts = ref([])
+    const allTimeoutWarning = ref(false)
 
     function loadSavedFilter() {
       try { return JSON.parse(sessionStorage.getItem(ALL_FILTER_KEY) || '{}') } catch { return {} }
@@ -1122,6 +1169,66 @@ export default {
 
     loadPresets()
 
+    function withAllTimeout(promise, ms) {
+      let timer
+      const timeout = new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error('timeout')), ms)
+      })
+      return Promise.race([promise, timeout]).finally(() => clearTimeout(timer))
+    }
+
+    async function doFetchAllProxmoxVMs() {
+      const hostsResp = await api.proxmox.listHosts()
+      const hosts = hostsResp.data
+      if (!hosts || hosts.length === 0) { allVMs.value = []; return }
+
+      const results = []
+      const localFailedHosts = []
+      let timedOut = false
+
+      await Promise.allSettled(
+        hosts.map(async (host) => {
+          try {
+            const resResp = await withAllTimeout(
+              api.pveNode.clusterResources(host.id, 'vm'),
+              ALL_LOAD_TIMEOUT_MS
+            )
+            const resources = resResp.data
+            const items = Array.isArray(resources) ? resources : (resources.data || [])
+            items.forEach((item) => {
+              if (item.type && item.type !== 'qemu') return
+              results.push({
+                hostId: host.id,
+                hostName: host.name || host.host || String(host.id),
+                node: item.node,
+                vmid: item.vmid,
+                name: item.name,
+                status: item.status || 'unknown',
+                cpus: item.cpus,
+                maxmem: item.maxmem,
+                mem: item.mem,
+                maxdisk: item.maxdisk,
+                uptime: item.uptime || 0,
+                tags: item.tags || '',
+                description: item.description || '',
+                netin: item.netin,
+                netout: item.netout,
+                _busy: false,
+              })
+            })
+          } catch (err) {
+            if (err.message === 'timeout') timedOut = true
+            localFailedHosts.push(host.name || String(host.id))
+            console.warn(`Failed to fetch cluster resources for host ${host.id}:`, err)
+          }
+        })
+      )
+
+      allPartialFailedHosts.value = localFailedHosts
+      allTimeoutWarning.value = timedOut
+      allVMs.value = results
+    }
+
     const fetchAllProxmoxVMs = async (resetCountdown = false) => {
       if (resetCountdown) {
         const intervalSecs = parseInt(localStorage.getItem('depl0y_refresh_interval') || '30', 10)
@@ -1129,51 +1236,25 @@ export default {
       }
       allLoading.value = true
       allError.value = null
-      try {
-        const hostsResp = await api.proxmox.listHosts()
-        const hosts = hostsResp.data
-        if (!hosts || hosts.length === 0) { allVMs.value = []; return }
 
-        const results = []
-        await Promise.allSettled(
-          hosts.map(async (host) => {
-            try {
-              const resResp = await api.pveNode.clusterResources(host.id, 'vm')
-              const resources = resResp.data
-              const items = Array.isArray(resources) ? resources : (resources.data || [])
-              items.forEach((item) => {
-                if (item.type && item.type !== 'qemu') return
-                results.push({
-                  hostId: host.id,
-                  hostName: host.name || host.host || String(host.id),
-                  node: item.node,
-                  vmid: item.vmid,
-                  name: item.name,
-                  status: item.status || 'unknown',
-                  cpus: item.cpus,
-                  maxmem: item.maxmem,
-                  mem: item.mem,
-                  maxdisk: item.maxdisk,
-                  uptime: item.uptime || 0,
-                  tags: item.tags || '',
-                  description: item.description || '',
-                  netin: item.netin,
-                  netout: item.netout,
-                  _busy: false,
-                })
-              })
-            } catch (err) {
-              console.warn(`Failed to fetch cluster resources for host ${host.id}:`, err)
-            }
-          })
-        )
-        allVMs.value = results
-      } catch (err) {
-        console.error('Failed to fetch Proxmox hosts:', err)
-        allError.value = 'Failed to load Proxmox hosts. Check that at least one host is configured.'
-      } finally {
-        allLoading.value = false
+      let lastErr = null
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          await doFetchAllProxmoxVMs()
+          lastErr = null
+          break
+        } catch (err) {
+          lastErr = err
+          if (attempt < 2) await new Promise(r => setTimeout(r, 1000 * attempt))
+        }
       }
+
+      if (lastErr) {
+        console.error('Failed to fetch Proxmox hosts:', lastErr)
+        allError.value = lastErr.response?.data?.detail || lastErr.message || 'Failed to load Proxmox hosts. Check that at least one host is configured.'
+      }
+
+      allLoading.value = false
     }
 
     const allSortBy = (field) => {
@@ -1652,11 +1733,12 @@ export default {
 
     return {
       activeTab, switchTab,
-      vms, loading, sortField, sortDirection, statusFilter, managedSearch, managedStatusFilter,
+      vms, loading, managedError, sortField, sortDirection, statusFilter, managedSearch, managedStatusFilter,
       filteredVMs, showDeleteConfirmModal, vmToDelete, deleteConfirmInput,
       sortBy, startVM, stopVM, powerOffVM, restartVM,
       showDeleteModal, closeDeleteModal, deleteVM, clearFilter,
       allVMs, allLoading, allError, allSearch, allStatusFilter, allSortField, allSortDirection,
+      allPartialFailedHosts, allTimeoutWarning,
       filteredAllVMs, groupedVMs, fetchAllProxmoxVMs, allSortBy,
       navigateToVM, allStartVM, allStopVM, allShutdownVM, allCountdown, openConsole,
       exportCSV,
@@ -2001,6 +2083,54 @@ export default {
 }
 .empty-title { font-size: 1rem; font-weight: 600; color: var(--text-primary); margin: 0; }
 .empty-subtitle { font-size: 0.875rem; color: var(--text-secondary); margin: 0; }
+
+/* ── Error / Warning Banners ─────────────────────────────────────────────── */
+.error-banner-inline {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.65rem 1rem;
+  background: rgba(239, 68, 68, 0.07);
+  border-bottom: 1px solid rgba(239, 68, 68, 0.25);
+  font-size: 0.875rem;
+  color: var(--text-primary);
+}
+.error-banner-inline svg { color: #ef4444; flex-shrink: 0; }
+
+.warning-banner-inline {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 1rem;
+  background: rgba(245, 158, 11, 0.07);
+  border-bottom: 1px solid rgba(245, 158, 11, 0.25);
+  font-size: 0.825rem;
+  color: var(--text-primary);
+}
+.warning-banner-inline svg { color: #f59e0b; flex-shrink: 0; }
+
+.btn-inline-close-sm {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  color: var(--text-muted);
+  padding: 0 0.2rem;
+  margin-left: auto;
+}
+.btn-inline-close-sm:hover { color: var(--text-primary); }
+
+/* ── Empty state flat (within card, no border of own) ─────────────────────── */
+.empty-state-flat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 3rem 1.5rem;
+  text-align: center;
+}
 
 /* ── Mobile ──────────────────────────────────────────────────────────────── */
 @media (max-width: 768px) {

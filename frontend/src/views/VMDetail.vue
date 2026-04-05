@@ -73,26 +73,139 @@
 
       <!-- ─── Overview Tab ─── -->
       <div v-if="activeTab === 'overview'">
-        <div class="stats-row mb-2">
-          <div class="stat-card-sm">
-            <div class="stat-card-sm__label">CPU</div>
-            <div class="stat-card-sm__value">{{ cpuPct }}%</div>
+
+        <!-- ── Row 1: Status badge + Quick Actions ── -->
+        <div class="ov-top-row mb-2">
+          <!-- Status + uptime badge strip -->
+          <div class="ov-status-strip">
+            <span :class="['ov-status-badge', `ov-status-badge--${vmStatus?.status || 'unknown'}`]">
+              <span class="ov-status-dot"></span>
+              {{ vmStatus?.status || 'unknown' }}
+            </span>
+            <span v-if="vmStatus?.status === 'running'" class="ov-uptime-live">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:3px;"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+              {{ liveUptimeStr }}
+            </span>
           </div>
-          <div class="stat-card-sm">
-            <div class="stat-card-sm__label">RAM Used</div>
-            <div class="stat-card-sm__value">{{ formatBytes(vmStatus?.mem) }} / {{ formatBytes(vmStatus?.maxmem) }}</div>
-          </div>
-          <div class="stat-card-sm">
-            <div class="stat-card-sm__label">Uptime</div>
-            <div class="stat-card-sm__value">{{ formatUptime(vmStatus?.uptime) }}</div>
-          </div>
-          <div class="stat-card-sm">
-            <div class="stat-card-sm__label">Net In / Out</div>
-            <div class="stat-card-sm__value text-sm">{{ formatBytes(vmStatus?.netin) }} / {{ formatBytes(vmStatus?.netout) }}</div>
+          <!-- Quick actions -->
+          <div class="ov-actions flex gap-1 flex-wrap">
+            <button v-if="vmStatus?.status !== 'running'" @click="vmAction('start')"
+              class="btn btn-success btn-sm ov-action-btn" :disabled="actioning">
+              <span v-if="actioning" class="spin-inline">&#9696;</span>
+              <svg v-else width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
+              Start
+            </button>
+            <button v-if="vmStatus?.status === 'running'" @click="vmAction('shutdown')"
+              class="btn btn-outline btn-sm ov-action-btn" :disabled="actioning">
+              <span v-if="actioning" class="spin-inline">&#9696;</span>
+              <svg v-else width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+              Shutdown
+            </button>
+            <button v-if="vmStatus?.status === 'running'" @click="vmAction('stop')"
+              class="btn btn-danger btn-sm ov-action-btn" :disabled="actioning">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              Force Stop
+            </button>
+            <button v-if="vmStatus?.status === 'running'" @click="vmAction('reboot')"
+              class="btn btn-outline btn-sm ov-action-btn" :disabled="actioning">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4"/></svg>
+              Restart
+            </button>
+            <button v-if="vmStatus?.status === 'running' && vmStatus?.status !== 'suspended'" @click="vmAction('suspend')"
+              class="btn btn-outline btn-sm ov-action-btn" :disabled="actioning">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+              Suspend
+            </button>
+            <button v-if="vmStatus?.status === 'suspended'" @click="vmAction('resume')"
+              class="btn btn-outline btn-sm ov-action-btn" :disabled="actioning">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
+              Resume
+            </button>
+            <span class="action-sep">|</span>
+            <router-link :to="`/proxmox/${hostId}/nodes/${node}/console/${vmid}`"
+              class="btn btn-outline btn-sm ov-action-btn">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+              Console
+            </router-link>
+            <button @click="openCloneModal" class="btn btn-outline btn-sm ov-action-btn">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              Clone
+            </button>
+            <router-link :to="`/migrate/${hostId}/${node}/${vmid}?type=qemu`" class="btn btn-outline btn-sm ov-action-btn">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="5 9 2 12 5 15"/><polyline points="19 9 22 12 19 15"/><line x1="2" y1="12" x2="22" y2="12"/></svg>
+              Migrate
+            </router-link>
           </div>
         </div>
 
-        <div class="charts-row">
+        <!-- ── Row 2: Live Stats Panel ── -->
+        <div v-if="vmStatus?.status === 'running'" class="ov-live-panel mb-2">
+
+          <!-- CPU Arc Gauge -->
+          <div class="ov-stat-card ov-stat-card--gauge">
+            <div class="ov-gauge-wrap">
+              <svg width="90" height="56" viewBox="0 0 90 56" class="ov-arc-svg">
+                <!-- track arc -->
+                <path d="M 10 50 A 35 35 0 0 1 80 50" fill="none" stroke="var(--border-color,#374151)" stroke-width="7" stroke-linecap="round"/>
+                <!-- value arc -->
+                <path :d="cpuArcPath" fill="none" :stroke="cpuArcColor" stroke-width="7" stroke-linecap="round"/>
+              </svg>
+              <div class="ov-gauge-label">{{ cpuPct }}<span class="ov-gauge-unit">%</span></div>
+            </div>
+            <div class="ov-stat-name">CPU</div>
+          </div>
+
+          <!-- Memory bar -->
+          <div class="ov-stat-card ov-stat-card--mem">
+            <div class="ov-stat-header">
+              <span class="ov-stat-name">Memory</span>
+              <span class="ov-stat-val">{{ memPct }}%</span>
+            </div>
+            <div class="ov-bar-track">
+              <div class="ov-bar-fill" :style="{ width: memPct + '%', background: memBarColor }"></div>
+            </div>
+            <div class="ov-stat-sub">{{ formatBytes(vmStatus.mem) }} / {{ formatBytes(vmStatus.maxmem) }}</div>
+          </div>
+
+          <!-- Network sparkline -->
+          <div class="ov-stat-card ov-stat-card--spark">
+            <div class="ov-stat-header">
+              <span class="ov-stat-name">Network I/O</span>
+            </div>
+            <svg :width="sparkW" :height="sparkH" class="ov-sparkline">
+              <polyline v-if="netInSparkPoints" :points="netInSparkPoints" fill="none" stroke="#3b82f6" stroke-width="1.5"/>
+              <polyline v-if="netOutSparkPoints" :points="netOutSparkPoints" fill="none" stroke="#f59e0b" stroke-width="1.5"/>
+            </svg>
+            <div class="ov-spark-legend">
+              <span class="ov-spark-dot" style="background:#3b82f6;"></span>In: {{ formatBytesPerSec(latestNetIn) }}
+              <span class="ov-spark-dot" style="background:#f59e0b;margin-left:0.5rem;"></span>Out: {{ formatBytesPerSec(latestNetOut) }}
+            </div>
+          </div>
+
+          <!-- Disk I/O sparkline -->
+          <div class="ov-stat-card ov-stat-card--spark">
+            <div class="ov-stat-header">
+              <span class="ov-stat-name">Disk I/O</span>
+            </div>
+            <svg :width="sparkW" :height="sparkH" class="ov-sparkline">
+              <polyline v-if="diskReadSparkPoints" :points="diskReadSparkPoints" fill="none" stroke="#10b981" stroke-width="1.5"/>
+              <polyline v-if="diskWriteSparkPoints" :points="diskWriteSparkPoints" fill="none" stroke="#ef4444" stroke-width="1.5"/>
+            </svg>
+            <div class="ov-spark-legend">
+              <span class="ov-spark-dot" style="background:#10b981;"></span>Read: {{ formatBytesPerSec(latestDiskRead) }}
+              <span class="ov-spark-dot" style="background:#ef4444;margin-left:0.5rem;"></span>Write: {{ formatBytesPerSec(latestDiskWrite) }}
+            </div>
+          </div>
+        </div>
+
+        <!-- Stopped / suspended state notice -->
+        <div v-else class="ov-stopped-notice mb-2">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:6px;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          Live stats are only available while the VM is running.
+        </div>
+
+        <!-- ── Row 3: Historical charts ── -->
+        <div class="charts-row mb-2">
           <div class="card chart-card">
             <div class="card-header">
               <h4>CPU % over time</h4>
@@ -116,7 +229,85 @@
           </div>
         </div>
 
-        <!-- Tags -->
+        <!-- ── Row 4: Config Summary Cards ── -->
+        <div class="ov-config-grid mb-2">
+
+          <!-- Hardware card -->
+          <div class="card ov-info-card">
+            <div class="card-header"><h4 class="ov-card-title">Hardware</h4></div>
+            <div class="card-body ov-info-body">
+              <div class="ov-info-row"><span class="ov-info-key">CPU type</span><span class="ov-info-val"><code>{{ parsedCpuType }}</code></span></div>
+              <div class="ov-info-row"><span class="ov-info-key">Cores / Sockets</span><span class="ov-info-val">{{ config.cores || 1 }} / {{ config.sockets || 1 }}</span></div>
+              <div class="ov-info-row"><span class="ov-info-key">Memory</span><span class="ov-info-val">{{ ((config.memory || 0) / 1024).toFixed(1) }} GB</span></div>
+              <div class="ov-info-row"><span class="ov-info-key">BIOS</span><span class="ov-info-val">{{ config.bios || 'seabios' }}</span></div>
+              <div class="ov-info-row"><span class="ov-info-key">Machine</span><span class="ov-info-val">{{ config.machine || 'default' }}</span></div>
+              <div class="ov-info-row"><span class="ov-info-key">Boot order</span><span class="ov-info-val text-sm">{{ config.boot || '—' }}</span></div>
+            </div>
+          </div>
+
+          <!-- Storage card -->
+          <div class="card ov-info-card">
+            <div class="card-header"><h4 class="ov-card-title">Storage</h4></div>
+            <div class="card-body ov-info-body">
+              <div v-if="parsedDisks.length === 0" class="text-muted text-sm">No disks</div>
+              <div v-for="disk in parsedDisks" :key="disk.key" class="ov-info-row">
+                <span class="ov-info-key"><code>{{ disk.key }}</code></span>
+                <span class="ov-info-val text-sm">
+                  {{ formatDiskSize(disk.parsed.size) }}
+                  <span class="ov-info-badge">{{ disk.parsed.storage }}</span>
+                </span>
+              </div>
+              <div v-for="cd in parsedCdRoms" :key="cd.key" class="ov-info-row">
+                <span class="ov-info-key"><code>{{ cd.key }}</code></span>
+                <span class="ov-info-val text-sm text-muted">CD-ROM {{ cd.iso ? '(ISO mounted)' : '(empty)' }}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Network card -->
+          <div class="card ov-info-card">
+            <div class="card-header"><h4 class="ov-card-title">Network</h4></div>
+            <div class="card-body ov-info-body">
+              <div v-if="parsedNics.length === 0" class="text-muted text-sm">No NICs</div>
+              <div v-for="nic in parsedNics" :key="nic.key" class="ov-info-row">
+                <span class="ov-info-key"><code>{{ nic.key }}</code></span>
+                <span class="ov-info-val text-sm">
+                  {{ nic.parsed?.model || '—' }}
+                  <span class="ov-info-badge">{{ nic.parsed?.bridge || '—' }}</span>
+                  <span v-if="nic.parsed?.tag" class="ov-info-badge ov-info-badge--vlan">vlan{{ nic.parsed.tag }}</span>
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <!-- VM Info card -->
+          <div class="card ov-info-card">
+            <div class="card-header"><h4 class="ov-card-title">VM Info</h4></div>
+            <div class="card-body ov-info-body">
+              <div class="ov-info-row"><span class="ov-info-key">VM ID</span><span class="ov-info-val"><code>{{ vmid }}</code></span></div>
+              <div class="ov-info-row"><span class="ov-info-key">Node</span><span class="ov-info-val">{{ node }}</span></div>
+              <div class="ov-info-row"><span class="ov-info-key">Host</span><span class="ov-info-val">{{ hostId }}</span></div>
+              <div class="ov-info-row">
+                <span class="ov-info-key">Protection</span>
+                <span :class="config.protection ? 'ov-info-badge ov-info-badge--warn' : 'ov-info-val text-muted text-sm'">
+                  {{ config.protection ? 'Protected' : 'None' }}
+                </span>
+              </div>
+              <div class="ov-info-row">
+                <span class="ov-info-key">Start at boot</span>
+                <span :class="config.onboot ? 'ov-info-badge ov-info-badge--ok' : 'ov-info-val text-muted text-sm'">
+                  {{ config.onboot ? 'Yes' : 'No' }}
+                </span>
+              </div>
+              <div v-if="config.lock" class="ov-info-row">
+                <span class="ov-info-key">Lock</span>
+                <span class="ov-info-badge ov-info-badge--warn">{{ config.lock }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Row 5: Tags ── -->
         <div class="card mt-2">
           <div class="card-header">
             <h4 style="margin:0;font-size:0.95rem;">Tags</h4>
@@ -134,7 +325,6 @@
                 @remove="removeTag"
               />
               <span v-if="tagList.length === 0 && !showTagInput" class="text-muted text-sm">No tags</span>
-
               <span v-if="showTagInput" class="tag-input-wrap">
                 <input
                   ref="tagInputRef"
@@ -153,13 +343,21 @@
           </div>
         </div>
 
-        <!-- Notes -->
+        <!-- ── Row 6: Notes / Description ── -->
         <div class="card mt-2">
           <div class="card-header">
             <h4 style="margin:0;font-size:0.95rem;">Notes</h4>
             <div class="flex gap-1">
-              <button v-if="!editingNotes" @click="startEditNotes" class="btn btn-outline btn-sm">Edit</button>
+              <template v-if="!editingNotes">
+                <button @click="startEditNotes" class="btn btn-outline btn-sm">Edit Notes</button>
+                <button v-if="config.description" @click="notesPreview = !notesPreview" class="btn btn-outline btn-sm">
+                  {{ notesPreview ? 'Source' : 'Preview' }}
+                </button>
+              </template>
               <template v-else>
+                <button @click="notesPreview = !notesPreview" class="btn btn-outline btn-sm">
+                  {{ notesPreview ? 'Edit' : 'Preview' }}
+                </button>
                 <button @click="saveNotes" class="btn btn-primary btn-sm" :disabled="savingNotes">
                   {{ savingNotes ? 'Saving...' : 'Save' }}
                 </button>
@@ -168,11 +366,14 @@
             </div>
           </div>
           <div class="card-body">
-            <textarea v-if="editingNotes" v-model="notesText" class="form-control" rows="5"
-              placeholder="Enter notes / description for this VM..."></textarea>
-            <div v-else class="config-value pre-wrap" style="min-height:60px;">
-              {{ config.description || '—' }}
-            </div>
+            <template v-if="editingNotes && !notesPreview">
+              <textarea v-model="notesText" class="form-control ov-notes-textarea" rows="7"
+                placeholder="Enter notes / description for this VM (Markdown supported)..."></textarea>
+              <div class="ov-notes-hint">Markdown: **bold**, *italic*, `code`, ## heading, - list item, [link](url)</div>
+            </template>
+            <div v-else-if="notesPreview || (!editingNotes && config.description)"
+              class="ov-notes-rendered" v-html="renderedNotes"></div>
+            <div v-else class="text-muted text-sm" style="min-height:40px;">No notes. Click "Edit Notes" to add a description.</div>
           </div>
         </div>
       </div>
@@ -2653,6 +2854,171 @@ const savingNotes = ref(false)
 const notesText = ref('')
 const activeTab = ref('overview')
 
+// ── Overview tab — live stats sparklines ──────────────────────────────────────
+const SPARK_MAX = 20
+const sparkW = 160
+const sparkH = 40
+// Each sample: { netin, netout, diskread, diskwrite } — raw cumulative bytes from Proxmox
+const sparkSamples = ref([])
+const liveUptimeStr = ref('')
+let liveUptimeTimer = null
+let prevNetIn = null
+let prevNetOut = null
+let prevDiskRead = null
+let prevDiskWrite = null
+// notes markdown preview toggle
+const notesPreview = ref(false)
+
+// Compute per-second delta for the most-recent pair of samples
+const latestNetIn = computed(() => {
+  const s = sparkSamples.value
+  if (s.length < 2) return 0
+  const delta = s[s.length - 1].netin - s[s.length - 2].netin
+  return Math.max(0, delta) / 5
+})
+const latestNetOut = computed(() => {
+  const s = sparkSamples.value
+  if (s.length < 2) return 0
+  const delta = s[s.length - 1].netout - s[s.length - 2].netout
+  return Math.max(0, delta) / 5
+})
+const latestDiskRead = computed(() => {
+  const s = sparkSamples.value
+  if (s.length < 2) return 0
+  const delta = s[s.length - 1].diskread - s[s.length - 2].diskread
+  return Math.max(0, delta) / 5
+})
+const latestDiskWrite = computed(() => {
+  const s = sparkSamples.value
+  if (s.length < 2) return 0
+  const delta = s[s.length - 1].diskwrite - s[s.length - 2].diskwrite
+  return Math.max(0, delta) / 5
+})
+
+// Build SVG polyline points string from a raw cumulative array
+const buildSparkPoints = (arr, valFn) => {
+  if (arr.length < 2) return null
+  const deltas = []
+  for (let i = 1; i < arr.length; i++) {
+    deltas.push(Math.max(0, valFn(arr[i]) - valFn(arr[i - 1])))
+  }
+  const max = Math.max(...deltas, 1)
+  return deltas.map((v, i) => {
+    const x = (i / (deltas.length - 1 || 1)) * sparkW
+    const y = sparkH - (v / max) * (sparkH - 4) - 2
+    return `${x.toFixed(1)},${y.toFixed(1)}`
+  }).join(' ')
+}
+
+const netInSparkPoints = computed(() => buildSparkPoints(sparkSamples.value, s => s.netin))
+const netOutSparkPoints = computed(() => buildSparkPoints(sparkSamples.value, s => s.netout))
+const diskReadSparkPoints = computed(() => buildSparkPoints(sparkSamples.value, s => s.diskread))
+const diskWriteSparkPoints = computed(() => buildSparkPoints(sparkSamples.value, s => s.diskwrite))
+
+const memPct = computed(() => {
+  const s = vmStatus.value
+  if (!s?.mem || !s?.maxmem) return 0
+  return Math.round((s.mem / s.maxmem) * 100)
+})
+
+const memBarColor = computed(() => {
+  const p = memPct.value
+  if (p >= 90) return '#ef4444'
+  if (p >= 70) return '#f59e0b'
+  return '#10b981'
+})
+
+// CPU arc gauge — arc from 180deg to 0deg
+const cpuArcPath = computed(() => {
+  const pct = Math.min(parseFloat(cpuPct.value) || 0, 100) / 100
+  // Track arc: M 10 50 A 35 35 0 0 1 80 50 (half circle)
+  const cx = 45, cy = 50, r = 35
+  const startAngle = Math.PI     // left
+  const endAngle = 0             // right
+  const sweepAngle = endAngle - startAngle  // negative (going CCW) → use pct
+  const angle = startAngle - pct * Math.PI
+  const x = cx + r * Math.cos(angle)
+  const y = cy + r * Math.sin(angle)
+  const largeArc = pct > 0.5 ? 1 : 0
+  return `M ${(cx + r * Math.cos(startAngle)).toFixed(1)} ${(cy + r * Math.sin(startAngle)).toFixed(1)} A ${r} ${r} 0 ${largeArc} 1 ${x.toFixed(1)} ${y.toFixed(1)}`
+})
+
+const cpuArcColor = computed(() => {
+  const p = parseFloat(cpuPct.value) || 0
+  if (p >= 90) return '#ef4444'
+  if (p >= 70) return '#f59e0b'
+  return '#3b82f6'
+})
+
+const formatBytesPerSec = (bps) => {
+  if (!bps || bps < 1) return '0 B/s'
+  if (bps < 1024) return `${bps.toFixed(0)} B/s`
+  if (bps < 1024 ** 2) return `${(bps / 1024).toFixed(1)} KB/s`
+  if (bps < 1024 ** 3) return `${(bps / 1024 ** 2).toFixed(1)} MB/s`
+  return `${(bps / 1024 ** 3).toFixed(2)} GB/s`
+}
+
+// Simple regex-based Markdown renderer
+const renderMarkdown = (text) => {
+  if (!text) return ''
+  let html = text
+    // Escape HTML special chars first
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    // Headings
+    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+    .replace(/^# (.+)$/gm, '<h1>$1</h1>')
+    // Bold / italic
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    // Inline code
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    // Links
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
+    // Unordered list items
+    .replace(/^[-*] (.+)$/gm, '<li>$1</li>')
+    // Ordered list items
+    .replace(/^\d+\. (.+)$/gm, '<li>$1</li>')
+    // Horizontal rule
+    .replace(/^---$/gm, '<hr/>')
+    // Wrap consecutive <li> runs in <ul>
+    .replace(/(<li>.*<\/li>(\n|$))+/g, (m) => `<ul>${m}</ul>`)
+    // Double newlines → paragraph breaks
+    .replace(/\n\n/g, '</p><p>')
+    // Single newlines inside paragraphs → <br>
+    .replace(/\n/g, '<br>')
+  return `<p>${html}</p>`
+}
+
+const renderedNotes = computed(() => {
+  const src = editingNotes.value ? notesText.value : (config.value?.description || '')
+  return renderMarkdown(src)
+})
+
+const startLiveUptime = () => {
+  liveUptimeTimer = setInterval(() => {
+    const st = vmStatus.value
+    if (st?.status !== 'running' || !st?.uptime) {
+      liveUptimeStr.value = ''
+      return
+    }
+    // uptime is in seconds, refreshed periodically. Count up from the last poll.
+    liveUptimeStr.value = formatUptime(st.uptime)
+  }, 1000)
+}
+
+const pushSparkSample = () => {
+  const s = vmStatus.value
+  if (!s) return
+  const sample = {
+    netin: s.netin || 0,
+    netout: s.netout || 0,
+    diskread: s.diskread || 0,
+    diskwrite: s.diskwrite || 0,
+  }
+  sparkSamples.value = [...sparkSamples.value, sample].slice(-SPARK_MAX)
+}
+
 // ── Access tab state ───────────────────────────────────────────────────────────
 const vmAclAll = ref([])
 const loadingVmAcl = ref(false)
@@ -3722,9 +4088,13 @@ const removeSerial = async (port) => {
 // ── Polling ────────────────────────────────────────────────────────────────────
 
 const startPolling = () => {
-  pollInterval = setInterval(() => {
+  startLiveUptime()
+  // Push initial sample
+  pushSparkSample()
+  pollInterval = setInterval(async () => {
     if (activeTab.value === 'overview' && vmStatus.value?.status === 'running') {
-      loadStatus()
+      await loadStatus()
+      pushSparkSample()
     }
   }, 5000)
 }
@@ -3829,11 +4199,13 @@ const saveConfig = async () => {
 
 const startEditNotes = () => {
   notesText.value = config.value.description || ''
+  notesPreview.value = false
   editingNotes.value = true
 }
 
 const cancelEditNotes = () => {
   editingNotes.value = false
+  notesPreview.value = false
 }
 
 const saveNotes = async () => {
@@ -4934,6 +5306,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   if (pollInterval) clearInterval(pollInterval)
+  if (liveUptimeTimer) clearInterval(liveUptimeTimer)
 })
 
 // ── Copy helpers ──────────────────────────────────────────────────────────
@@ -6453,4 +6826,374 @@ const copySshCommand = () => {
   padding: 0.4rem 0;
   color: var(--text-secondary);
 }
+
+/* ── Overview Tab ─────────────────────────────────────────────────────────── */
+.ov-top-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.ov-status-strip {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.ov-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.25rem 0.75rem;
+  border-radius: 1rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.ov-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+
+.ov-status-badge--running {
+  background: rgba(16,185,129,0.12);
+  color: #10b981;
+  border: 1px solid rgba(16,185,129,0.3);
+}
+.ov-status-badge--running .ov-status-dot {
+  animation: ov-pulse 1.5s infinite;
+  box-shadow: 0 0 0 0 rgba(16,185,129,0.6);
+}
+
+@keyframes ov-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(16,185,129,0.6); }
+  70%  { box-shadow: 0 0 0 5px rgba(16,185,129,0); }
+  100% { box-shadow: 0 0 0 0 rgba(16,185,129,0); }
+}
+
+.ov-status-badge--stopped {
+  background: rgba(239,68,68,0.10);
+  color: #ef4444;
+  border: 1px solid rgba(239,68,68,0.25);
+}
+.ov-status-badge--paused,
+.ov-status-badge--suspended {
+  background: rgba(245,158,11,0.12);
+  color: #f59e0b;
+  border: 1px solid rgba(245,158,11,0.3);
+}
+.ov-status-badge--unknown {
+  background: rgba(156,163,175,0.12);
+  color: #9ca3af;
+  border: 1px solid rgba(156,163,175,0.3);
+}
+
+.ov-uptime-live {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.ov-actions {
+  flex-shrink: 0;
+}
+
+.ov-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.spin-inline {
+  display: inline-block;
+  animation: spin 0.8s linear infinite;
+}
+
+/* ── Live stats panel ────────────────────────────────────────────── */
+.ov-live-panel {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.75rem;
+}
+
+.ov-stat-card {
+  background: var(--card-background, var(--background-secondary));
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 0.85rem 1rem 0.7rem;
+}
+
+.ov-stat-card--gauge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 0.5rem;
+}
+
+.ov-gauge-wrap {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.ov-arc-svg {
+  display: block;
+}
+
+.ov-gauge-label {
+  position: absolute;
+  bottom: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ov-gauge-unit {
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-left: 1px;
+}
+
+.ov-stat-name {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+  text-align: center;
+  margin-top: 0.25rem;
+}
+
+.ov-stat-card--mem .ov-stat-name {
+  text-align: left;
+  margin-top: 0;
+}
+
+.ov-stat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.4rem;
+}
+
+.ov-stat-val {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.ov-bar-track {
+  height: 6px;
+  background: var(--border-color);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 0.3rem;
+}
+
+.ov-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.4s ease, background 0.3s;
+}
+
+.ov-stat-sub {
+  font-size: 0.73rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Sparkline cards */
+.ov-stat-card--spark .ov-stat-header {
+  margin-bottom: 0.2rem;
+}
+
+.ov-sparkline {
+  display: block;
+  width: 100%;
+  height: 40px;
+}
+
+.ov-spark-legend {
+  display: flex;
+  align-items: center;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-top: 0.25rem;
+  flex-wrap: wrap;
+  gap: 0.15rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.ov-spark-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  vertical-align: middle;
+  margin-right: 2px;
+}
+
+/* Stopped notice */
+.ov-stopped-notice {
+  background: rgba(156,163,175,0.08);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 0.65rem 1rem;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+/* ── Config summary cards ──────────────────────────────────────────── */
+.ov-config-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.75rem;
+}
+
+.ov-info-card {
+  min-width: 0;
+}
+
+.ov-card-title {
+  margin: 0;
+  font-size: 0.88rem;
+}
+
+.ov-info-body {
+  padding: 0.6rem 1rem 0.75rem !important;
+}
+
+.ov-info-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.28rem 0;
+  border-bottom: 1px solid var(--border-color);
+  font-size: 0.82rem;
+}
+
+.ov-info-row:last-child {
+  border-bottom: none;
+}
+
+.ov-info-key {
+  color: var(--text-secondary);
+  flex-shrink: 0;
+  font-weight: 500;
+}
+
+.ov-info-val {
+  color: var(--text-primary);
+  text-align: right;
+  word-break: break-all;
+  font-variant-numeric: tabular-nums;
+}
+
+.ov-info-badge {
+  display: inline-block;
+  padding: 0.1rem 0.4rem;
+  background: rgba(59,130,246,0.1);
+  color: #3b82f6;
+  border: 1px solid rgba(59,130,246,0.25);
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  margin-left: 3px;
+}
+
+.ov-info-badge--vlan {
+  background: rgba(139,92,246,0.1);
+  color: #8b5cf6;
+  border-color: rgba(139,92,246,0.25);
+}
+
+.ov-info-badge--ok {
+  background: rgba(16,185,129,0.1);
+  color: #10b981;
+  border-color: rgba(16,185,129,0.25);
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+}
+
+.ov-info-badge--warn {
+  background: rgba(245,158,11,0.1);
+  color: #f59e0b;
+  border-color: rgba(245,158,11,0.25);
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+}
+
+/* ── Notes rendered markdown ───────────────────────────────────────── */
+.ov-notes-textarea {
+  font-family: ui-monospace, monospace;
+  font-size: 0.85rem;
+  resize: vertical;
+}
+
+.ov-notes-hint {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-top: 0.3rem;
+}
+
+.ov-notes-rendered {
+  font-size: 0.875rem;
+  line-height: 1.65;
+  color: var(--text-primary);
+  min-height: 40px;
+}
+
+.ov-notes-rendered p {
+  margin: 0 0 0.5em;
+}
+.ov-notes-rendered p:last-child {
+  margin-bottom: 0;
+}
+.ov-notes-rendered h1,
+.ov-notes-rendered h2,
+.ov-notes-rendered h3 {
+  font-weight: 700;
+  margin: 0.6em 0 0.3em;
+}
+.ov-notes-rendered h1 { font-size: 1.2em; }
+.ov-notes-rendered h2 { font-size: 1.05em; }
+.ov-notes-rendered h3 { font-size: 0.95em; }
+.ov-notes-rendered ul {
+  margin: 0.3em 0 0.5em 1.4em;
+  padding: 0;
+}
+.ov-notes-rendered li { margin: 0.15em 0; }
+.ov-notes-rendered code {
+  background: rgba(59,130,246,0.08);
+  border: 1px solid rgba(59,130,246,0.15);
+  padding: 0.1em 0.3em;
+  border-radius: 3px;
+  font-family: ui-monospace, monospace;
+  font-size: 0.88em;
+}
+.ov-notes-rendered a {
+  color: var(--color-primary, #3b82f6);
+  text-decoration: underline;
+}
+.ov-notes-rendered hr {
+  border: none;
+  border-top: 1px solid var(--border-color);
+  margin: 0.75rem 0;
+}
+/* ── End Overview Tab ─────────────────────────────────────────────── */
 </style>

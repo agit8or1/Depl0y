@@ -40,6 +40,66 @@ _API_KEY_RPM = 60  # requests per minute per API key
 _temp_tokens: dict = {}
 _TEMP_TOKEN_TTL = 300  # 5 minutes
 
+# ---------------------------------------------------------------------------
+# In-memory IP-based brute-force protection
+# Tracks failed login attempts per IP independently of the per-username DB store
+# {ip: {"count": int, "first_attempt": float, "blocked_until": float|None}}
+# ---------------------------------------------------------------------------
+_IP_FAIL_WINDOW = 15 * 60   # 15 minutes observation window
+_IP_FAIL_MAX = 5             # block after this many failures in the window
+_IP_BLOCK_DURATION = 15 * 60 # block duration in seconds (15 minutes)
+_ip_fail_tracker: dict = {}
+
+
+def _ip_check_and_record_failure(ip: str) -> bool:
+    """
+    Record a failed login from *ip*.
+    Returns True if the IP should now be blocked (caller must raise 429).
+    Also returns True if the IP is already blocked and the block has not expired.
+    """
+    now = time.time()
+    entry = _ip_fail_tracker.get(ip)
+
+    if entry is None:
+        _ip_fail_tracker[ip] = {"count": 1, "first_attempt": now, "blocked_until": None}
+        return False
+
+    # Check active block first
+    if entry["blocked_until"] and now < entry["blocked_until"]:
+        return True  # still blocked
+
+    # Check if the observation window has expired — reset if so
+    if now - entry["first_attempt"] > _IP_FAIL_WINDOW:
+        _ip_fail_tracker[ip] = {"count": 1, "first_attempt": now, "blocked_until": None}
+        return False
+
+    entry["count"] += 1
+
+    if entry["count"] >= _IP_FAIL_MAX:
+        entry["blocked_until"] = now + _IP_BLOCK_DURATION
+        return True
+
+    return False
+
+
+def _ip_is_blocked(ip: str) -> bool:
+    """Return True if the IP is currently in an active block period."""
+    now = time.time()
+    entry = _ip_fail_tracker.get(ip)
+    if entry is None:
+        return False
+    if entry["blocked_until"] and now < entry["blocked_until"]:
+        return True
+    # Block expired — clean up
+    if entry["blocked_until"] and now >= entry["blocked_until"]:
+        del _ip_fail_tracker[ip]
+    return False
+
+
+def _ip_clear_failures(ip: str):
+    """Remove failure tracking for an IP after a successful login."""
+    _ip_fail_tracker.pop(ip, None)
+
 
 def _cleanup_temp_tokens():
     """Remove expired temp tokens from in-memory store."""
@@ -615,6 +675,27 @@ async def login(credentials: LoginRequest, request: Request, db: Session = Depen
     if ip_block_msg:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=ip_block_msg)
 
+    # In-memory IP brute-force block (independent of per-username DB lockout)
+    if _ip_is_blocked(client_ip):
+        try:
+            from app.api.audit import log_audit_event
+            log_audit_event(
+                db,
+                action="login_blocked_ip",
+                user_id=None,
+                resource_type="user",
+                details={"username": credentials.username, "reason": "ip_blocked"},
+                ip_address=client_ip,
+                user_agent=user_agent,
+                success=False,
+            )
+        except Exception:
+            pass
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too Many Requests — your IP has been temporarily blocked due to repeated failed login attempts.",
+        )
+
     # Brute-force: check if account is locked
     lockout_msg = _check_account_lockout(db, credentials.username)
     if lockout_msg:
@@ -634,7 +715,9 @@ async def login(credentials: LoginRequest, request: Request, db: Session = Depen
     time.sleep(random.uniform(0.001, 0.05))
 
     if not user or not password_valid:
+        # Record failure in both DB (per-username) and in-memory IP tracker
         _record_failed_login(db, credentials.username, client_ip, user_agent)
+        ip_now_blocked = _ip_check_and_record_failure(client_ip)
         _record_login_attempt(
             db,
             user_id=user.id if user else None,
@@ -687,6 +770,32 @@ async def login(credentials: LoginRequest, request: Request, db: Session = Depen
             loop.create_task(_fire_login_failed_event())
         except Exception:
             pass
+
+        # If this failure pushed the IP over the threshold, log the block event
+        if ip_now_blocked:
+            try:
+                from app.api.audit import log_audit_event
+                log_audit_event(
+                    db,
+                    action="login_ip_blocked",
+                    user_id=None,
+                    resource_type="user",
+                    details={
+                        "username": credentials.username,
+                        "ip": client_ip,
+                        "reason": f"IP blocked after {_IP_FAIL_MAX} failed attempts",
+                    },
+                    ip_address=client_ip,
+                    user_agent=user_agent,
+                    success=False,
+                )
+            except Exception:
+                pass
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Too Many Requests — your IP has been temporarily blocked due to repeated failed login attempts.",
+            )
+
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
@@ -710,6 +819,7 @@ async def login(credentials: LoginRequest, request: Request, db: Session = Depen
 
     # No 2FA — complete login immediately
     _clear_failed_attempts(db, credentials.username)
+    _ip_clear_failures(client_ip)
     _record_login_attempt(db, user.id, credentials.username, client_ip, user_agent, True, None)
 
     # Audit log: successful login

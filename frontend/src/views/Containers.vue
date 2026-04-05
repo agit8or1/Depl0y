@@ -105,11 +105,39 @@
       </div>
     </div>
 
+    <!-- Critical error banner -->
+    <div v-if="criticalError" class="error-banner mb-2">
+      <div class="error-banner__icon">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      </div>
+      <div class="error-banner__body">
+        <strong>Failed to load containers</strong>
+        <span class="error-banner__msg">{{ criticalError }}</span>
+      </div>
+      <button @click="loadAll(true)" class="btn btn-outline btn-sm error-banner__retry">Retry</button>
+    </div>
+
+    <!-- Partial failure warning (some hosts failed) -->
+    <div v-if="failedHosts.length > 0 && !criticalError" class="warning-banner mb-2">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      <span>
+        <strong>{{ failedHosts.length }} host{{ failedHosts.length !== 1 ? 's' : '' }} unreachable:</strong>
+        {{ failedHosts.join(', ') }} — data shown may be incomplete.
+      </span>
+    </div>
+
+    <!-- Timeout warning -->
+    <div v-if="timeoutWarning" class="warning-banner mb-2">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      <span>Some requests are taking longer than expected. Data may be incomplete.</span>
+      <button @click="timeoutWarning = false" class="btn-inline-close">×</button>
+    </div>
+
     <!-- Loading skeleton -->
     <SkeletonLoader v-if="loading && containers.length === 0" type="table" :count="8" />
 
     <!-- Empty state: no containers at all -->
-    <div v-else-if="!loading && containers.length === 0" class="card empty-state">
+    <div v-else-if="!loading && !criticalError && containers.length === 0" class="card empty-state">
       <div class="empty-icon-wrap">
         <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
       </div>
@@ -119,12 +147,13 @@
     </div>
 
     <!-- Empty state: filters match nothing -->
-    <div v-else-if="!loading && sortedContainers.length === 0" class="card empty-state">
+    <div v-else-if="!loading && sortedContainers.length === 0 && containers.length > 0" class="card empty-state">
       <div class="empty-icon-wrap">
         <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
       </div>
       <h4 class="empty-title">No containers match your filters</h4>
       <p class="empty-subtitle">Try adjusting the search query, status or node filters.</p>
+      <button @click="clearFilters" class="btn btn-outline">Clear Filters</button>
     </div>
 
     <!-- Grid View -->
@@ -496,6 +525,9 @@ export default {
     const loading = ref(true)
     const bulkActioning = ref(false)
     const viewMode = ref('table')
+    const criticalError = ref(null)
+    const failedHosts = ref([])
+    const timeoutWarning = ref(false)
 
     // Snapshot modal state
     const showSnapshotModal = ref(false)
@@ -577,40 +609,96 @@ export default {
 
     // ── Data loading ─────────────────────────────────────────────────────────
 
+    const LOAD_TIMEOUT_MS = 10_000
+
+    async function withTimeout(promise, ms) {
+      let timer
+      const timeout = new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error('timeout')), ms)
+      })
+      try {
+        const result = await Promise.race([promise, timeout])
+        clearTimeout(timer)
+        return result
+      } catch (err) {
+        clearTimeout(timer)
+        throw err
+      }
+    }
+
+    async function tryLoadAll() {
+      const hostsRes = await api.proxmox.listHosts()
+      hosts.value = hostsRes.data || []
+
+      const localFailedHosts = []
+      let timedOut = false
+
+      const allCts = await Promise.all(
+        hosts.value.map(async (host) => {
+          try {
+            const res = await withTimeout(
+              api.pveNode.clusterResources(host.id, 'lxc'),
+              LOAD_TIMEOUT_MS
+            )
+            const items = res.data || []
+            return items.map(ct => ({
+              ...ct,
+              _hostId: host.id,
+              _hostName: host.name,
+              _node: ct.node || ct._node || '',
+              _ip: extractIp(ct),
+              _actioning: false,
+              _pendingAction: null,
+            }))
+          } catch (err) {
+            if (err.message === 'timeout') timedOut = true
+            localFailedHosts.push(host.name || host.id)
+            return []
+          }
+        })
+      )
+
+      failedHosts.value = localFailedHosts
+      timeoutWarning.value = timedOut
+      containers.value = allCts.flat().sort((a, b) => a.vmid - b.vmid)
+    }
+
     const loadAll = async (manual = false) => {
       if (manual) countdown.value = REFRESH_SECS
       loading.value = true
-      try {
-        const hostsRes = await api.proxmox.listHosts()
-        hosts.value = hostsRes.data || []
+      criticalError.value = null
 
-        const allCts = await Promise.all(
-          hosts.value.map(async (host) => {
-            try {
-              const res = await api.pveNode.clusterResources(host.id, 'lxc')
-              const items = res.data || []
-              return items.map(ct => ({
-                ...ct,
-                _hostId: host.id,
-                _hostName: host.name,
-                _node: ct.node || ct._node || '',
-                _ip: extractIp(ct),
-                _actioning: false,
-                _pendingAction: null,
-              }))
-            } catch {
-              return []
-            }
-          })
-        )
-
-        containers.value = allCts.flat().sort((a, b) => a.vmid - b.vmid)
-      } catch (e) {
-        console.error('Failed to load containers', e)
-        toast.error('Failed to load containers')
-      } finally {
-        loading.value = false
+      let lastErr = null
+      const MAX_ATTEMPTS = 2
+      for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+        try {
+          await tryLoadAll()
+          lastErr = null
+          break
+        } catch (e) {
+          lastErr = e
+          if (attempt < MAX_ATTEMPTS) {
+            // exponential backoff: 1s before retry
+            await new Promise(r => setTimeout(r, 1000 * attempt))
+          }
+        }
       }
+
+      if (lastErr) {
+        console.error('Failed to load containers', lastErr)
+        criticalError.value = lastErr.response?.data?.detail || lastErr.message || 'Unknown error'
+        toast.error('Failed to load containers')
+      }
+
+      loading.value = false
+    }
+
+    const clearFilters = () => {
+      searchQuery.value = ''
+      statusFilter.value = 'all'
+      hostFilter.value = 'all'
+      nodeFilter.value = 'all'
+      memFilter.value = 'all'
     }
 
     // ── Computed: unique nodes ────────────────────────────────────────────────
@@ -728,6 +816,7 @@ export default {
         setTimeout(() => loadAll(), 3000)
       } catch (e) {
         console.error(e)
+        toast.error(`Failed to ${action} container ${ct.name || ct.vmid}`)
       } finally {
         ct._actioning = false
         ct._pendingAction = null
@@ -877,12 +966,16 @@ export default {
       snapshotTarget,
       snapshotForm,
       savingSnapshot,
+      criticalError,
+      failedHosts,
+      timeoutWarning,
       formatBytes,
       formatUptime,
       statusBadgeClass,
       barClass,
       parseTags,
       loadAll,
+      clearFilters,
       ctAction,
       openShell,
       openDetail,
@@ -1332,4 +1425,58 @@ export default {
   font-size: 0.875rem;
 }
 .mt-2 { margin-top: 0.75rem; }
+
+/* ── Error / Warning Banners ─────────────────────────────────────────────── */
+.error-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  border-radius: 0.5rem;
+  color: var(--text-primary);
+}
+
+.error-banner__icon { color: #ef4444; flex-shrink: 0; }
+
+.error-banner__body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.error-banner__msg {
+  font-size: 0.825rem;
+  color: var(--text-muted);
+}
+
+.error-banner__retry { margin-left: auto; flex-shrink: 0; }
+
+.warning-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.6rem 1rem;
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+}
+
+.warning-banner svg { color: #f59e0b; flex-shrink: 0; }
+
+.btn-inline-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 1.1rem;
+  line-height: 1;
+  color: var(--text-muted);
+  padding: 0 0.2rem;
+  margin-left: auto;
+}
+.btn-inline-close:hover { color: var(--text-primary); }
 </style>

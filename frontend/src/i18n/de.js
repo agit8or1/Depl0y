@@ -5,6 +5,7 @@ export default {
   'nav.section.infrastructure': 'Infrastruktur',
   'nav.section.admin': 'Administration',
   'nav.section.account': 'Konto',
+  'nav.section.favorites': 'Favoriten',
 
   // Navigation — links
   'nav.dashboard': 'Dashboard',
@@ -29,6 +30,11 @@ export default {
   'nav.idrac': 'iDRAC / iLO',
   'nav.network': 'Netzwerkverwaltung',
   'nav.sdn': 'SDN / VNets',
+  'nav.firewall': 'Firewall',
+  'nav.ceph': 'Ceph-Speicher',
+  'nav.pve_users': 'PVE-Benutzer',
+  'nav.vm_search': 'VM-Suche',
+  'nav.cluster': 'Cluster-Übersicht',
   'nav.images': 'Images',
   'nav.proxmox_hosts': 'Proxmox-Hosts',
   'nav.storage_management': 'Speicherverwaltung',
@@ -72,12 +78,23 @@ export default {
   'common.disabled': 'Deaktiviert',
   'common.error': 'Fehler',
   'common.success': 'Erfolg',
+  'common.warning': 'Warnung',
+  'common.info': 'Info',
+  'common.none': 'Keine',
+  'common.unknown': 'Unbekannt',
   'common.actions': 'Aktionen',
   'common.status': 'Status',
   'common.name': 'Name',
+  'common.description': 'Beschreibung',
+  'common.type': 'Typ',
+  'common.size': 'Größe',
+  'common.date': 'Datum',
   'common.copy': 'Kopieren',
   'common.copied': 'Kopiert',
+  'common.check': 'Prüfen',
   'common.checking': 'Wird geprüft...',
+  'common.verifying': 'Wird verifiziert...',
+  'common.updating': 'Wird aktualisiert...',
 
   // Status
   'status.running': 'Läuft',
@@ -109,6 +126,8 @@ export default {
   'vm.memory': 'Arbeitsspeicher',
   'vm.disk': 'Festplatte',
   'vm.network': 'Netzwerk',
+  'vm.ip_address': 'IP-Adresse',
+  'vm.os_type': 'Betriebssystemtyp',
   'vm.uptime': 'Betriebszeit',
 
   // Login
@@ -130,16 +149,27 @@ export default {
   'login.use_authenticator': 'Stattdessen die Authenticator-App verwenden',
   'login.back_to_login': 'Zurück zur Anmeldung',
 
-  // Settings
+  // Settings — General
   'settings.language': 'Sprache',
   'settings.language_label': 'Oberflächensprache',
   'settings.language_hint': 'Wählen Sie die Sprache für die Depl0y-Oberfläche. Sofort wirksam.',
   'settings.language_en': 'English (EN)',
   'settings.language_de': 'Deutsch (DE)',
   'settings.language_fr': 'Français (FR)',
+
+  // Settings — Appearance
   'settings.appearance': 'Darstellung',
   'settings.appearance_subtitle': 'Passen Sie das Aussehen von Depl0y an',
   'settings.theme': 'Design',
   'settings.theme_hint': 'Wählen Sie zwischen hell, dunkel oder Systemeinstellung.',
+
+  // Settings — General section
   'settings.general': 'Allgemeine Einstellungen',
+  'settings.app_name': 'Anwendungsname',
+  'settings.app_url': 'Anwendungs-URL',
+  'settings.default_language': 'Standardsprache',
+  'settings.default_timezone': 'Standardzeitzone',
+  'settings.session_timeout': 'Sitzungstimeout (Minuten)',
+  'settings.max_login_attempts': 'Maximale Anmeldeversuche vor Sperrung',
+  'settings.lockout_duration': 'Sperrdauer (Minuten)',
 }

@@ -565,6 +565,7 @@ class LLMDeployRequest(BaseModel):
     # Credentials
     username: str
     password: str
+    ssh_public_key: Optional[str] = None  # Optional SSH public key for cloud-init
 
 
 # ---------------------------------------------------------------------------
@@ -764,6 +765,7 @@ async def deploy_llm(
         dns_servers=deploy_data.dns_servers,
         username=deploy_data.username,
         password=encrypt_data(deploy_data.password),
+        ssh_key=deploy_data.ssh_public_key or None,
         status=VMStatus.CREATING,
         cloud_init_config=llm_cloud_init,
         created_by=current_user.id,
@@ -2457,6 +2459,34 @@ async def get_instance_status(
         return {"reachable": False, "ip": ip, "models_loaded": [], "models_installed": [], "error": "Timeout"}
     except Exception as e:
         return {"reachable": False, "ip": ip, "models_loaded": [], "models_installed": [], "error": str(e)}
+
+
+@router.get("/instances/{host_id}/{node}/{vmid}/version")
+async def get_instance_version(
+    host_id: int,
+    node: str,
+    vmid: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Return Ollama version string from the VM's /api/version endpoint."""
+    import httpx
+
+    ip = _get_proxmox_vm_ip(host_id, node, vmid, db)
+    if not ip:
+        return {"version": None, "error": "IP not resolved"}
+
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            r = await client.get(f"http://{ip}:11434/api/version")
+            if r.status_code == 200:
+                data = r.json()
+                return {"version": data.get("version"), "error": None}
+            return {"version": None, "error": f"HTTP {r.status_code}"}
+    except httpx.ConnectError:
+        return {"version": None, "error": "not reachable"}
+    except Exception as e:
+        return {"version": None, "error": str(e)}
 
 
 @router.post("/instances/{host_id}/{node}/{vmid}/unload/{model:path}")

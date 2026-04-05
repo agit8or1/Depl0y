@@ -373,6 +373,7 @@ export default {
     pullInstanceModel: (hostId, node, vmid, model) => api.post(`/llm/instances/${hostId}/${node}/${vmid}/pull`, { model }),
     deleteInstanceModel: (hostId, node, vmid, model) => api.delete(`/llm/instances/${hostId}/${node}/${vmid}/models/${encodeURIComponent(model)}`),
     unloadInstanceModel: (hostId, node, vmid, model) => api.post(`/llm/instances/${hostId}/${node}/${vmid}/unload/${encodeURIComponent(model)}`),
+    getInstanceVersion: (hostId, node, vmid) => api.get(`/llm/instances/${hostId}/${node}/${vmid}/version`),
   },
 
   // VM Import
@@ -565,6 +566,7 @@ export default {
     listUnusedDisks: (h, node, vmid) => api.get(`/pve-vm/${h}/${node}/${vmid}/unused-disks`),
     reattachDisk: (h, node, vmid, unused_key, bus = 'scsi') => api.post(`/pve-vm/${h}/${node}/${vmid}/reattach-disk`, null, { params: { unused_key, bus } }),
     addNIC: (h, node, vmid, data) => api.post(`/pve-vm/${h}/${node}/${vmid}/network`, data),
+    updateNIC: (h, node, vmid, nic, data) => api.put(`/pve-vm/${h}/${node}/${vmid}/network/${nic}`, data),
     removeNIC: (h, node, vmid, nic) => api.delete(`/pve-vm/${h}/${node}/${vmid}/network/${nic}`),
     template: (h, node, vmid) => api.post(`/pve-vm/${h}/${node}/${vmid}/template`),
     delete: (h, node, vmid) => api.delete(`/pve-vm/${h}/${node}/${vmid}`),

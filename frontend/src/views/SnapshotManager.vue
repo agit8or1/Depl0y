@@ -20,6 +20,19 @@
         <button v-if="singleVmMode" @click="openCreateSnap" class="btn btn-primary">
           + Take Snapshot
         </button>
+        <!-- Global "Create Snapshot" for cluster mode: uses VM picker -->
+        <button v-if="!singleVmMode && sel.hostId" @click="openGlobalCreateSnap" class="btn btn-primary">
+          + Create Snapshot
+        </button>
+        <!-- Timeline toggle -->
+        <button
+          v-if="singleVmMode"
+          @click="showTimeline = !showTimeline"
+          :class="['btn btn-sm', showTimeline ? 'btn-primary' : 'btn-outline']"
+          title="Toggle timeline view"
+        >
+          Timeline
+        </button>
         <button @click="refresh" class="btn btn-outline btn-sm" :disabled="loading">
           {{ loading ? 'Loading…' : 'Refresh' }}
         </button>
@@ -97,6 +110,12 @@
         </div>
       </div>
 
+      <!-- Count warning -->
+      <div v-if="realSnapCount >= 10" class="snap-count-warning mb-2">
+        <strong>⚠ {{ realSnapCount }} snapshots</strong> — Proxmox recommends fewer than 10 snapshots per VM.
+        Consider cleaning up old snapshots to maintain disk I/O performance.
+      </div>
+
       <!-- Compare notice -->
       <div v-if="selectedForCompare.length === 2" class="compare-bar mb-2">
         <span>2 snapshots selected — </span>
@@ -107,11 +126,65 @@
         Select one more snapshot to compare.
       </div>
 
+      <!-- ─── Timeline View ─── -->
+      <div v-if="showTimeline" class="card mb-3">
+        <div class="card-header">
+          <h3>Snapshot Timeline</h3>
+          <span class="text-muted text-sm">Newest → Oldest</span>
+        </div>
+        <div class="timeline-container">
+          <div v-if="sortedSnapsForTimeline.length === 0" class="empty-state">
+            No snapshots to display on timeline.
+          </div>
+          <div v-else class="timeline-track">
+            <div
+              v-for="snap in sortedSnapsForTimeline"
+              :key="snap.name"
+              class="timeline-item"
+            >
+              <div class="timeline-dot" :class="snap.vmstate ? 'timeline-dot--ram' : ''"></div>
+              <div class="timeline-content">
+                <div class="timeline-name">{{ snap.name }}</div>
+                <div class="timeline-date text-muted text-xs">{{ fmtTs(snap.snaptime) }}</div>
+                <div v-if="snap.description" class="timeline-desc text-muted text-xs">{{ snap.description }}</div>
+                <div v-if="snap.vmstate" class="badge badge-info" style="font-size:0.6rem;margin-top:0.2rem;">RAM</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Snapshot Tree -->
       <div class="card">
         <div class="card-header">
-          <h3>Snapshots ({{ snapshots.filter(s => s.name !== 'current').length }})</h3>
-          <span class="text-muted text-sm">Click a row to expand; use checkboxes to compare two snapshots</span>
+          <h3>
+            Snapshots
+            <span :class="['badge ml-1', realSnapCount >= 10 ? 'badge-warning' : 'badge-secondary']" style="font-size:0.7rem;">
+              {{ realSnapCount }}
+            </span>
+          </h3>
+          <div class="flex gap-2 align-center">
+            <span class="text-muted text-sm">Check 2 to compare; use Rollback Latest to go to newest</span>
+            <!-- Batch actions for single VM -->
+            <button
+              v-if="realSnapCount > 0"
+              @click="doDeleteAll"
+              class="btn btn-danger btn-sm"
+              :disabled="actingSnap !== null"
+              title="Delete all snapshots for this VM (irreversible)"
+            >
+              Delete All
+            </button>
+            <button
+              v-if="latestSnap"
+              @click="doRollbackLatest"
+              class="btn btn-warning btn-sm"
+              :disabled="actingSnap !== null"
+              title="Rollback to the newest snapshot"
+            >
+              Rollback Latest
+            </button>
+          </div>
         </div>
 
         <div v-if="snapshots.length === 0" class="empty-state">
@@ -158,6 +231,7 @@
       <div class="card">
         <div class="card-header">
           <h3>VM Snapshot Summary</h3>
+          <span class="text-muted text-sm">{{ filteredClusterRows.length }} VM(s) with snapshots</span>
         </div>
 
         <div v-if="clusterRows.length === 0" class="empty-state">
@@ -171,7 +245,10 @@
                 <th>VMID</th>
                 <th>Name</th>
                 <th>Node</th>
+                <th>Type</th>
                 <th>Snapshots</th>
+                <th>Children</th>
+                <th>RAM Snaps</th>
                 <th>Oldest</th>
                 <th>Newest</th>
                 <th>Actions</th>
@@ -181,24 +258,47 @@
               <tr
                 v-for="row in filteredClusterRows"
                 :key="`${row.node}-${row.vmid}`"
+                :class="row.snapCount >= 10 ? 'row-warning' : ''"
               >
                 <td>{{ row.vmid }}</td>
                 <td>{{ row.name || '—' }}</td>
                 <td>{{ row.node }}</td>
                 <td>
-                  <span :class="['badge', row.snapCount > 10 ? 'badge-warning' : 'badge-info']">
+                  <span class="badge badge-secondary" style="font-size:0.65rem;">{{ row.type }}</span>
+                </td>
+                <td>
+                  <span :class="['badge', row.snapCount >= 10 ? 'badge-warning' : 'badge-info']">
                     {{ row.snapCount }}
                   </span>
                 </td>
+                <td class="text-sm text-muted">{{ row.childCount || 0 }}</td>
+                <td class="text-sm text-muted">{{ row.ramCount || 0 }}</td>
                 <td class="text-sm text-muted">{{ row.oldest ? fmtTs(row.oldest) : '—' }}</td>
                 <td class="text-sm text-muted">{{ row.newest ? fmtTs(row.newest) : '—' }}</td>
                 <td>
-                  <router-link
-                    :to="`/snapshots?hostId=${sel.hostId}&node=${row.node}&vmid=${row.vmid}`"
-                    class="btn btn-outline btn-sm"
-                  >
-                    Manage
-                  </router-link>
+                  <div class="flex gap-1">
+                    <router-link
+                      :to="`/snapshots?hostId=${sel.hostId}&node=${row.node}&vmid=${row.vmid}`"
+                      class="btn btn-outline btn-sm"
+                    >
+                      Manage
+                    </router-link>
+                    <button
+                      @click="doRollbackLatestCluster(row)"
+                      class="btn btn-warning btn-xs"
+                      :disabled="!row.newestSnap"
+                      title="Rollback to latest snapshot"
+                    >
+                      Rollback Latest
+                    </button>
+                    <button
+                      @click="openDeleteAllForRow(row)"
+                      class="btn btn-danger btn-xs"
+                      title="Delete all snapshots for this VM"
+                    >
+                      Delete All
+                    </button>
+                  </div>
                 </td>
               </tr>
             </tbody>
@@ -207,7 +307,7 @@
       </div>
     </template>
 
-    <!-- ─── CREATE SNAPSHOT MODAL ─────────────────────────────────────────── -->
+    <!-- ─── CREATE SNAPSHOT MODAL (single VM or global picker) ───────────────── -->
     <div v-if="showCreateModal" class="modal-overlay" @click.self="showCreateModal = false">
       <div class="modal-box">
         <div class="modal-header">
@@ -215,6 +315,30 @@
           <button @click="showCreateModal = false" class="modal-close">×</button>
         </div>
         <div class="modal-body">
+          <!-- VM picker (only shown in cluster/global mode) -->
+          <div v-if="!singleVmMode" class="form-group">
+            <label class="form-label">Host <span class="text-danger">*</span></label>
+            <select v-model="createForm.targetHostId" class="form-control" @change="onCreateHostChange">
+              <option value="">— Select host —</option>
+              <option v-for="h in hosts" :key="h.id" :value="h.id">{{ h.name }}</option>
+            </select>
+          </div>
+          <div v-if="!singleVmMode" class="form-group">
+            <label class="form-label">Node <span class="text-danger">*</span></label>
+            <select v-model="createForm.targetNode" class="form-control" @change="onCreateNodeChange" :disabled="!createForm.targetHostId">
+              <option value="">— Node —</option>
+              <option v-for="n in createNodes" :key="n.node" :value="n.node">{{ n.node }}</option>
+            </select>
+          </div>
+          <div v-if="!singleVmMode" class="form-group">
+            <label class="form-label">VM <span class="text-danger">*</span></label>
+            <select v-model="createForm.targetVmid" class="form-control" :disabled="!createForm.targetNode">
+              <option value="">— Select VM —</option>
+              <option v-for="v in createVms" :key="v.vmid" :value="v.vmid">
+                {{ v.vmid }} — {{ v.name || v.vmid }}
+              </option>
+            </select>
+          </div>
           <div class="form-group">
             <label class="form-label">Snapshot Name <span class="text-danger">*</span></label>
             <input v-model="createForm.snapname" class="form-control" placeholder="e.g. before-upgrade" />
@@ -327,6 +451,30 @@
       </div>
     </div>
 
+    <!-- ─── DELETE ALL SNAPSHOTS CONFIRM MODAL ────────────────────────────── -->
+    <div v-if="showDeleteAllModal" class="modal-overlay" @click.self="showDeleteAllModal = false">
+      <div class="modal-box">
+        <div class="modal-header">
+          <h3>Delete All Snapshots</h3>
+          <button @click="showDeleteAllModal = false" class="modal-close">×</button>
+        </div>
+        <div class="modal-body">
+          <p class="text-sm mb-2">
+            You are about to delete <strong>{{ deleteAllTarget?.snapCount || realSnapCount }}</strong>
+            snapshot(s) for VM
+            <strong>{{ deleteAllTarget ? `${deleteAllTarget.vmid} (${deleteAllTarget.name || deleteAllTarget.vmid})` : `${effectiveVmid}` }}</strong>.
+          </p>
+          <p class="error-msg" style="margin:0;">This action is irreversible. All snapshot data will be permanently deleted.</p>
+        </div>
+        <div class="modal-footer">
+          <button @click="showDeleteAllModal = false" class="btn btn-outline">Cancel</button>
+          <button @click="executeDeleteAll" class="btn btn-danger" :disabled="bulkDeleting">
+            {{ bulkDeleting ? 'Deleting…' : 'Delete All Snapshots' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- ─── SNAPSHOT CONFIG COMPARE MODAL ───────────────────────────────── -->
     <div v-if="showCompareModal" class="modal-overlay" @click.self="showCompareModal = false">
       <div class="modal-box modal-box--wide">
@@ -410,11 +558,21 @@ const sel = ref({ hostId: '', node: '', vmid: '' })
 const selectedForCompare = ref([])
 const actingSnap = ref(null)
 
+// Timeline toggle
+const showTimeline = ref(false)
+
 // Create snapshot modal
 const showCreateModal = ref(false)
 const creating = ref(false)
 const createError = ref('')
-const createForm = ref({ snapname: '', description: '', vmstate: false })
+const createForm = ref({
+  snapname: '', description: '', vmstate: false,
+  // for global picker (cluster mode)
+  targetHostId: '', targetNode: '', targetVmid: null,
+})
+// Cascading dropdowns for global create
+const createNodes = ref([])
+const createVms = ref([])
 
 // Clone from snapshot modal
 const showCloneModal = ref(false)
@@ -428,6 +586,10 @@ const filterMinSnaps = ref(0)
 const showBulkModal = ref(false)
 const bulkPreview = ref([])
 const bulkDeleting = ref(false)
+
+// Delete-all modal
+const showDeleteAllModal = ref(false)
+const deleteAllTarget = ref(null) // { vmid, node, type, name, snapCount, snaps } or null for current single VM
 
 // Compare modal
 const showCompareModal = ref(false)
@@ -453,6 +615,20 @@ const effectiveVmid = computed(() =>
 )
 
 const vmName = computed(() => vmStatus.value?.name || vmConfig.value?.name || `VM ${effectiveVmid.value}`)
+
+const realSnapCount = computed(() => snapshots.value.filter(s => s.name !== 'current').length)
+
+const latestSnap = computed(() => {
+  const snaps = snapshots.value.filter(s => s.name !== 'current' && s.snaptime)
+  if (!snaps.length) return null
+  return snaps.reduce((a, b) => (a.snaptime > b.snaptime ? a : b))
+})
+
+// Timeline: all snapshots sorted newest first
+const sortedSnapsForTimeline = computed(() =>
+  [...snapshots.value.filter(s => s.name !== 'current')]
+    .sort((a, b) => (b.snaptime || 0) - (a.snaptime || 0))
+)
 
 // Build hierarchical snapshot tree
 const treeRoots = computed(() => {
@@ -597,14 +773,24 @@ async function loadClusterWide() {
             const snaps = (snapsRes.data || []).filter(s => s.name !== 'current')
             if (snaps.length > 0) {
               const times = snaps.map(s => s.snaptime || 0).filter(Boolean)
+              // Count snaps with children
+              const nameSet = new Set(snaps.map(s => s.name))
+              const childCount = snaps.filter(s => s.parent && nameSet.has(s.parent)).length
+              const ramCount = snaps.filter(s => s.vmstate).length
+              const newestSnap = times.length
+                ? snaps.reduce((a, b) => ((a.snaptime || 0) > (b.snaptime || 0) ? a : b))
+                : null
               rows.push({
                 vmid: vm.vmid,
                 name: vm.name,
                 node,
                 type: vm.type || 'qemu',
                 snapCount: snaps.length,
+                childCount,
+                ramCount,
                 oldest: times.length ? Math.min(...times) : null,
                 newest: times.length ? Math.max(...times) : null,
+                newestSnap,
                 snaps,
               })
             }
@@ -624,9 +810,39 @@ async function loadClusterWide() {
 }
 
 function openCreateSnap() {
-  createForm.value = { snapname: '', description: '', vmstate: false }
+  createForm.value = { snapname: '', description: '', vmstate: false, targetHostId: '', targetNode: '', targetVmid: null }
   createError.value = ''
   showCreateModal.value = true
+}
+
+function openGlobalCreateSnap() {
+  createForm.value = { snapname: '', description: '', vmstate: false, targetHostId: '', targetNode: '', targetVmid: null }
+  createNodes.value = []
+  createVms.value = []
+  createError.value = ''
+  showCreateModal.value = true
+}
+
+async function onCreateHostChange() {
+  createNodes.value = []
+  createVms.value = []
+  createForm.value.targetNode = ''
+  createForm.value.targetVmid = null
+  if (!createForm.value.targetHostId) return
+  try {
+    const res = await api.proxmox.listNodes(Number(createForm.value.targetHostId))
+    createNodes.value = res.data || []
+  } catch (e) { /* ignore */ }
+}
+
+async function onCreateNodeChange() {
+  createVms.value = []
+  createForm.value.targetVmid = null
+  if (!createForm.value.targetHostId || !createForm.value.targetNode) return
+  try {
+    const res = await api.pveNode.nodeVms(Number(createForm.value.targetHostId), createForm.value.targetNode)
+    createVms.value = [...(res.data?.vms || []), ...(res.data?.containers || [])]
+  } catch (e) { /* ignore */ }
 }
 
 async function doCreate() {
@@ -634,15 +850,21 @@ async function doCreate() {
     createError.value = 'Snapshot name is required.'
     return
   }
+  const hId = singleVmMode.value ? effectiveHostId.value : Number(createForm.value.targetHostId)
+  const nd = singleVmMode.value ? effectiveNode.value : createForm.value.targetNode
+  const vid = singleVmMode.value ? effectiveVmid.value : createForm.value.targetVmid
+  if (!hId || !nd || !vid) {
+    createError.value = 'Please select host, node, and VM.'
+    return
+  }
   creating.value = true
   createError.value = ''
   try {
-    const res = await api.pveVm.createSnapshot(
-      effectiveHostId.value,
-      effectiveNode.value,
-      effectiveVmid.value,
-      createForm.value
-    )
+    const res = await api.pveVm.createSnapshot(hId, nd, vid, {
+      snapname: createForm.value.snapname,
+      description: createForm.value.description,
+      vmstate: createForm.value.vmstate,
+    })
     showCreateModal.value = false
     taskUpid.value = res.data?.upid
     toast.success('Snapshot task started')
@@ -654,7 +876,7 @@ async function doCreate() {
 }
 
 async function doRollback(snapname) {
-  if (!confirm(`Roll back VM to snapshot "${snapname}"?\n\nWARNING: All changes since this snapshot will be lost unless you have saved them as a newer snapshot.`)) return
+  if (!confirm(`Roll back VM to snapshot "${snapname}"?\n\nWARNING: All changes since this snapshot will be lost.`)) return
   actingSnap.value = snapname
   try {
     const res = await api.pveVm.rollbackSnapshot(
@@ -669,6 +891,28 @@ async function doRollback(snapname) {
     toast.error(e.response?.data?.detail || String(e))
   } finally {
     actingSnap.value = null
+  }
+}
+
+async function doRollbackLatest() {
+  if (!latestSnap.value) return
+  await doRollback(latestSnap.value.name)
+}
+
+async function doRollbackLatestCluster(row) {
+  if (!row.newestSnap) return
+  if (!confirm(`Roll back VM ${row.vmid} (${row.name || row.vmid}) to snapshot "${row.newestSnap.name}"?\n\nThis cannot be undone.`)) return
+  try {
+    const res = await api.pveVm.rollbackSnapshot(
+      Number(sel.value.hostId),
+      row.node,
+      row.vmid,
+      row.newestSnap.name
+    )
+    taskUpid.value = res.data?.upid
+    toast.success(`Rollback task started for VM ${row.vmid}`)
+  } catch (e) {
+    toast.error(e.response?.data?.detail || String(e))
   }
 }
 
@@ -695,8 +939,65 @@ async function doDelete(snapname, hasChildren) {
   }
 }
 
+function doDeleteAll() {
+  deleteAllTarget.value = null // use current single-VM context
+  showDeleteAllModal.value = true
+}
+
+function openDeleteAllForRow(row) {
+  deleteAllTarget.value = row
+  showDeleteAllModal.value = true
+}
+
+async function executeDeleteAll() {
+  bulkDeleting.value = true
+  let deleted = 0
+  let errors = 0
+
+  let targetSnaps, targetHostId, targetNode, targetVmid, targetType
+  if (deleteAllTarget.value) {
+    targetSnaps = (deleteAllTarget.value.snaps || []).filter(s => s.name !== 'current')
+    targetHostId = Number(sel.value.hostId)
+    targetNode = deleteAllTarget.value.node
+    targetVmid = deleteAllTarget.value.vmid
+    targetType = deleteAllTarget.value.type
+  } else {
+    targetSnaps = snapshots.value.filter(s => s.name !== 'current')
+    targetHostId = effectiveHostId.value
+    targetNode = effectiveNode.value
+    targetVmid = effectiveVmid.value
+    targetType = 'qemu'
+  }
+
+  // Delete leaf-first: sort by those with no children
+  // Simple approach: delete in reverse order so leaves go first
+  const sorted = [...targetSnaps].sort((a, b) => {
+    const aHasChild = targetSnaps.some(s => s.parent === a.name)
+    const bHasChild = targetSnaps.some(s => s.parent === b.name)
+    return (aHasChild ? 1 : 0) - (bHasChild ? 1 : 0)
+  })
+
+  for (const snap of sorted) {
+    try {
+      if (targetType === 'lxc') {
+        await api.pveNode.deleteContainerSnapshot(targetHostId, targetNode, targetVmid, snap.name)
+      } else {
+        await api.pveVm.deleteSnapshot(targetHostId, targetNode, targetVmid, snap.name)
+      }
+      deleted++
+    } catch (e) {
+      errors++
+    }
+  }
+
+  bulkDeleting.value = false
+  showDeleteAllModal.value = false
+  deleteAllTarget.value = null
+  toast.success(`Deleted ${deleted} snapshot(s)${errors ? `, ${errors} error(s)` : ''}`)
+  await refresh()
+}
+
 async function openCloneFromSnap(snapname) {
-  // get next free vmid
   let nextId = null
   try {
     const res = await api.pveNode.nextId(effectiveHostId.value)
@@ -751,7 +1052,6 @@ function toggleCompare(snapname) {
   } else if (selectedForCompare.value.length < 2) {
     selectedForCompare.value.push(snapname)
   } else {
-    // Replace oldest
     selectedForCompare.value.shift()
     selectedForCompare.value.push(snapname)
   }
@@ -854,6 +1154,16 @@ export const SnapNode = defineComponent({
       return new Date(ts * 1000).toLocaleString()
     }
 
+    function relativeTime(ts) {
+      if (!ts) return ''
+      const now = Date.now() / 1000
+      const diff = now - ts
+      if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
+      if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
+      if (diff < 86400 * 30) return `${Math.floor(diff / 86400)}d ago`
+      return fmtTs(ts)
+    }
+
     function renderNode(snap, depth = 0) {
       const isChecked = props.selectedCompare?.includes(snap.name) ?? false
       const isActing = props.actingSnap === snap.name
@@ -879,8 +1189,13 @@ export const SnapNode = defineComponent({
           h('div', { class: 'snap-info' }, [
             h('span', { class: 'snap-name' }, snap.name),
             snap.description ? h('span', { class: 'snap-desc text-muted' }, ' — ' + snap.description) : null,
-            h('span', { class: 'snap-time text-muted text-xs' }, ' · ' + fmtTs(snap.snaptime)),
+            h('span', { class: 'snap-time text-muted text-xs', title: fmtTs(snap.snaptime) },
+              ' · ' + relativeTime(snap.snaptime)),
             snap.vmstate ? h('span', { class: 'badge badge-info snap-badge' }, 'RAM') : null,
+            hasChildren
+              ? h('span', { class: 'snap-children-count text-muted text-xs' },
+                  ` · ${snap.children.length} child${snap.children.length !== 1 ? 'ren' : ''}`)
+              : null,
           ]),
 
           // actions
@@ -888,6 +1203,7 @@ export const SnapNode = defineComponent({
             h('button', {
               class: 'btn btn-warning btn-xs',
               disabled: isActing,
+              title: 'Rollback to this snapshot',
               onClick: () => emit('rollback', snap.name),
             }, isActing ? '…' : 'Rollback'),
             h('button', {
@@ -967,6 +1283,16 @@ export const SnapNode = defineComponent({
   font-size: 0.9rem;
 }
 
+/* ── Snapshot count warning ─────────────────────────────────── */
+.snap-count-warning {
+  background: rgba(234, 179, 8, 0.1);
+  border: 1px solid rgba(234, 179, 8, 0.35);
+  border-radius: 0.375rem;
+  padding: 0.6rem 1rem;
+  font-size: 0.85rem;
+  color: #facc15;
+}
+
 /* ── Compare bar ───────────────────────────────────────────── */
 .compare-bar {
   background: rgba(234, 179, 8, 0.12);
@@ -982,6 +1308,73 @@ export const SnapNode = defineComponent({
 .compare-bar--info {
   background: rgba(59, 130, 246, 0.1);
   border-color: rgba(59, 130, 246, 0.3);
+}
+
+/* ── Timeline ──────────────────────────────────────────────── */
+.timeline-container {
+  padding: 1rem 1.5rem;
+  overflow-x: auto;
+}
+
+.timeline-track {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 0;
+  position: relative;
+  padding-bottom: 0.5rem;
+}
+
+.timeline-track::before {
+  content: '';
+  position: absolute;
+  top: 0.55rem;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--border-color);
+  z-index: 0;
+}
+
+.timeline-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 120px;
+  position: relative;
+  z-index: 1;
+}
+
+.timeline-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--primary-color, #3b82f6);
+  border: 2px solid var(--bg-secondary);
+  flex-shrink: 0;
+  margin-bottom: 0.5rem;
+}
+
+.timeline-dot--ram {
+  background: #60a5fa;
+  box-shadow: 0 0 0 3px rgba(59,130,246,0.2);
+}
+
+.timeline-content {
+  text-align: center;
+  max-width: 110px;
+}
+
+.timeline-name {
+  font-family: monospace;
+  font-size: 0.78rem;
+  font-weight: 600;
+  word-break: break-all;
+}
+
+.timeline-date, .timeline-desc {
+  font-size: 0.68rem;
+  margin-top: 0.15rem;
 }
 
 /* ── Snapshot tree ─────────────────────────────────────────── */
@@ -1042,6 +1435,7 @@ export const SnapNode = defineComponent({
 
 .snap-desc { font-size: 0.8rem; }
 .snap-time { font-size: 0.75rem; }
+.snap-children-count { font-size: 0.72rem; }
 
 .snap-badge {
   font-size: 0.65rem;
@@ -1064,6 +1458,11 @@ export const SnapNode = defineComponent({
   margin-left: 0.5rem;
   border-left: 2px solid var(--border-color);
   padding-left: 0.5rem;
+}
+
+/* ── Cluster table row warning ─────────────────────────────── */
+.row-warning {
+  background: rgba(234, 179, 8, 0.04);
 }
 
 /* ── Badges ────────────────────────────────────────────────── */
@@ -1095,6 +1494,8 @@ export const SnapNode = defineComponent({
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
 }
 
 .card-header h3 { margin: 0; font-size: 1rem; }
@@ -1270,10 +1671,12 @@ export const SnapNode = defineComponent({
 .mb-2 { margin-bottom: 0.75rem; }
 .mb-3 { margin-bottom: 1rem; }
 .flex { display: flex; }
+.gap-1 { gap: 0.4rem; }
 .gap-2 { gap: 0.75rem; }
 .gap-3 { gap: 1rem; }
 .flex-wrap { flex-wrap: wrap; }
 .align-center { align-items: center; }
+.ml-1 { margin-left: 0.25rem; }
 .ml-2 { margin-left: 0.5rem; }
 .mb-0 { margin-bottom: 0; }
 .text-muted { color: var(--text-secondary); }

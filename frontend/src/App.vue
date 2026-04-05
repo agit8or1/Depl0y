@@ -50,7 +50,13 @@
       :is-open="sidebarOpen"
       @close="sidebarOpen = false"
     />
-    <div class="main-content" :class="{ 'full-width': !isAuthenticated || isFullscreen }">
+    <div
+      class="main-content"
+      :class="{ 'full-width': !isAuthenticated || isFullscreen }"
+      @touchstart.passive="onSwipeTouchStart"
+      @touchmove.passive="onSwipeTouchMove"
+      @touchend.passive="onSwipeTouchEnd"
+    >
       <Header
         v-if="isAuthenticated && !isFullscreen"
         @toggle-sidebar="sidebarOpen = !sidebarOpen"
@@ -63,6 +69,30 @@
         </router-view>
       </main>
     </div>
+
+    <!-- Bottom navigation bar (mobile only) -->
+    <nav v-if="isAuthenticated && !isFullscreen" class="bottom-nav" aria-label="Mobile navigation">
+      <router-link to="/" class="bottom-nav-item" exact-active-class="bottom-nav-item--active">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+        <span>Dashboard</span>
+      </router-link>
+      <router-link to="/vms" class="bottom-nav-item" active-class="bottom-nav-item--active">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><polyline points="8 21 12 17 16 21"/></svg>
+        <span>VMs</span>
+      </router-link>
+      <router-link to="/proxmox" class="bottom-nav-item" active-class="bottom-nav-item--active">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+        <span>Nodes</span>
+      </router-link>
+      <router-link to="/tasks" class="bottom-nav-item" active-class="bottom-nav-item--active">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        <span>Tasks</span>
+      </router-link>
+      <router-link to="/settings" class="bottom-nav-item" active-class="bottom-nav-item--active">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        <span>Settings</span>
+      </router-link>
+    </nav>
 
     <!-- Global toast notifications -->
     <ToastContainer />
@@ -272,6 +302,40 @@ export default {
       }
     }
 
+    // ── Swipe-to-open sidebar ─────────────────────────────────────────────────
+    let swipeStartX = 0
+    let swipeStartY = 0
+    const SWIPE_THRESHOLD = 60   // px horizontal travel needed
+    const SWIPE_EDGE = 30        // px from left edge to trigger open gesture
+
+    const onSwipeTouchStart = (e) => {
+      const touch = e.touches[0]
+      swipeStartX = touch.clientX
+      swipeStartY = touch.clientY
+    }
+
+    const onSwipeTouchMove = () => {
+      // intentionally left empty — tracking handled in touchend
+    }
+
+    const onSwipeTouchEnd = (e) => {
+      if (!isMobile.value) return
+      const touch = e.changedTouches[0]
+      const dx = touch.clientX - swipeStartX
+      const dy = touch.clientY - swipeStartY
+
+      // Ignore mostly-vertical swipes
+      if (Math.abs(dy) > Math.abs(dx)) return
+
+      if (!sidebarOpen.value && dx > SWIPE_THRESHOLD && swipeStartX <= SWIPE_EDGE) {
+        // Swipe right from left edge → open sidebar
+        sidebarOpen.value = true
+      } else if (sidebarOpen.value && dx < -SWIPE_THRESHOLD) {
+        // Swipe left → close sidebar
+        sidebarOpen.value = false
+      }
+    }
+
     const handleResize = () => {
       const mobile = window.innerWidth <= 768
       isMobile.value = mobile
@@ -309,6 +373,9 @@ export default {
       clearError,
       reloadPage,
       isDev,
+      onSwipeTouchStart,
+      onSwipeTouchMove,
+      onSwipeTouchEnd,
     }
   }
 }
@@ -500,10 +567,80 @@ export default {
 
   .content {
     padding: 1rem;
+    padding-bottom: 5rem; /* space for bottom nav */
   }
 
   .shortcuts-keys {
     min-width: 110px;
+  }
+
+  /* Shortcuts modal: full-screen friendly on mobile */
+  .shortcuts-modal {
+    width: calc(100vw - 1.5rem);
+    max-height: 88vh;
+    border-radius: 10px;
+  }
+}
+
+/* ── Bottom navigation bar ── */
+.bottom-nav {
+  display: none; /* hidden on desktop */
+}
+
+@media (max-width: 768px) {
+  .bottom-nav {
+    display: flex;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 60px;
+    background: var(--surface);
+    border-top: 1px solid var(--border-color);
+    box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.12);
+    z-index: 120;
+    padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+
+  .bottom-nav-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    text-decoration: none;
+    color: var(--text-muted);
+    font-size: 0.65rem;
+    font-weight: 500;
+    padding: 6px 4px 4px;
+    min-height: 44px;
+    transition: color 0.15s;
+    position: relative;
+  }
+
+  .bottom-nav-item svg {
+    flex-shrink: 0;
+  }
+
+  .bottom-nav-item:hover {
+    color: var(--primary-color);
+  }
+
+  .bottom-nav-item--active {
+    color: var(--primary-color);
+  }
+
+  /* Active indicator: top underline */
+  .bottom-nav-item--active::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 20%;
+    right: 20%;
+    height: 3px;
+    background: var(--primary-color);
+    border-radius: 0 0 3px 3px;
   }
 }
 

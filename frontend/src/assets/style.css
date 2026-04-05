@@ -553,21 +553,117 @@ select.form-control {
   animation: pulse 2s infinite;
 }
 
-/* Responsive */
+/* ── Visibility utilities ── */
+.mobile-hidden {
+  display: none !important;
+}
+
+.mobile-show {
+  display: block !important;
+}
+
+@media (min-width: 769px) {
+  .mobile-hidden {
+    display: revert !important;
+  }
+
+  .mobile-show {
+    display: none !important;
+  }
+}
+
+/* ── Table horizontal scroll wrapper ── */
+.table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  width: 100%;
+}
+
+/* ── Responsive ── */
 @media (max-width: 768px) {
+  /* Grids collapse to single column */
   .grid-cols-2,
   .grid-cols-3,
   .grid-cols-4 {
     grid-template-columns: 1fr;
   }
 
-  /* Prevent content overflow */
+  /* Cards: full-width, reduced padding */
   .card {
     padding: 0.875rem 1rem;
+    margin-left: 0;
+    margin-right: 0;
+    border-radius: 0.5rem;
+    width: 100%;
   }
 
   /* Wrapping flex rows on mobile */
   .flex-wrap-mobile {
     flex-wrap: wrap;
   }
+
+  /* Header/nav: compact */
+  .header,
+  nav.header {
+    padding: 0 0.75rem;
+    height: 52px;
+  }
+
+  /* Modals: full-screen on mobile */
+  .modal-backdrop {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .modal-content {
+    border-radius: 1rem 1rem 0 0;
+    max-height: 92vh;
+    width: 100%;
+    max-width: 100%;
+    margin: 0;
+    animation: modal-slide-up 0.25s ease;
+  }
+
+  @keyframes modal-slide-up {
+    from { transform: translateY(100%); opacity: 0; }
+    to   { transform: translateY(0);    opacity: 1; }
+  }
+
+  /* Form grids: single column */
+  .form-grid,
+  .form-row {
+    grid-template-columns: 1fr !important;
+    flex-direction: column !important;
+  }
+
+  /* Touch-friendly tap targets: 44px minimum */
+  .btn {
+    min-height: 44px;
+    padding: 0.5rem 0.875rem;
+  }
+
+  .btn-sm {
+    min-height: 36px;
+  }
+
+  .nav-item,
+  .sidebar-close-btn,
+  a[href],
+  button {
+    min-height: 44px;
+  }
+
+  /* Extra bottom padding so content is not hidden behind bottom nav */
+  .content {
+    padding-bottom: 5rem;
+  }
+}
+
+/* Modal z-index stacking — ensure modals always appear on top */
+.modal-backdrop {
+  z-index: 1000;
+}
+
+.modal-content {
+  z-index: 1001;
 }

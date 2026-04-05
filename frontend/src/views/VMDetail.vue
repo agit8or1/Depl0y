@@ -470,19 +470,21 @@
               <thead>
                 <tr>
                   <th>Interface</th>
-                  <th>Storage Pool</th>
+                  <th>Storage</th>
                   <th>Volume</th>
                   <th>Size</th>
                   <th>Format</th>
                   <th>Cache</th>
+                  <th>Backup</th>
                   <th>SSD</th>
                   <th>Discard</th>
+                  <th>IOThread</th>
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 <tr v-if="parsedDisks.length === 0">
-                  <td colspan="9" class="text-muted text-center">No disks found</td>
+                  <td colspan="11" class="text-muted text-center">No disks found</td>
                 </tr>
                 <tr v-for="disk in parsedDisks" :key="disk.key">
                   <td><code>{{ disk.key }}</code></td>
@@ -491,6 +493,13 @@
                   <td><strong>{{ formatDiskSize(disk.parsed.size) }}</strong></td>
                   <td>{{ disk.parsed.format || 'raw' }}</td>
                   <td>{{ disk.parsed.cache || 'none' }}</td>
+                  <td>
+                    <button @click="toggleDiskFlag(disk, 'backup')"
+                      :class="disk.parsed.backup ? 'btn btn-success btn-xs' : 'btn btn-outline btn-xs'"
+                      :disabled="actioning" title="Toggle backup">
+                      {{ disk.parsed.backup ? 'Yes' : 'No' }}
+                    </button>
+                  </td>
                   <td>
                     <button @click="toggleDiskFlag(disk, 'ssd')"
                       :class="disk.parsed.ssd ? 'btn btn-success btn-xs' : 'btn btn-outline btn-xs'"
@@ -506,10 +515,54 @@
                     </button>
                   </td>
                   <td>
+                    <button @click="toggleDiskFlag(disk, 'iothread')"
+                      :class="disk.parsed.iothread ? 'btn btn-success btn-xs' : 'btn btn-outline btn-xs'"
+                      :disabled="actioning" title="Toggle IO thread">
+                      {{ disk.parsed.iothread ? 'On' : 'Off' }}
+                    </button>
+                  </td>
+                  <td>
                     <div class="flex gap-1 flex-wrap">
                       <button @click="openResizeDisk(disk)" class="btn btn-outline btn-sm">Resize</button>
                       <button @click="openMoveDisk(disk)" class="btn btn-outline btn-sm">Move</button>
-                      <button @click="detachDisk(disk.key)" class="btn btn-danger btn-sm" :disabled="actioning">Detach</button>
+                      <button @click="detachDisk(disk.key)" class="btn btn-warning btn-sm" :disabled="actioning">Detach</button>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- CD-ROM / ISO Drives card -->
+        <div v-if="parsedCdRoms.length > 0" class="card mt-2">
+          <div class="card-header">
+            <h3>CD-ROM / ISO Drives</h3>
+          </div>
+          <div class="table-container">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Slot</th>
+                  <th>Media / ISO</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="cd in parsedCdRoms" :key="cd.key">
+                  <td><code>{{ cd.key }}</code></td>
+                  <td class="text-sm">
+                    <span v-if="cd.iso" class="cdrom-iso-label">{{ cd.iso }}</span>
+                    <span v-else class="text-muted">Empty (no media)</span>
+                  </td>
+                  <td>
+                    <div class="flex gap-1">
+                      <button v-if="cd.iso" @click="ejectCdrom(cd.key)"
+                        class="btn btn-outline btn-sm" :disabled="actioning">Eject</button>
+                      <button @click="openChangeIsoModal(cd)" class="btn btn-outline btn-sm" :disabled="actioning">
+                        {{ cd.iso ? 'Change ISO' : 'Insert ISO' }}
+                      </button>
+                      <button @click="removeCdromDrive(cd.key)" class="btn btn-danger btn-sm" :disabled="actioning">Remove</button>
                     </div>
                   </td>
                 </tr>
@@ -546,10 +599,21 @@
 
       <!-- ─── Network Tab ─── -->
       <div v-if="activeTab === 'network'">
+        <!-- NIC statistics banner (only when VM is running) -->
+        <div v-if="vmStatus?.status === 'running' && (vmStatus?.netin || vmStatus?.netout)" class="nic-stats-bar mb-2">
+          <span class="nic-stats-label">Live Network I/O:</span>
+          <span class="nic-stat"><span class="nic-stat-icon">↓</span> {{ formatBytes(vmStatus.netin) }} in</span>
+          <span class="nic-stat"><span class="nic-stat-icon">↑</span> {{ formatBytes(vmStatus.netout) }} out</span>
+          <span class="text-muted text-sm">(cumulative since last boot)</span>
+        </div>
+
         <div class="card">
           <div class="card-header">
             <h3>Network Interfaces</h3>
-            <button @click="showAddNicModal = true" class="btn btn-primary btn-sm">+ Add NIC</button>
+            <div class="flex gap-1">
+              <button @click="openAddNicModal" class="btn btn-primary btn-sm">+ Add NIC</button>
+              <button @click="loadNodeBridges" class="btn btn-outline btn-sm" title="Refresh bridges list">↺</button>
+            </div>
           </div>
           <div class="table-container">
             <table class="table">
@@ -561,15 +625,17 @@
                   <th>Bridge</th>
                   <th>VLAN Tag</th>
                   <th>Firewall</th>
+                  <th>Link</th>
                   <th>Rate (MB/s)</th>
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 <tr v-if="parsedNics.length === 0">
-                  <td colspan="8" class="text-muted text-center">No NICs configured</td>
+                  <td colspan="9" class="text-muted text-center">No NICs configured</td>
                 </tr>
-                <tr v-for="nic in parsedNics" :key="nic.key">
+                <tr v-for="nic in parsedNics" :key="nic.key"
+                  :class="nic.parsed.link_down ? 'nic-row-disconnected' : ''">
                   <td><code>{{ nic.key }}</code></td>
                   <td><span class="badge badge-info">{{ nic.parsed.model }}</span></td>
                   <td class="text-sm"><code>{{ nic.parsed.mac || '—' }}</code></td>
@@ -582,11 +648,18 @@
                       {{ nic.parsed.firewall ? 'On' : 'Off' }}
                     </button>
                   </td>
+                  <td>
+                    <button @click="toggleNicLinkDown(nic)"
+                      :class="nic.parsed.link_down ? 'btn btn-danger btn-xs' : 'btn btn-success btn-xs'"
+                      :disabled="actioning" title="Toggle link (connected/disconnected)">
+                      {{ nic.parsed.link_down ? 'Down' : 'Up' }}
+                    </button>
+                  </td>
                   <td>{{ nic.parsed.rate || '—' }}</td>
                   <td>
                     <div class="flex gap-1">
                       <button @click="openEditNic(nic)" class="btn btn-outline btn-sm">Edit</button>
-                      <button @click="removeNic(nic.key)" class="btn btn-danger btn-sm" :disabled="actioning">Detach</button>
+                      <button @click="removeNic(nic.key)" class="btn btn-danger btn-sm" :disabled="actioning">Delete</button>
                     </div>
                   </td>
                 </tr>
@@ -598,69 +671,102 @@
 
       <!-- ─── Snapshots Tab ─── -->
       <div v-if="activeTab === 'snapshots'">
+
+        <!-- Snapshot count warning -->
+        <div v-if="realSnapCount >= 10" class="snap-limit-warning mb-2">
+          <span class="snap-limit-icon">⚠</span>
+          <strong>{{ realSnapCount }} snapshots</strong> — Proxmox recommends keeping fewer than 10 snapshots per VM. Consider deleting old snapshots to maintain performance.
+        </div>
+
+        <!-- Compare bar -->
+        <div v-if="selectedSnaps.size === 2" class="snap-compare-bar mb-2">
+          <span>2 snapshots selected for comparison:</span>
+          <span class="snap-compare-names">{{ Array.from(selectedSnaps).join(' vs ') }}</span>
+          <button @click="openCompareModal" class="btn btn-warning btn-sm">Compare Configs</button>
+          <button @click="clearSnapSelect" class="btn btn-outline btn-sm">Clear</button>
+        </div>
+        <div v-else-if="selectedSnaps.size === 1" class="snap-compare-bar snap-compare-bar--info mb-2">
+          Select one more snapshot to compare configurations.
+        </div>
+
+        <!-- Main snapshot card -->
         <div class="card">
           <div class="card-header">
-            <h3>Snapshots</h3>
+            <div class="flex gap-2 align-center">
+              <h3 style="margin:0;">
+                Snapshots
+                <span :class="['badge ml-1', realSnapCount >= 10 ? 'badge-warning' : 'badge-secondary']" style="font-size:0.7rem;">
+                  {{ realSnapCount }}
+                </span>
+              </h3>
+            </div>
             <div class="flex gap-1">
-              <button v-if="selectedSnaps.size === 2" @click="openCompareModal" class="btn btn-outline btn-sm">Compare Selected</button>
               <button @click="showSnapshotModal = true" class="btn btn-primary btn-sm">+ Create Snapshot</button>
             </div>
           </div>
+
           <div v-if="loadingSnapshots" class="loading-spinner"></div>
-          <div v-else class="table-container">
-            <table class="table">
-              <thead>
-                <tr>
-                  <th style="width:2rem"></th>
-                  <th>Name</th>
-                  <th>Description</th>
-                  <th>Date</th>
-                  <th>VM State</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-if="snapshotTree.length === 0">
-                  <td colspan="6" class="text-muted text-center">No snapshots</td>
-                </tr>
-                <template v-for="snap in snapshotTree" :key="snap.name">
-                  <tr :class="snap.name === 'current' ? 'snap-current-row' : ''">
-                    <td>
-                      <input v-if="snap.name !== 'current'" type="checkbox"
-                        :checked="selectedSnaps.has(snap.name)"
-                        @change="toggleSnapSelect(snap.name)"
-                        :disabled="selectedSnaps.size >= 2 && !selectedSnaps.has(snap.name)" />
-                    </td>
-                    <td>
-                      <span class="snap-tree-indent" :style="{ paddingLeft: snap._depth * 1.2 + 'rem' }">
-                        <span v-if="snap._depth > 0" class="snap-tree-line">{{ snap._isLast ? '└ ' : '├ ' }}</span>
-                      </span>
-                      <span v-if="snap.name === 'current'" class="badge badge-success" style="font-size:0.7rem;">You are here</span>
-                      <strong v-else>{{ snap.name }}</strong>
-                      <span v-if="snap.vmstate" class="ml-1" title="RAM state saved">💾</span>
-                    </td>
-                    <td class="text-sm text-muted">{{ snap.description || '—' }}</td>
-                    <td class="text-sm">{{ snap.snaptime ? new Date(snap.snaptime * 1000).toLocaleString() : '—' }}</td>
-                    <td>
-                      <span v-if="snap.vmstate" class="badge badge-info">Saved</span>
-                      <span v-else class="text-muted text-sm">—</span>
-                    </td>
-                    <td>
-                      <div v-if="snap.name !== 'current'" class="flex gap-1">
-                        <button v-if="snap._hasChildren"
-                          @click="toggleSnapCollapse(snap.name)"
-                          class="btn btn-outline btn-xs"
-                          :title="collapsedSnaps.has(snap.name) ? 'Expand children' : 'Collapse children'">
-                          {{ collapsedSnaps.has(snap.name) ? '▶' : '▼' }}
-                        </button>
-                        <button @click="rollbackSnapshot(snap.name)" class="btn btn-outline btn-sm" :disabled="actioning">Rollback</button>
-                        <button @click="deleteSnapshot(snap.name)" class="btn btn-danger btn-sm" :disabled="actioning">Delete</button>
-                      </div>
-                    </td>
-                  </tr>
-                </template>
-              </tbody>
-            </table>
+
+          <div v-else-if="!realSnapCount" class="empty-state">
+            No snapshots found for this VM.
+            <br>
+            <button @click="showSnapshotModal = true" class="btn btn-primary btn-sm mt-2">Take First Snapshot</button>
+          </div>
+
+          <div v-else class="snap-tree-container">
+            <!-- Current pointer row -->
+            <div class="snap-card snap-card--current">
+              <div class="snap-card-line snap-card-line--current"></div>
+              <div class="snap-card-body">
+                <div class="snap-card-name">
+                  <span class="badge badge-success">● You are here (current)</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Recursive tree nodes -->
+            <template v-for="root in snapTreeRoots" :key="root.name">
+              <SnapDetailNode
+                :node="root"
+                :depth="0"
+                :selected-snaps="selectedSnaps"
+                :acting-snap="actingSnapName"
+                :collapsed-snaps="collapsedSnaps"
+                @rollback="rollbackSnapshot"
+                @delete="deleteSnapshot"
+                @toggle-compare="toggleSnapSelect"
+                @toggle-collapse="toggleSnapCollapse"
+              />
+            </template>
+          </div>
+        </div>
+
+        <!-- Schedule / Quick Actions card -->
+        <div class="card mt-2">
+          <div class="card-header">
+            <h3>Snapshot Schedule</h3>
+          </div>
+          <div class="card-body">
+            <p class="text-muted text-sm mb-2">
+              Proxmox VE supports automated snapshot schedules via backup jobs. Create a scheduled backup job to automatically snapshot this VM on a daily or weekly basis.
+            </p>
+            <div class="flex gap-2 flex-wrap">
+              <router-link
+                :to="`/proxmox/${hostId}/backup`"
+                class="btn btn-outline btn-sm"
+              >
+                Open Backup Scheduler
+              </router-link>
+              <button @click="openQuickSnapshotModal" class="btn btn-outline btn-sm">
+                Quick Snapshot Now
+              </button>
+              <router-link
+                :to="`/snapshots?hostId=${hostId}&node=${node}&vmid=${vmid}`"
+                class="btn btn-outline btn-sm"
+              >
+                Open in Snapshot Manager
+              </router-link>
+            </div>
           </div>
         </div>
       </div>
@@ -1134,6 +1240,144 @@
 
       <!-- ─── Hardware Tab ─── -->
       <div v-if="activeTab === 'hardware'">
+
+        <!-- Machine Type, BIOS & CPU -->
+        <div class="card mb-2">
+          <div class="card-header">
+            <h4>Machine Type, BIOS &amp; CPU</h4>
+            <span class="text-sm text-muted">Most changes require a reboot to take effect</span>
+          </div>
+          <div class="card-body hw-machine-grid">
+
+            <!-- Machine Type -->
+            <div class="form-group inline-field">
+              <label class="form-label">Machine Type</label>
+              <div class="inline-edit-row">
+                <select v-model="hwEdit.machine" class="form-control">
+                  <option value="">default (i440fx)</option>
+                  <option value="pc">pc (i440fx)</option>
+                  <option value="q35">q35 (PCIe — recommended for GPU passthrough)</option>
+                  <option value="pc-i440fx-2.2">pc-i440fx-2.2</option>
+                  <option value="pc-i440fx-3.1">pc-i440fx-3.1</option>
+                  <option value="pc-i440fx-6.2">pc-i440fx-6.2</option>
+                  <option value="pc-i440fx-8.1">pc-i440fx-8.1</option>
+                  <option value="pc-q35-2.10">pc-q35-2.10</option>
+                  <option value="pc-q35-6.2">pc-q35-6.2</option>
+                  <option value="pc-q35-8.1">pc-q35-8.1</option>
+                </select>
+                <button @click="saveHwField('machine', hwEdit.machine)"
+                  class="btn btn-primary btn-sm" :disabled="savingHw.machine">
+                  {{ savingHw.machine ? '...' : 'Save' }}
+                </button>
+              </div>
+              <div class="inline-current">Current: <code>{{ config.machine || 'default' }}</code></div>
+            </div>
+
+            <!-- BIOS -->
+            <div class="form-group inline-field">
+              <label class="form-label">BIOS Type</label>
+              <div class="inline-edit-row">
+                <select v-model="hwEdit.bios" class="form-control">
+                  <option value="seabios">SeaBIOS (legacy, default)</option>
+                  <option value="ovmf">OVMF (UEFI — required for Secure Boot)</option>
+                </select>
+                <button @click="saveHwField('bios', hwEdit.bios)"
+                  class="btn btn-primary btn-sm" :disabled="savingHw.bios">
+                  {{ savingHw.bios ? '...' : 'Save' }}
+                </button>
+              </div>
+              <div class="inline-current">Current: <code>{{ config.bios || 'seabios' }}</code></div>
+            </div>
+
+            <!-- CPU Type -->
+            <div class="form-group inline-field">
+              <label class="form-label">CPU Type</label>
+              <div class="inline-edit-row">
+                <select v-model="hwEdit.cpuType" class="form-control">
+                  <option value="host">host (pass-through host CPU — best performance)</option>
+                  <option value="max">max (all features QEMU supports)</option>
+                  <option value="kvm64">kvm64 (default KVM, good compatibility)</option>
+                  <option value="kvm32">kvm32</option>
+                  <option value="qemu64">qemu64</option>
+                  <option value="qemu32">qemu32</option>
+                  <option value="x86-64-v2-AES">x86-64-v2-AES</option>
+                  <option value="x86-64-v3">x86-64-v3</option>
+                  <option value="x86-64-v4">x86-64-v4</option>
+                  <option value="Nehalem">Nehalem</option>
+                  <option value="Westmere">Westmere</option>
+                  <option value="SandyBridge">SandyBridge</option>
+                  <option value="IvyBridge">IvyBridge</option>
+                  <option value="Haswell">Haswell</option>
+                  <option value="Broadwell">Broadwell</option>
+                  <option value="Skylake-Client">Skylake-Client</option>
+                  <option value="Skylake-Server">Skylake-Server</option>
+                  <option value="Cascadelake-Server">Cascadelake-Server</option>
+                  <option value="Icelake-Client">Icelake-Client</option>
+                  <option value="Icelake-Server">Icelake-Server</option>
+                </select>
+                <button @click="saveHwCpu"
+                  class="btn btn-primary btn-sm" :disabled="savingHw.cpu">
+                  {{ savingHw.cpu ? '...' : 'Save CPU' }}
+                </button>
+              </div>
+              <div class="inline-current">
+                Current type: <code>{{ parsedCpuType }}</code>
+                <span v-if="parsedCpuFlags.length" class="ml-1 text-sm text-muted">
+                  — flags: <code>{{ parsedCpuFlags.join(' ') }}</code>
+                </span>
+              </div>
+            </div>
+
+            <!-- CPU Sockets x Cores -->
+            <div class="form-group inline-field">
+              <label class="form-label">Sockets &times; Cores</label>
+              <div class="inline-edit-row">
+                <div class="flex gap-1 align-center" style="flex:1;">
+                  <input v-model.number="hwEdit.sockets" type="number" min="1" max="8"
+                    class="form-control" style="max-width:72px;" />
+                  <span class="text-muted">&times;</span>
+                  <input v-model.number="hwEdit.cores" type="number" min="1" max="512"
+                    class="form-control" style="max-width:72px;" />
+                  <span class="text-muted text-sm">= {{ (hwEdit.sockets || 1) * (hwEdit.cores || 1) }} vCPUs</span>
+                </div>
+                <button @click="saveHwField2({ sockets: hwEdit.sockets, cores: hwEdit.cores })"
+                  class="btn btn-primary btn-sm" :disabled="savingHw.sockets">
+                  {{ savingHw.sockets ? '...' : 'Save' }}
+                </button>
+              </div>
+              <div class="inline-current">
+                Current: <code>{{ config.sockets || 1 }}</code> &times; <code>{{ config.cores || 1 }}</code>
+                = {{ (config.sockets || 1) * (config.cores || 1) }} vCPUs
+              </div>
+            </div>
+
+          </div>
+
+          <!-- CPU Flags section -->
+          <div class="hw-cpu-flags-section">
+            <div class="hw-cpu-flags-header">
+              <span class="hw-cpu-flags-title">CPU Feature Flags</span>
+              <span class="text-xs text-muted ml-1">Override individual CPU features (requires reboot)</span>
+              <button @click="saveHwCpu" class="btn btn-primary btn-sm" :disabled="savingHw.cpu">
+                {{ savingHw.cpu ? 'Saving...' : 'Apply Flag Changes' }}
+              </button>
+            </div>
+            <div class="hw-cpu-flags-grid">
+              <div v-for="flag in cpuFlagOptions" :key="flag.name" class="hw-cpu-flag-item"
+                   :title="flag.desc">
+                <select v-model="hwCpuFlagState[flag.name]" class="form-control form-control-sm hw-flag-select">
+                  <option value="">default</option>
+                  <option value="+">+ enable</option>
+                  <option value="-">- disable</option>
+                </select>
+                <span class="hw-flag-name">{{ flag.name }}</span>
+                <span class="hw-flag-desc">{{ flag.desc }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- PCI Passthrough -->
         <PCIPassthrough
           :host-id="hostId"
           :node="node"
@@ -1147,7 +1391,7 @@
         <div class="card mt-2">
           <div class="card-header">
             <h4>USB Passthrough</h4>
-            <button @click="showAddUsbModal = true" class="btn btn-primary btn-sm">+ Add USB Device</button>
+            <button @click="openAddUsbModal" class="btn btn-primary btn-sm">+ Add USB Device</button>
           </div>
           <div v-if="!attachedUsbDevices.length" class="text-center text-muted" style="padding:1.2rem;">
             No USB devices passed through.
@@ -1158,6 +1402,7 @@
                 <tr>
                   <th>Slot</th>
                   <th>Host Device</th>
+                  <th>Type</th>
                   <th>USB3</th>
                   <th>Actions</th>
                 </tr>
@@ -1165,7 +1410,17 @@
               <tbody>
                 <tr v-for="dev in attachedUsbDevices" :key="dev.key">
                   <td><code>{{ dev.key }}</code></td>
-                  <td><code>{{ dev.host }}</code></td>
+                  <td>
+                    <code>{{ dev.host }}</code>
+                    <span v-if="resolveUsbName(dev.host)" class="text-sm text-muted ml-1">
+                      — {{ resolveUsbName(dev.host) }}
+                    </span>
+                  </td>
+                  <td>
+                    <span v-if="dev.host === 'spice'" class="badge badge-info">SPICE</span>
+                    <span v-else-if="/^\d+$/.test(dev.host)" class="badge badge-secondary">port</span>
+                    <span v-else class="badge badge-secondary">vendor:product</span>
+                  </td>
                   <td>
                     <span :class="['badge', dev.usb3 ? 'badge-info' : 'badge-secondary']">
                       {{ dev.usb3 ? 'USB 3.0' : 'USB 2.0' }}
@@ -1187,26 +1442,34 @@
         <div class="card mt-2">
           <div class="card-header">
             <h4>Serial Ports</h4>
-            <button @click="addSerialSocket" class="btn btn-primary btn-sm" :disabled="addingSerial">
-              {{ addingSerial ? '...' : '+ Add Serial Socket' }}
-            </button>
+            <div class="flex gap-1">
+              <button @click="addSerialSocket" class="btn btn-primary btn-sm" :disabled="addingSerial">
+                {{ addingSerial ? '...' : '+ Add Socket' }}
+              </button>
+              <button @click="showAddSerialDevModal = true" class="btn btn-outline btn-sm">
+                + Add Device Path
+              </button>
+            </div>
           </div>
           <div v-if="!attachedSerialPorts.length" class="text-center text-muted" style="padding:1.2rem;">
-            No serial ports configured.
+            No serial ports configured. Serial ports enable console access or host device passthrough.
           </div>
           <div v-else class="table-container">
             <table class="table">
               <thead>
                 <tr>
                   <th>Port</th>
-                  <th>Type</th>
+                  <th>Type / Path</th>
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 <tr v-for="port in attachedSerialPorts" :key="port.key">
                   <td><code>{{ port.key }}</code></td>
-                  <td><code>{{ port.type }}</code></td>
+                  <td>
+                    <span v-if="port.type === 'socket'" class="badge badge-info">unix socket</span>
+                    <code v-else>{{ port.type }}</code>
+                  </td>
                   <td>
                     <button @click="removeSerial(port)" class="btn btn-danger btn-sm"
                             :disabled="removingSerial === port.key">
@@ -1221,36 +1484,60 @@
 
         <!-- Add USB modal -->
         <div v-if="showAddUsbModal" class="modal" @click.self="showAddUsbModal = false">
-          <div class="modal-content" @click.stop style="max-width:480px;">
+          <div class="modal-content" @click.stop style="max-width:560px;">
             <div class="modal-header">
               <h3>Add USB Device to VM {{ vmid }}</h3>
               <button @click="showAddUsbModal = false" class="btn-close">×</button>
             </div>
             <div class="modal-body">
               <p class="text-sm text-muted mb-2">
-                Select from available USB devices on the node, or enter a vendor:product ID manually.
+                Select from available USB devices on the node, or enter an identifier manually.
               </p>
-              <div v-if="usbDevices.length > 0" class="form-group">
+
+              <div v-if="usbDevicesLoading" class="loading-spinner" style="height:60px;"></div>
+              <div v-else-if="usbDevices.length > 0" class="form-group">
                 <label class="form-label">Available USB Devices on Node</label>
-                <select v-model="addUsbForm.host" class="form-control">
-                  <option value="">-- Select device --</option>
-                  <option v-for="u in usbDevices" :key="u.usbid || u.vendid+':'+u.prodid"
-                          :value="u.vendid + ':' + u.prodid">
-                    {{ u.vendid }}:{{ u.prodid }} — {{ u.product || u.manufacturer || '(unknown)' }}
-                  </option>
-                </select>
+                <div class="usb-device-list">
+                  <div
+                    v-for="u in usbDevices"
+                    :key="u.usbid || (u.vendid + ':' + u.prodid)"
+                    class="usb-device-row"
+                    :class="{ 'usb-device-row--selected': addUsbForm.host === u.vendid + ':' + u.prodid }"
+                    @click="addUsbForm.host = u.vendid + ':' + u.prodid"
+                  >
+                    <div class="usb-device-info">
+                      <code class="usb-device-id">{{ u.vendid }}:{{ u.prodid }}</code>
+                      <span class="usb-device-name ml-1">{{ u.product || u.manufacturer || '(unknown)' }}</span>
+                      <span v-if="u.port" class="text-xs text-muted ml-1">port {{ u.port }}</span>
+                    </div>
+                    <span v-if="addUsbForm.host === u.vendid + ':' + u.prodid"
+                          class="badge badge-success" style="flex-shrink:0;">Selected</span>
+                  </div>
+                </div>
+                <p class="text-xs text-muted mt-1">Click a device to populate the identifier field.</p>
               </div>
+              <div v-else-if="!usbDevicesLoading" class="text-muted text-sm mb-2">
+                No USB devices detected on node, or listing unavailable.
+              </div>
+
               <div class="form-group">
-                <label class="form-label">Vendor:Product ID (manual)</label>
-                <input v-model="addUsbForm.host" class="form-control" placeholder="1234:abcd" />
-                <p class="text-xs text-muted mt-1">Format: vendorid:productid (hex)</p>
+                <label class="form-label">Device Identifier</label>
+                <input v-model="addUsbForm.host" class="form-control"
+                       placeholder="vendorid:productid, port number, or 'spice'" />
+                <p class="text-xs text-muted mt-1">
+                  <code>vendorid:productid</code> (hex) — follows device across ports |
+                  <code>N</code> — pass through by port number |
+                  <code>spice</code> — SPICE USB redirection
+                </p>
               </div>
+
               <div class="form-group">
                 <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;">
                   <input type="checkbox" v-model="addUsbForm.usb3" />
-                  <span>USB 3.0</span>
+                  <span>USB 3.0 (xHCI controller — required for USB 3 devices)</span>
                 </label>
               </div>
+
               <div class="alert alert-warning text-sm">
                 The VM should be <strong>powered off</strong> before making USB configuration changes.
               </div>
@@ -1263,6 +1550,37 @@
             </div>
           </div>
         </div>
+
+        <!-- Add Serial Device Path modal -->
+        <div v-if="showAddSerialDevModal" class="modal" @click.self="showAddSerialDevModal = false">
+          <div class="modal-content" @click.stop style="max-width:420px;">
+            <div class="modal-header">
+              <h3>Add Serial Device Port</h3>
+              <button @click="showAddSerialDevModal = false" class="btn-close">×</button>
+            </div>
+            <div class="modal-body">
+              <div class="form-group">
+                <label class="form-label">Host Device Path</label>
+                <input v-model="addSerialDevPath" class="form-control" placeholder="/dev/ttyS0" />
+                <p class="text-xs text-muted mt-1">
+                  Path to a host serial device to pass through (e.g. <code>/dev/ttyS0</code>,
+                  <code>/dev/ttyUSB0</code>). Use "Add Socket" for a UNIX domain socket instead.
+                </p>
+              </div>
+              <div class="alert alert-warning text-sm">
+                The VM must be <strong>powered off</strong> before changing serial configuration.
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button @click="showAddSerialDevModal = false" class="btn btn-outline">Cancel</button>
+              <button @click="doAddSerialDev" class="btn btn-primary"
+                      :disabled="addingSerial || !addSerialDevPath.trim()">
+                {{ addingSerial ? 'Adding...' : 'Add Serial Device' }}
+              </button>
+            </div>
+          </div>
+        </div>
+
       </div>
 
     <!-- ══════════════════════════════════════════════════════ MODALS ══ -->
@@ -1746,34 +2064,110 @@
 
     <!-- Add NIC Modal -->
     <div v-if="showAddNicModal" class="modal" @click.self="showAddNicModal = false">
-      <div class="modal-content modal-sm" @click.stop>
+      <div class="modal-content" @click.stop>
         <div class="modal-header">
           <h3>Add Network Interface</h3>
           <button @click="showAddNicModal = false" class="btn-close">×</button>
         </div>
         <div class="modal-body">
-          <div class="form-group">
-            <label class="form-label">Model</label>
-            <select v-model="addNicForm.model" class="form-control">
-              <option value="virtio">VirtIO (recommended)</option>
-              <option value="e1000">Intel E1000</option>
-              <option value="rtl8139">RTL8139</option>
-              <option value="vmxnet3">VMware vmxnet3</option>
-            </select>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Model</label>
+              <select v-model="addNicForm.model" class="form-control">
+                <option value="virtio">VirtIO (recommended)</option>
+                <option value="e1000">Intel E1000</option>
+                <option value="e1000e">Intel E1000e</option>
+                <option value="rtl8139">RTL8139</option>
+                <option value="vmxnet3">VMware vmxnet3</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Bridge <span class="text-danger">*</span></label>
+              <select v-if="nodeBridges.length > 0" v-model="addNicForm.bridge" class="form-control">
+                <option v-for="br in nodeBridges" :key="br.iface" :value="br.iface">
+                  {{ br.iface }}{{ br.comments ? ' — ' + br.comments : '' }}
+                </option>
+              </select>
+              <input v-else v-model="addNicForm.bridge" class="form-control" placeholder="vmbr0" />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">VLAN Tag (optional)</label>
+              <input v-model.number="addNicForm.tag" type="number" min="1" max="4094" class="form-control" placeholder="e.g. 10" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Rate Limit (MB/s, optional)</label>
+              <input v-model.number="addNicForm.rate" type="number" min="0" step="1" class="form-control" placeholder="0 = unlimited" />
+            </div>
           </div>
           <div class="form-group">
-            <label class="form-label">Bridge</label>
-            <input v-model="addNicForm.bridge" class="form-control" placeholder="vmbr0" />
+            <label class="form-label">MAC Address</label>
+            <div class="mac-input-row">
+              <input v-model="addNicForm.mac" class="form-control"
+                :placeholder="addNicForm.randomMac ? 'auto-generated' : 'AA:BB:CC:DD:EE:FF'"
+                :disabled="addNicForm.randomMac" />
+              <label class="mac-random-label">
+                <input type="checkbox" v-model="addNicForm.randomMac" />
+                Random
+              </label>
+            </div>
           </div>
-          <div class="form-group">
-            <label class="form-label">VLAN Tag (optional)</label>
-            <input v-model.number="addNicForm.tag" type="number" class="form-control" placeholder="e.g. 10" />
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label checkbox-label">
+                <input v-model="addNicForm.firewall" type="checkbox" />
+                Firewall enabled
+              </label>
+            </div>
+            <div class="form-group">
+              <label class="form-label checkbox-label">
+                <input v-model="addNicForm.link_down" type="checkbox" />
+                Link disconnected (down)
+              </label>
+            </div>
           </div>
           <div class="flex gap-1 mt-2">
             <button @click="doAddNic" class="btn btn-primary" :disabled="actioning || !addNicForm.bridge">
               {{ actioning ? 'Adding...' : 'Add NIC' }}
             </button>
             <button @click="showAddNicModal = false" class="btn btn-outline">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Change ISO Modal -->
+    <div v-if="showChangeIsoModal" class="modal" @click.self="showChangeIsoModal = false">
+      <div class="modal-content" @click.stop>
+        <div class="modal-header">
+          <h3>{{ changeIsoCdKey ? 'Change ISO: ' + changeIsoCdKey : 'Insert ISO' }}</h3>
+          <button @click="showChangeIsoModal = false" class="btn-close">×</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label">Storage</label>
+            <select v-model="changeIsoForm.storage" class="form-control" @change="loadIsoImages">
+              <option value="">Select storage...</option>
+              <option v-for="s in isoStorageList" :key="s.storage" :value="s.storage">{{ s.storage }} ({{ s.type }})</option>
+            </select>
+          </div>
+          <div v-if="isoImagesLoading" class="text-muted text-sm mt-1">Loading ISO files...</div>
+          <div v-else-if="isoImages.length" class="storage-image-list mt-1">
+            <div v-for="img in isoImages" :key="img.volid"
+              :class="['storage-image-row', changeIsoForm.volid === img.volid ? 'selected' : '']"
+              @click="changeIsoForm.volid = img.volid">
+              <input type="radio" :value="img.volid" v-model="changeIsoForm.volid" @click.stop />
+              <span class="img-name">{{ imgFileName(img.volid) }}</span>
+              <span class="img-meta">{{ img.size ? fmtBytes(img.size) : '—' }}</span>
+            </div>
+          </div>
+          <div v-else-if="changeIsoForm.storage" class="text-muted text-sm mt-1">No ISO files found in this storage.</div>
+          <div class="flex gap-1 mt-2">
+            <button @click="doChangeIso" class="btn btn-primary" :disabled="actioning || !changeIsoForm.volid">
+              {{ actioning ? 'Mounting...' : 'Mount ISO' }}
+            </button>
+            <button @click="showChangeIsoModal = false" class="btn btn-outline">Cancel</button>
           </div>
         </div>
       </div>
@@ -1793,19 +2187,25 @@
               <select v-model="editNicForm.model" class="form-control">
                 <option value="virtio">VirtIO (recommended)</option>
                 <option value="e1000">Intel E1000</option>
+                <option value="e1000e">Intel E1000e</option>
                 <option value="rtl8139">RTL8139</option>
                 <option value="vmxnet3">VMware vmxnet3</option>
               </select>
             </div>
             <div class="form-group">
-              <label class="form-label">Bridge</label>
-              <input v-model="editNicForm.bridge" class="form-control" placeholder="vmbr0" />
+              <label class="form-label">Bridge <span class="text-danger">*</span></label>
+              <select v-if="nodeBridges.length > 0" v-model="editNicForm.bridge" class="form-control">
+                <option v-for="br in nodeBridges" :key="br.iface" :value="br.iface">
+                  {{ br.iface }}{{ br.comments ? ' — ' + br.comments : '' }}
+                </option>
+              </select>
+              <input v-else v-model="editNicForm.bridge" class="form-control" placeholder="vmbr0" />
             </div>
           </div>
           <div class="form-row">
             <div class="form-group">
               <label class="form-label">VLAN Tag (optional)</label>
-              <input v-model.number="editNicForm.tag" type="number" class="form-control" placeholder="e.g. 10" />
+              <input v-model.number="editNicForm.tag" type="number" min="1" max="4094" class="form-control" placeholder="e.g. 10" />
             </div>
             <div class="form-group">
               <label class="form-label">Rate Limit (MB/s, optional)</label>
@@ -1813,10 +2213,23 @@
             </div>
           </div>
           <div class="form-group">
-            <label class="form-label checkbox-label">
-              <input v-model="editNicForm.firewall" type="checkbox" />
-              Firewall enabled for this NIC
-            </label>
+            <label class="form-label">MAC Address</label>
+            <input v-model="editNicForm.mac" class="form-control" placeholder="AA:BB:CC:DD:EE:FF (leave blank to keep)" />
+            <p class="text-xs text-muted mt-1">Leave blank to preserve the existing MAC address.</p>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label checkbox-label">
+                <input v-model="editNicForm.firewall" type="checkbox" />
+                Firewall enabled for this NIC
+              </label>
+            </div>
+            <div class="form-group">
+              <label class="form-label checkbox-label">
+                <input v-model="editNicForm.link_down" type="checkbox" />
+                Link disconnected (down)
+              </label>
+            </div>
           </div>
           <div class="flex gap-1 mt-2">
             <button @click="doEditNic" class="btn btn-primary" :disabled="actioning || !editNicForm.bridge">
@@ -2090,7 +2503,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick, watch, defineComponent, h } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Line } from 'vue-chartjs'
 import TaskProgressModal from '@/components/TaskProgressModal.vue'
@@ -2110,6 +2523,104 @@ import { copyToClipboard } from '@/utils/clipboard'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend, Title, Filler)
 
+// ── SnapDetailNode — inline recursive snapshot card component ──────────────────
+const SnapDetailNode = defineComponent({
+  name: 'SnapDetailNode',
+  props: {
+    node: Object,
+    depth: { type: Number, default: 0 },
+    selectedSnaps: { type: Set, default: () => new Set() },
+    actingSnap: String,
+    collapsedSnaps: { type: Set, default: () => new Set() },
+  },
+  emits: ['rollback', 'delete', 'toggle-compare', 'toggle-collapse'],
+  setup(props, { emit }) {
+    function relativeTime(ts) {
+      if (!ts) return '—'
+      const now = Date.now() / 1000
+      const diff = now - ts
+      if (diff < 60) return 'just now'
+      if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
+      if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
+      if (diff < 86400 * 30) return `${Math.floor(diff / 86400)}d ago`
+      if (diff < 86400 * 365) return `${Math.floor(diff / (86400 * 30))}mo ago`
+      return `${Math.floor(diff / (86400 * 365))}y ago`
+    }
+    function fullDate(ts) {
+      if (!ts) return ''
+      return new Date(ts * 1000).toLocaleString()
+    }
+    function renderNode(snap, depth) {
+      const isSelected = props.selectedSnaps?.has(snap.name) ?? false
+      const isActing = props.actingSnap === snap.name
+      const isCollapsed = props.collapsedSnaps?.has(snap.name) ?? false
+      const hasChildren = (snap.children || []).length > 0
+      const indent = depth * 1.5
+      return h('div', { class: 'snap-detail-node', style: `margin-left:${indent}rem;` }, [
+        depth > 0 ? h('div', { class: 'snap-detail-connector' }) : null,
+        h('div', { class: ['snap-detail-card', isSelected ? 'snap-detail-card--selected' : ''] }, [
+          h('div', { class: 'snap-detail-left' }, [
+            h('input', {
+              type: 'checkbox',
+              class: 'snap-detail-check',
+              checked: isSelected,
+              title: isSelected ? 'Deselect' : 'Select for compare',
+              onChange: () => emit('toggle-compare', snap.name),
+            }),
+            h('div', { class: 'snap-detail-info' }, [
+              h('div', { class: 'snap-detail-name-row' }, [
+                hasChildren
+                  ? h('button', {
+                      class: 'snap-collapse-btn',
+                      title: isCollapsed ? 'Expand children' : 'Collapse children',
+                      onClick: () => emit('toggle-collapse', snap.name),
+                    }, isCollapsed ? '\u25B6' : '\u25BC')
+                  : h('span', { class: 'snap-leaf-dot' }, '\u00B7'),
+                h('span', { class: 'snap-detail-snapname' }, snap.name),
+                snap.vmstate
+                  ? h('span', { class: 'badge badge-info snap-ram-badge', title: 'RAM state included' }, 'RAM')
+                  : null,
+                hasChildren
+                  ? h('span', {
+                      class: 'snap-children-badge',
+                      title: `${snap.children.length} child snapshot(s)`,
+                    }, `+${snap.children.length}`)
+                  : null,
+              ]),
+              snap.description ? h('div', { class: 'snap-detail-desc' }, snap.description) : null,
+            ]),
+          ]),
+          h('div', { class: 'snap-detail-right' }, [
+            snap.snaptime
+              ? h('span', { class: 'snap-detail-time', title: fullDate(snap.snaptime) }, relativeTime(snap.snaptime))
+              : null,
+            h('div', { class: 'snap-detail-actions' }, [
+              h('button', {
+                class: 'btn btn-warning btn-xs',
+                disabled: isActing,
+                title: 'Rollback VM to this snapshot',
+                onClick: () => emit('rollback', snap.name),
+              }, isActing ? '\u2026' : 'Rollback'),
+              h('button', {
+                class: 'btn btn-danger btn-xs',
+                disabled: isActing || hasChildren,
+                title: hasChildren ? 'Delete children first' : 'Delete snapshot',
+                onClick: () => emit('delete', snap.name, hasChildren),
+              }, 'Delete'),
+            ]),
+          ]),
+        ]),
+        !isCollapsed && hasChildren
+          ? h('div', { class: 'snap-detail-children' },
+              snap.children.map(child => renderNode(child, depth + 1))
+            )
+          : null,
+      ])
+    }
+    return () => renderNode(props.node, props.depth)
+  },
+})
+
 const DISK_KEYS = [
   'ide0','ide1','ide2','ide3',
   'sata0','sata1','sata2','sata3','sata4','sata5',
@@ -2119,6 +2630,8 @@ const DISK_KEYS = [
   'virtio6','virtio7','virtio8','virtio9','virtio10','virtio11','virtio12','virtio13',
 ]
 const NIC_KEYS = ['net0','net1','net2','net3','net4','net5','net6','net7']
+// Keys that can hold CD-ROM/ISO media
+const POSSIBLE_CDROM_KEYS = ['ide0','ide1','ide2','ide3','sata0','sata1','sata2','sata3']
 
 const route = useRoute()
 const router = useRouter()
@@ -2241,6 +2754,7 @@ const snapshots = ref([])
 const loadingSnapshots = ref(false)
 const selectedSnaps = ref(new Set())
 const collapsedSnaps = ref(new Set())
+const actingSnapName = ref(null)
 const firewallRules = ref([])
 const firewallOptions = ref(null)
 const loadingFirewall = ref(false)
@@ -2401,7 +2915,19 @@ const fmtBytes = (bytes) => {
 
 // Edit NIC state
 const editNicKey = ref('')
-const editNicForm = ref({ model: 'virtio', bridge: 'vmbr0', tag: null, rate: null, firewall: false })
+const editNicForm = ref({ model: 'virtio', bridge: 'vmbr0', tag: null, rate: null, firewall: false, link_down: false, mac: '' })
+
+// Node bridges (for NIC bridge dropdown)
+const nodeBridges = ref([])
+const nodeBridgesLoaded = ref(false)
+
+// CD-ROM / ISO state
+const showChangeIsoModal = ref(false)
+const changeIsoCdKey = ref('')
+const changeIsoForm = ref({ storage: '', volid: '' })
+const isoImages = ref([])
+const isoImagesLoading = ref(false)
+const isoStorageList = computed(() => storageList.value.filter(s => ['dir','nfs','cifs'].includes(s.type)))
 
 // Tag management
 const tagList = computed(() => {
@@ -2505,7 +3031,7 @@ const addDiskForm = ref({
   cache: '', ssd: false, discard: false, backup: true, iothread: false, replicate: true,
   browse_storage: '', import_volid: '',
 })
-const addNicForm = ref({ bridge: 'vmbr0', model: 'virtio', tag: null })
+const addNicForm = ref({ bridge: 'vmbr0', model: 'virtio', tag: null, rate: null, mac: '', randomMac: true, firewall: false, link_down: false })
 const snapshotForm = ref({ snapname: '', description: '', vmstate: false })
 const quickSnapForm = ref({ snapname: '', description: '' })
 const quickSnapUpid = ref('')
@@ -2552,6 +3078,165 @@ const attachedSerialPorts = computed(() => {
   }
   return result
 })
+
+// ── Hardware tab — Machine/BIOS/CPU state ────────────────────────────────────
+
+const hwEdit = ref({ machine: '', bios: 'seabios', cpuType: 'host', sockets: 1, cores: 1 })
+const savingHw = ref({})
+const usbDevicesLoading = ref(false)
+const showAddSerialDevModal = ref(false)
+const addSerialDevPath = ref('')
+
+// CPU flag definitions — name + short description
+const cpuFlagOptions = [
+  { name: 'aes',        desc: 'AES-NI hardware acceleration' },
+  { name: 'pdpe1gb',    desc: '1 GB hugepages support (Gigabyte pages)' },
+  { name: 'rdrand',     desc: 'Hardware random number generator' },
+  { name: 'md-clear',   desc: 'MDS vulnerability mitigation (VERW)' },
+  { name: 'pcid',       desc: 'Process-Context Identifiers (PCID) — reduces Meltdown overhead' },
+  { name: 'spec-ctrl',  desc: 'Spectre v2 mitigation (IBRS/IBPB)' },
+  { name: 'ssbd',       desc: 'Speculative Store Bypass Disable (Spectre v4)' },
+  { name: 'ibpb',       desc: 'Indirect Branch Prediction Barrier' },
+  { name: 'virt-ssbd',  desc: 'Virtualized SSBD' },
+  { name: 'avx',        desc: 'Advanced Vector Extensions (AVX)' },
+  { name: 'avx2',       desc: 'AVX2 — wider SIMD operations' },
+  { name: 'avx512f',    desc: 'AVX-512 Foundation' },
+  { name: 'hv-tlbflush', desc: 'Hyper-V TLB flush (Windows VMs)' },
+  { name: 'hv-evmcs',   desc: 'Hyper-V Enlightened VMCS' },
+  { name: 'x2apic',     desc: 'Extended xAPIC — supports >255 CPUs' },
+  { name: 'vmx',        desc: 'Nested VMs — virtualisation inside guest' },
+]
+
+// Per-flag state: '' = default, '+' = enabled, '-' = disabled
+const hwCpuFlagState = ref(Object.fromEntries(cpuFlagOptions.map(f => [f.name, ''])))
+
+// Parse current CPU string (e.g. "host,flags=+aes;-pdpe1gb") into type + flags
+const parsedCpuType = computed(() => {
+  const raw = config.value?.cpu || 'host'
+  return raw.split(',')[0] || 'host'
+})
+
+const parsedCpuFlags = computed(() => {
+  const raw = config.value?.cpu || ''
+  const flagsPart = raw.split(',').find(p => p.startsWith('flags='))
+  if (!flagsPart) return []
+  return flagsPart.replace('flags=', '').split(';').filter(Boolean)
+})
+
+// Sync hwEdit and hwCpuFlagState when config changes
+watch(() => config.value, (cfg) => {
+  if (!cfg) return
+  hwEdit.value.machine = cfg.machine || ''
+  hwEdit.value.bios = cfg.bios || 'seabios'
+  hwEdit.value.sockets = cfg.sockets || 1
+  hwEdit.value.cores = cfg.cores || 1
+  // Parse CPU type from "type,flags=+flag1;-flag2" format
+  const cpuStr = cfg.cpu || 'host'
+  const parts = cpuStr.split(',')
+  hwEdit.value.cpuType = parts[0] || 'host'
+  // Parse flags
+  const flagsPart = parts.find(p => p.startsWith('flags='))
+  const newFlagState = Object.fromEntries(cpuFlagOptions.map(f => [f.name, '']))
+  if (flagsPart) {
+    flagsPart.replace('flags=', '').split(';').forEach(f => {
+      if (!f) return
+      const sign = f[0]
+      const name = f.slice(1)
+      if (newFlagState.hasOwnProperty(name)) {
+        newFlagState[name] = sign === '+' ? '+' : '-'
+      }
+    })
+  }
+  hwCpuFlagState.value = newFlagState
+}, { immediate: true })
+
+const saveHwField = async (field, value) => {
+  savingHw.value = { ...savingHw.value, [field]: true }
+  try {
+    await api.pveVm.updateConfig(hostId.value, node.value, vmid.value, { [field]: value || null })
+    toast.success(`${field} updated`)
+    await loadConfig()
+  } catch (e) {
+    toast.error(`Failed to save ${field}: ` + (e.response?.data?.detail || e.message))
+  } finally {
+    savingHw.value = { ...savingHw.value, [field]: false }
+  }
+}
+
+const saveHwField2 = async (fields) => {
+  const firstKey = Object.keys(fields)[0]
+  savingHw.value = { ...savingHw.value, [firstKey]: true }
+  try {
+    await api.pveVm.updateConfig(hostId.value, node.value, vmid.value, fields)
+    toast.success('Configuration updated')
+    await loadConfig()
+  } catch (e) {
+    toast.error('Failed to save: ' + (e.response?.data?.detail || e.message))
+  } finally {
+    savingHw.value = { ...savingHw.value, [firstKey]: false }
+  }
+}
+
+const saveHwCpu = async () => {
+  savingHw.value = { ...savingHw.value, cpu: true }
+  try {
+    // Build Proxmox cpu string: "type,flags=+flag1;-flag2"
+    let cpuStr = hwEdit.value.cpuType || 'host'
+    const activeFlags = cpuFlagOptions
+      .map(f => hwCpuFlagState.value[f.name] ? hwCpuFlagState.value[f.name] + f.name : '')
+      .filter(Boolean)
+    if (activeFlags.length) {
+      cpuStr += ',flags=' + activeFlags.join(';')
+    }
+    await api.pveVm.updateConfig(hostId.value, node.value, vmid.value, { cpu: cpuStr })
+    toast.success('CPU configuration saved')
+    await loadConfig()
+  } catch (e) {
+    toast.error('Failed to save CPU config: ' + (e.response?.data?.detail || e.message))
+  } finally {
+    savingHw.value = { ...savingHw.value, cpu: false }
+  }
+}
+
+// Resolve a USB device host identifier to a human-readable name from node's USB list
+const resolveUsbName = (host) => {
+  if (!host || host === 'spice' || /^\d+$/.test(host)) return ''
+  const [vendid, prodid] = host.split(':')
+  const match = usbDevices.value.find(u => u.vendid === vendid && u.prodid === prodid)
+  return match ? (match.product || match.manufacturer || '') : ''
+}
+
+const openAddUsbModal = async () => {
+  addUsbForm.value = { host: '', usb3: false }
+  showAddUsbModal.value = true
+  // Refresh USB device list when opening modal
+  usbDevicesLoading.value = true
+  try {
+    const res = await api.pveNode.listUsbDevices(hostId.value, node.value)
+    usbDevices.value = res.data || []
+  } catch {
+    usbDevices.value = []
+  } finally {
+    usbDevicesLoading.value = false
+  }
+}
+
+const doAddSerialDev = async () => {
+  const path = addSerialDevPath.value.trim()
+  if (!path) return
+  addingSerial.value = true
+  try {
+    await api.pveVm.addSerialPort(hostId.value, node.value, vmid.value, { type: path })
+    toast.success('Serial device port added')
+    showAddSerialDevModal.value = false
+    addSerialDevPath.value = ''
+    await loadConfig()
+  } catch (e) {
+    toast.error('Failed to add serial device: ' + (e.response?.data?.detail || e.message))
+  } finally {
+    addingSerial.value = false
+  }
+}
 
 const availableNodes = computed(() => {
   return clusterNodes.value.map(n => n.node || n)
@@ -2637,6 +3322,25 @@ const snapshotTree = computed(() => {
   return treeRows
 })
 
+// ── New Snapshot Tree Root Computed (for card tree view) ───────────────────────
+
+const realSnapCount = computed(() => snapshots.value.filter(s => s.name !== 'current').length)
+
+const snapTreeRoots = computed(() => {
+  const snaps = snapshots.value.filter(s => s.name !== 'current')
+  const byName = {}
+  snaps.forEach(s => { byName[s.name] = { ...s, children: [] } })
+  const roots = []
+  snaps.forEach(s => {
+    if (s.parent && byName[s.parent]) {
+      byName[s.parent].children.push(byName[s.name])
+    } else {
+      roots.push(byName[s.name])
+    }
+  })
+  return roots
+})
+
 // ── Compare Computed ───────────────────────────────────────────────────────────
 
 const compareOnlyLeft = computed(() => {
@@ -2669,14 +3373,47 @@ const parsedDisks = computed(() => {
   return DISK_KEYS
     .filter(k => config.value[k])
     .map(k => ({ key: k, raw: config.value[k], parsed: parseProxmoxDisk(config.value[k]) }))
-    .filter(d => d.parsed)
+    .filter(d => d.parsed && !d.raw.includes('media=cdrom') && !d.raw.includes(',media=cdrom'))
+})
+
+const parsedCdRoms = computed(() => {
+  if (!config.value) return []
+  const result = []
+  for (const k of POSSIBLE_CDROM_KEYS) {
+    const val = config.value[k]
+    if (!val) continue
+    const str = String(val)
+    if (str.includes('media=cdrom')) {
+      // extract ISO path if any — format: storage:iso/name.iso,media=cdrom
+      let iso = null
+      const colonIdx = str.indexOf(':')
+      if (colonIdx !== -1) {
+        const volPart = str.split(',')[0]
+        iso = volPart
+        // if the volid is just "cdrom" or "none" it's empty
+        if (iso === 'none' || iso.endsWith(':none') || !iso.includes('.iso')) {
+          iso = null
+        }
+      }
+      result.push({ key: k, raw: str, iso })
+    }
+  }
+  return result
 })
 
 const parsedNics = computed(() => {
   if (!config.value) return []
   return NIC_KEYS
     .filter(k => config.value[k])
-    .map(k => ({ key: k, raw: config.value[k], parsed: parseProxmoxNIC(config.value[k]) }))
+    .map(k => {
+      const raw = config.value[k]
+      const parsed = parseProxmoxNIC(raw)
+      if (parsed) {
+        // Augment with link_down (not handled by the shared util)
+        parsed.link_down = raw.includes('link_down=1')
+      }
+      return { key: k, raw, parsed }
+    })
     .filter(n => n.parsed)
 })
 
@@ -2797,6 +3534,22 @@ const loadSnapshots = async () => {
   }
 }
 
+const loadNodeBridges = async () => {
+  try {
+    const res = await api.pveNode.listNetwork(hostId.value, node.value)
+    const all = res.data || []
+    nodeBridges.value = all.filter(n => n.type === 'bridge' || n.iface?.startsWith('vmbr'))
+    nodeBridgesLoaded.value = true
+    // Pre-select first bridge in forms if not set
+    if (nodeBridges.value.length > 0) {
+      if (!addNicForm.value.bridge) addNicForm.value.bridge = nodeBridges.value[0].iface
+    }
+  } catch (e) {
+    console.warn('Failed to load node bridges', e)
+    nodeBridges.value = []
+  }
+}
+
 const loadFirewall = async () => {
   loadingFirewall.value = true
   try {
@@ -2888,6 +3641,7 @@ const switchTab = (tab) => {
   if (tab === 'config') loadPending()
   if (tab === 'performance') loadPerfRrd()
   if (tab === 'disks') loadUnusedDisks()
+  if (tab === 'network') { if (!nodeBridgesLoaded.value) loadNodeBridges() }
   if (tab === 'access') { loadVmAcl(); loadVmRoles() }
   if (tab === 'hardware') { loadUsbDevices() }
 }
@@ -3307,6 +4061,15 @@ const removeNic = async (nicKey) => {
   }
 }
 
+const openAddNicModal = async () => {
+  addNicForm.value = { bridge: '', model: 'virtio', tag: null, rate: null, mac: '', randomMac: true, firewall: false, link_down: false }
+  if (!nodeBridgesLoaded.value) await loadNodeBridges()
+  if (nodeBridges.value.length > 0 && !addNicForm.value.bridge) {
+    addNicForm.value.bridge = nodeBridges.value[0].iface
+  }
+  showAddNicModal.value = true
+}
+
 const doAddNic = async () => {
   if (!addNicForm.value.bridge) {
     toast.error('Please enter a bridge name')
@@ -3314,21 +4077,30 @@ const doAddNic = async () => {
   }
   actioning.value = true
   try {
-    const payload = { ...addNicForm.value }
-    if (!payload.tag) delete payload.tag
+    const f = addNicForm.value
+    const payload = {
+      bridge: f.bridge,
+      model: f.model,
+      vlan: f.tag || null,
+      mac: (!f.randomMac && f.mac) ? f.mac : null,
+      firewall: f.firewall,
+      rate: f.rate || null,
+      link_down: f.link_down,
+    }
     await api.pveVm.addNic(hostId.value, node.value, vmid.value, payload)
     toast.success('NIC added')
     showAddNicModal.value = false
-    addNicForm.value = { bridge: 'vmbr0', model: 'virtio', tag: null }
+    addNicForm.value = { bridge: 'vmbr0', model: 'virtio', tag: null, rate: null, mac: '', randomMac: true, firewall: false, link_down: false }
     await loadConfig()
   } catch (e) {
     console.error(e)
+    toast.error('Failed to add NIC')
   } finally {
     actioning.value = false
   }
 }
 
-const openEditNic = (nic) => {
+const openEditNic = async (nic) => {
   editNicKey.value = nic.key
   editNicForm.value = {
     model: nic.parsed.model || 'virtio',
@@ -3336,7 +4108,10 @@ const openEditNic = (nic) => {
     tag: nic.parsed.vlan ? parseInt(nic.parsed.vlan) : null,
     rate: nic.parsed.rate ? parseFloat(nic.parsed.rate) : null,
     firewall: !!nic.parsed.firewall,
+    link_down: !!nic.parsed.link_down,
+    mac: nic.parsed.mac || '',
   }
+  if (!nodeBridgesLoaded.value) await loadNodeBridges()
   showEditNicModal.value = true
 }
 
@@ -3347,17 +4122,20 @@ const doEditNic = async () => {
   }
   actioning.value = true
   try {
-    // Build Proxmox NIC string: model=MAC,bridge=br,tag=n,firewall=0/1,rate=n
     const f = editNicForm.value
-    // preserve original MAC by extracting from raw config
+    // Use the existing MAC from the parsed NIC if no new one supplied
     const rawNic = parsedNics.value.find(n => n.key === editNicKey.value)
-    const mac = rawNic?.parsed.mac || ''
-    let nicStr = `${f.model}=${mac}`
-    nicStr += `,bridge=${f.bridge}`
-    if (f.tag) nicStr += `,tag=${f.tag}`
-    if (f.rate) nicStr += `,rate=${f.rate}`
-    nicStr += `,firewall=${f.firewall ? 1 : 0}`
-    await api.pveVm.updateConfig(hostId.value, node.value, vmid.value, { [editNicKey.value]: nicStr })
+    const mac = f.mac || rawNic?.parsed.mac || null
+    const payload = {
+      bridge: f.bridge,
+      model: f.model,
+      vlan: f.tag || null,
+      mac: mac || null,
+      firewall: f.firewall,
+      rate: f.rate || null,
+      link_down: f.link_down,
+    }
+    await api.pveVm.updateNIC(hostId.value, node.value, vmid.value, editNicKey.value, payload)
     toast.success(`${editNicKey.value} updated`)
     showEditNicModal.value = false
     await loadConfig()
@@ -3372,19 +4150,119 @@ const doEditNic = async () => {
 const toggleNicFirewall = async (nic) => {
   actioning.value = true
   try {
-    const mac = nic.parsed.mac || ''
-    const newFirewall = nic.parsed.firewall ? 0 : 1
-    let nicStr = `${nic.parsed.model}=${mac}`
-    nicStr += `,bridge=${nic.parsed.bridge || 'vmbr0'}`
-    if (nic.parsed.vlan) nicStr += `,tag=${nic.parsed.vlan}`
-    if (nic.parsed.rate) nicStr += `,rate=${nic.parsed.rate}`
-    nicStr += `,firewall=${newFirewall}`
-    await api.pveVm.updateConfig(hostId.value, node.value, vmid.value, { [nic.key]: nicStr })
+    const newFirewall = !nic.parsed.firewall
+    await api.pveVm.updateNIC(hostId.value, node.value, vmid.value, nic.key, {
+      bridge: nic.parsed.bridge || 'vmbr0',
+      model: nic.parsed.model || 'virtio',
+      vlan: nic.parsed.vlan ? parseInt(nic.parsed.vlan) : null,
+      mac: nic.parsed.mac || null,
+      firewall: newFirewall,
+      rate: nic.parsed.rate ? parseFloat(nic.parsed.rate) : null,
+      link_down: !!nic.parsed.link_down,
+    })
     toast.success(`Firewall ${newFirewall ? 'enabled' : 'disabled'} for ${nic.key}`)
     await loadConfig()
   } catch (e) {
     console.error(e)
     toast.error('Failed to toggle firewall')
+  } finally {
+    actioning.value = false
+  }
+}
+
+const toggleNicLinkDown = async (nic) => {
+  actioning.value = true
+  try {
+    const newLinkDown = !nic.parsed.link_down
+    await api.pveVm.updateNIC(hostId.value, node.value, vmid.value, nic.key, {
+      bridge: nic.parsed.bridge || 'vmbr0',
+      model: nic.parsed.model || 'virtio',
+      vlan: nic.parsed.vlan ? parseInt(nic.parsed.vlan) : null,
+      mac: nic.parsed.mac || null,
+      firewall: !!nic.parsed.firewall,
+      rate: nic.parsed.rate ? parseFloat(nic.parsed.rate) : null,
+      link_down: newLinkDown,
+    })
+    toast.success(`${nic.key} link ${newLinkDown ? 'disconnected' : 'connected'}`)
+    await loadConfig()
+  } catch (e) {
+    console.error(e)
+    toast.error('Failed to toggle link state')
+  } finally {
+    actioning.value = false
+  }
+}
+
+// ── CD-ROM Actions ─────────────────────────────────────────────────────────────
+
+const ejectCdrom = async (cdKey) => {
+  if (!confirm(`Eject ISO from ${cdKey}?`)) return
+  actioning.value = true
+  try {
+    await api.pveVm.updateConfig(hostId.value, node.value, vmid.value, { [cdKey]: 'none,media=cdrom' })
+    toast.success(`ISO ejected from ${cdKey}`)
+    await loadConfig()
+  } catch (e) {
+    console.error(e)
+    toast.error('Failed to eject ISO')
+  } finally {
+    actioning.value = false
+  }
+}
+
+const openChangeIsoModal = async (cd) => {
+  changeIsoCdKey.value = cd.key
+  changeIsoForm.value = { storage: '', volid: '' }
+  isoImages.value = []
+  showChangeIsoModal.value = true
+}
+
+const loadIsoImages = async () => {
+  const storage = changeIsoForm.value.storage
+  if (!storage) return
+  isoImagesLoading.value = true
+  isoImages.value = []
+  try {
+    const res = await api.pveNode.browseStorage(hostId.value, node.value, storage, { content: 'iso' })
+    isoImages.value = res.data || []
+  } catch (e) {
+    console.warn('Failed to load ISO images', e)
+    isoImages.value = []
+  } finally {
+    isoImagesLoading.value = false
+  }
+}
+
+const doChangeIso = async () => {
+  if (!changeIsoForm.value.volid) {
+    toast.error('Please select an ISO image')
+    return
+  }
+  actioning.value = true
+  try {
+    const isoVal = `${changeIsoForm.value.volid},media=cdrom`
+    await api.pveVm.updateConfig(hostId.value, node.value, vmid.value, { [changeIsoCdKey.value]: isoVal })
+    toast.success(`ISO mounted to ${changeIsoCdKey.value}`)
+    showChangeIsoModal.value = false
+    await loadConfig()
+  } catch (e) {
+    console.error(e)
+    toast.error('Failed to mount ISO')
+  } finally {
+    actioning.value = false
+  }
+}
+
+const removeCdromDrive = async (cdKey) => {
+  if (!confirm(`Remove CD-ROM drive ${cdKey} from this VM?`)) return
+  actioning.value = true
+  try {
+    await api.pveVm.updateConfig(hostId.value, node.value, vmid.value, { [cdKey]: null })
+    toast.success(`CD-ROM drive ${cdKey} removed`)
+    await loadConfig()
+  } catch (e) {
+    console.error(e)
+    toast.error('Failed to remove CD-ROM drive')
   } finally {
     actioning.value = false
   }
@@ -3406,23 +4284,25 @@ const formatDiskSize = (sizeStr) => {
 const toggleDiskFlag = async (disk, flag) => {
   actioning.value = true
   try {
-    // Rebuild the disk config string with the toggled flag
     const p = disk.parsed
-    const newVal = flag === 'ssd' ? (p.ssd ? 0 : 1) : (p.discard ? 0 : 1)
-    // Build a minimal config string from known parts
+    // Determine the new toggled value for each supported flag
+    const newSsd = flag === 'ssd' ? !p.ssd : p.ssd
+    const newDiscard = flag === 'discard' ? !p.discard : p.discard
+    const newBackup = flag === 'backup' ? !p.backup : p.backup
+    const newIothread = flag === 'iothread' ? !p.iothread : p.iothread
+    // Rebuild the disk config string
     let diskStr = `${p.storage}:${p.volume}`
     if (p.size) diskStr += `,size=${p.size}`
     if (p.format) diskStr += `,format=${p.format}`
     if (p.cache) diskStr += `,cache=${p.cache}`
-    const ssdVal = flag === 'ssd' ? newVal : (p.ssd ? 1 : 0)
-    const discardVal = flag === 'discard' ? newVal : (p.discard ? 'on' : 0)
-    if (ssdVal) diskStr += `,ssd=1`
-    if (discardVal && discardVal !== 0) diskStr += `,discard=on`
-    if (!p.backup) diskStr += `,backup=0`
-    if (p.iothread) diskStr += `,iothread=1`
+    if (newSsd) diskStr += `,ssd=1`
+    if (newDiscard) diskStr += `,discard=on`
+    if (!newBackup) diskStr += `,backup=0`
+    if (newIothread) diskStr += `,iothread=1`
     await api.pveVm.updateConfig(hostId.value, node.value, vmid.value, { [disk.key]: diskStr })
-    const label = flag === 'ssd' ? 'SSD emulation' : 'Discard'
-    toast.success(`${label} ${newVal ? 'enabled' : 'disabled'} for ${disk.key}`)
+    const labelMap = { ssd: 'SSD emulation', discard: 'Discard', backup: 'Backup', iothread: 'IO thread' }
+    const newFlagVal = { ssd: newSsd, discard: newDiscard, backup: newBackup, iothread: newIothread }[flag]
+    toast.success(`${labelMap[flag] || flag} ${newFlagVal ? 'enabled' : 'disabled'} for ${disk.key}`)
     await loadConfig()
   } catch (e) {
     console.error(e)
@@ -3454,30 +4334,40 @@ const doCreateSnapshot = async () => {
 }
 
 const rollbackSnapshot = async (snapName) => {
-  if (!confirm(`This will revert the VM to this snapshot. Continue?`)) return
+  if (!confirm(`This will revert the VM to snapshot "${snapName}".\n\nWARNING: All changes since this snapshot will be lost. Continue?`)) return
   actioning.value = true
+  actingSnapName.value = snapName
   try {
-    await api.pveVm.rollbackSnapshot(hostId.value, node.value, vmid.value, snapName)
-    toast.success('Rollback initiated')
+    const res = await api.pveVm.rollbackSnapshot(hostId.value, node.value, vmid.value, snapName)
+    toast.success('Rollback task started')
     await loadSnapshots()
   } catch (e) {
+    toast.error(e.response?.data?.detail || 'Rollback failed')
     console.error(e)
   } finally {
     actioning.value = false
+    actingSnapName.value = null
   }
 }
 
-const deleteSnapshot = async (snapName) => {
+const deleteSnapshot = async (snapName, hasChildren) => {
+  if (hasChildren) {
+    toast.error(`Cannot delete "${snapName}" — it has child snapshots. Delete children first.`)
+    return
+  }
   if (!confirm(`Delete snapshot '${snapName}'? This cannot be undone.`)) return
   actioning.value = true
+  actingSnapName.value = snapName
   try {
     await api.pveVm.deleteSnapshot(hostId.value, node.value, vmid.value, snapName)
     toast.success('Snapshot deleted')
     await loadSnapshots()
   } catch (e) {
+    toast.error(e.response?.data?.detail || 'Delete failed')
     console.error(e)
   } finally {
     actioning.value = false
+    actingSnapName.value = null
   }
 }
 
@@ -3489,6 +4379,10 @@ const toggleSnapSelect = (snapName) => {
     s.add(snapName)
   }
   selectedSnaps.value = s
+}
+
+const clearSnapSelect = () => {
+  selectedSnaps.value = new Set()
 }
 
 const toggleSnapCollapse = (snapName) => {
@@ -4051,6 +4945,7 @@ const copySshCommand = () => {
 }
 </script>
 
+
 <style scoped>
 /* ── Firewall tab enhancements ──────────────────────────────────────────────── */
 .fw-options-body {
@@ -4508,6 +5403,91 @@ const copySshCommand = () => {
 
 .btn-success:hover {
   background-color: #059669;
+}
+
+.btn-warning {
+  background-color: #d97706;
+  color: white;
+}
+
+.btn-warning:hover {
+  background-color: #b45309;
+}
+
+/* NIC stats bar */
+.nic-stats-bar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.5rem 1rem;
+  background: var(--card-background);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 0.875rem;
+}
+
+.nic-stats-label {
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.nic-stat {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--text-primary);
+}
+
+.nic-stat-icon {
+  font-weight: bold;
+}
+
+/* Disconnected NIC row styling */
+.nic-row-disconnected td {
+  opacity: 0.6;
+}
+
+.nic-row-disconnected {
+  background: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 4px,
+    rgba(127, 127, 127, 0.04) 4px,
+    rgba(127, 127, 127, 0.04) 8px
+  );
+}
+
+/* MAC address input with random toggle */
+.mac-input-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.mac-input-row .form-control {
+  flex: 1;
+}
+
+.mac-random-label {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.875rem;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+}
+
+/* CD-ROM ISO path label */
+.cdrom-iso-label {
+  font-family: monospace;
+  font-size: 0.8rem;
+  background: var(--background);
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+  padding: 1px 5px;
+  color: var(--text-primary);
+  word-break: break-all;
 }
 
 /* Pending Config Changes */
@@ -5147,5 +6127,330 @@ const copySshCommand = () => {
   color: var(--text-secondary);
   font-size: 0.78rem;
   white-space: nowrap;
+}
+
+/* ── Snapshot tab enhancements ─────────────────────────────────────────────── */
+.snap-limit-warning {
+  background: rgba(234, 179, 8, 0.1);
+  border: 1px solid rgba(234, 179, 8, 0.35);
+  border-radius: 0.375rem;
+  padding: 0.6rem 1rem;
+  font-size: 0.85rem;
+  color: #facc15;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.snap-limit-icon {
+  font-size: 1.1rem;
+  flex-shrink: 0;
+}
+
+.snap-compare-bar {
+  background: rgba(234, 179, 8, 0.08);
+  border: 1px solid rgba(234, 179, 8, 0.3);
+  border-radius: 0.375rem;
+  padding: 0.55rem 1rem;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.snap-compare-bar--info {
+  background: rgba(59, 130, 246, 0.08);
+  border-color: rgba(59, 130, 246, 0.3);
+  color: #93c5fd;
+}
+.snap-compare-names {
+  font-weight: 600;
+  font-family: monospace;
+  font-size: 0.8rem;
+  color: #facc15;
+  flex: 1;
+}
+
+.snap-tree-container {
+  padding: 0.75rem 1rem;
+}
+
+.snap-card--current {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.4rem;
+  opacity: 0.7;
+}
+
+/* SnapDetailNode styles */
+.snap-detail-node {
+  position: relative;
+  margin-bottom: 0.35rem;
+}
+
+.snap-detail-connector {
+  position: absolute;
+  left: -0.85rem;
+  top: 0;
+  bottom: 50%;
+  width: 2px;
+  background: var(--border-color);
+  opacity: 0.5;
+}
+
+.snap-detail-card {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.55rem 0.875rem;
+  border: 1px solid var(--border-color);
+  border-radius: 0.4rem;
+  background: var(--bg-secondary);
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.snap-detail-card:hover {
+  background: rgba(255,255,255,0.03);
+}
+
+.snap-detail-card--selected {
+  border-color: rgba(59, 130, 246, 0.5);
+  background: rgba(59, 130, 246, 0.06);
+}
+
+.snap-detail-check {
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.snap-detail-left {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.snap-detail-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.snap-detail-name-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.snap-collapse-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.65rem;
+  color: var(--text-secondary);
+  padding: 0.1rem 0.2rem;
+  flex-shrink: 0;
+}
+
+.snap-leaf-dot {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  flex-shrink: 0;
+  width: 1rem;
+  text-align: center;
+}
+
+.snap-detail-snapname {
+  font-weight: 600;
+  font-family: monospace;
+  font-size: 0.9rem;
+}
+
+.snap-ram-badge {
+  font-size: 0.65rem;
+  padding: 0.1rem 0.35rem;
+}
+
+.snap-children-badge {
+  font-size: 0.7rem;
+  background: rgba(148, 163, 184, 0.15);
+  color: #94a3b8;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 9999px;
+  padding: 0.05rem 0.4rem;
+}
+
+.snap-detail-desc {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  margin-top: 0.15rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.snap-detail-right {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-shrink: 0;
+}
+
+.snap-detail-time {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  cursor: default;
+}
+
+.snap-detail-actions {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.snap-detail-children {
+  margin-left: 1.25rem;
+  border-left: 2px solid var(--border-color);
+  padding-left: 0.75rem;
+  margin-top: 0.3rem;
+}
+
+.empty-state {
+  padding: 2.5rem;
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+/* ── Hardware tab — Machine/CPU/USB/Serial styles ───────────────────────────── */
+.hw-machine-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 1.5rem;
+  padding: 1rem 1.5rem;
+}
+
+@media (max-width: 768px) {
+  .hw-machine-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.hw-cpu-flags-section {
+  border-top: 1px solid var(--border-color, #e5e7eb);
+  padding: 0.75rem 1.5rem 1rem;
+}
+
+.hw-cpu-flags-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.hw-cpu-flags-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.hw-cpu-flags-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 0.4rem;
+}
+
+.hw-cpu-flag-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.5rem;
+  border-radius: 4px;
+  background: var(--bg-secondary, #f8f9fa);
+  border: 1px solid var(--border-color, #e5e7eb);
+}
+
+.hw-flag-select {
+  width: 110px;
+  flex-shrink: 0;
+  font-size: 0.78rem;
+}
+
+.hw-flag-name {
+  font-family: monospace;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.hw-flag-desc {
+  font-size: 0.73rem;
+  color: var(--text-secondary, #6b7280);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+/* USB device picker list */
+.usb-device-list {
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-radius: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.usb-device-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border-color, #e5e7eb);
+  transition: background 0.1s;
+}
+
+.usb-device-row:last-child {
+  border-bottom: none;
+}
+
+.usb-device-row:hover {
+  background: var(--bg-hover, #f0f2f5);
+}
+
+.usb-device-row--selected {
+  background: rgba(59, 130, 246, 0.06);
+  border-color: rgba(59, 130, 246, 0.3);
+}
+
+.usb-device-info {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.usb-device-id {
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.usb-device-name {
+  font-size: 0.85rem;
+  color: var(--text-primary);
+}
+
+.usb-mode-divider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.4rem 0;
+  color: var(--text-secondary);
 }
 </style>

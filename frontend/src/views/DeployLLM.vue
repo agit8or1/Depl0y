@@ -56,13 +56,14 @@
           >
             <div class="catalog-card-header">
               <span class="catalog-model-name">{{ m.name }}</span>
-              <span class="catalog-model-size">{{ m.size_gb }} GB</span>
+              <span :class="['catalog-model-size', m.size_gb >= 4 ? 'size-large' : '']">{{ m.size_gb }} GB</span>
             </div>
             <p class="catalog-model-desc">{{ m.description }}</p>
             <div class="catalog-model-meta">
               <span class="meta-chip">{{ m.params }}</span>
               <span class="meta-chip">{{ m.context_len }}</span>
               <span class="meta-chip vram">VRAM: {{ m.vram }}</span>
+              <span v-if="m.size_gb >= 4" class="meta-chip ram-warn">8+ GB RAM req.</span>
             </div>
             <div class="catalog-card-footer">
               <button
@@ -80,8 +81,24 @@
         </div>
       </div>
 
+      <!-- RAM warning for selected models -->
+      <div v-if="catalogRamWarning" class="catalog-ram-warning">
+        <span class="ram-warning-icon">&#9888;</span>
+        <div>
+          <strong>RAM Warning:</strong> Selected models total <strong>{{ catalogSelectedTotalGb.toFixed(1) }} GB</strong> on disk.
+          Ollama loads models into RAM — ensure your VM has at least <strong>{{ Math.ceil(catalogSelectedTotalGb + 2) }} GB RAM</strong> available.
+          Models ≥ 4 GB each require 8+ GB RAM; consider deploying on a node with sufficient memory.
+        </div>
+        <div class="ram-threshold-control">
+          <label>VM RAM (GB): <input type="number" v-model.number="catalogRamLimit" min="4" max="256" class="ram-limit-input" /></label>
+        </div>
+      </div>
+
       <div v-if="selectedCatalogModels.length > 0" class="catalog-selection-bar">
-        <span>{{ selectedCatalogModels.length }} model(s) selected</span>
+        <div class="catalog-selection-info">
+          <span>{{ selectedCatalogModels.length }} model(s) selected</span>
+          <span class="catalog-selection-size">{{ catalogSelectedTotalGb.toFixed(1) }} GB total</span>
+        </div>
         <button class="btn btn-primary" @click="goDeployWithCatalogModels()">Deploy with selected models →</button>
       </div>
     </div>
@@ -131,8 +148,9 @@
                 :href="'http://' + inst.ip_address + ':11434'"
                 target="_blank"
                 class="btn btn-xs btn-outline"
+                title="Open Ollama REST API"
                 @click.stop
-              >Ollama API</a>
+              >Open API</a>
               <a
                 v-if="inst.ip_address && inst.status === 'running' && inst.ui_type === 'open-webui'"
                 :href="'http://' + inst.ip_address + ':3000'"
@@ -140,6 +158,20 @@
                 class="btn btn-xs btn-outline"
                 @click.stop
               >Open WebUI</a>
+              <a
+                v-if="inst.ip_address && inst.status === 'running' && (inst.engine === 'meme-maker')"
+                :href="'http://' + inst.ip_address + ':8189'"
+                target="_blank"
+                class="btn btn-xs btn-outline"
+                @click.stop
+              >Meme Maker</a>
+              <a
+                v-if="inst.ip_address && inst.status === 'running' && (inst.engine === 'stable-diffusion' || inst.ui_type === 'comfyui')"
+                :href="'http://' + inst.ip_address + ':8188'"
+                target="_blank"
+                class="btn btn-xs btn-outline"
+                @click.stop
+              >ComfyUI</a>
               <span :class="['status-badge', 'status-' + inst.status]">{{ inst.status }}</span>
             </div>
             <span class="expand-arrow">{{ expandedInstances.includes(inst.vmid) ? '▲' : '▼' }}</span>
@@ -159,6 +191,32 @@
               </div>
 
               <template v-else>
+                <!-- Instance header info row -->
+                <div class="inst-info-row">
+                  <div class="inst-info-chip">
+                    <span class="inst-info-label">IP</span>
+                    <span class="inst-info-value">{{ inst.ip_address || instStatus[inst.vmid].ip || '—' }}</span>
+                  </div>
+                  <div class="inst-info-chip">
+                    <span class="inst-info-label">Ollama</span>
+                    <span class="inst-info-value">{{ instVersions[inst.vmid] || 'loading...' }}</span>
+                  </div>
+                  <div v-if="inst.engine" class="inst-info-chip">
+                    <span class="inst-info-label">Engine</span>
+                    <span class="inst-info-value">{{ inst.engine }}</span>
+                  </div>
+                  <div v-if="inst.gpu_enabled" class="inst-info-chip inst-info-chip-gpu">
+                    <span class="inst-info-label">GPU</span>
+                    <span class="inst-info-value">{{ inst.gpu_type || 'enabled' }}</span>
+                  </div>
+                  <a
+                    v-if="inst.ip_address"
+                    :href="'http://' + inst.ip_address + ':11434'"
+                    target="_blank"
+                    class="btn btn-xs btn-outline inst-api-btn"
+                  >Open API :11434</a>
+                </div>
+
                 <!-- Running models -->
                 <div class="inst-section">
                   <h4 class="inst-section-title">Loaded in VRAM</h4>
@@ -196,7 +254,18 @@
                 <!-- Pull model -->
                 <div class="inst-section">
                   <h4 class="inst-section-title">Pull Model</h4>
-                  <div class="pull-row">
+                  <!-- Quick-select popular models -->
+                  <div class="pull-quick-select">
+                    <span class="pull-quick-label">Quick select:</span>
+                    <button
+                      v-for="qm in QUICK_PULL_MODELS"
+                      :key="qm.id"
+                      :class="['btn btn-xs pull-quick-btn', pullModelInputs[inst.vmid] === qm.id ? 'pull-quick-btn-active' : 'btn-outline']"
+                      @click="pullModelInputs[inst.vmid] = qm.id"
+                      :title="qm.label"
+                    >{{ qm.id }}</button>
+                  </div>
+                  <div class="pull-row" style="margin-top:0.5rem">
                     <input
                       v-model="pullModelInputs[inst.vmid]"
                       class="form-control pull-input"
@@ -703,6 +772,16 @@
                 <input v-model="form.password" type="password" autocomplete="new-password" class="form-control" />
               </div>
             </div>
+            <div class="form-group">
+              <label class="form-label">SSH Public Key <span class="form-label-optional">(optional)</span></label>
+              <textarea
+                v-model="form.ssh_public_key"
+                class="form-control ssh-key-input"
+                placeholder="ssh-rsa AAAA... user@host"
+                rows="3"
+              ></textarea>
+              <small class="form-hint">Paste your public key for passwordless SSH login (cloud-init)</small>
+            </div>
 
             <!-- Resources adjustable -->
             <h4 class="section-label">Resources (auto-suggested, adjust if needed)</h4>
@@ -1207,6 +1286,15 @@
               <span v-if="form.gpu_enabled"> · VRAM ≥ {{ selectedModelInfo.min_vram_gb }} GB</span>
             </div>
 
+            <!-- RAM warning if configured RAM is below model minimum -->
+            <div v-if="selectedModelInfo && form.memory < selectedModelInfo.min_ram_gb * 1024" class="info-box warning" style="margin-top:0.5rem">
+              <strong>&#9888; RAM Warning:</strong>
+              Model <strong>{{ selectedModelInfo.name }}</strong> requires at least
+              <strong>{{ selectedModelInfo.min_ram_gb }} GB RAM</strong> ({{ selectedModelInfo.min_ram_gb * 1024 }} MB),
+              but you have only <strong>{{ (form.memory / 1024).toFixed(1) }} GB</strong> configured.
+              Increase RAM or choose a smaller model to avoid OOM crashes.
+            </div>
+
             <div class="grid grid-cols-3 gap-2">
               <div class="form-group">
                 <label class="form-label">CPU Sockets</label>
@@ -1308,6 +1396,16 @@
                 <label class="form-label">Password *</label>
                 <input v-model="form.password" type="password" autocomplete="new-password" class="form-control" />
               </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">SSH Public Key <span class="form-label-optional">(optional)</span></label>
+              <textarea
+                v-model="form.ssh_public_key"
+                class="form-control ssh-key-input"
+                placeholder="ssh-rsa AAAA... user@host"
+                rows="3"
+              ></textarea>
+              <small class="form-hint">Paste your public key for passwordless SSH login (cloud-init)</small>
             </div>
           </div>
           <div class="wizard-nav">
@@ -1497,6 +1595,17 @@ const CATALOG_CATEGORIES = [
     ],
   },
   {
+    id: 'reasoning',
+    label: 'Reasoning',
+    icon: '🧠',
+    models: [
+      { id: 'deepseek-r1:7b',  name: 'DeepSeek R1 7B',    params: '7B',   size_gb: 4.7,  context_len: '128K', vram: '5 GB',  description: 'DeepSeek R1 reasoning model. Shows chain-of-thought. Great for complex problems. Requires 8+ GB RAM.' },
+      { id: 'deepseek-r1:1.5b', name: 'DeepSeek R1 1.5B',  params: '1.5B', size_gb: 1.1,  context_len: '128K', vram: '2 GB',  description: 'Compact reasoning model. Surprising CoT capability in a small package.' },
+      { id: 'phi3:mini',        name: 'Phi-3 Mini',         params: '3.8B', size_gb: 2.3,  context_len: '128K', vram: '3 GB',  description: 'Microsoft Phi-3 Mini. Exceptional step-by-step reasoning for its size. Runs well on CPU.' },
+      { id: 'mistral:7b',       name: 'Mistral 7B',         params: '7B',   size_gb: 4.1,  context_len: '32K',  vram: '5 GB',  description: 'Highly capable 7B model with strong reasoning. One of the most popular choices. Requires 8+ GB RAM.' },
+    ],
+  },
+  {
     id: 'embedding',
     label: 'Embedding',
     icon: '🔢',
@@ -1559,6 +1668,19 @@ const SIMPLE_RECS = {
   'memes-quality':      { engine: 'stable-diffusion', model: 'sdxl',          modelName: 'SDXL 1.0',       cpu_cores: 8,  memory: 24576, disk_size: 60 },
 }
 
+// Quick-pull model list shown as chips in the instance panel
+const QUICK_PULL_MODELS = [
+  { id: 'llama3.2:1b',     label: 'Llama 3.2 1B  (0.8 GB, CPU)' },
+  { id: 'llama3.2:3b',     label: 'Llama 3.2 3B  (2.0 GB, CPU)' },
+  { id: 'qwen2.5:3b',      label: 'Qwen 2.5 3B  (1.9 GB, CPU)' },
+  { id: 'phi3:mini',       label: 'Phi-3 Mini  (2.3 GB, CPU)' },
+  { id: 'gemma2:2b',       label: 'Gemma 2 2B  (1.6 GB, CPU)' },
+  { id: 'mistral:7b',      label: 'Mistral 7B  (4.1 GB, 8+ GB RAM)' },
+  { id: 'qwen2.5:7b',      label: 'Qwen 2.5 7B  (4.7 GB, 8+ GB RAM)' },
+  { id: 'deepseek-r1:7b',  label: 'DeepSeek R1 7B  (4.7 GB, reasoning)' },
+  { id: 'nomic-embed-text', label: 'Nomic Embed  (0.3 GB, embeddings)' },
+]
+
 export default {
   name: 'DeployLLM',
 
@@ -1573,6 +1695,7 @@ export default {
     const catalogCatFilter = ref('all')
     const catalogSizeFilter = ref('all')
     const selectedCatalogModels = ref([])
+    const catalogRamLimit = ref(8)  // GB — user-set VM RAM threshold for warnings
 
     const catalogCategories = computed(() => [
       { id: 'all', label: 'All' },
@@ -1594,6 +1717,26 @@ export default {
         .filter(cat => cat.models.length > 0)
     })
 
+    // Catalog RAM warning computed properties
+    const catalogSelectedTotalGb = computed(() => {
+      const allModels = CATALOG_CATEGORIES.flatMap(c => c.models)
+      return selectedCatalogModels.value.reduce((sum, id) => {
+        const m = allModels.find(x => x.id === id)
+        return sum + (m ? m.size_gb : 0)
+      }, 0)
+    })
+
+    const catalogRamWarning = computed(() => {
+      if (selectedCatalogModels.value.length === 0) return false
+      // Warn if largest single model >= 4GB or total > catalogRamLimit
+      const allModels = CATALOG_CATEGORIES.flatMap(c => c.models)
+      const hasLargeModel = selectedCatalogModels.value.some(id => {
+        const m = allModels.find(x => x.id === id)
+        return m && m.size_gb >= 4
+      })
+      return hasLargeModel || catalogSelectedTotalGb.value > catalogRamLimit.value
+    })
+
     function addCatalogModel(m) { if (!selectedCatalogModels.value.includes(m.id)) selectedCatalogModels.value.push(m.id) }
     function removeCatalogModel(id) { selectedCatalogModels.value = selectedCatalogModels.value.filter(x => x !== id) }
     function goDeployWithCatalogModels() { topTab.value = 'deploy' }
@@ -1603,6 +1746,7 @@ export default {
     const instancesLoading = ref(false)
     const expandedInstances = ref([])
     const instStatus = ref({})
+    const instVersions = ref({})   // vmid → ollama version string
     const pullModelInputs = ref({})
     const pullProgress = ref({})
     const pullingModel = ref({})
@@ -1638,10 +1782,23 @@ export default {
 
     async function refreshInstStatus(inst) {
       try {
-        const res = await api.llm.getInstanceStatus(inst.host_id, inst.node, inst.vmid)
-        instStatus.value = { ...instStatus.value, [inst.vmid]: res.data }
+        const [statusRes, versionRes] = await Promise.allSettled([
+          api.llm.getInstanceStatus(inst.host_id, inst.node, inst.vmid),
+          inst.node ? api.llm.getInstanceVersion(inst.host_id, inst.node, inst.vmid) : Promise.reject('no node'),
+        ])
+        if (statusRes.status === 'fulfilled') {
+          instStatus.value = { ...instStatus.value, [inst.vmid]: statusRes.value.data }
+        } else {
+          instStatus.value = { ...instStatus.value, [inst.vmid]: { reachable: false, error: 'Request failed' } }
+        }
+        if (versionRes.status === 'fulfilled' && versionRes.value.data?.version) {
+          instVersions.value = { ...instVersions.value, [inst.vmid]: 'v' + versionRes.value.data.version }
+        } else {
+          instVersions.value = { ...instVersions.value, [inst.vmid]: 'unknown' }
+        }
       } catch (e) {
         instStatus.value = { ...instStatus.value, [inst.vmid]: { reachable: false, error: 'Request failed' } }
+        instVersions.value = { ...instVersions.value, [inst.vmid]: 'unknown' }
       }
     }
 
@@ -1785,6 +1942,7 @@ export default {
       dns_servers: '',
       username: 'ubuntu',
       password: '',
+      ssh_public_key: '',
       cloud_image_id: null,
     })
 
@@ -2144,6 +2302,7 @@ export default {
           dns_servers: form.value.dns_servers || null,
           username: form.value.username,
           password: form.value.password,
+          ssh_public_key: form.value.ssh_public_key || null,
         }
 
         const res = await api.llm.deploy(payload)
@@ -2178,7 +2337,7 @@ export default {
         storage: '', network_bridge: '', vm_name: '', hostname: '',
         cpu_cores: 4, memory: 8192, disk_size: 40,
         ip_address: '', gateway: '', netmask: '', dns_servers: '',
-        username: 'ubuntu', password: '', cloud_image_id: null,
+        username: 'ubuntu', password: '', ssh_public_key: '', cloud_image_id: null,
       }
       deployedAccessUrl.value = null
       deployedVmId.value = null
@@ -2198,11 +2357,13 @@ export default {
       // catalog tab
       catalogCatFilter, catalogSizeFilter, catalogCategories, visibleCatalogCategories,
       selectedCatalogModels, addCatalogModel, removeCatalogModel, goDeployWithCatalogModels,
+      catalogRamLimit, catalogSelectedTotalGb, catalogRamWarning,
       // instances tab
       instances, instancesLoading, instancesCount, loadInstances,
-      expandedInstances, toggleInstance, instStatus, refreshInstStatus,
+      expandedInstances, toggleInstance, instStatus, instVersions, refreshInstStatus,
       pullModelInputs, pullProgress, pullingModel, pullModel,
       deleteModel, unloadModel, formatModelSize, formatDate,
+      QUICK_PULL_MODELS,
       // deploy wizard
       mode, steps, currentStep, simpleSteps, simpleStep, simpleAnswers, simpleRec, selectSimpleModel, USE_CASE_MODELS,
       loading, deploying, deployError, deployedAccessUrl, deployedVmId, progressData, getDeployStage,
@@ -3016,4 +3177,77 @@ code {
 .pull-progress-status { color: #475569; margin-bottom: 0.4rem; }
 .pull-progress-bar-wrap { background: #e2e8f0; border-radius: 4px; height: 6px; overflow: hidden; }
 .pull-progress-bar { height: 100%; background: #3b82f6; transition: width 0.3s; border-radius: 4px; }
+
+/* ── catalog RAM warning ────────────────────────────────── */
+.catalog-ram-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  background: #fffbeb;
+  border: 1px solid #fbbf24;
+  border-radius: 8px;
+  padding: 0.85rem 1rem;
+  margin-bottom: 1.25rem;
+  font-size: 0.85rem;
+  color: #78350f;
+}
+.ram-warning-icon { font-size: 1.2rem; flex-shrink: 0; }
+.catalog-ram-warning > div { flex: 1; }
+.ram-threshold-control { margin-top: 0.5rem; font-size: 0.8rem; }
+.ram-limit-input {
+  width: 56px;
+  padding: 0.15rem 0.35rem;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  margin-left: 0.3rem;
+}
+
+.catalog-selection-info { display: flex; flex-direction: column; gap: 0.15rem; }
+.catalog-selection-size { font-size: 0.78rem; opacity: 0.7; }
+
+/* ── size chip for large models ─────────────────────────── */
+.catalog-model-size.size-large { color: #dc2626; font-weight: 700; }
+.meta-chip.ram-warn { background: #fee2e2; border-color: #fca5a5; color: #991b1b; }
+
+/* ── instance info row ──────────────────────────────────── */
+.inst-info-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid #f3f4f6;
+}
+.inst-info-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 0.2rem 0.6rem;
+  font-size: 0.78rem;
+}
+.inst-info-chip-gpu { background: #fef3c7; border-color: #fde68a; }
+.inst-info-label { color: #6b7280; font-weight: 600; text-transform: uppercase; font-size: 0.65rem; letter-spacing: 0.04em; }
+.inst-info-value { color: #111; font-family: monospace; font-size: 0.8rem; }
+.inst-api-btn { margin-left: auto; text-decoration: none; }
+
+/* ── pull quick-select ──────────────────────────────────── */
+.pull-quick-select { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+.pull-quick-label { font-size: 0.75rem; color: #6b7280; font-weight: 600; flex-shrink: 0; }
+.pull-quick-btn { font-family: monospace; font-size: 0.72rem; }
+.pull-quick-btn-active {
+  background: #eff6ff; border: 1px solid #3b82f6; color: #1d4ed8;
+}
+
+/* ── SSH key textarea ───────────────────────────────────── */
+.ssh-key-input { font-family: monospace; font-size: 0.78rem; resize: vertical; }
+.form-label-optional { font-weight: 400; color: #9ca3af; font-size: 0.78rem; }
+
+/* ── grid-cols-4 ────────────────────────────────────────── */
+.grid-cols-4 { grid-template-columns: 1fr 1fr 1fr 1fr; }
+@media (max-width: 640px) { .grid-cols-4 { grid-template-columns: 1fr 1fr; } }
 </style>

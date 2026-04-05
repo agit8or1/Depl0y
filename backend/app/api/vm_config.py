@@ -103,6 +103,20 @@ class NICAdd(BaseModel):
     vlan: Optional[int] = None
     mac: Optional[str] = None
     firewall: bool = False
+    rate: Optional[float] = None        # MB/s rate limit
+    link_down: bool = False             # disconnect the NIC
+    queues: Optional[int] = None        # virtio multi-queue
+
+
+class NICUpdate(BaseModel):
+    bridge: str
+    model: str = "virtio"
+    vlan: Optional[int] = None
+    mac: Optional[str] = None
+    firewall: bool = False
+    rate: Optional[float] = None
+    link_down: bool = False
+    queues: Optional[int] = None
 
 class FirewallRule(BaseModel):
     type: str  # in / out
@@ -638,6 +652,28 @@ def reattach_disk(host_id: int, node: str, vmid: int,
 
 # ── NIC management ────────────────────────────────────────────────────────────
 
+def _build_nic_val(model: str, mac: Optional[str], bridge: str, vlan: Optional[int],
+                   firewall: bool, rate: Optional[float], link_down: bool,
+                   queues: Optional[int]) -> str:
+    """Build a Proxmox NIC configuration string."""
+    if mac:
+        net_val = f"{model}={mac}"
+    else:
+        net_val = model
+    net_val += f",bridge={bridge}"
+    if vlan is not None:
+        net_val += f",tag={vlan}"
+    if firewall:
+        net_val += ",firewall=1"
+    if rate is not None and rate > 0:
+        net_val += f",rate={rate}"
+    if link_down:
+        net_val += ",link_down=1"
+    if queues is not None and queues > 1:
+        net_val += f",queues={queues}"
+    return net_val
+
+
 @router.post("/{host_id}/{node}/{vmid}/network")
 def add_nic(host_id: int, node: str, vmid: int, req: NICAdd,
             db: Session = Depends(get_db), current_user=Depends(require_operator)):
@@ -649,16 +685,27 @@ def add_nic(host_id: int, node: str, vmid: int, req: NICAdd,
         while f"net{idx}" in cfg:
             idx += 1
         net_key = f"net{idx}"
-        net_val = f"{req.model},bridge={req.bridge}"
-        if req.vlan is not None:
-            net_val += f",tag={req.vlan}"
-        if req.mac:
-            net_val += f"={req.mac}"
-        if req.firewall:
-            net_val += ",firewall=1"
+        net_val = _build_nic_val(req.model, req.mac, req.bridge, req.vlan,
+                                  req.firewall, req.rate, req.link_down, req.queues)
         pve.nodes(node).qemu(vmid).config.put(**{net_key: net_val})
         pve_cache.clear_prefix(f"pve:{host_id}:")
         return {"success": True, "interface": net_key}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/{host_id}/{node}/{vmid}/network/{net_key}")
+def update_nic(host_id: int, node: str, vmid: int, net_key: str, req: NICUpdate,
+               db: Session = Depends(get_db), current_user=Depends(require_operator)):
+    """Update an existing NIC configuration."""
+    host = _get_host(host_id, db)
+    pve = _pve(_svc(host))
+    try:
+        net_val = _build_nic_val(req.model, req.mac, req.bridge, req.vlan,
+                                  req.firewall, req.rate, req.link_down, req.queues)
+        pve.nodes(node).qemu(vmid).config.put(**{net_key: net_val})
+        pve_cache.clear_prefix(f"pve:{host_id}:")
+        return {"success": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

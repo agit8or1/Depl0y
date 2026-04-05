@@ -208,31 +208,58 @@
             <div v-if="srv._info && srv._activeTab === 'overview'">
 
               <!-- ── Health issues summary ─────────────────────────────── -->
-              <div v-if="healthIssues(srv).length" class="health-issues-panel">
+              <div v-if="(srv._info?.health && srv._info.health !== 'OK' && srv._info.health !== 'Unknown') || (srv._status?.error && !srv._useSSH)" class="health-issues-panel">
                 <div class="health-issues-title">
-                  <span v-if="srv._info.health === 'Critical'" class="hi-badge hi-badge--crit">⚠ Critical</span>
+                  <span v-if="srv._info?.health === 'Critical' || (srv._status?.error && !srv._useSSH)" class="hi-badge hi-badge--crit">⚠ Critical</span>
                   <span v-else class="hi-badge hi-badge--warn">⚠ Warning</span>
                   Detected issues
                 </div>
-                <ul class="health-issues-list">
+
+                <!-- Specific component issues found -->
+                <ul v-if="healthIssues(srv).length" class="health-issues-list">
                   <li v-for="issue in healthIssues(srv)" :key="issue.label" :class="issue.level === 'critical' ? 'hi-item--crit' : 'hi-item--warn'">
                     <strong>{{ issue.label }}</strong>
                     <span v-if="issue.detail" class="hi-detail">{{ issue.detail }}</span>
                   </li>
                 </ul>
-                <div v-if="srv._logs === null || srv._logsLoading" class="hi-footer text-muted text-xs">
+                <!-- Still loading component data -->
+                <div v-else-if="srv._loading" class="text-muted text-xs" style="padding: 0.25rem 0">
+                  Loading component details…
+                </div>
+                <!-- Data loaded but no specific component issues -->
+                <div v-else class="text-xs" style="padding: 0.25rem 0; color: #fcd34d;">
+                  No specific sensor/component issues detected. The warning may be from a RAID volume, PSU, or NIC. Check the <button class="hi-tab-link" @click="switchTab(srv, 'hardware')">Hardware</button> and <button class="hi-tab-link" @click="switchTab(srv, 'logs')">Logs</button> tabs.
+                </div>
+
+                <!-- System event log entries -->
+                <div v-if="srv._logs === null" class="hi-footer text-muted text-xs">
                   Loading system event log…
                 </div>
-                <div v-else-if="recentAlertLogs(srv).length" class="hi-footer">
-                  <div class="hi-footer-title">Recent event log entries:</div>
-                  <ul class="hi-log-list">
-                    <li v-for="e in recentAlertLogs(srv)" :key="e.id"
-                        :class="e.severity === 'Critical' ? 'hi-item--crit' : 'hi-item--warn'">
-                      <span class="text-xs text-muted">{{ formatDate(e.created) }}</span>
-                      {{ e.message }}
-                    </li>
-                  </ul>
-                </div>
+                <template v-else>
+                  <div v-if="recentAlertLogs(srv).length" class="hi-footer">
+                    <div class="hi-footer-title">Recent Warning / Critical events:</div>
+                    <ul class="hi-log-list">
+                      <li v-for="e in recentAlertLogs(srv)" :key="e.id"
+                          :class="e.severity === 'Critical' ? 'hi-item--crit' : 'hi-item--warn'">
+                        <span class="text-xs text-muted" style="white-space:nowrap">{{ formatDate(e.created) }}</span>
+                        {{ e.message }}
+                      </li>
+                    </ul>
+                  </div>
+                  <!-- No filtered events — show most recent raw entries as fallback -->
+                  <div v-else-if="srv._logs.length" class="hi-footer">
+                    <div class="hi-footer-title">Most recent event log entries (no Warning/Critical found):</div>
+                    <ul class="hi-log-list">
+                      <li v-for="e in srv._logs.slice(0, 5)" :key="e.id" style="color:#94a3b8">
+                        <span class="text-xs text-muted" style="white-space:nowrap">{{ formatDate(e.created) }}</span>
+                        {{ e.message }}
+                      </li>
+                    </ul>
+                  </div>
+                  <div v-else class="hi-footer text-muted text-xs">
+                    System event log is empty.
+                  </div>
+                </template>
               </div>
               <!-- ─────────────────────────────────────────────────────── -->
 
@@ -877,11 +904,6 @@ export default {
             issues.push({ level: 'critical', label: `Drive issue: ${d.name || d.id}`, detail: `${d.model} ${d.capacity_gb ? d.capacity_gb + ' GB' : ''}`.trim() })
           }
         }
-      }
-
-      // Fallback if we haven't loaded component data yet
-      if (issues.length === 0) {
-        issues.push({ level: health === 'Critical' ? 'critical' : 'warn', label: `System health: ${health}`, detail: 'Loading component details…' })
       }
 
       return issues
@@ -2186,6 +2208,11 @@ export default {
 .hi-item--crit { background: rgba(220,38,38,0.15); color: #fca5a5; }
 .hi-item--warn { background: rgba(217,119,6,0.15); color: #fcd34d; }
 .hi-detail { opacity: 0.75; font-size: 0.78rem; }
+.hi-tab-link {
+  background: none; border: none; padding: 0; cursor: pointer;
+  color: #60a5fa; text-decoration: underline; font-size: inherit; font-family: inherit;
+}
+.hi-tab-link:hover { color: #93c5fd; }
 .hi-footer { margin-top: 0.5rem; border-top: 1px solid rgba(255,255,255,0.07); padding-top: 0.5rem; }
 .hi-footer-title { font-size: 0.75rem; color: #94a3b8; margin-bottom: 0.3rem; }
 .hi-log-list {

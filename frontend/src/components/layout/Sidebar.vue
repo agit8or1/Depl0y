@@ -6,145 +6,132 @@
     </div>
 
     <nav class="sidebar-nav">
-      <!-- Core -->
+
+      <!-- ── Overview ── -->
+      <div class="nav-section-label">Overview</div>
       <router-link to="/" class="nav-item">
         <span class="icon">📊</span>
         <span>Dashboard</span>
       </router-link>
-
       <router-link to="/datacenter" class="nav-item">
         <span class="icon">🏢</span>
         <span>Datacenter</span>
       </router-link>
-
-      <router-link to="/vms" class="nav-item">
-        <span class="icon">🖥️</span>
-        <span>Virtual Machines</span>
-      </router-link>
-
-      <!-- Deploy -->
-      <router-link v-if="isOperator" to="/deploy" class="nav-item">
-        <span class="icon">🚀</span>
-        <span>Deploy VM</span>
-      </router-link>
-
-      <router-link v-if="isOperator" to="/import-vm" class="nav-item">
-        <span class="icon">📥</span>
-        <span>Import VM</span>
-      </router-link>
-
-      <router-link v-if="isOperator" to="/create-lxc" class="nav-item">
-        <span class="icon">📦</span>
-        <span>Create LXC</span>
-      </router-link>
-
-      <router-link v-if="isOperator" to="/llm-deploy" class="nav-item">
-        <span class="icon">🤖</span>
-        <span>LLM Deploy</span>
-      </router-link>
-
-      <router-link v-if="isOperator" to="/create-pve-vm" class="nav-item">
-        <span class="icon">🖥️</span>
-        <span>Create VM (PVE)</span>
-      </router-link>
-
-      <router-link v-if="isOperator" to="/vm-management" class="nav-item">
-        <span class="icon">🛠️</span>
-        <span>VM Management</span>
-      </router-link>
-
-      <!-- Infrastructure -->
-      <router-link to="/proxmox" class="nav-item">
-        <span class="icon">🌐</span>
-        <span>Proxmox Hosts</span>
-      </router-link>
-
-      <router-link v-if="isOperator" to="/containers" class="nav-item">
-        <span class="icon">📦</span>
-        <span>Containers</span>
-      </router-link>
-
-      <router-link to="/templates" class="nav-item">
-        <span class="icon">📋</span>
-        <span>Templates</span>
-      </router-link>
-
       <router-link to="/tasks" class="nav-item">
         <span class="icon">📋</span>
         <span>Task Log</span>
       </router-link>
 
+      <!-- ── Compute ── -->
+      <div class="nav-section-label">Compute</div>
+      <router-link v-if="isOperator" to="/containers" class="nav-item">
+        <span class="icon">📦</span>
+        <span>Containers</span>
+      </router-link>
+      <router-link v-if="isOperator" to="/create-lxc" class="nav-item">
+        <span class="icon">➕</span>
+        <span>Create LXC</span>
+      </router-link>
+      <router-link v-if="isOperator" to="/create-pve-vm" class="nav-item">
+        <span class="icon">➕</span>
+        <span>Create VM (PVE)</span>
+      </router-link>
+      <router-link v-if="isOperator" to="/deploy" class="nav-item">
+        <span class="icon">🚀</span>
+        <span>Deploy VM</span>
+      </router-link>
+      <router-link v-if="isOperator" to="/import-vm" class="nav-item">
+        <span class="icon">📥</span>
+        <span>Import VM</span>
+      </router-link>
+      <router-link v-if="isOperator" to="/llm-deploy" class="nav-item">
+        <span class="icon">🤖</span>
+        <span>LLM Deploy</span>
+      </router-link>
+      <router-link to="/templates" class="nav-item">
+        <span class="icon">📄</span>
+        <span>Templates</span>
+      </router-link>
+      <router-link to="/vms" class="nav-item">
+        <span class="icon">🖥️</span>
+        <span>Virtual Machines</span>
+      </router-link>
+      <router-link v-if="isOperator" to="/vm-management" class="nav-item">
+        <span class="icon">🛠️</span>
+        <span>VM Management</span>
+      </router-link>
+
+      <!-- ── Infrastructure ── -->
+      <div class="nav-section-label">Infrastructure</div>
+      <router-link to="/backup" class="nav-item">
+        <span class="icon">💾</span>
+        <span>Backup</span>
+      </router-link>
       <router-link v-if="isAdmin" to="/ha-management" class="nav-item">
         <span class="icon">🔄</span>
         <span>HA Management</span>
       </router-link>
-
       <router-link v-if="isOperator" to="/idrac" class="nav-item">
         <span class="icon">🖧</span>
         <span>iDRAC / iLO</span>
       </router-link>
-
-      <!-- Images -->
       <router-link to="/images" class="nav-item">
         <span class="icon">💿</span>
         <span>Images</span>
       </router-link>
+      <router-link to="/proxmox" class="nav-item">
+        <span class="icon">🌐</span>
+        <span>Proxmox Hosts</span>
+      </router-link>
 
-      <!-- Admin -->
+      <!-- ── Admin ── -->
+      <div v-if="isAdmin" class="nav-section-label">Admin</div>
+      <router-link v-if="isAdmin" to="/audit-log" class="nav-item">
+        <span class="icon">🔍</span>
+        <span>Audit Log</span>
+      </router-link>
+      <router-link v-if="isAdmin && linuxAgentEnabled" to="/linux-vms" class="nav-item">
+        <span class="icon">🛡️</span>
+        <span>Linux VM Security</span>
+      </router-link>
+      <router-link v-if="isAdmin" to="/security" class="nav-item">
+        <span class="icon">🔒</span>
+        <span>Security</span>
+      </router-link>
+      <router-link v-if="isAdmin" to="/system-health" class="nav-item">
+        <span class="icon">💚</span>
+        <span>System Health</span>
+      </router-link>
+      <router-link v-if="isAdmin" to="/system-logs" class="nav-item">
+        <span class="icon">📜</span>
+        <span>System Logs</span>
+      </router-link>
       <router-link v-if="isAdmin" to="/users" class="nav-item">
         <span class="icon">👥</span>
         <span>Users</span>
       </router-link>
 
-      <router-link v-if="isAdmin" to="/security" class="nav-item">
-        <span class="icon">🔒</span>
-        <span>Security</span>
+      <!-- ── Account ── -->
+      <div class="nav-section-label">Account</div>
+      <router-link to="/about" class="nav-item">
+        <span class="icon">ℹ️</span>
+        <span>About</span>
       </router-link>
-
-      <router-link v-if="isAdmin" to="/audit-log" class="nav-item">
-        <span class="icon">🔍</span>
-        <span>Audit Log</span>
-      </router-link>
-
-      <router-link v-if="isAdmin" to="/system-logs" class="nav-item">
-        <span class="icon">📜</span>
-        <span>System Logs</span>
-      </router-link>
-
-      <router-link v-if="isAdmin" to="/system-health" class="nav-item">
-        <span class="icon">💚</span>
-        <span>System Health</span>
-      </router-link>
-
-      <router-link v-if="isAdmin && linuxAgentEnabled" to="/linux-vms" class="nav-item">
-        <span class="icon">🛡️</span>
-        <span>Linux VM Security</span>
-      </router-link>
-
-      <!-- System -->
-      <router-link to="/profile" class="nav-item">
-        <span class="icon">👤</span>
-        <span>My Profile</span>
-      </router-link>
-
       <router-link to="/documentation" class="nav-item">
         <span class="icon">📖</span>
         <span>Documentation</span>
       </router-link>
-
+      <router-link to="/profile" class="nav-item">
+        <span class="icon">👤</span>
+        <span>My Profile</span>
+      </router-link>
       <router-link to="/settings" class="nav-item">
         <span class="icon">⚙️</span>
         <span>Settings</span>
       </router-link>
-
       <router-link to="/support" class="nav-item nav-item-heart">
         <span class="icon">❤️</span>
         <span>Support Project</span>
-      </router-link>
-
-      <router-link to="/about" class="nav-item">
-        <span class="icon">ℹ️</span>
-        <span>About</span>
       </router-link>
 
       <a href="https://github.com/agit8or1/Depl0y/issues" target="_blank" rel="noopener noreferrer" class="nav-item">
@@ -284,6 +271,16 @@ export default {
 
 .icon {
   font-size: 1.25rem;
+}
+
+.nav-section-label {
+  padding: 0.6rem 1.5rem 0.25rem;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.38);
+  margin-top: 0.5rem;
 }
 
 .nav-item-heart {

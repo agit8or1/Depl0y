@@ -948,6 +948,15 @@ export default {
 
     const jumpToServer = (srv) => {
       expandServer(srv)
+      // If the alert is a health issue (Warning/Critical), go straight to Logs
+      // so the user sees the System Event Log entries that explain the problem.
+      // Unreachable servers already show the error on the Overview tab.
+      const health = srv._status?.health
+      if (health === 'Warning' || health === 'Critical') {
+        srv._activeTab = 'logs'
+        // loadServerDetail pre-fetches logs; only call loadLogs if detail fetch isn't running
+        if (srv._logs === null && !srv._loading) loadLogs(srv)
+      }
       setTimeout(() => {
         const el = document.getElementById(`srv-card-${srv._key}`)
         if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })

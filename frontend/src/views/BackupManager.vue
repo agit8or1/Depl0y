@@ -15,6 +15,10 @@
         :class="['tab-btn', activeTab === 'run' ? 'tab-btn--active' : '']"
         @click="activeTab = 'run'"
       >Run Backup</button>
+      <button
+        :class="['tab-btn', activeTab === 'restore' ? 'tab-btn--active' : '']"
+        @click="activeTab = 'restore'; onRestoreTabOpen()"
+      >Restore</button>
     </div>
 
     <!-- Schedules tab -->
@@ -135,6 +139,75 @@
       </div>
     </div>
 
+    <!-- Restore tab -->
+    <div v-if="activeTab === 'restore'">
+      <div class="card mb-2">
+        <div class="card-header">
+          <h3>Browse Backups</h3>
+          <div class="flex gap-1">
+            <select v-model="restoreFilter.node" class="form-control form-control-sm" @change="onRestoreNodeChange">
+              <option value="">Select node...</option>
+              <option v-for="n in clusterNodes" :key="n.node || n.name" :value="n.node || n.name">
+                {{ n.node || n.name }}
+              </option>
+            </select>
+            <select v-model="restoreFilter.storage" class="form-control form-control-sm" :disabled="!restoreFilter.node || loadingRestoreStorages" @change="fetchBackupFiles">
+              <option value="">Select storage...</option>
+              <option v-for="s in restoreStorages" :key="s.storage" :value="s.storage">
+                {{ s.storage }}
+              </option>
+            </select>
+            <button @click="fetchBackupFiles" class="btn btn-outline btn-sm" :disabled="!restoreFilter.node || !restoreFilter.storage || loadingBackupFiles">
+              Refresh
+            </button>
+          </div>
+        </div>
+
+        <div v-if="loadingBackupFiles" class="loading-spinner"></div>
+
+        <div v-else-if="!restoreFilter.node || !restoreFilter.storage" class="text-center text-muted p-3">
+          Select a node and storage to browse backup files.
+        </div>
+
+        <div v-else-if="backupGroups.length === 0" class="text-center text-muted p-3">
+          No backup files found in this storage.
+        </div>
+
+        <div v-else>
+          <div v-for="group in backupGroups" :key="group.vmid" class="backup-group">
+            <div class="backup-group-header">
+              <span class="vmid-badge">VMID {{ group.vmid }}</span>
+              <span class="text-muted text-sm ml-1">{{ group.backups.length }} backup{{ group.backups.length !== 1 ? 's' : '' }}</span>
+            </div>
+            <table class="table table-sm">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Format</th>
+                  <th>Size</th>
+                  <th>Volume ID</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="bk in group.backups" :key="bk.volid">
+                  <td>{{ formatDate(bk.ctime) }}</td>
+                  <td><code class="text-xs">{{ bk.format || '—' }}</code></td>
+                  <td>{{ formatSize(bk.size) }}</td>
+                  <td class="text-xs volid-cell">{{ bk.volid }}</td>
+                  <td>
+                    <button @click="openRestoreModal(bk, group.vmid)" class="btn btn-primary btn-sm">
+                      Restore
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Create / Edit Schedule Modal -->
     <div v-if="scheduleModal.show" class="modal" @click="closeScheduleModal">
       <div class="modal-content" @click.stop>
@@ -213,11 +286,106 @@
         </form>
       </div>
     </div>
+
+    <!-- Restore Modal -->
+    <div v-if="restoreModal.show" class="modal" @click="closeRestoreModal">
+      <div class="modal-content modal-content--wide" @click.stop>
+        <div class="modal-header">
+          <h3>Restore Backup</h3>
+          <button @click="closeRestoreModal" class="btn-close">&#215;</button>
+        </div>
+        <div class="modal-body">
+          <!-- Source info -->
+          <div class="restore-source-info mb-2">
+            <div class="text-sm text-muted">Restoring from:</div>
+            <code class="upid-code">{{ restoreModal.volid }}</code>
+          </div>
+
+          <!-- Task progress (shown after restore starts) -->
+          <div v-if="restoreTask.upid" class="restore-progress mb-2">
+            <div class="restore-progress-header">
+              <strong>Restore Task</strong>
+              <span :class="['task-status-badge', `task-status-badge--${restoreTask.status}`]">
+                {{ restoreTask.status }}
+              </span>
+            </div>
+            <code class="upid-code">{{ restoreTask.upid }}</code>
+            <div v-if="restoreTask.status === 'running'" class="progress-bar-wrap mt-1">
+              <div class="progress-bar progress-bar--animated"></div>
+            </div>
+            <div v-if="restoreTask.exitstatus && restoreTask.exitstatus !== 'OK'" class="text-sm text-danger mt-1">
+              Exit status: {{ restoreTask.exitstatus }}
+            </div>
+            <div v-if="restoreTask.status === 'stopped' && restoreTask.exitstatus === 'OK'" class="text-sm text-success mt-1">
+              Restore completed successfully.
+            </div>
+          </div>
+
+          <!-- Restore form (hidden once task is running/done) -->
+          <form v-if="!restoreTask.upid" @submit.prevent="submitRestore">
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Target VM ID <span class="required">*</span></label>
+                <input
+                  v-model.number="restoreForm.vmid"
+                  type="number"
+                  class="form-control"
+                  min="100"
+                  max="999999999"
+                  required
+                />
+                <div class="text-xs text-muted mt-1">The VM ID that will be created/overwritten.</div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Target Node <span class="required">*</span></label>
+                <select v-model="restoreForm.node" class="form-control" required @change="onRestoreFormNodeChange">
+                  <option value="">Select node...</option>
+                  <option v-for="n in clusterNodes" :key="n.node || n.name" :value="n.node || n.name">
+                    {{ n.node || n.name }}
+                  </option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Target Storage <span class="required">*</span></label>
+                <select v-model="restoreForm.storage" class="form-control" required :disabled="loadingRestoreTargetStorages || !restoreForm.node">
+                  <option value="">{{ loadingRestoreTargetStorages ? 'Loading...' : 'Select storage...' }}</option>
+                  <option v-for="s in restoreTargetStorages" :key="s.storage" :value="s.storage">
+                    {{ s.storage }}{{ s.type ? ` (${s.type})` : '' }}
+                  </option>
+                </select>
+              </div>
+              <div class="form-group form-group--center">
+                <label class="form-label">&nbsp;</label>
+                <label class="checkbox-label">
+                  <input type="checkbox" v-model="restoreForm.start" />
+                  <span>Start VM after restore</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="flex gap-1 mt-2">
+              <button type="submit" class="btn btn-primary" :disabled="restoringBackup">
+                {{ restoringBackup ? 'Starting restore...' : 'Restore' }}
+              </button>
+              <button type="button" @click="closeRestoreModal" class="btn btn-outline">Cancel</button>
+            </div>
+          </form>
+
+          <!-- Actions after task started -->
+          <div v-if="restoreTask.upid" class="flex gap-1 mt-2">
+            <button @click="closeRestoreModal" class="btn btn-outline">Close</button>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useToast } from 'vue-toastification'
 import api from '@/services/api'
@@ -257,6 +425,65 @@ const runForm = ref({
   compress: 'zstd',
   mode: 'snapshot',
 })
+
+// Restore tab state
+const restoreFilter = ref({ node: '', storage: '' })
+const restoreStorages = ref([])
+const loadingRestoreStorages = ref(false)
+const backupFiles = ref([])
+const loadingBackupFiles = ref(false)
+
+// Restore modal state
+const restoreModal = ref({ show: false, volid: '' })
+const restoreForm = ref({ vmid: null, node: '', storage: '', start: false })
+const restoringBackup = ref(false)
+const restoreTargetStorages = ref([])
+const loadingRestoreTargetStorages = ref(false)
+
+// Restore task polling
+const restoreTask = ref({ upid: null, status: null, exitstatus: null })
+let restoreTaskPollTimer = null
+
+// Computed: group backup files by VMID
+const backupGroups = computed(() => {
+  const groups = {}
+  for (const bk of backupFiles.value) {
+    // Parse vmid from volid: e.g. local:backup/vzdump-qemu-100-2024_01_15-03_00_01.vma.zst
+    const vmid = parseVmidFromVolid(bk.volid) || bk.vmid || 'unknown'
+    if (!groups[vmid]) groups[vmid] = { vmid, backups: [] }
+    groups[vmid].backups.push(bk)
+  }
+  // Sort each group's backups by date descending
+  return Object.values(groups)
+    .sort((a, b) => String(a.vmid).localeCompare(String(b.vmid), undefined, { numeric: true }))
+    .map(g => ({
+      ...g,
+      backups: [...g.backups].sort((a, b) => (b.ctime || 0) - (a.ctime || 0))
+    }))
+})
+
+function parseVmidFromVolid(volid) {
+  if (!volid) return null
+  // vzdump-qemu-100-... or vzdump-lxc-100-...
+  const m = volid.match(/vzdump-(?:qemu|lxc)-(\d+)-/)
+  return m ? m[1] : null
+}
+
+function formatDate(ctime) {
+  if (!ctime) return '—'
+  return new Date(ctime * 1000).toLocaleString()
+}
+
+function formatSize(bytes) {
+  if (!bytes && bytes !== 0) return '—'
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  let v = bytes
+  let u = 0
+  while (v >= 1024 && u < units.length - 1) { v /= 1024; u++ }
+  return `${v.toFixed(1)} ${units[u]}`
+}
+
+// ── Schedules ────────────────────────────────────────────────────────────────
 
 async function fetchSchedules() {
   loadingSchedules.value = true
@@ -306,7 +533,6 @@ function closeScheduleModal() {
 async function saveSchedule() {
   savingSchedule.value = true
   const payload = { ...scheduleForm.value }
-  // Clean up empty fields
   Object.keys(payload).forEach(k => { if (payload[k] === '') delete payload[k] })
 
   try {
@@ -339,6 +565,8 @@ async function deleteSchedule(id) {
   }
 }
 
+// ── Run Backup ───────────────────────────────────────────────────────────────
+
 async function runBackup() {
   if (!runForm.value.node) {
     toast.error('Please select a node')
@@ -360,8 +588,170 @@ async function runBackup() {
   }
 }
 
+// ── Restore tab ──────────────────────────────────────────────────────────────
+
+function onRestoreTabOpen() {
+  // Pre-populate node list if not done yet; storages load on node selection
+  if (restoreFilter.value.node && restoreStorages.value.length === 0) {
+    fetchRestoreStorages(restoreFilter.value.node)
+  }
+}
+
+async function onRestoreNodeChange() {
+  restoreFilter.value.storage = ''
+  restoreStorages.value = []
+  backupFiles.value = []
+  if (restoreFilter.value.node) {
+    await fetchRestoreStorages(restoreFilter.value.node)
+  }
+}
+
+async function fetchRestoreStorages(node) {
+  loadingRestoreStorages.value = true
+  try {
+    const res = await api.pveNode.listStorage(hostId.value, node)
+    restoreStorages.value = res.data || []
+  } catch (err) {
+    console.warn('Failed to load storages:', err)
+  } finally {
+    loadingRestoreStorages.value = false
+  }
+}
+
+async function fetchBackupFiles() {
+  if (!restoreFilter.value.node || !restoreFilter.value.storage) return
+  loadingBackupFiles.value = true
+  backupFiles.value = []
+  try {
+    const res = await api.pveNode.browseStorage(
+      hostId.value,
+      restoreFilter.value.node,
+      restoreFilter.value.storage,
+      { content: 'backup' }
+    )
+    backupFiles.value = res.data || []
+  } catch (err) {
+    console.error('Failed to browse backup storage:', err)
+    toast.error('Failed to load backup files')
+  } finally {
+    loadingBackupFiles.value = false
+  }
+}
+
+// ── Restore modal ─────────────────────────────────────────────────────────────
+
+function openRestoreModal(backup, vmid) {
+  restoreTask.value = { upid: null, status: null, exitstatus: null }
+  restoreForm.value = {
+    vmid: Number(vmid) || null,
+    node: restoreFilter.value.node,
+    storage: '',
+    start: false,
+  }
+  restoreModal.value = { show: true, volid: backup.volid }
+  // Load storages for the pre-selected node
+  if (restoreForm.value.node) {
+    fetchRestoreTargetStorages(restoreForm.value.node)
+  }
+}
+
+function closeRestoreModal() {
+  stopTaskPolling()
+  restoreModal.value = { show: false, volid: '' }
+  restoreTask.value = { upid: null, status: null, exitstatus: null }
+}
+
+async function onRestoreFormNodeChange() {
+  restoreForm.value.storage = ''
+  restoreTargetStorages.value = []
+  if (restoreForm.value.node) {
+    await fetchRestoreTargetStorages(restoreForm.value.node)
+  }
+}
+
+async function fetchRestoreTargetStorages(node) {
+  loadingRestoreTargetStorages.value = true
+  try {
+    const res = await api.pveNode.listStorage(hostId.value, node)
+    restoreTargetStorages.value = res.data || []
+  } catch (err) {
+    console.warn('Failed to load target storages:', err)
+  } finally {
+    loadingRestoreTargetStorages.value = false
+  }
+}
+
+async function submitRestore() {
+  if (!restoreForm.value.node) { toast.error('Please select a target node'); return }
+  if (!restoreForm.value.storage) { toast.error('Please select a target storage'); return }
+  if (!restoreForm.value.vmid) { toast.error('Please enter a target VM ID'); return }
+
+  restoringBackup.value = true
+  try {
+    const payload = {
+      archive: restoreModal.value.volid,
+      storage: restoreForm.value.storage,
+      start: restoreForm.value.start ? 1 : 0,
+    }
+    const res = await api.pveNode.restoreBackup(
+      hostId.value,
+      restoreForm.value.node,
+      restoreForm.value.vmid,
+      payload
+    )
+    const upid = res.data?.upid || res.data
+    toast.success('Restore task started')
+    restoreTask.value = { upid, status: 'running', exitstatus: null }
+    startTaskPolling(restoreForm.value.node, upid)
+  } catch (err) {
+    console.error('Failed to start restore:', err)
+    toast.error('Failed to start restore')
+  } finally {
+    restoringBackup.value = false
+  }
+}
+
+// ── Task polling ─────────────────────────────────────────────────────────────
+
+function startTaskPolling(node, upid) {
+  stopTaskPolling()
+  restoreTaskPollTimer = setInterval(() => pollTaskStatus(node, upid), 3000)
+  // Poll once immediately
+  pollTaskStatus(node, upid)
+}
+
+function stopTaskPolling() {
+  if (restoreTaskPollTimer) {
+    clearInterval(restoreTaskPollTimer)
+    restoreTaskPollTimer = null
+  }
+}
+
+async function pollTaskStatus(node, upid) {
+  try {
+    const res = await api.pveNode.taskStatus(hostId.value, node, encodeURIComponent(upid))
+    const data = res.data || {}
+    restoreTask.value.status = data.status || 'unknown'
+    restoreTask.value.exitstatus = data.exitstatus || null
+    if (data.status === 'stopped') {
+      stopTaskPolling()
+      if (data.exitstatus === 'OK') {
+        toast.success('Restore completed successfully')
+      } else {
+        toast.error(`Restore finished with status: ${data.exitstatus}`)
+      }
+    }
+  } catch (err) {
+    console.warn('Failed to poll task status:', err)
+  }
+}
+
 onMounted(async () => {
   await Promise.all([fetchSchedules(), fetchClusterNodes()])
+})
+
+onUnmounted(() => {
+  stopTaskPolling()
 })
 </script>
 
@@ -453,6 +843,151 @@ onMounted(async () => {
   font-size: 0.875rem;
 }
 
+.form-control-sm {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.875rem;
+  height: auto;
+}
+
+/* Restore tab */
+.backup-group {
+  border-top: 1px solid var(--border-color);
+}
+
+.backup-group:first-child {
+  border-top: none;
+}
+
+.backup-group-header {
+  padding: 0.6rem 1rem;
+  background: var(--bg-secondary, rgba(255,255,255,0.03));
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.vmid-badge {
+  background: var(--primary-color, #6366f1);
+  color: #fff;
+  border-radius: 0.25rem;
+  padding: 0.1rem 0.45rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.table-sm td,
+.table-sm th {
+  padding: 0.4rem 0.75rem;
+  font-size: 0.875rem;
+}
+
+.volid-cell {
+  color: var(--text-muted);
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Restore modal */
+.modal-content--wide {
+  max-width: 720px;
+}
+
+.restore-source-info {
+  padding: 0.75rem 1rem;
+  background: var(--bg-secondary);
+  border-radius: 0.375rem;
+}
+
+.restore-progress {
+  padding: 1rem;
+  background: rgba(99, 102, 241, 0.08);
+  border: 1px solid var(--primary-color, #6366f1);
+  border-radius: 0.375rem;
+}
+
+.restore-progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.task-status-badge {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.15rem 0.5rem;
+  border-radius: 0.25rem;
+  text-transform: uppercase;
+}
+
+.task-status-badge--running {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+  border: 1px solid #f59e0b;
+}
+
+.task-status-badge--stopped {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+  border: 1px solid #10b981;
+}
+
+.task-status-badge--unknown {
+  background: rgba(156, 163, 175, 0.15);
+  color: #9ca3af;
+  border: 1px solid #9ca3af;
+}
+
+.progress-bar-wrap {
+  height: 4px;
+  background: var(--border-color);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.progress-bar {
+  height: 100%;
+  background: var(--primary-color, #6366f1);
+}
+
+.progress-bar--animated {
+  width: 40%;
+  animation: progress-slide 1.4s ease-in-out infinite;
+}
+
+@keyframes progress-slide {
+  0%   { transform: translateX(-150%); }
+  100% { transform: translateX(400%); }
+}
+
+.text-danger { color: #ef4444; }
+.text-success { color: #10b981; }
+
+.form-group--center {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  padding-bottom: 0.5rem;
+}
+
+.checkbox-label input[type="checkbox"] {
+  width: 1rem;
+  height: 1rem;
+  cursor: pointer;
+}
+
+.ml-1 { margin-left: 0.25rem; }
 .mb-2 { margin-bottom: 1rem; }
 .mt-1 { margin-top: 0.25rem; }
 .mt-2 { margin-top: 0.75rem; }

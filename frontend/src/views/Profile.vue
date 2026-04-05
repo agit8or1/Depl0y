@@ -11,7 +11,7 @@
     </div>
 
     <div v-else>
-      <!-- Account Info -->
+      <!-- Account Info Card (read-only) -->
       <div class="card mb-4">
         <div class="card-header">
           <h3>Account Information</h3>
@@ -26,31 +26,39 @@
             </div>
           </div>
 
-          <form @submit.prevent="updateProfile" class="profile-form">
-            <div class="form-group">
-              <label class="form-label">Username</label>
-              <input v-model="profileForm.username" class="form-control" disabled />
-              <p class="text-xs text-muted">Username cannot be changed</p>
+          <div class="info-grid">
+            <div class="info-item">
+              <span class="info-label">Username</span>
+              <span class="info-value">{{ user ? user.username : '—' }}</span>
             </div>
-
-            <div class="form-group">
-              <label class="form-label">Email Address</label>
-              <input v-model="profileForm.email" type="email" class="form-control" required />
+            <div class="info-item">
+              <span class="info-label">Email</span>
+              <span class="info-value">{{ user ? user.email : '—' }}</span>
             </div>
-
-            <div v-if="profileMsg" :class="['alert', profileMsgType === 'success' ? 'alert-success' : 'alert-danger']">
-              {{ profileMsg }}
+            <div class="info-item">
+              <span class="info-label">Role</span>
+              <span v-if="user" :class="['badge', 'badge-' + getRoleBadge(user.role)]">{{ user.role }}</span>
             </div>
-
-            <button type="submit" class="btn btn-primary" :disabled="updatingProfile">
-              {{ updatingProfile ? 'Updating...' : 'Update Profile' }}
-            </button>
-          </form>
+            <div class="info-item">
+              <span class="info-label">Member Since</span>
+              <span class="info-value">{{ user ? formatDate(user.created_at) : '—' }}</span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">Two-Factor Auth</span>
+              <span v-if="user && user.totp_enabled" class="badge badge-success">Enabled</span>
+              <span v-else class="badge badge-warning">Disabled</span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">Status</span>
+              <span v-if="user && user.is_active" class="badge badge-success">Active</span>
+              <span v-else class="badge badge-danger">Inactive</span>
+            </div>
+          </div>
         </div>
       </div>
 
-      <!-- Change Password -->
-      <div class="card">
+      <!-- Change Password Card -->
+      <div class="card mb-4">
         <div class="card-header">
           <h3>Change Password</h3>
         </div>
@@ -58,27 +66,79 @@
           <form @submit.prevent="changePassword" class="password-form">
             <div class="form-group">
               <label class="form-label">Current Password</label>
-              <input v-model="passwordForm.current_password" type="password" autocomplete="current-password" class="form-control" required />
+              <input
+                v-model="passwordForm.current_password"
+                type="password"
+                autocomplete="current-password"
+                class="form-control"
+                required
+              />
             </div>
 
             <div class="form-group">
               <label class="form-label">New Password</label>
-              <input v-model="passwordForm.new_password" type="password" autocomplete="new-password" class="form-control" required />
+              <input
+                v-model="passwordForm.new_password"
+                type="password"
+                autocomplete="new-password"
+                class="form-control"
+                required
+              />
+              <p
+                v-if="passwordForm.new_password && passwordForm.new_password.length < 8"
+                class="field-hint field-error"
+              >
+                Password must be at least 8 characters
+              </p>
             </div>
 
             <div class="form-group">
               <label class="form-label">Confirm New Password</label>
-              <input v-model="passwordForm.confirm_password" type="password" autocomplete="new-password" class="form-control" required />
+              <input
+                v-model="passwordForm.confirm_password"
+                type="password"
+                autocomplete="new-password"
+                class="form-control"
+                required
+              />
+              <p
+                v-if="passwordForm.confirm_password && passwordForm.new_password !== passwordForm.confirm_password"
+                class="field-hint field-error"
+              >
+                Passwords do not match
+              </p>
             </div>
 
-            <div v-if="passwordMsg" :class="['alert', passwordMsgType === 'success' ? 'alert-success' : 'alert-danger']">
+            <div
+              v-if="passwordMsg"
+              :class="['alert', passwordMsgType === 'success' ? 'alert-success' : 'alert-danger']"
+            >
               {{ passwordMsg }}
             </div>
 
-            <button type="submit" class="btn btn-primary" :disabled="changingPassword">
+            <button
+              type="submit"
+              class="btn btn-primary"
+              :disabled="changingPassword || !passwordFormValid"
+            >
               {{ changingPassword ? 'Changing...' : 'Change Password' }}
             </button>
           </form>
+        </div>
+      </div>
+
+      <!-- Preferences Card -->
+      <div class="card">
+        <div class="card-header">
+          <h3>Preferences</h3>
+        </div>
+        <div class="card-body">
+          <p class="text-muted">
+            Proxmox connection preferences and system options are managed in the Settings page.
+          </p>
+          <router-link to="/settings" class="btn btn-outline mt-3">
+            Go to Settings
+          </router-link>
         </div>
       </div>
     </div>
@@ -86,90 +146,108 @@
 </template>
 
 <script>
+import { ref, computed } from 'vue'
+import { useAuthStore } from '@/store/auth'
+import { useToast } from 'vue-toastification'
 import api from '@/services/api'
 
 export default {
   name: 'Profile',
-  data() {
-    return {
-      loading: true,
-      user: null,
-      profileForm: { username: '', email: '' },
-      passwordForm: { current_password: '', new_password: '', confirm_password: '' },
-      updatingProfile: false,
-      changingPassword: false,
-      profileMsg: '',
-      profileMsgType: 'success',
-      passwordMsg: '',
-      passwordMsgType: 'success',
+  async setup() {
+    const authStore = useAuthStore()
+    const toast = useToast()
+
+    const loading = ref(true)
+    const user = ref(null)
+    const changingPassword = ref(false)
+    const passwordMsg = ref('')
+    const passwordMsgType = ref('success')
+
+    const passwordForm = ref({
+      current_password: '',
+      new_password: '',
+      confirm_password: ''
+    })
+
+    const passwordFormValid = computed(() => {
+      const f = passwordForm.value
+      return (
+        f.current_password.length > 0 &&
+        f.new_password.length >= 8 &&
+        f.new_password === f.confirm_password
+      )
+    })
+
+    const getRoleBadge = (role) => {
+      const map = { admin: 'danger', operator: 'warning', viewer: 'info' }
+      return map[role] || 'secondary'
     }
-  },
-  async mounted() {
-    await this.loadProfile()
-  },
-  methods: {
-    async loadProfile() {
-      this.loading = true
+
+    const formatDate = (dateStr) => {
+      if (!dateStr) return '—'
+      return new Date(dateStr).toLocaleDateString(undefined, {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      })
+    }
+
+    const loadProfile = async () => {
+      loading.value = true
       try {
         const resp = await api.auth.getMe()
-        this.user = resp.data
-        this.profileForm.username = this.user.username
-        this.profileForm.email = this.user.email || ''
+        user.value = resp.data
+        authStore.user = resp.data
       } catch (e) {
         console.error('Failed to load profile', e)
       } finally {
-        this.loading = false
+        loading.value = false
       }
-    },
-    getRoleBadge(role) {
-      const map = { admin: 'danger', operator: 'warning', viewer: 'info' }
-      return map[role] || 'secondary'
-    },
-    async updateProfile() {
-      this.profileMsg = ''
-      this.updatingProfile = true
-      try {
-        await api.auth.updateMe({ email: this.profileForm.email })
-        this.profileMsg = 'Profile updated successfully'
-        this.profileMsgType = 'success'
-        await this.loadProfile()
-      } catch (e) {
-        this.profileMsg = e.response?.data?.detail || 'Failed to update profile'
-        this.profileMsgType = 'error'
-      } finally {
-        this.updatingProfile = false
-      }
-    },
-    async changePassword() {
-      this.passwordMsg = ''
-      if (this.passwordForm.new_password !== this.passwordForm.confirm_password) {
-        this.passwordMsg = 'New passwords do not match'
-        this.passwordMsgType = 'error'
-        return
-      }
-      this.changingPassword = true
+    }
+
+    const changePassword = async () => {
+      passwordMsg.value = ''
+      if (!passwordFormValid.value) return
+      changingPassword.value = true
       try {
         await api.auth.changePassword({
-          current_password: this.passwordForm.current_password,
-          new_password: this.passwordForm.new_password,
+          current_password: passwordForm.value.current_password,
+          new_password: passwordForm.value.new_password
         })
-        this.passwordMsg = 'Password changed successfully'
-        this.passwordMsgType = 'success'
-        this.passwordForm = { current_password: '', new_password: '', confirm_password: '' }
+        toast.success('Password changed successfully')
+        passwordMsg.value = 'Password changed successfully'
+        passwordMsgType.value = 'success'
+        passwordForm.value = { current_password: '', new_password: '', confirm_password: '' }
       } catch (e) {
-        this.passwordMsg = e.response?.data?.detail || 'Failed to change password'
-        this.passwordMsgType = 'error'
+        const msg = e.response?.data?.detail || 'Failed to change password'
+        passwordMsg.value = msg
+        passwordMsgType.value = 'error'
       } finally {
-        this.changingPassword = false
+        changingPassword.value = false
       }
-    },
-  },
+    }
+
+    await loadProfile()
+
+    return {
+      loading,
+      user,
+      passwordForm,
+      passwordFormValid,
+      changingPassword,
+      passwordMsg,
+      passwordMsgType,
+      getRoleBadge,
+      formatDate,
+      changePassword
+    }
+  }
 }
 </script>
 
 <style scoped>
 .profile-page {
-  max-width: 640px;
+  max-width: 680px;
   margin: 0 auto;
   padding: 1.5rem;
 }
@@ -202,12 +280,44 @@ export default {
   flex-shrink: 0;
 }
 
-.profile-form,
+.info-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 1rem 1.5rem;
+}
+
+.info-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.info-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  opacity: 0.55;
+}
+
+.info-value {
+  font-size: 0.95rem;
+}
+
 .password-form {
   display: flex;
   flex-direction: column;
   gap: 1rem;
-  max-width: 480px;
+  max-width: 420px;
+}
+
+.field-hint {
+  font-size: 0.8rem;
+  margin: 0.3rem 0 0;
+}
+
+.field-error {
+  color: #ef4444;
 }
 
 .loading-state {
@@ -218,6 +328,23 @@ export default {
   color: var(--text-muted, #6b7280);
 }
 
-.mb-4 { margin-bottom: 1rem; }
+.spinner {
+  width: 24px;
+  height: 24px;
+  border: 2px solid rgba(59, 130, 246, 0.3);
+  border-top-color: #3b82f6;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  margin-bottom: 0.75rem;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.mb-4 { margin-bottom: 1.25rem; }
+.mt-3 { display: inline-block; margin-top: 0.75rem; }
 .card-body { padding: 1.25rem; }
+.text-muted { opacity: 0.65; }
+.text-sm { font-size: 0.875rem; }
 </style>

@@ -5,6 +5,370 @@
       <p>Learn how to use Depl0y and its features</p>
     </div>
 
+    <!-- v1.7.0 Proxmox Management Features -->
+    <div class="section-header">
+      <h2>🖥️ v1.7.0 — Proxmox VE Management</h2>
+      <p>New in v1.7.0: full Proxmox host management, VM/container control, consoles, templates, backups, and HA.</p>
+    </div>
+
+    <div class="doc-grid v170-grid">
+      <!-- Proxmox VE Management -->
+      <div class="doc-card" :class="{ expanded: expandedCard === 'proxmox-hosts' }" @click="toggleCard('proxmox-hosts')">
+        <div class="doc-icon">🖥️</div>
+        <h2>Proxmox VE Management</h2>
+        <p>Add Proxmox hosts, poll their state, and navigate nodes, VMs, and containers from a single interface.</p>
+        <div class="doc-meta">
+          <span class="badge badge-primary">v1.7.0</span>
+          <span class="read-time">3 min read</span>
+        </div>
+        <div class="doc-actions" @click.stop>
+          <button @click.stop="toggleCard('proxmox-hosts')" class="btn btn-primary">
+            {{ expandedCard === 'proxmox-hosts' ? 'Collapse' : 'Learn More' }}
+          </button>
+          <router-link to="/proxmox" class="btn btn-outline" @click.stop>Open Hosts</router-link>
+        </div>
+        <div v-if="expandedCard === 'proxmox-hosts'" class="card-detail" @click.stop>
+          <h4>Adding a Proxmox Host</h4>
+          <p>Go to <router-link to="/proxmox">Proxmox Hosts</router-link> and click <strong>Add Host</strong>. Enter the host address, API token, and an optional display name. Depl0y stores the token securely and uses it for all subsequent API calls.</p>
+          <h4>Polling Host State</h4>
+          <p>After adding a host, click <strong>Poll</strong> (or the refresh icon) to sync the current state of all nodes, VMs, and LXC containers. Polling is also triggered automatically when you navigate to a host's detail view. The status badges on each host card reflect the last polled state.</p>
+          <h4>Navigating the Hierarchy</h4>
+          <ol>
+            <li>Select a host from the Proxmox Hosts list to view its nodes.</li>
+            <li>Click a node to open the Node Detail page — showing VMs, containers, storage, and tasks.</li>
+            <li>Click any VM or container to open its detail page with full management controls.</li>
+          </ol>
+          <div class="info-box">
+            <strong>Tip:</strong> The Datacenter view at <router-link to="/datacenter">/datacenter</router-link> gives an aggregated overview across all registered Proxmox hosts.
+          </div>
+        </div>
+      </div>
+
+      <!-- VM Management -->
+      <div class="doc-card" :class="{ expanded: expandedCard === 'vm-management' }" @click="toggleCard('vm-management')">
+        <div class="doc-icon">⚙️</div>
+        <h2>VM Management</h2>
+        <p>The VM detail page provides tabbed access to every aspect of a virtual machine's configuration and state.</p>
+        <div class="doc-meta">
+          <span class="badge badge-primary">v1.7.0</span>
+          <span class="read-time">4 min read</span>
+        </div>
+        <div class="doc-actions" @click.stop>
+          <button @click.stop="toggleCard('vm-management')" class="btn btn-primary">
+            {{ expandedCard === 'vm-management' ? 'Collapse' : 'Learn More' }}
+          </button>
+        </div>
+        <div v-if="expandedCard === 'vm-management'" class="card-detail" @click.stop>
+          <p>Navigate to a VM via <strong>Proxmox Hosts → Node → VM</strong>. The detail page is organized into the following tabs:</p>
+          <div class="tab-list">
+            <div class="tab-item">
+              <strong>Overview</strong>
+              <span>Live CPU, memory, disk I/O, and network stats. Power controls (start, stop, reboot, shutdown). Current status badge and uptime.</span>
+            </div>
+            <div class="tab-item">
+              <strong>Config</strong>
+              <span>View and edit VM configuration options including CPU cores/sockets, memory, boot order, BIOS/UEFI, and machine type.</span>
+            </div>
+            <div class="tab-item">
+              <strong>Disks</strong>
+              <span>List attached disk devices, storage pool, size, and format. Resize disks directly from this tab.</span>
+            </div>
+            <div class="tab-item">
+              <strong>Network</strong>
+              <span>View and manage network interfaces (bridges, VLANs, MAC addresses). Add or remove NICs without stopping the VM.</span>
+            </div>
+            <div class="tab-item">
+              <strong>Snapshots</strong>
+              <span>Create, restore, and delete snapshots. Each snapshot entry shows its name, creation time, and description. Rollback is a single click.</span>
+            </div>
+            <div class="tab-item">
+              <strong>Firewall</strong>
+              <span>Manage per-VM firewall rules and IP sets. Enable or disable the VM-level firewall independently of the host firewall.</span>
+            </div>
+            <div class="tab-item">
+              <strong>Console</strong>
+              <span>Launch the noVNC graphical console directly in the browser. See the VNC Console section below for details.</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- VNC Console -->
+      <div class="doc-card" :class="{ expanded: expandedCard === 'vnc-console' }" @click="toggleCard('vnc-console')">
+        <div class="doc-icon">🖱️</div>
+        <h2>VNC Console</h2>
+        <p>Access a full graphical console for any VM directly in your browser via noVNC — no client software required.</p>
+        <div class="doc-meta">
+          <span class="badge badge-primary">v1.7.0</span>
+          <span class="read-time">2 min read</span>
+        </div>
+        <div class="doc-actions" @click.stop>
+          <button @click.stop="toggleCard('vnc-console')" class="btn btn-primary">
+            {{ expandedCard === 'vnc-console' ? 'Collapse' : 'Learn More' }}
+          </button>
+        </div>
+        <div v-if="expandedCard === 'vnc-console'" class="card-detail" @click.stop>
+          <h4>Opening the Console</h4>
+          <p>From the VM detail page, click the <strong>Console</strong> tab, then click <strong>Open Console</strong>. The noVNC viewer opens in a full-screen overlay. You can also open it directly from the VM list via the console icon.</p>
+          <h4>Keyboard Shortcuts</h4>
+          <div class="tab-list">
+            <div class="tab-item">
+              <strong>Ctrl+Alt+Del</strong>
+              <span>Use the <strong>Send Ctrl+Alt+Del</strong> button in the console toolbar — your browser intercepts the real key combination before it reaches the VM.</span>
+            </div>
+            <div class="tab-item">
+              <strong>Fullscreen Mode</strong>
+              <span>Click the <strong>Fullscreen</strong> button (or press F11) in the noVNC toolbar to expand the console to your entire screen. Press Escape or click the button again to exit.</span>
+            </div>
+            <div class="tab-item">
+              <strong>Clipboard</strong>
+              <span>Use the clipboard icon in the noVNC toolbar to paste text into the VM. This bypasses browser clipboard restrictions.</span>
+            </div>
+          </div>
+          <div class="info-box">
+            <strong>Note:</strong> The console requires the VM to be running. If the VM is stopped, start it from the Overview tab first.
+          </div>
+        </div>
+      </div>
+
+      <!-- Node Terminal -->
+      <div class="doc-card" :class="{ expanded: expandedCard === 'node-terminal' }" @click="toggleCard('node-terminal')">
+        <div class="doc-icon">💻</div>
+        <h2>Node Terminal</h2>
+        <p>Open a live shell session on any Proxmox node or LXC container using the built-in xterm.js terminal.</p>
+        <div class="doc-meta">
+          <span class="badge badge-primary">v1.7.0</span>
+          <span class="read-time">2 min read</span>
+        </div>
+        <div class="doc-actions" @click.stop>
+          <button @click.stop="toggleCard('node-terminal')" class="btn btn-primary">
+            {{ expandedCard === 'node-terminal' ? 'Collapse' : 'Learn More' }}
+          </button>
+        </div>
+        <div v-if="expandedCard === 'node-terminal'" class="card-detail" @click.stop>
+          <h4>Opening a Node Shell</h4>
+          <p>Navigate to <strong>Proxmox Hosts → Node Detail</strong> and click <strong>Open Terminal</strong>. The xterm.js terminal opens in a full-screen layout and connects directly to the Proxmox node shell via the PVE API WebSocket.</p>
+          <h4>LXC Container Shell</h4>
+          <p>From a container's detail page, click <strong>Open Terminal</strong> to attach to a shell running inside the LXC container. This uses the same xterm.js interface but targets the container's namespace rather than the host.</p>
+          <h4>Usage Notes</h4>
+          <ul>
+            <li>The terminal supports full ANSI color codes and interactive programs (vim, htop, etc.).</li>
+            <li>Copy and paste work via the browser's standard clipboard shortcuts (Ctrl+C / Ctrl+V on Windows/Linux, Cmd+C / Cmd+V on macOS).</li>
+            <li>The session terminates when you close the tab or navigate away. There is no session persistence.</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Creating VMs -->
+      <div class="doc-card" :class="{ expanded: expandedCard === 'create-pve-vm' }" @click="toggleCard('create-pve-vm')">
+        <div class="doc-icon">➕</div>
+        <h2>Creating VMs (PVE)</h2>
+        <p>Provision a new Proxmox-native VM using the guided 3-step Create VM form.</p>
+        <div class="doc-meta">
+          <span class="badge badge-primary">v1.7.0</span>
+          <span class="read-time">3 min read</span>
+        </div>
+        <div class="doc-actions" @click.stop>
+          <button @click.stop="toggleCard('create-pve-vm')" class="btn btn-primary">
+            {{ expandedCard === 'create-pve-vm' ? 'Collapse' : 'Learn More' }}
+          </button>
+          <router-link to="/create-pve-vm" class="btn btn-outline" @click.stop>Create VM</router-link>
+        </div>
+        <div v-if="expandedCard === 'create-pve-vm'" class="card-detail" @click.stop>
+          <p>Go to <router-link to="/create-pve-vm">Create VM (PVE)</router-link> to launch the 3-step wizard.</p>
+          <div class="step">
+            <strong>Step 1: Location</strong>
+            <p>Select the target Proxmox host and node where the VM will be created. A VM ID is auto-generated (or you can specify one). Enter a name for the new VM.</p>
+          </div>
+          <div class="step">
+            <strong>Step 2: Hardware</strong>
+            <p>Configure the VM's hardware profile:</p>
+            <ul>
+              <li><strong>CPU:</strong> Number of cores and sockets.</li>
+              <li><strong>Memory:</strong> RAM in MB.</li>
+              <li><strong>Disk:</strong> Storage pool, disk size, and format (qcow2, raw).</li>
+              <li><strong>OS / ISO:</strong> Select an ISO image from the available storage, or choose a cloud image for fast deployment.</li>
+              <li><strong>Network:</strong> Bridge interface and optional VLAN tag.</li>
+            </ul>
+          </div>
+          <div class="step">
+            <strong>Step 3: Review</strong>
+            <p>Review all settings before submission. Click <strong>Create VM</strong> to send the request to Proxmox. A task tracker shows real-time progress and links to the new VM's detail page once creation completes.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Creating LXC Containers -->
+      <div class="doc-card" :class="{ expanded: expandedCard === 'create-lxc' }" @click="toggleCard('create-lxc')">
+        <div class="doc-icon">📦</div>
+        <h2>Creating LXC Containers</h2>
+        <p>Deploy lightweight Linux containers on Proxmox using the CreateLXC form.</p>
+        <div class="doc-meta">
+          <span class="badge badge-primary">v1.7.0</span>
+          <span class="read-time">3 min read</span>
+        </div>
+        <div class="doc-actions" @click.stop>
+          <button @click.stop="toggleCard('create-lxc')" class="btn btn-primary">
+            {{ expandedCard === 'create-lxc' ? 'Collapse' : 'Learn More' }}
+          </button>
+          <router-link to="/create-lxc" class="btn btn-outline" @click.stop>Create LXC</router-link>
+        </div>
+        <div v-if="expandedCard === 'create-lxc'" class="card-detail" @click.stop>
+          <p>Go to <router-link to="/create-lxc">Create LXC</router-link> to open the container creation form. Fill in the following fields:</p>
+          <div class="tab-list">
+            <div class="tab-item"><strong>Host &amp; Node</strong><span>Select which Proxmox host and node to create the container on.</span></div>
+            <div class="tab-item"><strong>CT ID</strong><span>Container ID — auto-generated by default. Must be unique on the selected node.</span></div>
+            <div class="tab-item"><strong>Hostname</strong><span>The container's hostname, used for DNS and display purposes.</span></div>
+            <div class="tab-item"><strong>Template</strong><span>Choose an LXC template (e.g., Ubuntu 22.04, Debian 12, Alpine). Templates are fetched live from the Proxmox node's template storage. Download new templates from the Storage Browser if the one you need is not listed.</span></div>
+            <div class="tab-item"><strong>Root Password</strong><span>Password for the root account inside the container.</span></div>
+            <div class="tab-item"><strong>CPU &amp; Memory</strong><span>Number of CPU cores and memory in MB.</span></div>
+            <div class="tab-item"><strong>Disk</strong><span>Root filesystem size and storage pool.</span></div>
+            <div class="tab-item"><strong>Network</strong><span>Bridge, IP address (DHCP or static), and gateway.</span></div>
+            <div class="tab-item"><strong>DNS</strong><span>Optional DNS server and search domain overrides.</span></div>
+            <div class="tab-item"><strong>Start on Create</strong><span>Toggle to automatically start the container immediately after creation.</span></div>
+          </div>
+          <p>Click <strong>Create Container</strong> to submit. Progress is shown in the task tracker.</p>
+        </div>
+      </div>
+
+      <!-- VM Templates -->
+      <div class="doc-card" :class="{ expanded: expandedCard === 'templates' }" @click="toggleCard('templates')">
+        <div class="doc-icon">🗂️</div>
+        <h2>VM Templates</h2>
+        <p>Convert VMs into reusable templates and clone new VMs from them in seconds.</p>
+        <div class="doc-meta">
+          <span class="badge badge-primary">v1.7.0</span>
+          <span class="read-time">3 min read</span>
+        </div>
+        <div class="doc-actions" @click.stop>
+          <button @click.stop="toggleCard('templates')" class="btn btn-primary">
+            {{ expandedCard === 'templates' ? 'Collapse' : 'Learn More' }}
+          </button>
+          <router-link to="/templates" class="btn btn-outline" @click.stop>View Templates</router-link>
+        </div>
+        <div v-if="expandedCard === 'templates'" class="card-detail" @click.stop>
+          <h4>Converting a VM to a Template</h4>
+          <p>From the <router-link to="/templates">Templates</router-link> view or a VM's detail page, click <strong>Convert to Template</strong>. This action is irreversible — the VM is stopped and marked as a template in Proxmox. Templates cannot be started directly; they can only be cloned.</p>
+          <div class="info-box">
+            <strong>Best practice:</strong> Before converting, ensure the VM is fully configured, updated, and has been generalized (e.g., cloud-init reset or sysprep run) so clones start with a clean state.
+          </div>
+          <h4>Cloning from a Template</h4>
+          <ol>
+            <li>Go to <router-link to="/templates">Templates</router-link> to see all templates across registered Proxmox hosts.</li>
+            <li>Click <strong>Clone</strong> on the template you want to use.</li>
+            <li>Enter a name and target node for the new VM.</li>
+            <li>Choose <strong>Full Clone</strong> (independent copy) or <strong>Linked Clone</strong> (shares base disk, faster but depends on template remaining intact).</li>
+            <li>Click <strong>Clone VM</strong>. The new VM appears in the node's VM list once the task completes.</li>
+          </ol>
+        </div>
+      </div>
+
+      <!-- Backup Management -->
+      <div class="doc-card" :class="{ expanded: expandedCard === 'backup-manager' }" @click="toggleCard('backup-manager')">
+        <div class="doc-icon">💾</div>
+        <h2>Backup Management</h2>
+        <p>View backup schedules, run manual backups, and browse Proxmox Backup Server datastores.</p>
+        <div class="doc-meta">
+          <span class="badge badge-primary">v1.7.0</span>
+          <span class="read-time">4 min read</span>
+        </div>
+        <div class="doc-actions" @click.stop>
+          <button @click.stop="toggleCard('backup-manager')" class="btn btn-primary">
+            {{ expandedCard === 'backup-manager' ? 'Collapse' : 'Learn More' }}
+          </button>
+          <router-link to="/backup" class="btn btn-outline" @click.stop>Backups</router-link>
+        </div>
+        <div v-if="expandedCard === 'backup-manager'" class="card-detail" @click.stop>
+          <h4>Viewing Backup Schedules</h4>
+          <p>Navigate to <strong>Proxmox Hosts → (select host) → Backup</strong> to open the BackupManager. The <strong>Schedules</strong> tab lists all configured vzdump backup jobs with their schedule (cron), included VMs/containers, storage target, and retention settings.</p>
+          <h4>Running a Manual Backup</h4>
+          <ol>
+            <li>In BackupManager, click <strong>Run Now</strong> next to any backup job to trigger it immediately.</li>
+            <li>Alternatively, use <strong>Backup Now</strong> from a VM's detail page to create a one-off backup of that specific VM to your chosen storage.</li>
+            <li>Monitor progress in the task list — a link appears in the notification area when the task starts.</li>
+          </ol>
+          <h4>PBS Datastore Browsing</h4>
+          <p>If a Proxmox Backup Server (PBS) is configured as a storage target, the <strong>Datastores</strong> tab lists available datastores. Click a datastore to browse its backup snapshots, view their size and creation time, and restore or delete individual backups.</p>
+          <div class="info-box">
+            <strong>Retention:</strong> Backup retention policies (keep daily/weekly/monthly) are configured per job in the schedule settings. PBS manages deduplication automatically.
+          </div>
+        </div>
+      </div>
+
+      <!-- HA Management -->
+      <div class="doc-card" :class="{ expanded: expandedCard === 'ha-management' }" @click="toggleCard('ha-management')">
+        <div class="doc-icon">🔄</div>
+        <h2>HA Management</h2>
+        <p>Configure and monitor Proxmox High Availability resources to keep VMs running through node failures.</p>
+        <div class="doc-meta">
+          <span class="badge badge-warning">Admin Only</span>
+          <span class="read-time">4 min read</span>
+        </div>
+        <div class="doc-actions" @click.stop>
+          <button @click.stop="toggleCard('ha-management')" class="btn btn-primary">
+            {{ expandedCard === 'ha-management' ? 'Collapse' : 'Learn More' }}
+          </button>
+          <router-link to="/ha-management" class="btn btn-outline" @click.stop>HA Management</router-link>
+        </div>
+        <div v-if="expandedCard === 'ha-management'" class="card-detail" @click.stop>
+          <h4>Selecting a Host</h4>
+          <p>The <router-link to="/ha-management">HA Management</router-link> page opens with a host selector. Choose the Proxmox cluster you want to manage. Only hosts that are part of a cluster (3+ nodes with quorum) support HA.</p>
+          <h4>Viewing HA Status</h4>
+          <p>The <strong>Status</strong> panel shows the current HA manager state (active/passive), quorum status, and the state of each HA resource (started, stopped, migrating, error). Color-coded badges indicate health at a glance.</p>
+          <h4>Adding HA Resources</h4>
+          <ol>
+            <li>Click <strong>Add HA Resource</strong>.</li>
+            <li>Select the VM or container ID to protect.</li>
+            <li>Set the <strong>Max Relocate</strong> and <strong>Max Restart</strong> limits — how many times the HA manager will try to move or restart the resource before marking it as failed.</li>
+            <li>Choose a priority group if applicable.</li>
+            <li>Click <strong>Add</strong>. The resource appears in the HA resource list immediately.</li>
+          </ol>
+          <h4>Removing HA Resources</h4>
+          <p>Click the <strong>Remove</strong> button next to any HA resource to stop protecting it. The VM or container continues running but will no longer be automatically restarted or migrated on node failure.</p>
+          <div class="info-box">
+            <strong>Requirement:</strong> HA management requires admin-level permissions in Depl0y and a properly fenced Proxmox cluster with an odd number of nodes (minimum 3) for quorum.
+          </div>
+        </div>
+      </div>
+
+      <!-- Global Search -->
+      <div class="doc-card" :class="{ expanded: expandedCard === 'global-search' }" @click="toggleCard('global-search')">
+        <div class="doc-icon">🔍</div>
+        <h2>Global Search</h2>
+        <p>Instantly find VMs, containers, nodes, and hosts from anywhere in the UI using the header search bar.</p>
+        <div class="doc-meta">
+          <span class="badge badge-primary">v1.7.0</span>
+          <span class="read-time">2 min read</span>
+        </div>
+        <div class="doc-actions" @click.stop>
+          <button @click.stop="toggleCard('global-search')" class="btn btn-primary">
+            {{ expandedCard === 'global-search' ? 'Collapse' : 'Learn More' }}
+          </button>
+        </div>
+        <div v-if="expandedCard === 'global-search'" class="card-detail" @click.stop>
+          <h4>Opening the Search Bar</h4>
+          <p>Press <strong>Ctrl+K</strong> (Windows/Linux) or <strong>Cmd+K</strong> (macOS) from any page to open the global search overlay. You can also click the search icon in the top navigation bar.</p>
+          <h4>Result Types</h4>
+          <p>Search results are grouped by type and are drawn from all registered Proxmox hosts:</p>
+          <div class="tab-list">
+            <div class="tab-item"><strong>VMs</strong><span>Matched by name, VM ID, or IP address. Click to jump directly to the VM detail page.</span></div>
+            <div class="tab-item"><strong>Containers</strong><span>LXC containers matched by name or CT ID. Click to open the container detail page.</span></div>
+            <div class="tab-item"><strong>Nodes</strong><span>Proxmox nodes matched by hostname. Click to open the node detail page.</span></div>
+            <div class="tab-item"><strong>Hosts</strong><span>Registered Proxmox host entries matched by display name or address.</span></div>
+          </div>
+          <h4>Keyboard Navigation</h4>
+          <ul>
+            <li>Use the <strong>Up/Down arrow keys</strong> to move between results.</li>
+            <li>Press <strong>Enter</strong> to navigate to the selected result.</li>
+            <li>Press <strong>Escape</strong> to close the search overlay without navigating.</li>
+          </ul>
+          <div class="info-box">
+            <strong>Tip:</strong> Search is performed client-side against the last polled state. If a recently created VM is not appearing, poll the relevant host to refresh the data.
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="doc-grid">
       <!-- Installation Guide -->
       <div class="doc-card" @click="viewDoc('install')">
@@ -289,6 +653,11 @@ export default {
     const loadingDoc = ref(false)
     const docError = ref(null)
     const downloadingPDF = ref(false)
+    const expandedCard = ref(null)
+
+    const toggleCard = (cardId) => {
+      expandedCard.value = expandedCard.value === cardId ? null : cardId
+    }
 
     // Configure marked options
     marked.setOptions({
@@ -369,9 +738,11 @@ export default {
       loadingDoc,
       docError,
       downloadingPDF,
+      expandedCard,
       renderedMarkdown,
       viewDoc,
-      downloadPDF
+      downloadPDF,
+      toggleCard
     }
   }
 }
@@ -403,6 +774,10 @@ export default {
   grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
   gap: 2rem;
   margin-bottom: 3rem;
+}
+
+.v170-grid {
+  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
 }
 
 .doc-card {
@@ -868,5 +1243,111 @@ export default {
 
 .text-muted {
   color: var(--text-secondary);
+}
+
+/* v1.7.0 Section Header */
+.section-header {
+  margin: 3rem 0 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 2px solid var(--primary-color);
+}
+
+.section-header h2 {
+  font-size: 1.75rem;
+  color: var(--text-primary);
+  margin-bottom: 0.5rem;
+}
+
+.section-header p {
+  font-size: 1rem;
+  color: var(--text-secondary);
+}
+
+/* Expandable card details */
+.doc-card.expanded {
+  border-color: var(--primary-color);
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.04), rgba(147, 51, 234, 0.04));
+}
+
+.card-detail {
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border-color);
+  cursor: default;
+}
+
+.card-detail h4 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--primary-color);
+  margin: 1.25rem 0 0.5rem;
+}
+
+.card-detail h4:first-child {
+  margin-top: 0;
+}
+
+.card-detail p {
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin-bottom: 0.75rem;
+}
+
+.card-detail ol,
+.card-detail ul {
+  margin-left: 1.5rem;
+  margin-bottom: 0.75rem;
+  color: var(--text-secondary);
+  line-height: 1.7;
+}
+
+.card-detail li {
+  margin-bottom: 0.4rem;
+}
+
+/* Tab-style list for VM tabs documentation */
+.tab-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0.75rem 0 1rem;
+}
+
+.tab-item {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  background: #f9fafb;
+  border-radius: 0.375rem;
+  border-left: 3px solid var(--primary-color);
+  align-items: start;
+}
+
+.tab-item strong {
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  padding-top: 0.05rem;
+}
+
+.tab-item span {
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+@media (max-width: 768px) {
+  .v170-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .tab-item {
+    grid-template-columns: 1fr;
+    gap: 0.25rem;
+  }
+
+  .section-header h2 {
+    font-size: 1.4rem;
+  }
 }
 </style>

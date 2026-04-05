@@ -51,6 +51,28 @@ def _make_service(server: PBSServer) -> PBSService:
 # Endpoints
 # ---------------------------------------------------------------------------
 
+@router.get("/")
+def list_pbs_servers(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> List[Dict[str, Any]]:
+    """List all PBS servers registered in the system."""
+    servers = db.query(PBSServer).order_by(PBSServer.name).all()
+    return [
+        {
+            "id": s.id,
+            "name": s.name,
+            "hostname": s.hostname,
+            "port": s.port,
+            "username": s.username,
+            "is_active": s.is_active,
+            "verify_ssl": s.verify_ssl,
+            "api_token_id": s.api_token_id,
+        }
+        for s in servers
+    ]
+
+
 @router.get("/{server_id}/test")
 def test_pbs_connection(
     server_id: int,
@@ -275,6 +297,46 @@ def list_tasks(
         raise
     except Exception as exc:
         logger.error("Failed to list tasks for PBS server %s: %s", server_id, exc)
+        raise HTTPException(status_code=502, detail=f"PBS API error: {exc}")
+
+
+@router.get("/{server_id}/jobs")
+def list_jobs(
+    server_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> List[Dict[str, Any]]:
+    """List configured sync/backup jobs on the PBS server."""
+    server = _get_pbs_server(db, server_id)
+    try:
+        svc = _make_service(server)
+        return svc.get_sync_jobs()
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Failed to list jobs for PBS server %s: %s", server_id, exc)
+        raise HTTPException(status_code=502, detail=f"PBS API error: {exc}")
+
+
+@router.post("/{server_id}/jobs/{job_id}/run")
+def run_job(
+    server_id: int,
+    job_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Any:
+    """Trigger a PBS sync job to run immediately. Returns the task UPID."""
+    server = _get_pbs_server(db, server_id)
+    try:
+        svc = _make_service(server)
+        upid = svc.run_sync_job(job_id)
+        return {"upid": upid, "job_id": job_id}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error(
+            "Failed to run job %s for PBS server %s: %s", job_id, server_id, exc
+        )
         raise HTTPException(status_code=502, detail=f"PBS API error: {exc}")
 
 

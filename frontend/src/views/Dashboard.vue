@@ -283,6 +283,123 @@
       </div>
     </transition>
 
+    <!-- ── Resource Summary Bar ── -->
+    <div v-if="!initialLoading" class="resource-summary-bar">
+      <!-- VMs -->
+      <div class="rsb-card">
+        <div class="rsb-icon rsb-icon-vm">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+        </div>
+        <div class="rsb-content">
+          <span class="rsb-label">Virtual Machines</span>
+          <div class="rsb-value-row">
+            <span class="rsb-big">{{ dashSummary.vm_count ?? '—' }}</span>
+            <span class="rsb-sub">
+              <span class="rsb-chip rsb-chip-green">{{ dashSummary.running_vms ?? 0 }} running</span>
+              <span class="rsb-chip rsb-chip-gray">{{ (dashSummary.vm_count ?? 0) - (dashSummary.running_vms ?? 0) }} stopped</span>
+            </span>
+          </div>
+        </div>
+      </div>
+      <!-- Nodes -->
+      <div class="rsb-card">
+        <div class="rsb-icon rsb-icon-node">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
+        </div>
+        <div class="rsb-content">
+          <span class="rsb-label">Nodes</span>
+          <div class="rsb-value-row">
+            <span class="rsb-big">{{ dashSummary.node_count ?? '—' }}</span>
+            <span class="rsb-sub">
+              <span class="rsb-chip rsb-chip-green">online</span>
+            </span>
+          </div>
+        </div>
+      </div>
+      <!-- Storage -->
+      <div class="rsb-card">
+        <div class="rsb-icon rsb-icon-storage">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+        </div>
+        <div class="rsb-content">
+          <span class="rsb-label">Storage</span>
+          <div class="rsb-value-row">
+            <span class="rsb-big">{{ resourceStats ? resourceStats.used_disk_gb.toFixed(1) : (dashSummary.storage_used_gb ?? '—') }} GB</span>
+            <span class="rsb-sub" v-if="resourceStats">
+              <span class="rsb-chip rsb-chip-gray">/ {{ resourceStats.total_disk_gb.toFixed(1) }} GB</span>
+            </span>
+          </div>
+        </div>
+      </div>
+      <!-- CPU -->
+      <div class="rsb-card" v-if="resourceStats">
+        <div class="rsb-icon rsb-icon-cpu">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg>
+        </div>
+        <div class="rsb-content">
+          <span class="rsb-label">CPU Usage</span>
+          <div class="rsb-value-row">
+            <span class="rsb-big" :class="cpuUsedPct > 80 ? 'rsb-big-warn' : ''">{{ cpuUsedPct }}%</span>
+            <span class="rsb-sub">
+              <span class="rsb-chip rsb-chip-gray">{{ resourceStats.used_cpu_cores }}/{{ resourceStats.total_cpu_cores }} cores</span>
+            </span>
+          </div>
+        </div>
+      </div>
+      <!-- RAM -->
+      <div class="rsb-card" v-if="resourceStats">
+        <div class="rsb-icon rsb-icon-ram">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="5" width="22" height="14" rx="2"/><line x1="7" y1="9" x2="7" y2="15"/><line x1="11" y1="9" x2="11" y2="15"/><line x1="15" y1="9" x2="15" y2="15"/><line x1="19" y1="9" x2="19" y2="15"/></svg>
+        </div>
+        <div class="rsb-content">
+          <span class="rsb-label">RAM Usage</span>
+          <div class="rsb-value-row">
+            <span class="rsb-big" :class="ramUsedPct > 85 ? 'rsb-big-warn' : ''">{{ ramUsedPct }}%</span>
+            <span class="rsb-sub">
+              <span class="rsb-chip rsb-chip-gray">{{ resourceStats.used_memory_gb.toFixed(1) }}/{{ resourceStats.total_memory_gb.toFixed(1) }} GB</span>
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- Loading skeleton for resource summary -->
+    <div v-else-if="initialLoading" class="resource-summary-bar">
+      <div v-for="i in 5" :key="i" class="rsb-card rsb-card-skel">
+        <div class="rsb-skel-icon"></div>
+        <div class="rsb-skel-content">
+          <div class="rsb-skel-label"></div>
+          <div class="rsb-skel-value"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Quick Actions Panel ── -->
+    <div class="quick-actions-panel">
+      <span class="qap-title">Quick Actions</span>
+      <div class="qap-buttons">
+        <button class="qap-btn" @click="$router.push('/vms/create')">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="12" y1="17" x2="12" y2="21"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="8" x2="12" y2="14"/><line x1="9" y1="11" x2="15" y2="11"/></svg>
+          New VM
+        </button>
+        <button class="qap-btn" @click="$router.push('/create-lxc')">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+          New Container
+        </button>
+        <button class="qap-btn" @click="$router.push('/bulk-ops')">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="4" rx="1"/><rect x="2" y="12" width="20" height="4" rx="1"/><rect x="2" y="19" width="20" height="4" rx="1"/></svg>
+          Bulk Operations
+        </button>
+        <button class="qap-btn" @click="$router.push('/vm-search')">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          VM Search
+        </button>
+        <button class="qap-btn" @click="$router.push('/proxmox')">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+          Manage Hosts
+        </button>
+      </div>
+    </div>
+
     <!-- ── Resource Trending Row ── -->
     <div v-if="resourceStats" class="resource-trending-row">
       <div class="rt-card">
@@ -678,6 +795,7 @@ export default {
         fetchAlerts(),
         fetchActivity(),
         fetchResources(),
+        fetchSummary(),
       ])
       lastUpdatedSeconds.value = 0
       lastUpdatedAt.value = new Date().toLocaleTimeString()
@@ -686,6 +804,18 @@ export default {
         if (!w.collapsed) refreshWidget(w)
       })
       globalRefreshing.value = false
+    }
+
+    // ── Dashboard Summary (VM counts, node count, storage) ─────────────────
+    const dashSummary = ref({})
+
+    const fetchSummary = async () => {
+      try {
+        const res = await api.dashboard.getSummary()
+        dashSummary.value = res.data || {}
+      } catch (e) {
+        // Non-blocking
+      }
     }
 
     // ── No hosts state ────────────────────────────────────────────────────
@@ -1217,6 +1347,7 @@ export default {
         fetchAlerts(),
         fetchActivity(),
         fetchResources(),
+        fetchSummary(),
         checkHosts(),
       ])
       initialLoading.value = false
@@ -1291,6 +1422,9 @@ export default {
       showWelcomeBanner,
       dismissWelcomeBanner,
       openWizardFromBanner,
+      // Dashboard summary (VM/node/storage counts)
+      dashSummary,
+      fetchSummary,
       // Alerts summary
       alertsSummary,
       alertsBySeverity,
@@ -2605,4 +2739,201 @@ export default {
 .onboard-fade-leave-active { transition: opacity 0.3s ease; }
 .onboard-fade-enter-from,
 .onboard-fade-leave-to { opacity: 0; }
+
+/* ── Resource Summary Bar ─────────────────────────────────────────────── */
+.resource-summary-bar {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 0.6rem;
+}
+
+@media (max-width: 1100px) {
+  .resource-summary-bar { grid-template-columns: repeat(3, 1fr); }
+}
+
+@media (max-width: 640px) {
+  .resource-summary-bar { grid-template-columns: repeat(2, 1fr); }
+}
+
+.rsb-card {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  background: var(--surface);
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+  padding: 0.7rem 0.9rem;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.rsb-card:hover {
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.08);
+}
+
+.rsb-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 0.375rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.rsb-icon-vm      { background: rgba(99, 102, 241, 0.12); color: #818cf8; }
+.rsb-icon-node    { background: rgba(16, 185, 129, 0.12); color: #34d399; }
+.rsb-icon-storage { background: rgba(245, 158, 11, 0.12); color: #fbbf24; }
+.rsb-icon-cpu     { background: rgba(239, 68, 68, 0.1);   color: #f87171; }
+.rsb-icon-ram     { background: rgba(59, 130, 246, 0.1);  color: #60a5fa; }
+
+.rsb-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.rsb-label {
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rsb-value-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.rsb-big {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.rsb-big-warn { color: #f87171; }
+
+.rsb-sub {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+}
+
+.rsb-chip {
+  font-size: 0.62rem;
+  font-weight: 600;
+  padding: 0.1rem 0.35rem;
+  border-radius: 9999px;
+  white-space: nowrap;
+}
+
+.rsb-chip-green { background: rgba(34, 197, 94, 0.12); color: #22c55e; }
+.rsb-chip-gray  { background: rgba(148, 163, 184, 0.12); color: #94a3b8; }
+
+/* Skeleton */
+.rsb-card-skel {
+  pointer-events: none;
+}
+
+.rsb-skel-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 0.375rem;
+  background: linear-gradient(90deg, var(--border-color) 25%, var(--background) 50%, var(--border-color) 75%);
+  background-size: 200% auto;
+  animation: shimmer 1.5s linear infinite;
+  flex-shrink: 0;
+}
+
+.rsb-skel-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.rsb-skel-label {
+  height: 8px;
+  width: 60%;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--border-color) 25%, var(--background) 50%, var(--border-color) 75%);
+  background-size: 200% auto;
+  animation: shimmer 1.5s linear infinite;
+}
+
+.rsb-skel-value {
+  height: 16px;
+  width: 80%;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--border-color) 25%, var(--background) 50%, var(--border-color) 75%);
+  background-size: 200% auto;
+  animation: shimmer 1.5s linear infinite;
+}
+
+/* ── Quick Actions Panel ──────────────────────────────────────────────── */
+.quick-actions-panel {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: var(--surface);
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+  padding: 0.6rem 0.85rem;
+  flex-wrap: wrap;
+}
+
+.qap-title {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.qap-buttons {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  flex: 1;
+}
+
+.qap-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.7rem;
+  background: var(--background);
+  border: 1px solid var(--border-color);
+  border-radius: 0.375rem;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.qap-btn:hover {
+  background: var(--primary-color);
+  border-color: var(--primary-color);
+  color: #fff;
+}
+
+.qap-btn svg {
+  flex-shrink: 0;
+  transition: stroke 0.15s;
+}
 </style>

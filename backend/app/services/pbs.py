@@ -318,6 +318,34 @@ class PBSService:
             return []
         return data
 
+    def get_sync_jobs(self) -> List[Dict[str, Any]]:
+        """
+        Return all sync/backup jobs configured on this PBS instance.
+
+        PBS exposes sync jobs at /config/sync and pull jobs at /config/pull.
+        We merge both lists and tag each entry with its job type.
+        """
+        jobs: List[Dict[str, Any]] = []
+        for job_type, path in (("sync", "/config/sync"), ("pull", "/config/pull")):
+            try:
+                data = self._get(path)
+                if data:
+                    for item in data:
+                        item.setdefault("job-type", job_type)
+                        jobs.append(item)
+            except Exception as exc:
+                logger.warning("Could not fetch %s jobs from PBS '%s': %s", job_type, self.server.name, exc)
+        return jobs
+
+    def run_sync_job(self, job_id: str) -> Any:
+        """
+        Trigger a sync job to run immediately.
+
+        PBS: POST /api2/json/config/sync/{job-id}/run
+        Returns the UPID of the started task.
+        """
+        return self._post(f"/config/sync/{job_id}/run")
+
     def get_task_log(self, upid: str) -> List[str]:
         """
         Return the log lines for a given task UPID.

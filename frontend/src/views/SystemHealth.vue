@@ -134,6 +134,42 @@
             <span class="info-label">FastAPI</span>
             <span class="info-value mono">{{ systemInfo.fastapi_version || '—' }}</span>
           </div>
+          <!-- Backend process metrics from /system/metrics -->
+          <template v-if="systemMetrics && (systemMetrics.cpu_percent !== undefined || systemMetrics.memory_mb !== undefined)">
+            <div class="section-divider">Process Metrics</div>
+            <div class="info-row" v-if="systemMetrics.cpu_percent !== undefined">
+              <span class="info-label">Process CPU</span>
+              <span class="info-value">
+                <span :class="['badge', systemMetrics.cpu_percent > 80 ? 'badge-orange' : 'badge-gray']">
+                  {{ systemMetrics.cpu_percent.toFixed(1) }}%
+                </span>
+              </span>
+            </div>
+            <div class="info-row" v-if="systemMetrics.memory_mb !== undefined">
+              <span class="info-label">Process RAM</span>
+              <span class="info-value">{{ systemMetrics.memory_mb.toFixed(0) }} MB</span>
+            </div>
+            <div class="info-row" v-if="systemMetrics.open_files !== undefined">
+              <span class="info-label">Open Files</span>
+              <span class="info-value">{{ systemMetrics.open_files }}</span>
+            </div>
+            <div class="info-row" v-if="systemMetrics.threads !== undefined">
+              <span class="info-label">Threads</span>
+              <span class="info-value">{{ systemMetrics.threads }}</span>
+            </div>
+          </template>
+          <!-- Health check status -->
+          <template v-if="systemHealth && systemHealth.checks">
+            <div class="section-divider">Health Checks</div>
+            <div class="info-row" v-for="(val, key) in systemHealth.checks" :key="key">
+              <span class="info-label">{{ key }}</span>
+              <span class="info-value">
+                <span :class="['badge', val === true || val === 'ok' || val === 'healthy' ? 'badge-green' : 'badge-red']">
+                  {{ val === true ? 'OK' : val === false ? 'Fail' : val }}
+                </span>
+              </span>
+            </div>
+          </template>
         </div>
       </div>
 
@@ -361,6 +397,8 @@ export default {
 
       systemInfo: {},
       uptimeSeconds: null,
+      systemHealth: {},   // from /system/health
+      systemMetrics: {},  // from /system/metrics
 
       dbStats: {},
       dbTables: [
@@ -432,14 +470,33 @@ export default {
 
     async loadSystemInfo() {
       try {
-        const res = await api.system.getInfo()
-        this.systemInfo = res.data || {}
-        if (res.data?.uptime_seconds !== undefined) {
-          this.uptimeSeconds = res.data.uptime_seconds
+        const [infoRes, healthRes, metricsRes] = await Promise.allSettled([
+          api.system.getInfo(),
+          api.system.health(),
+          api.system.getMetrics(),
+        ])
+
+        if (infoRes.status === 'fulfilled') {
+          const d = infoRes.value.data || {}
+          this.systemInfo = d
+          if (d.uptime_seconds !== undefined) this.uptimeSeconds = d.uptime_seconds
+          if (d.db) this.dbStats = d.db
         }
-        // db stats may come from system info
-        if (res.data?.db) {
-          this.dbStats = res.data.db
+
+        if (healthRes.status === 'fulfilled') {
+          this.systemHealth = healthRes.value.data || {}
+          // Merge health fields into systemInfo if not already present
+          const h = this.systemHealth
+          if (h.status && !this.systemInfo.status) this.systemInfo = { ...this.systemInfo, status: h.status }
+          if (h.uptime_seconds !== undefined && this.uptimeSeconds === null) this.uptimeSeconds = h.uptime_seconds
+        }
+
+        if (metricsRes.status === 'fulfilled') {
+          this.systemMetrics = metricsRes.value.data || {}
+          // db stats may come from metrics
+          if (this.systemMetrics.db && Object.keys(this.dbStats).length === 0) {
+            this.dbStats = this.systemMetrics.db
+          }
         }
       } catch (e) {
         console.warn('Failed to load system info:', e)

@@ -72,6 +72,7 @@
           <NavItem :to="'/'" :icon="'📊'" :label="t('nav.dashboard')" :badge="unreadNotifications || null" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
           <NavItem :to="'/federation'" :icon="'🌍'" :label="t('nav.federation')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
           <NavItem :to="'/datacenter'" :icon="'🏢'" :label="t('nav.datacenter')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
+          <NavItem :to="'/cluster'" :icon="'🌐'" :label="t('nav.cluster')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
           <NavItem :to="'/tasks'" :icon="'📋'" :label="t('nav.tasklog')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
         </div>
       </transition>
@@ -103,6 +104,7 @@
           <NavItem v-if="isOperator" :to="'/vm-management'" :icon="'🛠️'" :label="t('nav.vm_management')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
           <NavItem v-if="isOperator" :to="'/vm-groups'" :icon="'🗃️'" :label="t('nav.vm_groups')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
           <NavItem v-if="isOperator" :to="'/bulk-ops'" :icon="'⚡'" :label="t('nav.bulk_ops')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
+          <NavItem :to="'/vm-search'" :icon="'🔎'" :label="t('nav.vm_search')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
         </div>
       </transition>
 
@@ -132,6 +134,8 @@
           <NavItem v-if="isOperator" :to="'/firewall-manager'" :icon="'🛡️'" :label="t('nav.firewall')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
           <NavItem v-if="isAdmin" :to="'/ceph'" :icon="'🪨'" :label="t('nav.ceph')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
           <NavItem v-if="isAdmin" :to="'/pve-users'" :icon="'👤'" :label="t('nav.pve_users')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
+          <NavItem v-if="isOperator" :to="'/node-monitor'" :icon="'📡'" :label="t('nav.node_monitor')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
+          <NavItem v-if="isAdmin" :to="'/pbs-management'" :icon="'🗄️'" :label="t('nav.pbs_management')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
           <NavItem :to="'/images'" :icon="'💿'" :label="t('nav.images')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
           <NavItem :to="'/proxmox'" :icon="'🌐'" :label="t('nav.proxmox_hosts')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
           <NavItem v-if="isAdmin" :to="'/storage-management'" :icon="'🗄️'" :label="t('nav.storage_management')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
@@ -160,6 +164,7 @@
             <NavItem v-if="linuxAgentEnabled" :to="'/linux-vms'" :icon="'🛡️'" :label="t('nav.linux_vm_security')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
             <NavItem :to="'/security'" :icon="'🔒'" :label="t('nav.security')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
             <NavItem :to="'/alerts'" :icon="'🚨'" :label="t('nav.alert_rules')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
+            <NavItem :to="'/notifications'" :icon="'🔔'" :label="t('nav.notifications')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
             <NavItem :to="'/system-health'" :icon="'💚'" :label="t('nav.system_health')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
             <NavItem :to="'/system-logs'" :icon="'📜'" :label="t('nav.system_logs')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
             <NavItem :to="'/users'" :icon="'👥'" :label="t('nav.users')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
@@ -218,10 +223,10 @@ const FAVORITES_KEY = 'sidebar_favorites'
 
 // Maps route paths to which section they belong
 const SECTION_ROUTES = {
-  overview: ['/', '/federation', '/datacenter', '/tasks'],
-  compute: ['/containers', '/create-lxc', '/create-pve-vm', '/deploy', '/import-vm', '/llm-deploy', '/templates', '/vms', '/vm-management', '/vm-groups', '/bulk-ops'],
-  infrastructure: ['/backup', '/snapshots', '/ha-management', '/replication', '/idrac', '/network', '/sdn', '/firewall-manager', '/ceph', '/pve-users', '/images', '/proxmox', '/storage-management', '/pools'],
-  admin: ['/audit-log', '/linux-vms', '/security', '/alerts', '/system-health', '/system-logs', '/users', '/integrations', '/api-explorer'],
+  overview: ['/', '/federation', '/datacenter', '/cluster', '/tasks'],
+  compute: ['/containers', '/create-lxc', '/create-pve-vm', '/deploy', '/import-vm', '/llm-deploy', '/templates', '/vms', '/vm-management', '/vm-groups', '/bulk-ops', '/vm-search'],
+  infrastructure: ['/backup', '/snapshots', '/ha-management', '/replication', '/idrac', '/network', '/sdn', '/firewall-manager', '/ceph', '/pve-users', '/node-monitor', '/pbs-management', '/images', '/proxmox', '/storage-management', '/pools'],
+  admin: ['/audit-log', '/linux-vms', '/security', '/alerts', '/notifications', '/system-health', '/system-logs', '/users', '/integrations', '/api-explorer'],
   account: ['/about', '/documentation', '/profile', '/settings', '/support'],
 }
 

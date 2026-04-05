@@ -132,6 +132,39 @@ async def mark_notifications_read(
     return {"status": "ok"}
 
 
+@router.post("/in-app/{notif_id}/read")
+async def mark_notification_read(
+    notif_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Mark a single in-app notification as read."""
+    notif = (
+        db.query(Notification)
+        .filter(Notification.id == notif_id, Notification.user_id == current_user.id)
+        .first()
+    )
+    if not notif:
+        raise HTTPException(status_code=404, detail="Notification not found")
+    notif.read = True
+    db.commit()
+    return {"status": "ok", "id": notif_id}
+
+
+@router.post("/in-app/read-all")
+async def mark_all_notifications_read(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Mark all in-app notifications for the current user as read."""
+    db.query(Notification).filter(
+        Notification.user_id == current_user.id,
+        Notification.read == False,
+    ).update({"read": True}, synchronize_session=False)
+    db.commit()
+    return {"status": "ok"}
+
+
 @router.delete("/in-app/{notif_id}")
 async def delete_notification(
     notif_id: int,

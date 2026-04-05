@@ -209,6 +209,18 @@ const router = createRouter({
       meta: { requiresAuth: true }
     },
     {
+      path: '/terminal',
+      name: 'TerminalBase',
+      component: () => import('@/views/Terminal.vue'),
+      meta: { requiresAuth: true, layout: 'fullscreen' }
+    },
+    {
+      path: '/terminal/:hostId/:node/:type/:vmid',
+      name: 'Terminal',
+      component: () => import('@/views/Terminal.vue'),
+      meta: { requiresAuth: true, layout: 'fullscreen' }
+    },
+    {
       path: '/images',
       name: 'Images',
       component: () => import('@/views/Images.vue'),
@@ -216,11 +228,19 @@ const router = createRouter({
     },
     {
       path: '/isos',
-      redirect: '/images'
+      redirect: '/iso-images'
+    },
+    {
+      path: '/iso-images',
+      name: 'ISOImages',
+      component: () => import('@/views/ISOImages.vue'),
+      meta: { requiresAuth: true }
     },
     {
       path: '/cloud-images',
-      redirect: '/images'
+      name: 'CloudImages',
+      component: () => import('@/views/CloudImages.vue'),
+      meta: { requiresAuth: true }
     },
     {
       path: '/cluster',
@@ -424,6 +444,12 @@ const router = createRouter({
       path: '/integrations',
       name: 'Integrations',
       component: () => import('@/views/Integrations.vue'),
+      meta: { requiresAuth: true, requiresAdmin: true }
+    },
+    {
+      path: '/pbs-management',
+      name: 'PBSManagement',
+      component: () => import('@/views/PBSManagement.vue'),
       meta: { requiresAuth: true, requiresAdmin: true }
     },
     {

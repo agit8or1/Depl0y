@@ -44,6 +44,10 @@
               <span class="info-value">{{ user ? formatDate(user.created_at) : '—' }}</span>
             </div>
             <div class="info-item">
+              <span class="info-label">Last Login</span>
+              <span class="info-value">{{ user && user.last_login ? formatDateTime(user.last_login) : '—' }}</span>
+            </div>
+            <div class="info-item">
               <span class="info-label">Two-Factor Auth</span>
               <span v-if="user && user.totp_enabled" class="badge badge-success">Enabled</span>
               <span v-else class="badge badge-warning">Disabled</span>
@@ -196,6 +200,44 @@
           </div>
           <div v-else class="text-muted text-sm">
             Session details unavailable. Sessions are tracked via refresh tokens.
+          </div>
+        </div>
+      </div>
+
+      <!-- Recent Activity Card -->
+      <div class="card mb-4">
+        <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;">
+          <h3>Recent Activity</h3>
+          <button class="btn btn-sm btn-outline" @click="loadActivity" :disabled="activityLoading">
+            {{ activityLoading ? 'Loading...' : 'Refresh' }}
+          </button>
+        </div>
+        <div class="card-body">
+          <p class="text-muted text-sm" style="margin-bottom:1rem;">
+            Your last 10 audit log entries.
+          </p>
+          <div v-if="activityLoading" class="loading-state" style="padding:1rem 0;">
+            <div class="spinner"></div>
+          </div>
+          <div v-else-if="activityEntries.length === 0" class="text-muted text-sm">
+            No recent activity found.
+          </div>
+          <div v-else class="activity-list">
+            <div v-for="entry in activityEntries" :key="entry.id" class="activity-row">
+              <div class="activity-icon-col">
+                <span :class="['activity-dot', getActivityDotClass(entry)]"></span>
+              </div>
+              <div class="activity-detail">
+                <span class="activity-action">{{ entry.action }}</span>
+                <span v-if="entry.resource_type || entry.resource_id" class="activity-resource text-muted text-sm">
+                  {{ entry.resource_type }}{{ entry.resource_id ? ' #' + entry.resource_id : '' }}
+                </span>
+                <span class="activity-time text-muted text-sm">{{ formatDateRelative(entry.created_at) }}</span>
+              </div>
+              <span :class="['badge', entry.status === 'success' || !entry.status ? 'badge-success' : 'badge-danger', 'activity-status-badge']">
+                {{ entry.status || 'ok' }}
+              </span>
+            </div>
           </div>
         </div>
       </div>
@@ -706,6 +748,10 @@ export default {
       })
     }
 
+    // Activity state
+    const activityEntries = ref([])
+    const activityLoading = ref(false)
+
     // Sessions state
     const sessions = ref([])
     const sessionsLoading = ref(false)
@@ -769,6 +815,32 @@ export default {
       })
     }
 
+    const formatDateTime = (dateStr) => {
+      if (!dateStr) return '—'
+      return new Date(dateStr).toLocaleString(undefined, {
+        year: 'numeric', month: 'short', day: 'numeric',
+        hour: '2-digit', minute: '2-digit'
+      })
+    }
+
+    const formatDateRelative = (dateStr) => {
+      if (!dateStr) return '—'
+      const diff = Date.now() - new Date(dateStr).getTime()
+      const mins = Math.floor(diff / 60000)
+      if (mins < 1) return 'just now'
+      if (mins < 60) return `${mins}m ago`
+      const hrs = Math.floor(mins / 60)
+      if (hrs < 24) return `${hrs}h ago`
+      const days = Math.floor(hrs / 24)
+      if (days < 30) return `${days}d ago`
+      return new Date(dateStr).toLocaleDateString()
+    }
+
+    const getActivityDotClass = (entry) => {
+      if (!entry.status || entry.status === 'success') return 'activity-dot-success'
+      return 'activity-dot-fail'
+    }
+
     const truncateUA = (ua) => {
       if (!ua) return ''
       return ua.length > 80 ? ua.substring(0, 80) + '...' : ua
@@ -793,6 +865,19 @@ export default {
         backupCodesRemaining.value = resp.data.remaining
       } catch (e) {
         // silently ignore
+      }
+    }
+
+    const loadActivity = async () => {
+      activityLoading.value = true
+      try {
+        const resp = await api.audit.list({ limit: 10, user_id: user.value?.id })
+        activityEntries.value = resp.data?.items || resp.data || []
+      } catch (e) {
+        // silently ignore — audit may not be available for all users
+        activityEntries.value = []
+      } finally {
+        activityLoading.value = false
       }
     }
 
@@ -1077,6 +1162,7 @@ export default {
     await Promise.all([
       loadApiKeys(),
       loadSessions(),
+      loadActivity(),
       user.value?.totp_enabled ? loadBackupCodeCount() : Promise.resolve(),
     ])
 
@@ -1090,8 +1176,15 @@ export default {
       passwordMsgType,
       getRoleBadge,
       formatDate,
+      formatDateTime,
+      formatDateRelative,
+      getActivityDotClass,
       truncateUA,
       changePassword,
+      // Recent Activity
+      activityEntries,
+      activityLoading,
+      loadActivity,
       // Sessions
       sessions,
       sessionsLoading,
@@ -1631,5 +1724,69 @@ export default {
   padding: 0.4rem 0.7rem;
   text-align: center;
   letter-spacing: 0.12em;
+}
+
+/* Recent Activity */
+.activity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.activity-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border-color, #e5e7eb);
+  border-radius: 0.375rem;
+  background: var(--background, #f9fafb);
+}
+
+.activity-icon-col {
+  display: flex;
+  align-items: center;
+  padding-top: 0.25rem;
+  flex-shrink: 0;
+}
+
+.activity-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.activity-dot-success { background: var(--success-color, #10b981); }
+.activity-dot-fail    { background: var(--danger-color, #ef4444); }
+
+.activity-detail {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.activity-action {
+  font-size: 0.875rem;
+  font-weight: 500;
+  word-break: break-word;
+}
+
+.activity-resource {
+  font-size: 0.78rem;
+}
+
+.activity-time {
+  font-size: 0.75rem;
+}
+
+.activity-status-badge {
+  flex-shrink: 0;
+  align-self: center;
+  font-size: 0.7rem;
+  padding: 0.1rem 0.4rem;
+  text-transform: lowercase;
 }
 </style>

@@ -149,6 +149,8 @@
               <span class="srv-name">{{ srv.name }}</span>
               <span :class="['type-pill', `type-pill--${srv._stype}`]">{{ typeLabel(srv._stype) }}</span>
               <span v-if="srv._isNode" class="type-pill type-pill--node">Node</span>
+              <span v-if="srv.idrac_type" :class="['type-pill', `type-pill--bmctype`]" :title="srv.idrac_hostname">{{ bmcTypeLabel(srv.idrac_type) }}</span>
+              <span v-if="srv.idrac_hostname" class="text-xs text-muted font-mono">{{ srv.idrac_hostname }}</span>
               <span v-if="srv._status" :class="['health-badge', `health-${(srv._status.health || 'unknown').toLowerCase()}`]">
                 {{ srv._status.health || 'Unknown' }}
               </span>
@@ -202,7 +204,7 @@
 
             <!-- Tabs -->
             <div v-if="srv._info" class="detail-tabs">
-              <button v-for="tab in ['overview','hardware','network','firmware','logs']" :key="tab"
+              <button v-for="tab in ['overview','hardware','sensors','network','firmware','logs']" :key="tab"
                 @click="switchTab(srv, tab)"
                 :class="['tab-btn', srv._activeTab === tab ? 'tab-btn--active' : '']">
                 {{ tab.charAt(0).toUpperCase() + tab.slice(1) }}
@@ -303,6 +305,18 @@
                     <button @click="powerAction(srv, 'off')" class="btn btn-danger btn-sm" :disabled="srv._actioning">Force Off</button>
                     <button @click="powerAction(srv, 'graceful_reset')" class="btn btn-outline btn-sm" :disabled="srv._actioning">Graceful Restart</button>
                     <button @click="powerAction(srv, 'reset')" class="btn btn-outline btn-sm" :disabled="srv._actioning">Force Reset</button>
+                    <button @click="powerAction(srv, 'power_cycle')" class="btn btn-outline btn-sm" :disabled="srv._actioning" title="Cold power cycle via BMC">Power Cycle</button>
+                  </div>
+                  <!-- Power history: recent on/off/reset events from SEL -->
+                  <div v-if="powerHistory(srv).length" class="power-history mt-2">
+                    <div class="power-history__title">Recent Power Events</div>
+                    <ul class="power-history__list">
+                      <li v-for="ev in powerHistory(srv)" :key="ev.id" class="power-history__item">
+                        <span class="text-xs text-muted" style="white-space:nowrap">{{ formatDate(ev.created) }}</span>
+                        <span :class="['power-history__badge', powerEventClass(ev)]">{{ ev.severity }}</span>
+                        <span class="text-xs">{{ ev.message }}</span>
+                      </li>
+                    </ul>
                   </div>
                 </div>
               </div>
@@ -399,6 +413,70 @@
                   <div v-else class="text-muted text-xs">No drives detected</div>
                 </div>
                 <div v-if="!srv._hardware.processors.length && !srv._hardware.modules.length && !srv._hardware.controllers.length" class="text-muted text-sm">No hardware data available</div>
+              </div>
+            </div>
+
+            <!-- TAB: Sensors -->
+            <div v-if="srv._info && srv._activeTab === 'sensors'">
+              <div v-if="srv._sensorsLoading" class="details-loading">
+                <div class="loading-spinner"></div><span class="text-muted text-sm">Fetching sensor readings…</span>
+              </div>
+              <div v-else-if="srv._useSSH && !srv._redfishOK" class="text-muted text-sm p-2">
+                Sensor readings are not available in SSH-only mode. Configure Redfish (iDRAC/iLO) credentials to enable.
+              </div>
+              <div v-else-if="srv._sensors">
+                <div class="flex gap-1 mb-1" style="align-items:center">
+                  <span class="text-muted text-xs">{{ (srv._sensors.sensors || []).length }} sensors</span>
+                  <div style="margin-left:auto">
+                    <button @click="loadSensors(srv)" class="btn btn-outline btn-sm">Refresh</button>
+                  </div>
+                </div>
+                <div v-if="!srv._sensors.sensors || srv._sensors.sensors.length === 0" class="text-muted text-sm">
+                  No sensor data available from this BMC.
+                </div>
+                <div v-else class="hw-table-wrapper">
+                  <table class="table">
+                    <thead>
+                      <tr>
+                        <th>Sensor Name</th>
+                        <th>Type</th>
+                        <th>Reading</th>
+                        <th>Warning Threshold</th>
+                        <th>Critical Threshold</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="sensor in srv._sensors.sensors" :key="sensor.name + sensor.type"
+                          :class="sensor.status === 'Critical' ? 'row-critical' : sensor.status === 'Warning' ? 'row-warning' : ''">
+                        <td class="text-xs font-bold">{{ sensor.name }}</td>
+                        <td class="text-xs">
+                          <span :class="['sensor-type-pill', `sensor-type--${(sensor.type || '').toLowerCase().replace(/\s+/g,'_')}`]">
+                            {{ sensor.type }}
+                          </span>
+                        </td>
+                        <td class="text-xs font-mono">
+                          {{ sensor.reading != null ? sensor.reading + ' ' + sensor.unit : '—' }}
+                        </td>
+                        <td class="text-xs text-muted font-mono">
+                          {{ sensor.upper_warning != null ? sensor.upper_warning + ' ' + sensor.unit : '—' }}
+                        </td>
+                        <td class="text-xs text-muted font-mono">
+                          {{ sensor.upper_critical != null ? sensor.upper_critical + ' ' + sensor.unit : '—' }}
+                        </td>
+                        <td class="text-xs">
+                          <span :class="['health-badge', `health-${(sensor.status || 'unknown').toLowerCase()}`]">
+                            {{ sensor.status || 'Unknown' }}
+                          </span>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div v-else class="text-muted text-sm">
+                Sensor data not loaded.
+                <button @click="loadSensors(srv)" class="btn btn-outline btn-sm ml-1">Load Sensors</button>
               </div>
             </div>
 
@@ -554,6 +632,7 @@
             <select v-model="bmcForm.idrac_type" class="form-control">
               <option value="idrac">Dell iDRAC</option>
               <option value="ilo">HPE iLO</option>
+              <option value="ipmi">Generic IPMI</option>
             </select>
           </div>
           <div class="form-group">
@@ -613,6 +692,7 @@
             <select v-model="pveForm.idrac_type" class="form-control">
               <option value="idrac">Dell iDRAC</option>
               <option value="ilo">HPE iLO</option>
+              <option value="ipmi">Generic IPMI</option>
             </select>
           </div>
           <div class="form-group">
@@ -660,6 +740,7 @@
             <select v-model="standaloneForm.idrac_type" class="form-control">
               <option value="idrac">Dell iDRAC</option>
               <option value="ilo">HPE iLO</option>
+              <option value="ipmi">Generic IPMI</option>
             </select>
           </div>
           <div class="form-group">
@@ -799,9 +880,11 @@ export default {
       _hardware: null,
       _network: null,
       _firmware: null,
+      _sensors: null,
       _hwLoading: false,
       _netLoading: false,
       _fwLoading: false,
+      _sensorsLoading: false,
       _useSSH: obj.idrac_use_ssh || false,
       _redfishOK: false,
       _sshHardware: null,
@@ -829,9 +912,11 @@ export default {
       _hardware: null,
       _network: null,
       _firmware: null,
+      _sensors: null,
       _hwLoading: false,
       _netLoading: false,
       _fwLoading: false,
+      _sensorsLoading: false,
       _useSSH: node.idrac_use_ssh || false,
       _redfishOK: false,
       _sshHardware: null,
@@ -843,7 +928,8 @@ export default {
       ...allStandalone.value,
     ])
 
-    const typeLabel = (stype) => ({ pve: 'PVE', pbs: 'PBS', standalone: 'BMC' })[stype] || stype.toUpperCase()
+    const typeLabel = (stype) => ({ pve: 'PVE', pbs: 'PBS', standalone: 'BMC', pve_node: 'Node' })[stype] || stype.toUpperCase()
+    const bmcTypeLabel = (t) => ({ idrac: 'iDRAC', ilo: 'iLO', ipmi: 'IPMI' })[t] || (t || 'BMC').toUpperCase()
 
     // ── Dashboard computed ──
     const dash = computed(() => {
@@ -951,6 +1037,24 @@ export default {
       return srv._logs
         .filter(e => e.severity === 'Critical' || e.severity === 'Warning')
         .slice(0, 5)
+    }
+
+    /**
+     * Return recent power-related SEL entries for the Power History strip.
+     * Filters for keywords like "Power", "Reset", "Startup", "Shutdown", "Boot".
+     */
+    const _POWER_KEYWORDS = /power|reset|startup|shutdown|boot|ac lost|button|chassis intrusion/i
+    const powerHistory = (srv) => {
+      if (!Array.isArray(srv._logs)) return []
+      return srv._logs
+        .filter(e => _POWER_KEYWORDS.test(e.message || '') || _POWER_KEYWORDS.test(e.sensor_type || ''))
+        .slice(0, 8)
+    }
+
+    const powerEventClass = (ev) => {
+      if (ev.severity === 'Critical') return 'power-event--crit'
+      if (ev.severity === 'Warning') return 'power-event--warn'
+      return 'power-event--info'
     }
 
     // ── Dashboard charts ──
@@ -1229,7 +1333,21 @@ export default {
       if (tab === 'hardware' && !srv._hardware && !srv._hwLoading) loadHardware(srv)
       if (tab === 'network' && !srv._network && !srv._netLoading) loadNetwork(srv)
       if (tab === 'firmware' && !srv._firmware && !srv._fwLoading) loadFirmware(srv)
+      if (tab === 'sensors' && !srv._sensors && !srv._sensorsLoading) loadSensors(srv)
       if (tab === 'logs' && srv._logs === null) loadLogs(srv)
+    }
+
+    const loadSensors = async (srv) => {
+      if (srv._useSSH && !srv._redfishOK) return  // SSH-only mode — no Redfish sensors
+      srv._sensorsLoading = true
+      try {
+        const res = await _apiFns(srv).getSensors()
+        srv._sensors = res.data
+      } catch {
+        srv._sensors = { sensors: [] }
+      } finally {
+        srv._sensorsLoading = false
+      }
     }
 
     const loadHardware = async (srv) => {
@@ -1378,6 +1496,7 @@ export default {
           getThermal: () => api.idrac.getThermal(hostId),
           getPowerUsage: () => api.idrac.getPowerUsage(hostId),
           getLogs: () => api.idrac.getLogs(hostId),
+          getSensors: () => api.idrac.getSensors(hostId),
           test: () => api.idrac.testConnection(hostId),
           testSsh: () => api.idrac.testSsh(hostId),
           powerAction: (action) => api.idrac.powerAction(hostId, action),
@@ -1400,6 +1519,7 @@ export default {
         getThermal: () => api.pbs.getIdracThermal(srv.id),
         getPowerUsage: () => api.pbs.getIdracPowerUsage(srv.id),
         getLogs: () => api.pbs.getIdracLogs(srv.id),
+        getSensors: () => api.pbs.getIdracSensors(srv.id),
         test: () => api.pbs.testIdrac(srv.id),
         testSsh: () => api.pbs.testIdracSsh(srv.id),
         powerAction: (action) => api.pbs.idracPowerAction(srv.id, action),
@@ -1421,6 +1541,7 @@ export default {
         getThermal: () => api.idrac.getStandaloneThermal(srv.id),
         getPowerUsage: () => api.idrac.getStandalonePowerUsage(srv.id),
         getLogs: () => api.idrac.getStandaloneLogs(srv.id),
+        getSensors: () => api.idrac.getStandaloneSensors(srv.id),
         test: () => api.idrac.testStandalone(srv.id),
         testSsh: () => api.idrac.testStandaloneSsh(srv.id),
         powerAction: (action) => api.idrac.standalonepower(srv.id, action),
@@ -1442,6 +1563,7 @@ export default {
         getThermal: () => api.idrac.getThermal(srv.id),
         getPowerUsage: () => api.idrac.getPowerUsage(srv.id),
         getLogs: () => api.idrac.getLogs(srv.id),
+        getSensors: () => api.idrac.getSensors(srv.id),
         test: () => api.idrac.testConnection(srv.id),
         testSsh: () => api.idrac.testSsh(srv.id),
         powerAction: (action) => api.idrac.powerAction(srv.id, action),
@@ -1502,6 +1624,7 @@ export default {
       srv._hardware = null
       srv._network = null
       srv._firmware = null
+      srv._sensors = null
       srv._sshHardware = null
       srv._logs = null
       srv._thermal = null
@@ -1593,6 +1716,7 @@ export default {
           _bmcTarget._hardware = null
           _bmcTarget._network = null
           _bmcTarget._firmware = null
+          _bmcTarget._sensors = null
           _bmcTarget._sshHardware = null
           _bmcTarget._logs = null
           _bmcTarget._thermal = null
@@ -1876,10 +2000,11 @@ export default {
     })
 
     return {
-      loading, polling, allServers, typeLabel, dash, alertedServers, alertLevel, alertReason, healthIssues, recentAlertLogs,
+      loading, polling, allServers, typeLabel, bmcTypeLabel, dash, alertedServers, alertLevel, alertReason, healthIssues, recentAlertLogs,
+      powerHistory, powerEventClass,
       healthChartData, powerStateChartData, tempBarData, dashChartOptions, tempBarOptions,
       expandServer, collapseServer, jumpToServer, loadServerDetail, loadLogs, testConnection, powerAction,
-      switchTab, loadHardware, loadNetwork, loadFirmware,
+      switchTab, loadHardware, loadNetwork, loadFirmware, loadSensors,
       showUpdateModal, updateOutput, updateRunning, updateSuccess, runUpdate,
       netEditForm, netSaving, startNetEdit, cancelNetEdit, saveNetwork,
       showBMCModal, bmcForm, bmcSaving, openConfigBMC, saveBMC, clearBMC,
@@ -2406,4 +2531,64 @@ export default {
   .dash-charts { grid-template-columns: 1fr 1fr; }
   .dash-chart-card--wide { grid-column: 1 / -1; }
 }
+
+/* BMC type badge */
+.type-pill--bmctype { background: #e0f2fe; color: #075985; }
+
+/* Power history strip */
+.power-history {
+  border-top: 1px solid var(--border-color);
+  padding-top: 0.75rem;
+}
+.power-history__title {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+  margin-bottom: 0.4rem;
+}
+.power-history__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+.power-history__item {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+  padding: 0.2rem 0.4rem;
+  border-radius: 0.2rem;
+  background: var(--background);
+}
+.power-history__badge {
+  display: inline-block;
+  padding: 0.05rem 0.35rem;
+  border-radius: 9999px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.power-event--crit { background: #fee2e2; color: #dc2626; }
+.power-event--warn { background: #fef9c3; color: #92400e; }
+.power-event--info { background: #dbeafe; color: #1e40af; }
+
+/* Sensor type pills */
+.sensor-type-pill {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-weight: 600;
+  padding: 0.05rem 0.35rem;
+  border-radius: 0.2rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.sensor-type--temperature { background: #fee2e2; color: #991b1b; }
+.sensor-type--fan { background: #dcfce7; color: #166534; }
+.sensor-type--voltage { background: #fef9c3; color: #78350f; }
+.sensor-type--power_supply { background: #dbeafe; color: #1e3a8a; }
 </style>

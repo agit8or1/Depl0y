@@ -41,6 +41,7 @@ class VMTarget(BaseModel):
 class BulkPowerRequest(BaseModel):
     vms: List[VMTarget]
     action: str  # start | stop | shutdown | reboot | reset
+    shutdown_mode: str = "graceful"  # graceful | force (for stop/shutdown actions)
 
 
 class BulkSnapshotRequest(BaseModel):
@@ -64,6 +65,7 @@ class BulkConfigRequest(BaseModel):
     agent: Optional[str] = None               # "1" or "0"
     balloon: Optional[int] = None
     onboot: Optional[bool] = None
+    dry_run: bool = False
 
 
 class BulkMigrateRequest(BaseModel):
@@ -71,6 +73,12 @@ class BulkMigrateRequest(BaseModel):
     target_node: str
     online: bool = True
     with_local_disks: bool = False
+
+
+class RollingRestartRequest(BaseModel):
+    vms: List[VMTarget]
+    delay_seconds: int = 30
+    shutdown_mode: str = "graceful"  # graceful | force
 
 
 # ── Bulk Power ────────────────────────────────────────────────────────────────
@@ -107,9 +115,16 @@ def bulk_power(req: BulkPowerRequest, db: Session = Depends(get_db),
             if req.action == "start":
                 entry["upid"] = qemu.status.start.post()
             elif req.action == "stop":
-                entry["upid"] = qemu.status.stop.post()
+                # force stop always uses stop; graceful uses shutdown
+                if req.shutdown_mode == "force":
+                    entry["upid"] = qemu.status.stop.post()
+                else:
+                    entry["upid"] = qemu.status.shutdown.post()
             elif req.action == "shutdown":
-                entry["upid"] = qemu.status.shutdown.post()
+                if req.shutdown_mode == "force":
+                    entry["upid"] = qemu.status.stop.post()
+                else:
+                    entry["upid"] = qemu.status.shutdown.post()
             elif req.action == "reboot":
                 entry["upid"] = qemu.status.reboot.post()
             elif req.action == "reset":
@@ -120,6 +135,76 @@ def bulk_power(req: BulkPowerRequest, db: Session = Depends(get_db),
             entry["error"] = e.detail
         except Exception as e:
             entry["error"] = str(e)
+
+        results.append(entry)
+
+    return {"results": results}
+
+
+# ── Rolling Restart ───────────────────────────────────────────────────────────
+
+@router.post("/bulk/rolling-restart")
+def bulk_rolling_restart(req: RollingRestartRequest, db: Session = Depends(get_db),
+                          current_user=Depends(require_operator)):
+    """Restart VMs one by one with a configurable delay between each.
+    Performs shutdown -> wait for stop -> start for each VM sequentially.
+    Returns per-VM result with status at each step.
+    """
+    results = []
+    host_cache: Dict[int, ProxmoxHost] = {}
+
+    for idx, vm in enumerate(req.vms):
+        entry: Dict[str, Any] = {
+            "host_id": vm.host_id,
+            "node": vm.node,
+            "vmid": vm.vmid,
+            "shutdown_upid": None,
+            "start_upid": None,
+            "error": None,
+            "status": "pending",
+        }
+        try:
+            if vm.host_id not in host_cache:
+                host_cache[vm.host_id] = _get_host(vm.host_id, db)
+            pve = _pve(host_cache[vm.host_id])
+            qemu = pve.nodes(vm.node).qemu(vm.vmid)
+
+            # Step 1: shutdown or force-stop
+            if req.shutdown_mode == "force":
+                upid = qemu.status.stop.post()
+            else:
+                upid = qemu.status.shutdown.post()
+            entry["shutdown_upid"] = upid
+            entry["status"] = "shutting_down"
+
+            # Step 2: wait up to 120s for VM to stop
+            waited = 0
+            while waited < 120:
+                _time.sleep(3)
+                waited += 3
+                try:
+                    s = qemu.status.current.get()
+                    if s.get("status") == "stopped":
+                        break
+                except Exception:
+                    pass
+
+            # Step 3: start the VM
+            start_upid = qemu.status.start.post()
+            entry["start_upid"] = start_upid
+            entry["status"] = "restarted"
+            pve_cache.clear_prefix(f"pve:{vm.host_id}:")
+
+            # Step 4: delay before next VM (skip delay after last VM)
+            if idx < len(req.vms) - 1 and req.delay_seconds > 0:
+                _time.sleep(req.delay_seconds)
+
+        except HTTPException as e:
+            entry["error"] = e.detail
+            entry["status"] = "failed"
+        except Exception as e:
+            entry["error"] = str(e)
+            entry["status"] = "failed"
 
         results.append(entry)
 
@@ -243,6 +328,7 @@ def bulk_config_update(req: BulkConfigRequest, db: Session = Depends(get_db),
                        current_user=Depends(require_operator)):
     """Update config fields on a list of VMs.
     Returns per-VM result: {vmid, changes_applied, error}.
+    Supports dry_run=true to simulate without applying.
     """
     results = []
     host_cache: Dict[int, ProxmoxHost] = {}
@@ -253,6 +339,7 @@ def bulk_config_update(req: BulkConfigRequest, db: Session = Depends(get_db),
             "node": vm.node,
             "vmid": vm.vmid,
             "changes_applied": {},
+            "dry_run": req.dry_run,
             "error": None,
         }
         try:
@@ -297,9 +384,11 @@ def bulk_config_update(req: BulkConfigRequest, db: Session = Depends(get_db),
                 results.append(entry)
                 continue
 
-            pve.nodes(vm.node).qemu(vm.vmid).config.put(**payload)
+            if not req.dry_run:
+                pve.nodes(vm.node).qemu(vm.vmid).config.put(**payload)
+                pve_cache.clear_prefix(f"pve:{vm.host_id}:")
+
             entry["changes_applied"] = payload
-            pve_cache.clear_prefix(f"pve:{vm.host_id}:")
         except HTTPException as e:
             entry["error"] = e.detail
         except Exception as e:
@@ -307,7 +396,7 @@ def bulk_config_update(req: BulkConfigRequest, db: Session = Depends(get_db),
 
         results.append(entry)
 
-    return {"results": results}
+    return {"results": results, "dry_run": req.dry_run}
 
 
 @router.post("/bulk/config/preview")
@@ -570,6 +659,43 @@ class ScriptResourceAuditRequest(BaseModel):
     ram_threshold_pct: float = 20.0
 
 
+class ScriptNightlySnapshotRequest(BaseModel):
+    host_id: int
+    snapname_template: str = "nightly-{date}"
+    only_running: bool = True
+    description: str = "Nightly automated snapshot"
+    vmstate: bool = False
+    dry_run: bool = True
+
+
+class ScriptVmHealthCheckRequest(BaseModel):
+    host_id: int
+    expected_running_vmids: Optional[List[int]] = None  # if None, checks all VMs
+
+
+class ScriptResourceRebalancerRequest(BaseModel):
+    host_id: int
+    cpu_imbalance_threshold: float = 30.0   # % difference from mean triggers suggestion
+    ram_imbalance_threshold: float = 30.0
+
+
+class ScriptBulkTagUpdaterRequest(BaseModel):
+    host_id: int
+    vmids: Optional[List[int]] = None       # None = all VMs
+    tags_add: Optional[List[str]] = None
+    tags_remove: Optional[List[str]] = None
+    dry_run: bool = True
+
+
+class ScriptConfigStandardizerRequest(BaseModel):
+    host_id: int
+    ensure_backup_enabled: bool = True
+    ensure_agent_enabled: bool = True
+    ensure_onboot: bool = True
+    required_tags: Optional[List[str]] = None
+    dry_run: bool = True
+
+
 @router.post("/scripts/cleanup-snapshots")
 def script_cleanup_snapshots(req: ScriptCleanupSnapsRequest,
                               db: Session = Depends(get_db),
@@ -755,4 +881,433 @@ def script_resource_audit(req: ScriptResourceAuditRequest,
         "ram_threshold_pct": req.ram_threshold_pct,
         "over_provisioned_count": len(report),
         "report": report,
+    }
+
+
+@router.post("/scripts/nightly-snapshot")
+def script_nightly_snapshot(req: ScriptNightlySnapshotRequest,
+                             db: Session = Depends(get_db),
+                             current_user=Depends(require_operator)):
+    """Create snapshots of all (or all running) VMs on the host.
+    Designed to be triggered at midnight / on a schedule.
+    """
+    from datetime import datetime
+    host = _get_host(req.host_id, db)
+    pve = _pve(host)
+    today = datetime.utcnow().strftime("%Y%m%d")
+
+    try:
+        nodes_list = pve.nodes.get()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    results = []
+
+    for node_info in nodes_list:
+        node = node_info.get("node", "")
+        if not node:
+            continue
+        try:
+            vms = pve.nodes(node).qemu.get()
+        except Exception:
+            continue
+
+        for vm in vms:
+            vmid = vm.get("vmid")
+            vm_name = vm.get("name", str(vmid))
+            status = vm.get("status", "")
+
+            if req.only_running and status != "running":
+                continue
+
+            snapname = (
+                req.snapname_template
+                .replace("{vmid}", str(vmid))
+                .replace("{name}", vm_name)
+                .replace("{date}", today)
+            )[:40]
+
+            entry: Dict[str, Any] = {
+                "node": node,
+                "vmid": vmid,
+                "vm_name": vm_name,
+                "status": status,
+                "snapname": snapname,
+                "upid": None,
+                "error": None,
+                "dry_run": req.dry_run,
+            }
+
+            if not req.dry_run:
+                try:
+                    upid = pve.nodes(node).qemu(vmid).snapshot.post(
+                        snapname=snapname,
+                        description=req.description,
+                        vmstate=int(req.vmstate),
+                    )
+                    entry["upid"] = upid
+                    pve_cache.clear_prefix(f"pve:{req.host_id}:")
+                except Exception as e:
+                    entry["error"] = str(e)
+
+            results.append(entry)
+
+    total_ok = sum(1 for r in results if not r["error"] and not r["dry_run"])
+    total_err = sum(1 for r in results if r["error"])
+
+    return {
+        "dry_run": req.dry_run,
+        "snapname_template": req.snapname_template,
+        "only_running": req.only_running,
+        "total_vms": len(results),
+        "total_ok": total_ok,
+        "total_errors": total_err,
+        "results": results,
+    }
+
+
+@router.post("/scripts/vm-health-check")
+def script_vm_health_check(req: ScriptVmHealthCheckRequest,
+                            db: Session = Depends(get_db),
+                            current_user=Depends(require_operator)):
+    """Check all VMs are running. Alert on stopped / paused ones.
+    Optionally restrict to a specific set of VMIDs.
+    """
+    host = _get_host(req.host_id, db)
+    pve = _pve(host)
+
+    try:
+        resources = pve.cluster.resources.get(type="vm")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    all_vms = []
+    alerts = []
+    stopped_count = 0
+    running_count = 0
+    paused_count = 0
+
+    for item in resources:
+        vmid = item.get("vmid")
+        if req.expected_running_vmids and vmid not in req.expected_running_vmids:
+            continue
+
+        status = item.get("status", "unknown")
+        vm_entry = {
+            "node": item.get("node", ""),
+            "vmid": vmid,
+            "vm_name": item.get("name", str(vmid)),
+            "status": status,
+            "cpu_pct": round((item.get("cpu", 0) or 0) * 100, 2),
+            "mem_pct": round(
+                ((item.get("mem", 0) or 0) / (item.get("maxmem", 1) or 1)) * 100, 2
+            ) if item.get("maxmem") else 0,
+            "uptime": item.get("uptime", 0),
+        }
+        all_vms.append(vm_entry)
+
+        if status == "running":
+            running_count += 1
+        elif status == "stopped":
+            stopped_count += 1
+            alerts.append({
+                "severity": "warning",
+                "vmid": vmid,
+                "vm_name": item.get("name", str(vmid)),
+                "node": item.get("node", ""),
+                "message": f"VM {vmid} ({item.get('name', '')}) is stopped",
+            })
+        elif status == "paused":
+            paused_count += 1
+            alerts.append({
+                "severity": "info",
+                "vmid": vmid,
+                "vm_name": item.get("name", str(vmid)),
+                "node": item.get("node", ""),
+                "message": f"VM {vmid} ({item.get('name', '')}) is paused",
+            })
+
+    return {
+        "total_vms": len(all_vms),
+        "running": running_count,
+        "stopped": stopped_count,
+        "paused": paused_count,
+        "alert_count": len(alerts),
+        "alerts": alerts,
+        "vms": all_vms,
+    }
+
+
+@router.post("/scripts/resource-rebalancer")
+def script_resource_rebalancer(req: ScriptResourceRebalancerRequest,
+                                db: Session = Depends(get_db),
+                                current_user=Depends(require_operator)):
+    """Analyze CPU/RAM load across nodes and suggest VM migrations for better balance."""
+    host = _get_host(req.host_id, db)
+    pve = _pve(host)
+
+    try:
+        nodes_list = pve.nodes.get()
+        resources = pve.cluster.resources.get(type="vm")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    # Build per-node stats
+    node_stats: Dict[str, Dict] = {}
+    for n in nodes_list:
+        node = n.get("node", "")
+        if not node:
+            continue
+        node_stats[node] = {
+            "node": node,
+            "maxcpu": n.get("maxcpu", 0) or 0,
+            "maxmem": n.get("maxmem", 0) or 0,
+            "cpu_used": n.get("cpu", 0) or 0,
+            "mem_used": n.get("mem", 0) or 0,
+            "vms": [],
+        }
+
+    for vm in resources:
+        node = vm.get("node", "")
+        if node in node_stats:
+            node_stats[node]["vms"].append({
+                "vmid": vm.get("vmid"),
+                "name": vm.get("name", ""),
+                "status": vm.get("status", ""),
+                "maxcpu": vm.get("maxcpu", 0),
+                "maxmem": vm.get("maxmem", 0),
+                "cpu": vm.get("cpu", 0),
+                "mem": vm.get("mem", 0),
+            })
+
+    # Compute CPU and RAM usage % per node
+    nodes_info = []
+    for node, stats in node_stats.items():
+        cpu_pct = (stats["cpu_used"] / stats["maxcpu"] * 100) if stats["maxcpu"] else 0
+        mem_pct = (stats["mem_used"] / stats["maxmem"] * 100) if stats["maxmem"] else 0
+        nodes_info.append({
+            "node": node,
+            "cpu_pct": round(cpu_pct, 2),
+            "mem_pct": round(mem_pct, 2),
+            "maxcpu": stats["maxcpu"],
+            "maxmem_gb": round(stats["maxmem"] / 1024 / 1024 / 1024, 1),
+            "vm_count": len(stats["vms"]),
+            "vms": stats["vms"],
+        })
+
+    if not nodes_info:
+        return {"nodes": [], "suggestions": [], "balanced": True}
+
+    # Compute mean CPU/RAM
+    mean_cpu = sum(n["cpu_pct"] for n in nodes_info) / len(nodes_info)
+    mean_mem = sum(n["mem_pct"] for n in nodes_info) / len(nodes_info)
+
+    # Identify overloaded and underloaded nodes
+    overloaded = [
+        n for n in nodes_info
+        if (n["cpu_pct"] - mean_cpu) > req.cpu_imbalance_threshold
+        or (n["mem_pct"] - mean_mem) > req.ram_imbalance_threshold
+    ]
+    underloaded = [
+        n for n in nodes_info
+        if (mean_cpu - n["cpu_pct"]) > req.cpu_imbalance_threshold
+        or (mean_mem - n["mem_pct"]) > req.ram_imbalance_threshold
+    ]
+
+    suggestions = []
+    for over in overloaded:
+        for under in underloaded:
+            if over["node"] == under["node"]:
+                continue
+            # Suggest migrating one running VM from the overloaded node
+            running_vms = [
+                v for v in node_stats[over["node"]]["vms"] if v["status"] == "running"
+            ]
+            if running_vms:
+                vm = running_vms[0]
+                suggestions.append({
+                    "from_node": over["node"],
+                    "to_node": under["node"],
+                    "vmid": vm["vmid"],
+                    "vm_name": vm["name"],
+                    "reason": (
+                        f"{over['node']} is overloaded "
+                        f"(CPU {over['cpu_pct']}%, RAM {over['mem_pct']}%) vs "
+                        f"{under['node']} (CPU {under['cpu_pct']}%, RAM {under['mem_pct']}%)"
+                    ),
+                })
+
+    return {
+        "mean_cpu_pct": round(mean_cpu, 2),
+        "mean_mem_pct": round(mean_mem, 2),
+        "nodes": nodes_info,
+        "overloaded_nodes": [n["node"] for n in overloaded],
+        "underloaded_nodes": [n["node"] for n in underloaded],
+        "suggestions": suggestions,
+        "balanced": len(suggestions) == 0,
+    }
+
+
+@router.post("/scripts/bulk-tag-updater")
+def script_bulk_tag_updater(req: ScriptBulkTagUpdaterRequest,
+                             db: Session = Depends(get_db),
+                             current_user=Depends(require_operator)):
+    """Add or remove tags from multiple VMs at once across the host."""
+    host = _get_host(req.host_id, db)
+    pve = _pve(host)
+
+    try:
+        resources = pve.cluster.resources.get(type="vm")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    tags_add = [t.strip().lower() for t in (req.tags_add or []) if t.strip()]
+    tags_remove = {t.strip().lower() for t in (req.tags_remove or []) if t.strip()}
+
+    if not tags_add and not tags_remove:
+        raise HTTPException(status_code=400, detail="Provide tags_add or tags_remove")
+
+    results = []
+
+    for item in resources:
+        vmid = item.get("vmid")
+        if req.vmids and vmid not in req.vmids:
+            continue
+
+        node = item.get("node", "")
+        vm_name = item.get("name", str(vmid))
+
+        entry: Dict[str, Any] = {
+            "node": node,
+            "vmid": vmid,
+            "vm_name": vm_name,
+            "tags_before": [],
+            "tags_after": [],
+            "changed": False,
+            "error": None,
+            "dry_run": req.dry_run,
+        }
+
+        try:
+            cfg = pve.nodes(node).qemu(vmid).config.get()
+            raw = cfg.get("tags", "")
+            current = [t.strip() for t in raw.split(";") if t.strip()] if raw else []
+            entry["tags_before"] = current[:]
+
+            updated = list(current)
+            for t in tags_add:
+                if t not in updated:
+                    updated.append(t)
+            updated = [t for t in updated if t not in tags_remove]
+
+            entry["tags_after"] = updated
+            entry["changed"] = set(current) != set(updated)
+
+            if entry["changed"] and not req.dry_run:
+                pve.nodes(node).qemu(vmid).config.put(tags=";".join(updated))
+                pve_cache.clear_prefix(f"pve:{req.host_id}:")
+        except Exception as e:
+            entry["error"] = str(e)
+
+        results.append(entry)
+
+    changed_count = sum(1 for r in results if r["changed"])
+    return {
+        "dry_run": req.dry_run,
+        "total_vms": len(results),
+        "changed_count": changed_count,
+        "results": results,
+    }
+
+
+@router.post("/scripts/config-standardizer")
+def script_config_standardizer(req: ScriptConfigStandardizerRequest,
+                                db: Session = Depends(get_db),
+                                current_user=Depends(require_operator)):
+    """Ensure all VMs have consistent settings: backup enabled, agent enabled, onboot, required tags."""
+    host = _get_host(req.host_id, db)
+    pve = _pve(host)
+
+    try:
+        nodes_list = pve.nodes.get()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    results = []
+
+    for node_info in nodes_list:
+        node = node_info.get("node", "")
+        if not node:
+            continue
+        try:
+            vms = pve.nodes(node).qemu.get()
+        except Exception:
+            continue
+
+        for vm in vms:
+            vmid = vm.get("vmid")
+            vm_name = vm.get("name", str(vmid))
+
+            entry: Dict[str, Any] = {
+                "node": node,
+                "vmid": vmid,
+                "vm_name": vm_name,
+                "issues": [],
+                "fixes_applied": [],
+                "error": None,
+                "dry_run": req.dry_run,
+            }
+
+            try:
+                cfg = pve.nodes(node).qemu(vmid).config.get()
+                payload: Dict[str, Any] = {}
+
+                # Check agent
+                if req.ensure_agent_enabled:
+                    agent_val = cfg.get("agent", "")
+                    agent_enabled = str(agent_val).startswith("1") or str(agent_val) == "enabled=1"
+                    if not agent_enabled:
+                        entry["issues"].append("QEMU agent disabled")
+                        payload["agent"] = "enabled=1"
+                        entry["fixes_applied"].append("Enable QEMU agent")
+
+                # Check onboot
+                if req.ensure_onboot:
+                    onboot_val = cfg.get("onboot", 0)
+                    if not onboot_val:
+                        entry["issues"].append("Start at boot disabled")
+                        payload["onboot"] = 1
+                        entry["fixes_applied"].append("Enable start at boot")
+
+                # Check required tags
+                if req.required_tags:
+                    raw = cfg.get("tags", "")
+                    current_tags = [t.strip() for t in raw.split(";") if t.strip()] if raw else []
+                    missing_tags = [t for t in req.required_tags if t.strip().lower() not in {x.lower() for x in current_tags}]
+                    if missing_tags:
+                        entry["issues"].append(f"Missing tags: {', '.join(missing_tags)}")
+                        new_tags = current_tags + [t.strip().lower() for t in missing_tags]
+                        payload["tags"] = ";".join(new_tags)
+                        entry["fixes_applied"].append(f"Add tags: {', '.join(missing_tags)}")
+
+                if payload and not req.dry_run:
+                    pve.nodes(node).qemu(vmid).config.put(**payload)
+                    pve_cache.clear_prefix(f"pve:{req.host_id}:")
+
+            except Exception as e:
+                entry["error"] = str(e)
+
+            results.append(entry)
+
+    compliant = [r for r in results if not r["issues"] and not r["error"]]
+    non_compliant = [r for r in results if r["issues"]]
+    errors = [r for r in results if r["error"]]
+
+    return {
+        "dry_run": req.dry_run,
+        "total_vms": len(results),
+        "compliant_count": len(compliant),
+        "non_compliant_count": len(non_compliant),
+        "error_count": len(errors),
+        "results": results,
     }

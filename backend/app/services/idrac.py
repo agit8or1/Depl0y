@@ -36,6 +36,7 @@ _RESET_TYPES = {
     "graceful_off": "GracefulShutdown",
     "reset": "ForceRestart",
     "graceful_reset": "GracefulRestart",
+    "power_cycle": "PowerCycle",
     "pxe": "Pxe",
 }
 
@@ -197,6 +198,85 @@ class RedfishClient:
         except Exception as e:
             logger.warning(f"Failed to get power usage: {e}")
             return {"power_control": []}
+
+    def get_sensors(self) -> Dict[str, Any]:
+        """Return a unified IPMI-style sensor table combining thermal and power readings."""
+        sensors = []
+        # Temperature sensors from /Thermal
+        try:
+            thermal = self._get(self.paths["thermal"])
+            for t in thermal.get("Temperatures", []):
+                state = t.get("Status", {}).get("State", "")
+                if state not in ("Enabled", ""):
+                    continue
+                health = t.get("Status", {}).get("Health", "OK") or "OK"
+                reading = t.get("ReadingCelsius")
+                crit = t.get("UpperThresholdCritical")
+                warn = t.get("UpperThresholdNonCritical")
+                # Derive status from health or threshold proximity
+                if health == "Critical" or (crit and reading is not None and reading >= crit):
+                    status = "Critical"
+                elif health == "Warning" or (warn and reading is not None and reading >= warn):
+                    status = "Warning"
+                else:
+                    status = "OK"
+                sensors.append({
+                    "name": t.get("Name", ""),
+                    "reading": reading,
+                    "unit": "°C",
+                    "status": status,
+                    "type": "Temperature",
+                    "upper_critical": crit,
+                    "upper_warning": warn,
+                })
+            for f in thermal.get("Fans", []):
+                health = f.get("Status", {}).get("Health", "OK") or "OK"
+                reading = f.get("ReadingRPM", f.get("Reading"))
+                status = "Critical" if health == "Critical" else ("Warning" if health == "Warning" else "OK")
+                sensors.append({
+                    "name": f.get("Name", f.get("FanName", "")),
+                    "reading": reading,
+                    "unit": "RPM",
+                    "status": status,
+                    "type": "Fan",
+                    "upper_critical": None,
+                    "upper_warning": None,
+                })
+        except Exception as e:
+            logger.warning(f"Sensor fetch (thermal) failed: {e}")
+
+        # Power readings from /Power
+        try:
+            power = self._get(self.paths["power"])
+            for psu in power.get("PowerSupplies", []):
+                health = psu.get("Status", {}).get("Health", "OK") or "OK"
+                status = "Critical" if health == "Critical" else ("Warning" if health == "Warning" else "OK")
+                reading = psu.get("PowerOutputWatts", psu.get("LastPowerOutputWatts"))
+                sensors.append({
+                    "name": psu.get("Name", psu.get("MemberId", "PSU")),
+                    "reading": reading,
+                    "unit": "W",
+                    "status": status,
+                    "type": "Power Supply",
+                    "upper_critical": psu.get("PowerCapacityWatts"),
+                    "upper_warning": None,
+                })
+            for v in power.get("Voltages", []):
+                health = v.get("Status", {}).get("Health", "OK") or "OK"
+                status = "Critical" if health == "Critical" else ("Warning" if health == "Warning" else "OK")
+                sensors.append({
+                    "name": v.get("Name", ""),
+                    "reading": v.get("ReadingVolts"),
+                    "unit": "V",
+                    "status": status,
+                    "type": "Voltage",
+                    "upper_critical": v.get("UpperThresholdCritical"),
+                    "upper_warning": v.get("UpperThresholdNonCritical"),
+                })
+        except Exception as e:
+            logger.warning(f"Sensor fetch (power) failed: {e}")
+
+        return {"sensors": sensors}
 
     def _patch(self, path: str, body: dict) -> Dict[str, Any]:
         url = self.base_url + path

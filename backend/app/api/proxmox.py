@@ -825,6 +825,95 @@ async def update_node_idrac(
     return node
 
 
+@router.get("/{host_id}/version")
+async def get_host_version(
+    host_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Return Proxmox version string and release info fetched live from the host.
+    Cached per-host for 5 minutes.
+    """
+    cache_key = f"proxmox:version:{host_id}"
+    cached = pve_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    host = db.query(ProxmoxHost).filter(ProxmoxHost.id == host_id).first()
+    if not host:
+        raise HTTPException(status_code=404, detail="Host not found")
+
+    try:
+        svc = ProxmoxService(host)
+        pve = svc.proxmox
+        t0 = time.time()
+        version_info = pve.version.get()
+        latency_ms = round((time.time() - t0) * 1000)
+        response = {
+            "host_id": host_id,
+            "version": version_info.get("version", "unknown"),
+            "release": version_info.get("release", ""),
+            "repoid": version_info.get("repoid", ""),
+            "latency_ms": latency_ms,
+            "fetched_at": datetime.utcnow().isoformat() + "Z",
+        }
+        pve_cache.set(cache_key, response, ttl=300)
+        return response
+    except Exception as e:
+        logger.warning(f"Failed to fetch version for host {host_id}: {e}")
+        raise HTTPException(status_code=502, detail=f"Could not reach host: {str(e)}")
+
+
+@router.post("/{host_id}/reconnect")
+async def reconnect_proxmox_host(
+    host_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Re-test connectivity and clear all per-host caches so the next poll
+    picks up fresh data. Returns the same payload as the /test endpoint
+    plus the live version string.
+    """
+    host = db.query(ProxmoxHost).filter(ProxmoxHost.id == host_id).first()
+    if not host:
+        raise HTTPException(status_code=404, detail="Host not found")
+
+    # Bust caches
+    for key in (
+        f"proxmox:version:{host_id}",
+        f"datacenter:summary:{host_id}",
+        "federation:summary",
+    ):
+        pve_cache.delete(key) if hasattr(pve_cache, "delete") else None
+
+    try:
+        svc = ProxmoxService(host)
+        t0 = time.time()
+        ok = svc.test_connection()
+        latency_ms = round((time.time() - t0) * 1000)
+
+        version = None
+        try:
+            version_info = svc.proxmox.version.get()
+            version = version_info.get("version", "unknown")
+        except Exception:
+            pass
+
+        if ok:
+            return {
+                "status": "success",
+                "message": "Connection successful",
+                "latency_ms": latency_ms,
+                "version": version,
+            }
+        else:
+            return {"status": "error", "message": "Connection test failed", "latency_ms": latency_ms}
+    except Exception as e:
+        return {"status": "error", "message": str(e), "latency_ms": None}
+
+
 @router.get("/{host_id}/datacenter/summary")
 async def get_datacenter_summary(
     host_id: int,

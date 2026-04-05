@@ -29,6 +29,56 @@
     </div>
 
     <template v-else-if="summary">
+      <!-- ── Federation Health Score ── -->
+      <div class="fed-health-row mb-2">
+        <div class="health-gauge-card">
+          <div class="hg-label">Federation Health</div>
+          <div class="hg-gauge-wrap">
+            <svg class="hg-gauge-svg" viewBox="0 0 120 70" width="120" height="70">
+              <!-- Background arc -->
+              <path
+                d="M10 65 A55 55 0 0 1 110 65"
+                fill="none"
+                stroke="var(--border-color)"
+                stroke-width="10"
+                stroke-linecap="round"
+              />
+              <!-- Foreground arc -->
+              <path
+                d="M10 65 A55 55 0 0 1 110 65"
+                fill="none"
+                :stroke="healthGaugeColor"
+                stroke-width="10"
+                stroke-linecap="round"
+                stroke-dasharray="172.8"
+                :stroke-dashoffset="gaugeOffset"
+                style="transition: stroke-dashoffset 0.6s ease, stroke 0.4s ease;"
+              />
+            </svg>
+            <div class="hg-score">{{ federationHealthScore }}%</div>
+          </div>
+          <div class="hg-sublabel" :class="healthScoreLabelClass">{{ healthScoreLabel }}</div>
+        </div>
+
+        <div class="health-breakdown">
+          <div class="hb-row" v-for="host in summary.hosts" :key="host.host_id">
+            <span :class="['hb-dot', host.status === 'online' ? 'dot-online' : 'dot-offline']"></span>
+            <span class="hb-name">{{ host.host_name }}</span>
+            <div class="hb-bar-wrap">
+              <div class="hb-bar">
+                <div
+                  class="hb-bar-fill"
+                  :class="barClass(hostHealthPct(host))"
+                  :style="{ width: hostHealthPct(host) + '%' }"
+                ></div>
+              </div>
+            </div>
+            <span class="hb-pct">{{ hostHealthPct(host) }}%</span>
+            <span :class="['badge', 'badge-sm', statusBadgeClass(host.status)]">{{ host.status }}</span>
+          </div>
+        </div>
+      </div>
+
       <!-- Global Stats Bar -->
       <div class="global-stats-grid mb-2">
         <div class="stat-card">
@@ -51,6 +101,200 @@
           <div class="stat-value">{{ summary.total_storage_used_gb }} GB</div>
           <div class="stat-label">Storage Used</div>
           <div class="stat-sub">of {{ summary.total_storage_total_gb }} GB</div>
+        </div>
+      </div>
+
+      <!-- ── World Map / Datacenter Locations ── -->
+      <div class="card mb-2">
+        <div class="card-header">
+          <h3>Datacenter Locations</h3>
+          <span class="card-header-sub">Geographic overview of your infrastructure</span>
+        </div>
+        <div class="world-map-container">
+          <!-- Simplified SVG world map outline (Mercator projection placeholder) -->
+          <svg
+            class="world-map-svg"
+            viewBox="0 0 900 450"
+            xmlns="http://www.w3.org/2000/svg"
+            preserveAspectRatio="xMidYMid meet"
+          >
+            <!-- Background ocean -->
+            <rect width="900" height="450" fill="var(--map-ocean, rgba(59,130,246,0.05))" rx="8"/>
+
+            <!-- Simplified continent outlines (decorative, not to-scale) -->
+            <!-- North America -->
+            <path d="M 60 80 L 120 70 L 170 90 L 200 120 L 210 170 L 180 210 L 150 230 L 130 260 L 100 270 L 80 250 L 60 200 L 50 150 Z"
+              fill="var(--map-land, rgba(100,160,100,0.18))" stroke="var(--border-color)" stroke-width="0.8"/>
+            <!-- South America -->
+            <path d="M 140 280 L 180 270 L 210 290 L 220 330 L 210 380 L 190 400 L 160 410 L 140 390 L 130 350 L 125 310 Z"
+              fill="var(--map-land, rgba(100,160,100,0.18))" stroke="var(--border-color)" stroke-width="0.8"/>
+            <!-- Europe -->
+            <path d="M 390 60 L 440 55 L 460 75 L 450 100 L 430 110 L 400 105 L 380 90 Z"
+              fill="var(--map-land, rgba(100,160,100,0.18))" stroke="var(--border-color)" stroke-width="0.8"/>
+            <!-- Africa -->
+            <path d="M 390 130 L 450 120 L 480 150 L 490 210 L 470 280 L 440 320 L 410 330 L 380 310 L 360 260 L 360 200 L 370 160 Z"
+              fill="var(--map-land, rgba(100,160,100,0.18))" stroke="var(--border-color)" stroke-width="0.8"/>
+            <!-- Asia -->
+            <path d="M 470 50 L 620 40 L 700 60 L 740 90 L 750 130 L 720 160 L 670 170 L 620 160 L 570 150 L 520 140 L 490 120 L 465 95 Z"
+              fill="var(--map-land, rgba(100,160,100,0.18))" stroke="var(--border-color)" stroke-width="0.8"/>
+            <!-- Australia -->
+            <path d="M 680 280 L 760 270 L 800 300 L 810 340 L 790 370 L 750 380 L 710 370 L 680 340 L 670 310 Z"
+              fill="var(--map-land, rgba(100,160,100,0.18))" stroke="var(--border-color)" stroke-width="0.8"/>
+
+            <!-- Grid lines (longitude/latitude feel) -->
+            <line v-for="x in [180, 270, 360, 450, 540, 630, 720]" :key="'v'+x"
+              :x1="x" y1="0" :x2="x" y2="450"
+              stroke="var(--border-color)" stroke-width="0.4" opacity="0.4"/>
+            <line v-for="y in [90, 180, 270, 360]" :key="'h'+y"
+              x1="0" :y1="y" x2="900" :y2="y"
+              stroke="var(--border-color)" stroke-width="0.4" opacity="0.4"/>
+
+            <!-- Host datacenter pins -->
+            <g v-for="(host, idx) in summary.hosts" :key="'pin-'+host.host_id">
+              <!-- Pin position cycles through preset locations if no lat/lon -->
+              <circle
+                :cx="hostMapX(host, idx)"
+                :cy="hostMapY(host, idx)"
+                r="10"
+                :fill="host.status === 'online' ? 'rgba(59,130,246,0.2)' : 'rgba(239,68,68,0.15)'"
+                stroke="none"
+                class="host-pin-pulse"
+              />
+              <circle
+                :cx="hostMapX(host, idx)"
+                :cy="hostMapY(host, idx)"
+                r="5"
+                :fill="host.status === 'online' ? '#3b82f6' : '#ef4444'"
+                stroke="white"
+                stroke-width="1.5"
+                class="host-pin-dot"
+              />
+              <!-- Label -->
+              <text
+                :x="hostMapX(host, idx) + 8"
+                :y="hostMapY(host, idx) - 8"
+                font-size="9"
+                fill="var(--text-primary)"
+                class="host-pin-label"
+              >{{ host.host_name }}</text>
+            </g>
+
+            <!-- Connection lines between online hosts -->
+            <g v-if="summary.hosts.filter(h => h.status === 'online').length > 1">
+              <line
+                v-for="pair in hostConnectionPairs"
+                :key="pair.key"
+                :x1="pair.x1" :y1="pair.y1"
+                :x2="pair.x2" :y2="pair.y2"
+                stroke="rgba(59,130,246,0.25)"
+                stroke-width="1"
+                stroke-dasharray="4 3"
+              />
+            </g>
+          </svg>
+
+          <!-- Host legend below map -->
+          <div class="map-legend">
+            <div v-for="host in summary.hosts" :key="'leg-'+host.host_id" class="map-legend-item">
+              <span :class="['legend-dot', host.status === 'online' ? 'dot-online' : 'dot-offline']"></span>
+              <span class="legend-name">{{ host.host_name }}</span>
+              <span class="text-muted text-sm">{{ host.api_url }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Cross-Host VM Migration Recommendations ── -->
+      <div class="card mb-2">
+        <div class="card-header">
+          <h3>Migration Opportunities</h3>
+          <span class="card-header-sub">VMs that may benefit from cross-host migration</span>
+        </div>
+
+        <div v-if="migrationLoading" class="loading-spinner"></div>
+
+        <div v-else-if="migrationCandidates.length === 0" class="migration-empty">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="migration-empty-icon">
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+          </svg>
+          <p>No migration recommendations at this time.</p>
+          <span class="text-muted text-sm">Resources appear balanced across your hosts.</span>
+        </div>
+
+        <div v-else class="migration-table-wrap">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>VM</th>
+                <th>Source Host</th>
+                <th>Source Load</th>
+                <th>Target Host</th>
+                <th>Target Load</th>
+                <th>Reason</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="cand in migrationCandidates" :key="cand.vm_name + cand.source_host">
+                <td>
+                  <span class="vm-name-cell">{{ cand.vm_name }}</span>
+                  <span class="text-muted text-sm">ID {{ cand.vmid }}</span>
+                </td>
+                <td class="text-sm">{{ cand.source_host }}</td>
+                <td>
+                  <div class="mini-bar-wrap">
+                    <div class="mini-bar">
+                      <div class="mini-bar-fill" :class="barClass(cand.source_cpu_pct)" :style="{ width: cand.source_cpu_pct + '%' }"></div>
+                    </div>
+                    <span class="text-sm">{{ cand.source_cpu_pct }}% CPU</span>
+                  </div>
+                </td>
+                <td class="text-sm">{{ cand.target_host }}</td>
+                <td>
+                  <div class="mini-bar-wrap">
+                    <div class="mini-bar">
+                      <div class="mini-bar-fill" :class="barClass(cand.target_cpu_pct)" :style="{ width: cand.target_cpu_pct + '%' }"></div>
+                    </div>
+                    <span class="text-sm">{{ cand.target_cpu_pct }}% CPU</span>
+                  </div>
+                </td>
+                <td>
+                  <span class="badge badge-warning text-sm">{{ cand.reason }}</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ── Bandwidth / SDN Placeholder ── -->
+      <div class="card mb-2">
+        <div class="card-header">
+          <h3>Inter-Host Bandwidth</h3>
+          <span class="card-header-sub text-muted">SDN tunnel statistics — coming soon</span>
+        </div>
+        <div class="bandwidth-placeholder">
+          <div class="bw-host-row" v-for="pair in hostPairs" :key="pair.key">
+            <div class="bw-host bw-host-a">
+              <span :class="['bw-status', pair.aOnline ? 'dot-online' : 'dot-offline']"></span>
+              {{ pair.a }}
+            </div>
+            <div class="bw-line">
+              <div class="bw-arrow-wrap">
+                <svg width="100%" height="24" viewBox="0 0 200 24">
+                  <line x1="10" y1="12" x2="190" y2="12" stroke="var(--border-color)" stroke-width="2" stroke-dasharray="6 3"/>
+                  <polygon points="185,8 195,12 185,16" fill="var(--border-color)"/>
+                </svg>
+              </div>
+              <div class="bw-label">N/A</div>
+            </div>
+            <div class="bw-host bw-host-b">
+              <span :class="['bw-status', pair.bOnline ? 'dot-online' : 'dot-offline']"></span>
+              {{ pair.b }}
+            </div>
+          </div>
+          <p class="bw-note text-muted text-sm">
+            Real-time bandwidth metrics will be available once SDN tunnel integration is configured.
+          </p>
         </div>
       </div>
 
@@ -167,18 +411,25 @@
         </div>
       </div>
 
-      <!-- Cross-Host VM Search -->
+      <!-- ── Global Search (searches across all hosts simultaneously) ── -->
       <div class="card mb-2">
         <div class="card-header">
-          <h3>Cross-Host VM Search</h3>
+          <h3>Global Search</h3>
+          <span class="card-header-sub">Search VMs and nodes across all hosts simultaneously</span>
         </div>
         <div class="search-bar">
-          <input
-            v-model="vmSearchQuery"
-            @input="onVmSearchInput"
-            class="form-control"
-            placeholder="Search VMs across all hosts by name or ID..."
-          />
+          <div class="global-search-row">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="gs-icon">
+              <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+            <input
+              v-model="vmSearchQuery"
+              @input="onVmSearchInput"
+              class="form-control global-search-input"
+              placeholder="Search VMs across all hosts by name or ID..."
+            />
+            <span v-if="vmSearchLoading" class="gs-spinner"></span>
+          </div>
         </div>
 
         <div v-if="vmSearchLoading" class="loading-spinner"></div>
@@ -257,9 +508,21 @@
 </template>
 
 <script>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/services/api'
+
+// Preset map coordinates (x, y in 900x450 viewBox) for hosts without lat/lon
+const MAP_PRESETS = [
+  { x: 160, y: 140 },  // North America East
+  { x: 100, y: 130 },  // North America West
+  { x: 420, y: 80  },  // Western Europe
+  { x: 500, y: 100 },  // Eastern Europe / Middle East
+  { x: 620, y: 110 },  // East Asia
+  { x: 720, y: 310 },  // Australia
+  { x: 160, y: 310 },  // South America
+  { x: 420, y: 200 },  // Africa
+]
 
 export default {
   name: 'FederatedDashboard',
@@ -280,6 +543,10 @@ export default {
     const recentTasks = ref([])
     const tasksLoading = ref(false)
 
+    // Migration
+    const migrationCandidates = ref([])
+    const migrationLoading = ref(false)
+
     const fetchSummary = async () => {
       loading.value = true
       try {
@@ -294,10 +561,201 @@ export default {
     }
 
     const refresh = () => {
-      fetchSummary()
+      fetchSummary().then(() => {
+        computeMigrationCandidates()
+      })
       if (recentTasks.value.length > 0 || tasksLoading.value) {
         fetchRecentTasks()
       }
+    }
+
+    // ── Federation Health Score ─────────────────────────────────────────────
+    // Composite score: penalise offline hosts, high resource usage, degraded health
+    const federationHealthScore = computed(() => {
+      if (!summary.value || summary.value.hosts.length === 0) return 0
+      const hosts = summary.value.hosts
+      let total = 0
+      for (const host of hosts) {
+        total += hostHealthPct(host)
+      }
+      return Math.round(total / hosts.length)
+    })
+
+    const hostHealthPct = (host) => {
+      if (host.status === 'offline') return 0
+      let score = 100
+      // Penalise high CPU
+      if (host.cpu_usage_pct > 90) score -= 30
+      else if (host.cpu_usage_pct > 75) score -= 15
+      else if (host.cpu_usage_pct > 60) score -= 5
+      // Penalise high memory
+      if (host.memory_usage_pct > 90) score -= 30
+      else if (host.memory_usage_pct > 75) score -= 15
+      else if (host.memory_usage_pct > 60) score -= 5
+      // Penalise degraded health
+      if (host.cluster_health === 'degraded') score -= 20
+      else if (!host.cluster_health || host.cluster_health === 'unknown') score -= 5
+      return Math.max(0, score)
+    }
+
+    const gaugeOffset = computed(() => {
+      // Arc total length is 172.8 (semicircle, r=55, half circumference)
+      const score = federationHealthScore.value
+      return 172.8 - (172.8 * score) / 100
+    })
+
+    const healthGaugeColor = computed(() => {
+      const s = federationHealthScore.value
+      if (s >= 80) return '#22c55e'
+      if (s >= 60) return '#f59e0b'
+      return '#ef4444'
+    })
+
+    const healthScoreLabel = computed(() => {
+      const s = federationHealthScore.value
+      if (s >= 80) return 'Healthy'
+      if (s >= 60) return 'Degraded'
+      return 'Critical'
+    })
+
+    const healthScoreLabelClass = computed(() => {
+      const s = federationHealthScore.value
+      if (s >= 80) return 'health-good'
+      if (s >= 60) return 'health-warn'
+      return 'health-bad'
+    })
+
+    // ── Map helpers ─────────────────────────────────────────────────────────
+    const hostMapX = (host, idx) => {
+      if (host.longitude != null) {
+        return Math.round(((host.longitude + 180) / 360) * 900)
+      }
+      return MAP_PRESETS[idx % MAP_PRESETS.length].x
+    }
+
+    const hostMapY = (host, idx) => {
+      if (host.latitude != null) {
+        return Math.round(((90 - host.latitude) / 180) * 450)
+      }
+      return MAP_PRESETS[idx % MAP_PRESETS.length].y
+    }
+
+    const hostConnectionPairs = computed(() => {
+      if (!summary.value) return []
+      const online = summary.value.hosts.filter(h => h.status === 'online')
+      const pairs = []
+      for (let i = 0; i < online.length; i++) {
+        for (let j = i + 1; j < online.length; j++) {
+          const a = online[i]
+          const b = online[j]
+          const aIdx = summary.value.hosts.indexOf(a)
+          const bIdx = summary.value.hosts.indexOf(b)
+          pairs.push({
+            key: `${a.host_id}-${b.host_id}`,
+            x1: hostMapX(a, aIdx),
+            y1: hostMapY(a, aIdx),
+            x2: hostMapX(b, bIdx),
+            y2: hostMapY(b, bIdx),
+          })
+        }
+      }
+      return pairs
+    })
+
+    // ── Host pairs for bandwidth display ────────────────────────────────────
+    const hostPairs = computed(() => {
+      if (!summary.value) return []
+      const hosts = summary.value.hosts
+      const pairs = []
+      for (let i = 0; i < hosts.length; i++) {
+        for (let j = i + 1; j < hosts.length; j++) {
+          pairs.push({
+            key: `${hosts[i].host_id}-${hosts[j].host_id}`,
+            a: hosts[i].host_name,
+            b: hosts[j].host_name,
+            aOnline: hosts[i].status === 'online',
+            bOnline: hosts[j].status === 'online',
+          })
+        }
+      }
+      return pairs.slice(0, 6)  // cap at 6 pairs
+    })
+
+    // ── Migration Candidates ─────────────────────────────────────────────────
+    // Find hosts with high CPU (>70%) paired with hosts with low CPU (<40%)
+    // and suggest moving VMs
+    const computeMigrationCandidates = async () => {
+      if (!summary.value || summary.value.hosts.length < 2) {
+        migrationCandidates.value = []
+        return
+      }
+      migrationLoading.value = true
+      const candidates = []
+
+      const onlineHosts = summary.value.hosts.filter(h => h.status === 'online')
+      const highCpu = onlineHosts.filter(h => (h.cpu_usage_pct || 0) > 70)
+      const lowCpu  = onlineHosts.filter(h => (h.cpu_usage_pct || 0) < 40)
+
+      if (highCpu.length > 0 && lowCpu.length > 0) {
+        for (const srcHost of highCpu) {
+          const tgtHost = lowCpu[0]
+          // Try to fetch top VMs from the overloaded host
+          try {
+            const nodesRes = await api.proxmox.listNodes(srcHost.host_id)
+            const nodes = Array.isArray(nodesRes.data) ? nodesRes.data.slice(0, 2) : []
+            for (const node of nodes) {
+              try {
+                const vmsRes = await api.pveNode.nodeVms(srcHost.host_id, node.node_name)
+                const vms = (Array.isArray(vmsRes.data) ? vmsRes.data : [])
+                  .filter(v => v.status === 'running')
+                  .slice(0, 2)
+
+                for (const vm of vms) {
+                  candidates.push({
+                    vm_name: vm.name || `VM ${vm.vmid}`,
+                    vmid: vm.vmid,
+                    source_host: srcHost.host_name,
+                    source_cpu_pct: srcHost.cpu_usage_pct || 0,
+                    target_host: tgtHost.host_name,
+                    target_cpu_pct: tgtHost.cpu_usage_pct || 0,
+                    reason: 'High CPU imbalance',
+                  })
+                  if (candidates.length >= 5) break
+                }
+              } catch (e) { /* skip node */ }
+              if (candidates.length >= 5) break
+            }
+          } catch (e) { /* skip host */ }
+          if (candidates.length >= 5) break
+        }
+      }
+
+      // Also check high memory
+      const highMem = onlineHosts.filter(h => (h.memory_usage_pct || 0) > 75)
+      const lowMem  = onlineHosts.filter(h => (h.memory_usage_pct || 0) < 40)
+
+      if (highMem.length > 0 && lowMem.length > 0 && candidates.length < 5) {
+        for (const srcHost of highMem) {
+          const tgtHost = lowMem[0]
+          if (srcHost.host_id === tgtHost.host_id) continue
+          // Don't duplicate if already added for CPU
+          const already = candidates.some(c => c.source_host === srcHost.host_name && c.target_host === tgtHost.host_name)
+          if (!already) {
+            candidates.push({
+              vm_name: '(multiple VMs)',
+              vmid: '—',
+              source_host: srcHost.host_name,
+              source_cpu_pct: srcHost.cpu_usage_pct || 0,
+              target_host: tgtHost.host_name,
+              target_cpu_pct: tgtHost.cpu_usage_pct || 0,
+              reason: 'High memory imbalance',
+            })
+          }
+        }
+      }
+
+      migrationCandidates.value = candidates
+      migrationLoading.value = false
     }
 
     // Cross-host VM search
@@ -322,7 +780,6 @@ export default {
 
       const searchTasks = onlineHosts.map(async (host) => {
         try {
-          // Use cluster/resources to get all VMs for the host
           const res = await api.pveNode.clusterResources(host.host_id, 'qemu')
           const vms = Array.isArray(res.data) ? res.data : []
           const matched = vms.filter(vm => {
@@ -360,7 +817,6 @@ export default {
 
       const taskFetches = onlineHosts.map(async (host) => {
         try {
-          // Get nodes for this host from the cluster status so we know which nodes to query
           const nodesRes = await api.proxmox.listNodes(host.host_id)
           const nodes = Array.isArray(nodesRes.data) ? nodesRes.data : []
           const nodeTasks = await Promise.allSettled(
@@ -388,9 +844,7 @@ export default {
         .filter(r => r.status === 'fulfilled')
         .flatMap(r => r.value)
 
-      // Sort by starttime descending
       merged.sort((a, b) => (b.starttime || 0) - (a.starttime || 0))
-
       recentTasks.value = merged.slice(0, 50)
       tasksLoading.value = false
     }
@@ -433,7 +887,6 @@ export default {
 
     const formatDate = (val) => {
       if (!val) return '—'
-      // Proxmox task starttimes are Unix timestamps (numbers)
       const d = typeof val === 'number' ? new Date(val * 1000) : new Date(val)
       return d.toLocaleString()
     }
@@ -456,6 +909,7 @@ export default {
     onMounted(() => {
       fetchSummary().then(() => {
         fetchRecentTasks()
+        computeMigrationCandidates()
       })
     })
 
@@ -468,6 +922,18 @@ export default {
       vmSearchLoading,
       recentTasks,
       tasksLoading,
+      migrationCandidates,
+      migrationLoading,
+      federationHealthScore,
+      gaugeOffset,
+      healthGaugeColor,
+      healthScoreLabel,
+      healthScoreLabelClass,
+      hostConnectionPairs,
+      hostPairs,
+      hostHealthPct,
+      hostMapX,
+      hostMapY,
       refresh,
       onVmSearchInput,
       navigateToVm,
@@ -519,6 +985,332 @@ export default {
   align-items: center;
   gap: 0.75rem;
   flex-shrink: 0;
+}
+
+/* ── Federation Health Score ─────────────────────────────────────────────── */
+.fed-health-row {
+  display: grid;
+  grid-template-columns: 180px 1fr;
+  gap: 1rem;
+  align-items: start;
+}
+
+.health-gauge-card {
+  background: var(--card-background, #fff);
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+  padding: 1.25rem 1rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  text-align: center;
+  box-shadow: var(--shadow-sm, none);
+}
+
+.hg-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+}
+
+.hg-gauge-wrap {
+  position: relative;
+  width: 120px;
+  height: 70px;
+}
+
+.hg-gauge-svg {
+  display: block;
+}
+
+.hg-score {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 1.4rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.hg-sublabel {
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.health-good { color: #22c55e; }
+.health-warn { color: #f59e0b; }
+.health-bad  { color: #ef4444; }
+
+.health-breakdown {
+  background: var(--card-background, #fff);
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+  padding: 1rem;
+  box-shadow: var(--shadow-sm, none);
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.hb-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.82rem;
+}
+
+.hb-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.hb-name {
+  width: 140px;
+  flex-shrink: 0;
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hb-bar-wrap {
+  flex: 1;
+}
+
+.hb-bar {
+  height: 6px;
+  background: var(--border-color);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.hb-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.4s ease;
+}
+
+.hb-pct {
+  width: 36px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  flex-shrink: 0;
+}
+
+/* ── World Map ───────────────────────────────────────────────────────────── */
+.world-map-container {
+  padding: 0.5rem 1rem 1rem;
+}
+
+.world-map-svg {
+  width: 100%;
+  border-radius: 0.375rem;
+  border: 1px solid var(--border-color);
+  overflow: visible;
+}
+
+.host-pin-pulse {
+  animation: ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+@keyframes ping {
+  0%    { transform: scale(1); opacity: 0.8; }
+  75%   { transform: scale(2.5); opacity: 0; }
+  100%  { transform: scale(2.5); opacity: 0; }
+}
+
+.host-pin-dot {
+  filter: drop-shadow(0 1px 3px rgba(0,0,0,0.3));
+}
+
+.host-pin-label {
+  font-family: var(--font-sans, sans-serif);
+  font-weight: 600;
+  pointer-events: none;
+  fill: var(--text-primary);
+  font-size: 9px;
+}
+
+.map-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.5rem;
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border-color);
+}
+
+.map-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+}
+
+.legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.legend-name {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.dot-online  { background: #22c55e; }
+.dot-offline { background: #ef4444; }
+
+/* ── Migration Card ──────────────────────────────────────────────────────── */
+.migration-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 2rem 1rem;
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+}
+
+.migration-empty-icon {
+  color: var(--text-secondary);
+  opacity: 0.5;
+}
+
+.migration-table-wrap {
+  overflow-x: auto;
+}
+
+.vm-name-cell {
+  display: block;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.mini-bar-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.mini-bar {
+  width: 60px;
+  height: 5px;
+  background: var(--border-color);
+  border-radius: 3px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.mini-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+}
+
+/* ── Bandwidth Placeholder ───────────────────────────────────────────────── */
+.bandwidth-placeholder {
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.bw-host-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.bw-host {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  width: 140px;
+  flex-shrink: 0;
+}
+
+.bw-host-b { justify-content: flex-end; }
+
+.bw-status {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.bw-line {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.1rem;
+}
+
+.bw-arrow-wrap { width: 100%; }
+
+.bw-label {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.bw-note {
+  margin: 0;
+  text-align: center;
+  font-style: italic;
+}
+
+/* ── Card header sub ─────────────────────────────────────────────────────── */
+.card-header-sub {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  font-weight: 400;
+}
+
+/* ── Global Search ───────────────────────────────────────────────────────── */
+.global-search-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.gs-icon {
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.global-search-input {
+  flex: 1;
+}
+
+.gs-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border-color);
+  border-top-color: var(--primary-color);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 /* Global stats bar */
@@ -587,9 +1379,7 @@ export default {
   gap: 1rem;
 }
 
-.host-card--offline {
-  opacity: 0.65;
-}
+.host-card--offline { opacity: 0.65; }
 
 .host-card-header {
   display: flex;
@@ -617,9 +1407,7 @@ export default {
   gap: 0.2rem;
 }
 
-.cluster-name {
-  color: var(--text-secondary);
-}
+.cluster-name { color: var(--text-secondary); }
 
 /* Counts row */
 .host-counts {
@@ -718,10 +1506,7 @@ export default {
   border-top: 1px solid var(--border-color);
 }
 
-.quick-links {
-  display: flex;
-  gap: 0.5rem;
-}
+.quick-links { display: flex; gap: 0.5rem; }
 
 .link-btn {
   font-size: 0.8rem;
@@ -733,9 +1518,7 @@ export default {
   transition: background 0.15s;
 }
 
-.link-btn:hover {
-  background: var(--border-color);
-}
+.link-btn:hover { background: var(--border-color); }
 
 /* VM Search */
 .search-bar {
@@ -743,13 +1526,8 @@ export default {
   border-bottom: 1px solid var(--border-color);
 }
 
-.search-results {
-  padding: 0.5rem 0;
-}
-
-.search-group {
-  margin-bottom: 0.5rem;
-}
+.search-results { padding: 0.5rem 0; }
+.search-group   { margin-bottom: 0.5rem; }
 
 .search-group-header {
   padding: 0.5rem 1rem;
@@ -761,9 +1539,7 @@ export default {
   background: var(--background, #f9fafb);
 }
 
-.search-group-items {
-  padding: 0 0.5rem;
-}
+.search-group-items { padding: 0 0.5rem; }
 
 .search-result-item {
   display: flex;
@@ -776,9 +1552,7 @@ export default {
   gap: 0.5rem;
 }
 
-.search-result-item:hover {
-  background: var(--border-color);
-}
+.search-result-item:hover { background: var(--border-color); }
 
 .vm-name {
   font-weight: 500;
@@ -791,38 +1565,43 @@ export default {
   gap: 0.4rem;
 }
 
-/* Empty / padding helpers */
+/* Spacing helpers */
+.mb-2  { margin-bottom: 1.25rem; }
+.mt-1  { margin-top: 0.5rem; }
+.p-2   { padding: 1.5rem; }
+
 .empty-state {
   text-align: center;
   padding: 3rem 1rem;
 }
 
-.p-2 {
-  padding: 1.5rem;
-}
+/* Badge variants */
+.badge-info      { background-color: #3b82f6; color: #fff; }
+.badge-warning   { background-color: #f59e0b; color: #fff; }
+.badge-secondary { background-color: var(--text-secondary, #6b7280); color: #fff; }
+.badge-danger    { background-color: #ef4444; color: #fff; }
 
-.mt-1 {
-  margin-top: 0.5rem;
-}
+/* Buttons */
+.btn-sm { padding: 0.3rem 0.7rem; font-size: 0.8rem; }
 
-/* Badge variants used here */
-.badge-info {
-  background-color: #3b82f6;
-  color: #fff;
-}
+/* Responsive */
+@media (max-width: 768px) {
+  .fed-health-row {
+    grid-template-columns: 1fr;
+  }
 
-.badge-warning {
-  background-color: #f59e0b;
-  color: #fff;
-}
+  .health-gauge-card {
+    flex-direction: row;
+    gap: 1rem;
+    justify-content: flex-start;
+    text-align: left;
+  }
 
-.badge-secondary {
-  background-color: var(--text-secondary, #6b7280);
-  color: #fff;
-}
+  .bw-host-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
 
-.badge-danger {
-  background-color: #ef4444;
-  color: #fff;
+  .bw-line { width: 100%; }
 }
 </style>

@@ -356,6 +356,31 @@ async def toggle_alert_rule(
         raise HTTPException(status_code=500, detail=str(exc))
 
 
+@router.post("/events/{event_id}/acknowledge")
+async def acknowledge_alert_event(
+    event_id: int,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Acknowledge a specific alert event by its event ID."""
+    try:
+        from app.models.alert_models import AlertEvent
+        event = db.query(AlertEvent).filter(AlertEvent.id == event_id).first()
+        if not event:
+            raise HTTPException(status_code=404, detail="Alert event not found")
+        event.acknowledged = True
+        event.acknowledged_at = datetime.utcnow()
+        event.acknowledged_by = current_user.id
+        db.commit()
+        return {"status": "acknowledged", "event_id": event_id}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        db.rollback()
+        logger.error(f"acknowledge_alert_event error: {exc}")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
 @router.post("/evaluate")
 async def trigger_evaluation(
     current_user: User = Depends(require_admin),

@@ -197,6 +197,8 @@ export default {
     updateNodeIdrac: (nodeId, data) => api.patch(`/proxmox/nodes/${nodeId}/idrac`, data),
     getFederationSummary: () => api.get('/proxmox/federation/summary'),
     getDatacenterSummary: (hostId) => api.get(`/proxmox/${hostId}/datacenter/summary`),
+    getHostVersion: (hostId) => api.get(`/proxmox/${hostId}/version`),
+    reconnectHost: (hostId) => api.post(`/proxmox/${hostId}/reconnect`),
   },
 
   // Virtual Machines
@@ -473,6 +475,9 @@ export default {
     getStandaloneMemory: (id) => api.get(`/idrac/standalone/${id}/memory`),
     getStandaloneStorage: (id) => api.get(`/idrac/standalone/${id}/storage`),
     getStandaloneFirmware: (id) => api.get(`/idrac/standalone/${id}/firmware`),
+    // Sensors (unified IPMI-style: temp + fans + PSU + voltage)
+    getSensors: (hostId) => api.get(`/idrac/${hostId}/sensors`),
+    getStandaloneSensors: (id) => api.get(`/idrac/standalone/${id}/sensors`),
     // SSH-based (host OS)
     runSshUpdate: (hostId) => api.post(`/idrac/${hostId}/ssh/update`),
     testSsh: (hostId) => api.get(`/idrac/${hostId}/ssh/test`),
@@ -510,6 +515,7 @@ export default {
     getIdracMemory: (id) => api.get(`/pbs/${id}/idrac/memory`),
     getIdracStorage: (id) => api.get(`/pbs/${id}/idrac/storage`),
     getIdracFirmware: (id) => api.get(`/pbs/${id}/idrac/firmware`),
+    getIdracSensors: (id) => api.get(`/pbs/${id}/idrac/sensors`),
     // SSH-based (host OS)
     runIdracSshUpdate: (id) => api.post(`/pbs/${id}/idrac/ssh/update`),
     testIdracSsh: (id) => api.get(`/pbs/${id}/idrac/ssh/test`),
@@ -741,6 +747,7 @@ export default {
   // Audit Log
   audit: {
     list: (params) => api.get('/audit/', { params }),
+    log: (params) => api.get('/audit/', { params }),  // alias — GET /audit/?limit=N
     feed: (params) => api.get('/audit/feed', { params }),
     stats: (params) => api.get('/audit/stats', { params }),
   },
@@ -915,20 +922,28 @@ export default {
   vmBulk: {
     // Power management
     bulkPower: (data) => api.post('/pve-vm/bulk/power', data),
+    // Rolling restart (sequential, with configurable delay)
+    bulkRollingRestart: (data) => api.post('/pve-vm/bulk/rolling-restart', data),
     // Snapshots
     bulkSnapshot: (data) => api.post('/pve-vm/bulk/snapshot', data),
     bulkDeleteSnapshots: (data) => api.post('/pve-vm/bulk/delete-snapshots', data),
-    // Config update
+    // Config update (supports dry_run flag)
     bulkConfig: (data) => api.post('/pve-vm/bulk/config', data),
     bulkConfigPreview: (data) => api.post('/pve-vm/bulk/config/preview', data),
     // Migration
     bulkMigrate: (data) => api.post('/pve-vm/bulk/migrate', data),
     // Orphaned disks
     getOrphanedDisks: (hostId) => api.get(`/pve-vm/orphaned-disks/${hostId}`),
-    // Automation scripts
+    // Automation scripts — existing
     scriptCleanupSnapshots: (data) => api.post('/pve-vm/scripts/cleanup-snapshots', data),
     scriptTagCompliance: (data) => api.post('/pve-vm/scripts/tag-compliance', data),
     scriptResourceAudit: (data) => api.post('/pve-vm/scripts/resource-audit', data),
+    // Automation scripts — new
+    scriptNightlySnapshot: (data) => api.post('/pve-vm/scripts/nightly-snapshot', data),
+    scriptVmHealthCheck: (data) => api.post('/pve-vm/scripts/vm-health-check', data),
+    scriptResourceRebalancer: (data) => api.post('/pve-vm/scripts/resource-rebalancer', data),
+    scriptBulkTagUpdater: (data) => api.post('/pve-vm/scripts/bulk-tag-updater', data),
+    scriptConfigStandardizer: (data) => api.post('/pve-vm/scripts/config-standardizer', data),
   },
 
   // Task Queue — Depl0y-tracked Proxmox async operations
@@ -945,6 +960,7 @@ export default {
     getActive: () => api.get('/alerts/active'),
     dismiss: (id) => api.post(`/alerts/${id}/dismiss`),
     dismissAll: () => api.post('/alerts/dismiss-all'),
+    acknowledgeEvent: (eventId) => api.post(`/alerts/events/${eventId}/acknowledge`),
     getHistory: (params) => api.get('/alerts/history', { params }),
     getSparkline: (days = 7) => api.get('/alerts/history/sparkline', { params: { days } }),
     listRules: () => api.get('/alerts/rules'),

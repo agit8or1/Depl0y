@@ -9,7 +9,7 @@
         </div>
         <div class="flex gap-1 align-center">
           <router-link to="/federation" class="btn btn-outline">
-            🌍 Federation View
+            Federation View
           </router-link>
         </div>
       </div>
@@ -49,17 +49,32 @@
           <!-- Card header: status pulse + name -->
           <div class="host-card__header">
             <div class="flex align-center gap-1">
-              <span class="status-pulse" :class="hostPulseClass(host)"></span>
+              <!-- Status dot with tooltip on error -->
+              <div class="status-dot-wrap" :title="hostStatusTooltip(host)">
+                <span class="status-pulse" :class="hostPulseClass(host)"></span>
+              </div>
               <h4 class="host-card__name">{{ host.name }}</h4>
             </div>
-            <span :class="['badge', host.is_active ? 'badge-success' : 'badge-danger']">
-              {{ host.is_active ? 'Active' : 'Inactive' }}
-            </span>
+            <div class="flex align-center gap-1">
+              <span :class="['badge', host.is_active ? 'badge-success' : 'badge-danger']">
+                {{ host.is_active ? 'Active' : 'Inactive' }}
+              </span>
+              <!-- Connection health badge -->
+              <span
+                v-if="getHostConnectionStatus(host)"
+                :class="['badge', getHostConnectionStatus(host).cls]"
+                :title="getHostConnectionStatus(host).tooltip">
+                {{ getHostConnectionStatus(host).label }}
+              </span>
+            </div>
           </div>
 
-          <!-- Hostname row -->
-          <div class="host-card__hostname text-sm text-muted">
+          <!-- Hostname + version row -->
+          <div class="host-card__hostname text-sm text-muted flex align-center gap-1">
             <code>{{ host.hostname }}:{{ host.port }}</code>
+            <span v-if="hostVersions[host.id]" class="version-chip">
+              PVE {{ hostVersions[host.id] }}
+            </span>
           </div>
 
           <!-- Cluster info row -->
@@ -145,6 +160,53 @@
             BMC: {{ host.idrac_hostname }}
           </div>
 
+          <!-- Expand nodes toggle -->
+          <button
+            class="expand-nodes-btn"
+            @click="toggleExpandNodes(host.id)"
+            :class="{ 'expand-nodes-btn--open': expandedHosts[host.id] }">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+              :style="{ transform: expandedHosts[host.id] ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }">
+              <polyline points="6 9 12 15 18 9"/>
+            </svg>
+            {{ expandedHosts[host.id] ? 'Hide Nodes' : 'Show Nodes' }}
+            <span class="text-xs text-muted">
+              ({{ getHostNodes(host.id).length }})
+            </span>
+          </button>
+
+          <!-- Expanded node list -->
+          <transition name="expand-fade">
+            <div v-if="expandedHosts[host.id]" class="host-card__nodes">
+              <div v-if="getHostNodes(host.id).length === 0" class="text-xs text-muted">
+                No nodes discovered. Click Poll to discover.
+              </div>
+              <div
+                v-for="node in getHostNodes(host.id)"
+                :key="node.node_name"
+                class="inline-node-row">
+                <span class="inline-node-dot" :class="node.status === 'online' ? 'dot-green' : 'dot-red'"></span>
+                <router-link
+                  :to="`/proxmox/${host.id}/nodes/${node.node_name}`"
+                  class="inline-node-name">
+                  {{ node.node_name }}
+                </router-link>
+                <template v-if="getNodeStat(host.id, node.node_name)">
+                  <span class="inline-node-stat">
+                    CPU {{ cpuPct(getNodeStat(host.id, node.node_name).cpu) }}%
+                  </span>
+                  <span class="inline-node-stat">
+                    RAM {{ ramPct(getNodeStat(host.id, node.node_name).memory) }}%
+                  </span>
+                  <span class="inline-node-guests text-xs text-muted">
+                    {{ getNodeStat(host.id, node.node_name).vmCount }}v / {{ getNodeStat(host.id, node.node_name).lxcCount }}c
+                  </span>
+                </template>
+                <span v-else class="text-xs text-muted">loading...</span>
+              </div>
+            </div>
+          </transition>
+
           <!-- Action buttons -->
           <div class="host-card__actions flex gap-1 mt-1">
             <router-link
@@ -152,8 +214,26 @@
               class="btn btn-primary btn-sm flex-1 text-center">
               Open Cluster
             </router-link>
+            <!-- Open in Proxmox Web UI -->
+            <a
+              :href="`https://${host.hostname}:${host.port}`"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="btn btn-outline btn-sm"
+              title="Open Proxmox Web UI">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                <polyline points="15 3 21 3 21 9"/>
+                <line x1="10" y1="14" x2="21" y2="3"/>
+              </svg>
+              PVE UI
+            </a>
             <button @click="openDetailDrawer(host)" class="btn btn-outline btn-sm" title="View Details">Details</button>
-            <button @click="testConnection(host.id)" class="btn btn-outline btn-sm" :disabled="testing[host.id]" title="Test Connection">
+            <button
+              @click="testConnection(host.id)"
+              class="btn btn-outline btn-sm"
+              :disabled="testing[host.id]"
+              title="Test Connection">
               {{ testing[host.id] ? '...' : 'Test' }}
             </button>
             <button @click="pollHost(host.id)" class="btn btn-outline btn-sm" title="Force poll">Poll</button>
@@ -352,6 +432,9 @@
                 <h3 class="drawer-title">{{ drawerHost && drawerHost.name }}</h3>
                 <div class="drawer-subtitle text-sm text-muted">
                   <code>{{ drawerHost && drawerHost.hostname }}:{{ drawerHost && drawerHost.port }}</code>
+                  <span v-if="drawerHost && hostVersions[drawerHost.id]" class="version-chip ml-1">
+                    PVE {{ hostVersions[drawerHost.id] }}
+                  </span>
                 </div>
               </div>
               <button class="btn-close" @click="closeDetailDrawer">&#215;</button>
@@ -365,13 +448,22 @@
                 @click="closeDetailDrawer">
                 Open Cluster Overview
               </router-link>
-              <router-link
+              <a
                 v-if="drawerHost"
-                :to="`/proxmox/${drawerHost.id}/cluster`"
+                :href="`https://${drawerHost.hostname}:${drawerHost.port}`"
+                target="_blank"
+                rel="noopener noreferrer"
                 class="btn btn-outline btn-sm"
-                @click="closeDetailDrawer">
-                View VMs
-              </router-link>
+                title="Open Proxmox Web UI">
+                PVE UI
+              </a>
+              <button
+                v-if="drawerHost"
+                class="btn btn-outline btn-sm"
+                :disabled="reconnecting[drawerHost.id]"
+                @click="reconnectHost(drawerHost.id)">
+                {{ reconnecting[drawerHost.id] ? 'Reconnecting...' : 'Reconnect' }}
+              </button>
               <button
                 v-if="drawerHost"
                 class="btn btn-outline btn-sm"
@@ -419,6 +511,10 @@
                     <span class="badge badge-info">{{ getFedSummary(drawerHost.id).vm_count }} VMs</span>
                     <span class="badge badge-secondary ml-1">{{ getFedSummary(drawerHost.id).lxc_count }} LXC</span>
                   </span>
+                </div>
+                <div v-if="drawerHost && hostVersions[drawerHost.id]" class="di-row">
+                  <span class="di-label">Version</span>
+                  <span class="di-value">Proxmox VE {{ hostVersions[drawerHost.id] }}</span>
                 </div>
               </div>
             </div>
@@ -545,8 +641,25 @@
     <div v-if="showEditModal" class="modal" @click="showEditModal = false">
       <div class="modal-content" @click.stop>
         <div class="modal-header">
-          <h3>Edit Host — {{ editHost.name }}</h3>
-          <button @click="showEditModal = false" class="btn-close">×</button>
+          <div>
+            <h3>Edit Host — {{ editHost.name }}</h3>
+            <div class="text-sm text-muted">
+              <code>{{ editHost.hostname }}:{{ editHost.port }}</code>
+              <span v-if="hostVersions[editHost.id]" class="version-chip ml-1">
+                PVE {{ hostVersions[editHost.id] }}
+              </span>
+            </div>
+          </div>
+          <div class="flex align-center gap-1">
+            <button
+              type="button"
+              class="btn btn-outline btn-sm"
+              :disabled="reconnecting[editHost.id]"
+              @click="reconnectHost(editHost.id)">
+              {{ reconnecting[editHost.id] ? 'Reconnecting...' : 'Reconnect' }}
+            </button>
+            <button @click="showEditModal = false" class="btn-close">×</button>
+          </div>
         </div>
         <form @submit.prevent="saveEdit" class="modal-body">
 
@@ -566,6 +679,10 @@
                 <label class="form-label">Port</label>
                 <input v-model.number="editHost.port" type="number" class="form-control" />
               </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Description</label>
+              <input v-model="editHost.description" class="form-control" placeholder="Optional notes about this host" />
             </div>
             <div class="form-inline-row">
               <label class="form-label inline-check">
@@ -593,14 +710,15 @@
               <div class="form-group">
                 <label class="form-label">API Token ID</label>
                 <input v-model="editHost.token_id" class="form-control" placeholder="e.g. root@pam!mytoken" autocomplete="off" />
+                <p class="form-hint text-xs text-muted">Format: <code>user@realm!tokenname</code></p>
               </div>
               <div class="form-group">
                 <label class="form-label">API Token Secret <span class="text-muted text-sm">(leave blank to keep current)</span></label>
                 <input v-model="editHost.token_secret" type="password" class="form-control" autocomplete="new-password" />
               </div>
               <div class="info-box text-sm">
-                <strong>Token format:</strong> Create via PVE &rarr; Datacenter &rarr; Permissions &rarr; API Tokens.
-                Token ID format: <code>user@realm!tokenname</code>
+                <strong>Token rotation:</strong> Enter a new Token Secret to rotate the credential.
+                The host connection will be validated on save.
               </div>
             </template>
             <template v-else>
@@ -717,6 +835,12 @@ export default {
     const testing = ref({})
     // Per-host test results (simple ok/latency)
     const testResults = ref({})
+    // Per-host reconnect loading
+    const reconnecting = ref({})
+    // Per-host version strings
+    const hostVersions = ref({})
+    // Per-host expand-nodes toggle
+    const expandedHosts = ref({})
 
     // Test-all state
     const testingAll = ref(false)
@@ -736,6 +860,7 @@ export default {
       is_active: true, verify_ssl: false,
       token_id: '', token_secret: '',
       username: '', password: '',
+      description: '',
       default_storage: '', default_bridge: '', default_node: '', iso_storage: '',
       idrac_type: '', idrac_hostname: '', idrac_port: 443,
       idrac_username: '', idrac_password: '',
@@ -749,11 +874,72 @@ export default {
     const drawerLoadingNodes = ref(false)
     const drawerTasksLoading = ref(false)
 
+    // ── Helper: get nodes for a specific host from allNodes ────────────────
+    const getHostNodes = (hostId) => {
+      return allNodes.value.filter(n => n.host_id === hostId)
+    }
+
+    // ── Toggle node expansion on host card ────────────────────────────────
+    const toggleExpandNodes = (hostId) => {
+      expandedHosts.value = {
+        ...expandedHosts.value,
+        [hostId]: !expandedHosts.value[hostId],
+      }
+    }
+
+    // ── Connection status badge derived from federation summary + testResults ──
+    const getHostConnectionStatus = (host) => {
+      const fed = getFedSummary(host.id)
+      const tr = testResults.value[host.id]
+
+      if (!host.is_active) {
+        return { label: 'Inactive', cls: 'badge-secondary', tooltip: 'Host is disabled' }
+      }
+
+      // Use explicit test result if available (most recent)
+      if (tr) {
+        if (tr.ok) {
+          return { label: 'Connected', cls: 'badge-success', tooltip: tr.message || 'Connection OK' }
+        } else {
+          return { label: 'Error', cls: 'badge-danger', tooltip: tr.message || 'Connection failed' }
+        }
+      }
+
+      if (!fed) return null
+
+      if (fed.status === 'online') {
+        // Check if some nodes are offline (degraded)
+        const offlineNodes = getHostNodes(host.id).filter(n => n.status !== 'online')
+        if (offlineNodes.length > 0 && getHostNodes(host.id).length > 0) {
+          return {
+            label: 'Degraded',
+            cls: 'badge-warning',
+            tooltip: `${offlineNodes.length} node(s) offline: ${offlineNodes.map(n => n.node_name).join(', ')}`,
+          }
+        }
+        return { label: 'Connected', cls: 'badge-success', tooltip: `Latency: ${fed.latency_ms}ms` }
+      }
+      if (fed.status === 'offline') {
+        return { label: 'Offline', cls: 'badge-danger', tooltip: 'Host is unreachable' }
+      }
+      return null
+    }
+
+    const hostStatusTooltip = (host) => {
+      const status = getHostConnectionStatus(host)
+      return status ? status.tooltip : ''
+    }
+
     const openDetailDrawer = async (host) => {
       drawerHost.value = host
       showDetailDrawer.value = true
       drawerNodes.value = []
       drawerTasks.value = []
+
+      // Fetch version if not already loaded
+      if (!hostVersions.value[host.id]) {
+        fetchHostVersion(host.id)
+      }
 
       // Load nodes
       drawerLoadingNodes.value = true
@@ -827,6 +1013,51 @@ export default {
     }
     // ─────────────────────────────────────────────────────────────────────
 
+    // ── Fetch version for a host (non-blocking) ───────────────────────────
+    const fetchHostVersion = async (hostId) => {
+      try {
+        const res = await api.proxmox.getHostVersion(hostId)
+        hostVersions.value = { ...hostVersions.value, [hostId]: res.data.version }
+      } catch {
+        // ignore — version is decorative
+      }
+    }
+
+    const fetchAllVersions = () => {
+      for (const host of hosts.value) {
+        if (!hostVersions.value[host.id]) {
+          fetchHostVersion(host.id)
+        }
+      }
+    }
+
+    // ── Reconnect a host (bust cache + test) ─────────────────────────────
+    const reconnectHost = async (hostId) => {
+      reconnecting.value = { ...reconnecting.value, [hostId]: true }
+      try {
+        const res = await api.proxmox.reconnectHost(hostId)
+        const ok = res.data.status === 'success'
+        testResults.value = {
+          ...testResults.value,
+          [hostId]: { ok, latency: res.data.latency_ms, message: res.data.message }
+        }
+        if (res.data.version) {
+          hostVersions.value = { ...hostVersions.value, [hostId]: res.data.version }
+        }
+        if (ok) {
+          toast.success(`Reconnected — PVE ${res.data.version || ''} (${res.data.latency_ms}ms)`)
+        } else {
+          toast.error('Reconnect failed: ' + res.data.message)
+        }
+      } catch (err) {
+        toast.error('Reconnect request failed')
+      } finally {
+        const r = { ...reconnecting.value }
+        delete r[hostId]
+        reconnecting.value = r
+      }
+    }
+
     const fetchHosts = async () => {
       loading.value = true
       try {
@@ -865,15 +1096,22 @@ export default {
 
     const hostCardClass = (host) => {
       if (!host.is_active) return 'host-card--inactive'
+      const tr = testResults.value[host.id]
+      if (tr && !tr.ok) return 'host-card--error'
       const fed = getFedSummary(host.id)
       if (!fed) return ''
       if (fed.latency_ms == null) return 'host-card--unknown'
       if (fed.latency_ms > 500) return 'host-card--degraded'
+      // Check if any nodes are offline (degraded)
+      const offlineNodes = getHostNodes(host.id).filter(n => n.status !== 'online')
+      if (offlineNodes.length > 0 && getHostNodes(host.id).length > 0) return 'host-card--degraded'
       return 'host-card--online'
     }
 
     const hostPulseClass = (host) => {
       if (!host.is_active) return 'pulse-inactive'
+      const tr = testResults.value[host.id]
+      if (tr && !tr.ok) return 'pulse-error'
       const fed = getFedSummary(host.id)
       if (!fed) return 'pulse-unknown'
       if (fed.latency_ms == null) return 'pulse-unknown'
@@ -1155,6 +1393,7 @@ export default {
         token_secret: '',
         username: host.username || '',
         password: '',
+        description: host.description || '',
         default_storage: host.default_storage || '',
         default_bridge: host.default_bridge || '',
         default_node: host.default_node || '',
@@ -1186,6 +1425,9 @@ export default {
         await api.proxmox.updateHost(editHost.value.id, data)
         toast.success('Host updated')
         showEditModal.value = false
+        // Refresh version after credential change
+        delete hostVersions.value[editHost.value.id]
+        fetchHostVersion(editHost.value.id)
         await fetchHosts()
       } catch (error) {
         console.error('Failed to update host:', error)
@@ -1219,6 +1461,7 @@ export default {
     onMounted(() => {
       fetchHosts().then(() => {
         handleRefreshAll()
+        fetchAllVersions()
       })
       fetchFederationSummary()
     })
@@ -1241,6 +1484,9 @@ export default {
       testResults,
       testingAll,
       testAllResults,
+      reconnecting,
+      hostVersions,
+      expandedHosts,
       onHostAdded,
       openEdit,
       saveEdit,
@@ -1255,8 +1501,11 @@ export default {
       formatUptime,
       formatGB,
       getNodeStat,
+      getHostNodes,
       getFedSummary,
       getHostResourceSummary,
+      getHostConnectionStatus,
+      hostStatusTooltip,
       latencyBadgeClass,
       hostCardClass,
       hostPulseClass,
@@ -1267,6 +1516,9 @@ export default {
       ramBarClass,
       diskPct,
       diskBarClass,
+      toggleExpandNodes,
+      reconnectHost,
+      fetchHostVersion,
       // Drawer
       showDetailDrawer,
       drawerHost,
@@ -1309,7 +1561,7 @@ export default {
 
 .host-cards-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
   gap: 1rem;
   padding: 1rem;
 }
@@ -1342,10 +1594,16 @@ export default {
   border-left: 3px solid var(--border-color);
 }
 
+.host-card--error {
+  border-left: 3px solid #ef4444;
+}
+
 .host-card__header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
 }
 
 .host-card__name {
@@ -1359,12 +1617,18 @@ export default {
   font-family: monospace;
 }
 
+/* Status dot with tooltip anchor */
+.status-dot-wrap {
+  cursor: help;
+}
+
 /* Animated status pulse dot */
 .status-pulse {
   width: 10px;
   height: 10px;
   border-radius: 50%;
   flex-shrink: 0;
+  display: inline-block;
 }
 
 .pulse-online {
@@ -1377,6 +1641,12 @@ export default {
   background-color: #f59e0b;
   box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.6);
   animation: pulse-orange 2s infinite;
+}
+
+.pulse-error {
+  background-color: #ef4444;
+  box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.6);
+  animation: pulse-red 2s infinite;
 }
 
 .pulse-inactive {
@@ -1397,6 +1667,26 @@ export default {
   0% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.6); }
   70% { box-shadow: 0 0 0 8px rgba(245, 158, 11, 0); }
   100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }
+}
+
+@keyframes pulse-red {
+  0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.6); }
+  70% { box-shadow: 0 0 0 8px rgba(239, 68, 68, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+}
+
+/* Version chip */
+.version-chip {
+  display: inline-flex;
+  align-items: center;
+  background: rgba(59, 130, 246, 0.1);
+  color: #3b82f6;
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  border-radius: 9999px;
+  padding: 0.05rem 0.5rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  font-family: monospace;
 }
 
 /* Cluster info rows */
@@ -1475,6 +1765,99 @@ export default {
   color: var(--text-secondary);
   white-space: nowrap;
   font-family: monospace;
+}
+
+/* ── Expand nodes button ──────────────────────────────────────────────────── */
+
+.expand-nodes-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: none;
+  border: 1px solid var(--border-color);
+  border-radius: 0.375rem;
+  padding: 0.3rem 0.6rem;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  width: 100%;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+
+.expand-nodes-btn:hover {
+  background: var(--border-color);
+  color: var(--text-primary);
+}
+
+.expand-nodes-btn--open {
+  background: rgba(59, 130, 246, 0.07);
+  border-color: rgba(59, 130, 246, 0.3);
+  color: #3b82f6;
+}
+
+/* ── Inline node rows (expanded) ─────────────────────────────────────────── */
+
+.host-card__nodes {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.5rem 0 0.25rem;
+  border-top: 1px dashed var(--border-color);
+}
+
+.inline-node-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  padding: 0.25rem 0.4rem;
+  border-radius: 0.25rem;
+  background: var(--background);
+}
+
+.inline-node-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.dot-green { background: #22c55e; }
+.dot-red   { background: #ef4444; }
+
+.inline-node-name {
+  font-weight: 600;
+  font-family: monospace;
+  color: #3b82f6;
+  text-decoration: none;
+  flex-shrink: 0;
+}
+
+.inline-node-name:hover { text-decoration: underline; }
+
+.inline-node-stat {
+  background: var(--border-color);
+  border-radius: 0.25rem;
+  padding: 0.05rem 0.4rem;
+  font-size: 0.72rem;
+  font-family: monospace;
+  color: var(--text-primary);
+}
+
+.inline-node-guests {
+  margin-left: auto;
+}
+
+/* expand-fade transition */
+.expand-fade-enter-active,
+.expand-fade-leave-active {
+  transition: opacity 0.2s, transform 0.2s;
+}
+.expand-fade-enter-from,
+.expand-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
 }
 
 /* Action buttons */
@@ -1698,10 +2081,11 @@ export default {
   border-bottom: 1px solid var(--border-color);
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
+  gap: 0.75rem;
 }
 
-.modal-header h3 { margin: 0; }
+.modal-header h3 { margin: 0 0 0.15rem 0; }
 
 .btn-close {
   background: none;
@@ -1743,6 +2127,12 @@ export default {
   font-size: 0.875rem;
   font-weight: 500;
   color: var(--text-primary);
+}
+
+.form-hint {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  margin-top: 0.2rem;
 }
 
 .form-row-2 {
@@ -2019,6 +2409,7 @@ export default {
 .gap-1 { gap: 0.5rem; }
 .align-center { align-items: center; }
 .mt-1 { margin-top: 0.5rem; }
+.mt-2 { margin-top: 1rem; }
 .ml-1 { margin-left: 0.25rem; }
 .text-sm { font-size: 0.875rem; }
 .text-xs { font-size: 0.75rem; }

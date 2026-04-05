@@ -175,7 +175,7 @@ def power_action(
     current_user: User = Depends(require_operator),
     db: Session = Depends(get_db),
 ):
-    valid_actions = ("on", "off", "graceful_off", "reset", "graceful_reset", "pxe")
+    valid_actions = ("on", "off", "graceful_off", "reset", "graceful_reset", "power_cycle", "pxe")
     if action not in valid_actions:
         raise HTTPException(status_code=400, detail=f"Invalid action '{action}'")
     host = _get_host_or_404(db, host_id)
@@ -328,6 +328,21 @@ def get_firmware_inventory(
     client = _build_client(host)
     try:
         return client.get_firmware_inventory()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Redfish error: {str(e)}")
+
+
+@router.get("/{host_id}/sensors")
+def get_sensors(
+    host_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Return unified IPMI-style sensor table (temperatures, fans, voltages, PSUs)."""
+    host = _get_host_or_404(db, host_id)
+    client = _build_client(host)
+    try:
+        return client.get_sensors()
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Redfish error: {str(e)}")
 
@@ -559,7 +574,7 @@ def standalone_power_action(
     current_user: User = Depends(require_operator),
     db: Session = Depends(get_db),
 ):
-    valid_actions = ("on", "off", "graceful_off", "reset", "graceful_reset", "pxe")
+    valid_actions = ("on", "off", "graceful_off", "reset", "graceful_reset", "power_cycle", "pxe")
     if action not in valid_actions:
         raise HTTPException(status_code=400, detail=f"Invalid action '{action}'")
     bmc = db.query(StandaloneBMC).filter(StandaloneBMC.id == bmc_id).first()
@@ -677,6 +692,15 @@ def get_standalone_firmware(bmc_id: int, current_user: User = Depends(get_curren
     if not bmc: raise HTTPException(status_code=404, detail="Standalone BMC not found")
     client = _build_client_from_obj(bmc)
     try: return client.get_firmware_inventory()
+    except Exception as e: raise HTTPException(status_code=502, detail=f"Redfish error: {str(e)}")
+
+@router.get("/standalone/{bmc_id}/sensors")
+def get_standalone_sensors(bmc_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Return unified IPMI-style sensor table for a standalone BMC."""
+    bmc = db.query(StandaloneBMC).filter(StandaloneBMC.id == bmc_id).first()
+    if not bmc: raise HTTPException(status_code=404, detail="Standalone BMC not found")
+    client = _build_client_from_obj(bmc)
+    try: return client.get_sensors()
     except Exception as e: raise HTTPException(status_code=502, detail=f"Redfish error: {str(e)}")
 
 @router.get("/standalone/{bmc_id}/ssh/test")

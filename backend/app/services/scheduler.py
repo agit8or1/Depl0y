@@ -221,6 +221,7 @@ def start_scheduler(update_hours: int = 24, scan_hours: int = 24):
         IntervalTrigger(minutes=2),
         id="bmc_poll",
         max_instances=1,
+        next_run_time=datetime.utcnow(),  # run immediately on startup
     )
     _scheduler.start()
     _started = True

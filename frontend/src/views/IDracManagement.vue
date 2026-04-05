@@ -206,6 +206,36 @@
 
             <!-- TAB: Overview -->
             <div v-if="srv._info && srv._activeTab === 'overview'">
+
+              <!-- ── Health issues summary ─────────────────────────────── -->
+              <div v-if="healthIssues(srv).length" class="health-issues-panel">
+                <div class="health-issues-title">
+                  <span v-if="srv._info.health === 'Critical'" class="hi-badge hi-badge--crit">⚠ Critical</span>
+                  <span v-else class="hi-badge hi-badge--warn">⚠ Warning</span>
+                  Detected issues
+                </div>
+                <ul class="health-issues-list">
+                  <li v-for="issue in healthIssues(srv)" :key="issue.label" :class="issue.level === 'critical' ? 'hi-item--crit' : 'hi-item--warn'">
+                    <strong>{{ issue.label }}</strong>
+                    <span v-if="issue.detail" class="hi-detail">{{ issue.detail }}</span>
+                  </li>
+                </ul>
+                <div v-if="srv._logs === null || srv._logsLoading" class="hi-footer text-muted text-xs">
+                  Loading system event log…
+                </div>
+                <div v-else-if="recentAlertLogs(srv).length" class="hi-footer">
+                  <div class="hi-footer-title">Recent event log entries:</div>
+                  <ul class="hi-log-list">
+                    <li v-for="e in recentAlertLogs(srv)" :key="e.id"
+                        :class="e.severity === 'Critical' ? 'hi-item--crit' : 'hi-item--warn'">
+                      <span class="text-xs text-muted">{{ formatDate(e.created) }}</span>
+                      {{ e.message }}
+                    </li>
+                  </ul>
+                </div>
+              </div>
+              <!-- ─────────────────────────────────────────────────────── -->
+
               <div class="details-grid">
                 <div class="detail-section">
                   <h4>System Information</h4>
@@ -789,6 +819,82 @@ export default {
       return ''
     }
 
+    /** Build a list of specific issues for the health issues panel in Overview. */
+    const healthIssues = (srv) => {
+      const issues = []
+      const health = srv._info?.health || srv._status?.health
+      if (!health || health === 'OK' || health === 'Unknown') return issues
+
+      // BMC unreachable
+      if (srv._status?.error && !srv._useSSH) {
+        issues.push({ level: 'critical', label: 'BMC Unreachable', detail: srv._status.error })
+        return issues
+      }
+
+      // Temperature sensors over or near threshold
+      const temps = srv._thermal?.temperatures || []
+      for (const t of temps) {
+        if (t.health && t.health !== 'OK') {
+          const crit = t.upper_threshold_critical ? ` (threshold: ${t.upper_threshold_critical}°C)` : ''
+          issues.push({
+            level: t.health.toLowerCase() === 'critical' ? 'critical' : 'warn',
+            label: `High temperature: ${t.name}`,
+            detail: `${t.reading_celsius}°C${crit}`,
+          })
+        }
+      }
+
+      // Fan health
+      const fans = srv._thermal?.fans || []
+      for (const f of fans) {
+        if (f.health && f.health !== 'OK') {
+          issues.push({
+            level: f.health.toLowerCase() === 'critical' ? 'critical' : 'warn',
+            label: `Fan issue: ${f.name}`,
+            detail: f.reading_rpm != null ? `${f.reading_rpm} RPM` : '',
+          })
+        }
+      }
+
+      // Processor health
+      for (const p of srv._hardware?.processors || []) {
+        if (p.health && p.health !== 'OK') {
+          issues.push({ level: 'critical', label: `CPU issue: ${p.socket || p.id}`, detail: p.model })
+        }
+      }
+
+      // Memory health
+      for (const m of srv._hardware?.modules || []) {
+        if (m.health && m.health !== 'OK') {
+          issues.push({ level: 'critical', label: `Memory issue: ${m.id}`, detail: m.manufacturer })
+        }
+      }
+
+      // Drive health
+      for (const ctrl of srv._hardware?.controllers || []) {
+        for (const d of ctrl.drives || []) {
+          if (d.health && d.health !== 'OK') {
+            issues.push({ level: 'critical', label: `Drive issue: ${d.name || d.id}`, detail: `${d.model} ${d.capacity_gb ? d.capacity_gb + ' GB' : ''}`.trim() })
+          }
+        }
+      }
+
+      // Fallback if we haven't loaded component data yet
+      if (issues.length === 0) {
+        issues.push({ level: health === 'Critical' ? 'critical' : 'warn', label: `System health: ${health}`, detail: 'Loading component details…' })
+      }
+
+      return issues
+    }
+
+    /** Return recent Warning/Critical SEL entries for the health issues panel. */
+    const recentAlertLogs = (srv) => {
+      if (!Array.isArray(srv._logs)) return []
+      return srv._logs
+        .filter(e => e.severity === 'Critical' || e.severity === 'Warning')
+        .slice(0, 5)
+    }
+
     // ── Dashboard charts ──
     const healthChartData = computed(() => {
       const counts = { OK: 0, Warning: 0, Critical: 0, Unknown: 0 }
@@ -948,14 +1054,13 @@ export default {
 
     const jumpToServer = (srv) => {
       expandServer(srv)
-      // If the alert is a health issue (Warning/Critical), go straight to Logs
-      // so the user sees the System Event Log entries that explain the problem.
-      // Unreachable servers already show the error on the Overview tab.
+      // Always land on Overview — the health issues panel there shows the specific problem.
+      srv._activeTab = 'overview'
+      // Proactively load logs and hardware so the health panel has component data
       const health = srv._status?.health
       if (health === 'Warning' || health === 'Critical') {
-        srv._activeTab = 'logs'
-        // loadServerDetail pre-fetches logs; only call loadLogs if detail fetch isn't running
         if (srv._logs === null && !srv._loading) loadLogs(srv)
+        if (!srv._hardware && !srv._hwLoading) loadHardware(srv)
       }
       setTimeout(() => {
         const el = document.getElementById(`srv-card-${srv._key}`)
@@ -1637,7 +1742,7 @@ export default {
     })
 
     return {
-      loading, polling, allServers, typeLabel, dash, alertedServers, alertLevel, alertReason,
+      loading, polling, allServers, typeLabel, dash, alertedServers, alertLevel, alertReason, healthIssues, recentAlertLogs,
       healthChartData, powerStateChartData, tempBarData, dashChartOptions, tempBarOptions,
       expandServer, collapseServer, jumpToServer, loadServerDetail, loadLogs, testConnection, powerAction,
       switchTab, loadHardware, loadNetwork, loadFirmware,
@@ -2035,6 +2140,70 @@ export default {
 .alert-chip--crit:hover { background: #fecaca; }
 .alert-chip--warn { background: #fef9c3; color: #a16207; }
 .alert-chip--warn:hover { background: #fef08a; }
+
+/* ── Health issues panel ──────────────────────────────────────────────── */
+.health-issues-panel {
+  background: #1c1a14;
+  border: 1px solid #a16207;
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+}
+.health-issues-title {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: #fbbf24;
+  margin-bottom: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.hi-badge {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+.hi-badge--crit { background: #dc2626; color: #fff; }
+.hi-badge--warn { background: #d97706; color: #fff; }
+.health-issues-list {
+  list-style: none;
+  margin: 0 0 0.5rem 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.health-issues-list li {
+  font-size: 0.82rem;
+  padding: 0.3rem 0.6rem;
+  border-radius: 0.25rem;
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+.hi-item--crit { background: rgba(220,38,38,0.15); color: #fca5a5; }
+.hi-item--warn { background: rgba(217,119,6,0.15); color: #fcd34d; }
+.hi-detail { opacity: 0.75; font-size: 0.78rem; }
+.hi-footer { margin-top: 0.5rem; border-top: 1px solid rgba(255,255,255,0.07); padding-top: 0.5rem; }
+.hi-footer-title { font-size: 0.75rem; color: #94a3b8; margin-bottom: 0.3rem; }
+.hi-log-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.hi-log-list li {
+  font-size: 0.78rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 0.2rem;
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
 
 .overview-table-wrap {
   overflow-x: auto;

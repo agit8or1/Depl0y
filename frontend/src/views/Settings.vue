@@ -304,25 +304,33 @@
         </div>
 
         <div class="action-buttons" style="margin-top: 1rem;">
-          <button @click="checkForUpdates" class="btn btn-outline" :disabled="checkingUpdates">
+          <button @click="checkForUpdates" class="btn btn-outline" :disabled="checkingUpdates || applyingUpdate">
             {{ checkingUpdates ? 'Checking...' : '🔍 Check for Updates' }}
           </button>
           <button
-            v-if="updateInfo && updateInfo.update_available"
+            v-if="updateInfo && updateInfo.update_available && !applyingUpdate && !updateDone"
             @click="applyUpdate"
             class="btn btn-success"
-            :disabled="applyingUpdate"
           >
-            {{ applyingUpdate ? 'Updating...' : '⬇️ Install Update' }}
+            ⬇️ Install Update
           </button>
+        </div>
+
+        <!-- Live progress terminal -->
+        <div v-if="applyingUpdate || updateLog.length > 0" class="update-terminal" ref="terminalEl">
+          <div class="update-terminal__header">
+            <span v-if="applyingUpdate && !updateDone && !updateFailed">
+              <span class="terminal-spinner"></span> Update in progress…
+            </span>
+            <span v-else-if="updateDone" style="color:#4ade80">✅ Upgrade complete — reloading in {{ reloadCountdown }}s</span>
+            <span v-else-if="updateFailed" style="color:#f87171">❌ Update failed</span>
+            <span v-else>Update log</span>
+          </div>
+          <pre class="update-terminal__body" ref="logBodyEl">{{ updateLog.join('\n') }}</pre>
         </div>
 
         <div v-if="updateError" class="error-message" style="margin-top: 1rem;">
           {{ updateError }}
-        </div>
-
-        <div v-if="updateSuccess" class="success-message" style="margin-top: 1rem;">
-          {{ updateSuccess }}
         </div>
       </div>
     </div>
@@ -783,7 +791,7 @@
 </template>
 
 <script>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, nextTick } from 'vue'
 import api from '@/services/api'
 import { useToast } from 'vue-toastification'
 
@@ -829,6 +837,14 @@ export default {
     const applyingUpdate = ref(false)
     const updateError = ref(null)
     const updateSuccess = ref(null)
+    const updateLog = ref([])
+    const updateDone = ref(false)
+    const updateFailed = ref(false)
+    const reloadCountdown = ref(15)
+    const terminalEl = ref(null)
+    const logBodyEl = ref(null)
+    let _logPollTimer = null
+    let _reloadTimer = null
 
     // Linux VM Agent
     const linuxAgentEnabled = ref(false)
@@ -1138,32 +1154,65 @@ export default {
       }
     }
 
+    const _scrollLog = () => {
+      nextTick(() => {
+        if (logBodyEl.value) logBodyEl.value.scrollTop = logBodyEl.value.scrollHeight
+      })
+    }
+
+    const _startLogPoll = () => {
+      if (_logPollTimer) return
+      _logPollTimer = setInterval(async () => {
+        try {
+          const res = await api.systemUpdates.log()
+          updateLog.value = res.data.lines || []
+          _scrollLog()
+          if (res.data.done && !updateDone.value) {
+            updateDone.value = true
+            applyingUpdate.value = false
+            clearInterval(_logPollTimer)
+            _logPollTimer = null
+            // Countdown then reload
+            reloadCountdown.value = 15
+            _reloadTimer = setInterval(() => {
+              reloadCountdown.value--
+              if (reloadCountdown.value <= 0) {
+                clearInterval(_reloadTimer)
+                window.location.reload()
+              }
+            }, 1000)
+          } else if (res.data.failed && !updateFailed.value) {
+            updateFailed.value = true
+            applyingUpdate.value = false
+            clearInterval(_logPollTimer)
+            _logPollTimer = null
+          }
+        } catch {
+          // Backend restarted — keep polling until it comes back
+        }
+      }, 2000)
+    }
+
     const applyUpdate = async () => {
-      if (!confirm('This will update Depl0y and restart the service. Continue?')) {
-        return
-      }
+      if (!confirm('This will update Depl0y and restart the service. Continue?')) return
 
       applyingUpdate.value = true
       updateError.value = null
       updateSuccess.value = null
+      updateLog.value = []
+      updateDone.value = false
+      updateFailed.value = false
+      if (_logPollTimer) { clearInterval(_logPollTimer); _logPollTimer = null }
+      if (_reloadTimer) { clearInterval(_reloadTimer); _reloadTimer = null }
 
       try {
-        const response = await api.systemUpdates.apply()
-        updateSuccess.value = response.data.message
-        toast.success('Update started! Service will restart shortly.')
-
-        setTimeout(() => {
-          toast.info('Reloading page in 20 seconds...')
-          setTimeout(() => {
-            window.location.reload()
-          }, 20000)
-        }, 5000)
-
+        await api.systemUpdates.apply()
+        toast.success('Update started — watch the progress log below.')
+        _startLogPoll()
       } catch (error) {
         console.error('Failed to apply update:', error)
         updateError.value = error.response?.data?.detail || 'Failed to apply update'
         toast.error('Failed to apply update')
-      } finally {
         applyingUpdate.value = false
       }
     }
@@ -1297,6 +1346,12 @@ export default {
       applyingUpdate,
       updateError,
       updateSuccess,
+      updateLog,
+      updateDone,
+      updateFailed,
+      reloadCountdown,
+      terminalEl,
+      logBodyEl,
       checkForUpdates,
       applyUpdate,
       haStatus,
@@ -1927,6 +1982,47 @@ export default {
   margin-top: 1.5rem;
   padding-top: 1rem;
   border-top: 1px solid var(--border-color);
+}
+
+.update-terminal {
+  margin-top: 1.25rem;
+  border: 1px solid #334155;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  font-family: 'Fira Mono', 'Consolas', monospace;
+  font-size: 0.8rem;
+}
+.update-terminal__header {
+  background: #1e293b;
+  color: #94a3b8;
+  padding: 0.4rem 0.75rem;
+  font-size: 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-bottom: 1px solid #334155;
+}
+.update-terminal__body {
+  background: #0f172a;
+  color: #e2e8f0;
+  margin: 0;
+  padding: 0.75rem;
+  max-height: 320px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  line-height: 1.6;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.terminal-spinner {
+  display: inline-block;
+  width: 0.8rem;
+  height: 0.8rem;
+  border: 2px solid #475569;
+  border-top-color: #38bdf8;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  vertical-align: middle;
 }
 
 .error-message {

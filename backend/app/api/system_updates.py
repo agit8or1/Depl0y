@@ -10,6 +10,7 @@ import logging
 import subprocess
 import os
 import requests
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -175,12 +176,35 @@ def download_update():
         )
 
 
+UPDATE_LOG = "/tmp/depl0y-update.log"
+
+
+def _log(f, msg: str):
+    """Write a timestamped line to the update log file."""
+    ts = datetime.now().strftime("%H:%M:%S")
+    line = f"[{ts}] {msg}"
+    f.write(line + "\n")
+    f.flush()
+    logger.info(msg)
+
+
+@router.get("/log")
+def get_update_log(current_user=Depends(get_current_user)):
+    """Return the current contents of the update log for real-time progress display."""
+    if not os.path.exists(UPDATE_LOG):
+        return {"lines": [], "done": False, "failed": False}
+    with open(UPDATE_LOG) as f:
+        content = f.read()
+    lines = content.splitlines()
+    done = any("Upgrade complete" in l for l in lines)
+    failed = any("❌" in l or "failed to start" in l.lower() for l in lines)
+    return {"lines": lines[-300:], "done": done, "failed": failed}
+
+
 @router.post("/apply")
 def apply_update(current_user=Depends(get_current_user)):
     """Apply update by downloading from GitHub and running the installer"""
     try:
-        logger.info("Starting update process from GitHub...")
-
         # Get latest release from GitHub
         github_service = GitHubUpdateService()
         update_info = github_service.check_for_updates()
@@ -192,64 +216,56 @@ def apply_update(current_user=Depends(get_current_user)):
         if not download_url:
             raise HTTPException(status_code=500, detail="No download URL found")
 
-        logger.info(f"Downloading update from GitHub: {download_url}")
-
-        # Download tarball from GitHub
         tarball_path = "/tmp/depl0y-update.tar.gz"
         extract_path = "/tmp/depl0y-update"
+        latest = update_info.get("latest_version", "")
 
-        # Download the release tarball
-        response = requests.get(download_url, timeout=300, stream=True)
-        if response.status_code != 200:
-            raise Exception(f"Failed to download update: HTTP {response.status_code}")
+        # Open log file and write progress throughout the pre-script phases
+        with open(UPDATE_LOG, "w") as lf:
+            _log(lf, f"🔄 Starting update to v{latest}...")
+            _log(lf, f"📥 Downloading release from GitHub...")
 
-        # Save tarball
-        with open(tarball_path, 'wb') as f:
-            for chunk in response.iter_content(chunk_size=8192):
-                if chunk:
-                    f.write(chunk)
+            response = requests.get(download_url, timeout=300, stream=True)
+            if response.status_code != 200:
+                _log(lf, f"❌ Download failed: HTTP {response.status_code}")
+                raise Exception(f"Failed to download update: HTTP {response.status_code}")
 
-        logger.info("Download complete, extracting files...")
+            total = 0
+            with open(tarball_path, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=65536):
+                    if chunk:
+                        f.write(chunk)
+                        total += len(chunk)
+            _log(lf, f"✅ Download complete ({total // 1024} KB)")
 
-        # Clean up old extract directory if it exists
-        if os.path.exists(extract_path):
-            subprocess.run(['rm', '-rf', extract_path], check=True, timeout=10)
+            _log(lf, "📦 Extracting release archive...")
+            if os.path.exists(extract_path):
+                subprocess.run(['rm', '-rf', extract_path], check=True, timeout=10)
+            os.makedirs(extract_path, exist_ok=True)
+            subprocess.run(
+                ['tar', '-xzf', tarball_path, '-C', extract_path, '--strip-components=1'],
+                check=True, capture_output=True, timeout=60
+            )
+            _log(lf, "✅ Extraction complete")
 
-        os.makedirs(extract_path, exist_ok=True)
+            upgrade_script_path = os.path.join(extract_path, 'scripts', 'upgrade.sh')
+            if not os.path.exists(upgrade_script_path):
+                _log(lf, "❌ Upgrade script not found in downloaded package")
+                raise Exception("Upgrade script not found in downloaded package")
 
-        # Extract tarball
-        subprocess.run(
-            ['tar', '-xzf', tarball_path, '-C', extract_path, '--strip-components=1'],
-            check=True,
-            capture_output=True,
-            timeout=60
-        )
+            os.chmod(upgrade_script_path, 0o755)
+            _log(lf, "🚀 Launching upgrade script — service will restart automatically...")
 
-        # Find the upgrade script
-        upgrade_script_path = os.path.join(extract_path, 'scripts', 'upgrade.sh')
-        if not os.path.exists(upgrade_script_path):
-            raise Exception(f"Upgrade script not found in downloaded package")
-
-        os.chmod(upgrade_script_path, 0o755)
-
-        logger.info("Starting upgrade in background...")
-
-        # Run upgrade script via at daemon to detach from backend process
-        update_script = f"""#!/bin/bash
-/bin/bash {upgrade_script_path} {extract_path} > /tmp/depl0y-update.log 2>&1
-"""
+        # Append upgrade script output to the same log file
+        runner = f"#!/bin/bash\n/bin/bash {upgrade_script_path} {extract_path} >> {UPDATE_LOG} 2>&1\n"
         script_path = "/tmp/depl0y-update-runner.sh"
         with open(script_path, 'w') as f:
-            f.write(update_script)
+            f.write(runner)
         os.chmod(script_path, 0o755)
 
-        # Schedule via at
         proc = subprocess.Popen(
             ['/usr/bin/at', 'now'],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
         )
         stdout, stderr = proc.communicate(input=script_path, timeout=5)
         if proc.returncode != 0:
@@ -257,16 +273,20 @@ def apply_update(current_user=Depends(get_current_user)):
 
         return {
             "success": True,
-            "message": "Update is being applied from GitHub. The service will restart automatically when complete.",
-            "version": update_info.get("latest_version"),
-            "log_file": "/tmp/depl0y-update.log"
+            "message": f"Update to v{latest} is running. Watch the progress log below.",
+            "version": latest,
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
+        # Write failure to log if possible
+        try:
+            with open(UPDATE_LOG, "a") as lf:
+                _log(lf, f"❌ Update failed: {e}")
+        except Exception:
+            pass
         logger.error(f"Failed to apply update: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to apply update: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Failed to apply update: {str(e)}")
 
 

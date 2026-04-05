@@ -38,8 +38,26 @@ echo "📦 Copying new backend files..."
 sudo rsync -av --exclude='*.pyc' --exclude='__pycache__' --exclude='venv' --exclude='.env' \
     "$EXTRACT_DIR/backend/" "$INSTALL_DIR/backend/"
 
-echo "📦 Copying new frontend files..."
-sudo rsync -av "$EXTRACT_DIR/frontend/dist/" "$INSTALL_DIR/frontend/dist/"
+echo "📦 Building frontend from source..."
+# Build from source so the compiled output always matches the downloaded code.
+# The dist/ directory in the release tarball may be stale or absent (gitignored).
+FRONTEND_SRC="$EXTRACT_DIR/frontend"
+if [ -f "$FRONTEND_SRC/package.json" ]; then
+    cd "$FRONTEND_SRC"
+    # Install deps quietly, then build (vite is configured to output directly to INSTALL_DIR/frontend/dist)
+    npm install --silent 2>&1 || npm install 2>&1
+    sudo chown -R "$(whoami)" "$INSTALL_DIR/frontend/dist" 2>/dev/null || true
+    # Override outDir so build goes straight to the install location
+    npx vite build --outDir "$INSTALL_DIR/frontend/dist" --emptyOutDir 2>&1
+    cd - > /dev/null
+else
+    echo "⚠ No package.json found — falling back to rsync of pre-built dist"
+    if [ -d "$FRONTEND_SRC/dist" ]; then
+        sudo rsync -av "$FRONTEND_SRC/dist/" "$INSTALL_DIR/frontend/dist/"
+    else
+        echo "⚠ No dist/ folder either — frontend unchanged"
+    fi
+fi
 
 echo "📦 Copying scripts..."
 sudo cp -r "$EXTRACT_DIR/scripts/"* "$INSTALL_DIR/scripts/" 2>/dev/null || true

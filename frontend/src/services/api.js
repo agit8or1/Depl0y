@@ -232,7 +232,8 @@ export default {
   systemUpdates: {
     check: () => api.get('/system-updates/check'),
     download: () => api.get('/system-updates/download', { responseType: 'blob' }),
-    apply: () => api.post('/system-updates/apply')
+    apply: () => api.post('/system-updates/apply'),
+    log: () => api.get('/system-updates/log')
   },
 
   // High Availability

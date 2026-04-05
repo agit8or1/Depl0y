@@ -5,9 +5,25 @@
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)
 ![Vue.js](https://img.shields.io/badge/vue.js-3.x-green.svg)
-![Version](https://img.shields.io/badge/version-1.6.0-brightgreen.svg)
+![Version](https://img.shields.io/badge/version-1.6.1-brightgreen.svg)
 
 Depl0y is a free, open-source web-based control panel that simplifies the deployment, management, and import of virtual machines on Proxmox VE infrastructure. With an intuitive interface and powerful automation, Depl0y makes VM provisioning and day-2 operations accessible to everyone.
+
+---
+
+## ✨ What's New in v1.6.1 — iDRAC / iLO Out-of-Band Management
+
+**Monitor and control your physical servers directly from Depl0y — no separate BMC console required.**
+
+- **🖧 Redfish Dashboard** — unified view of all BMC-enabled servers (ProxmoxHosts, PBS servers, standalones) with health, power state, temperature, and wattage at a glance
+- **📊 Live Charts** — health doughnut, power state doughnut, and per-server temperature bar chart updated every 2 minutes
+- **⚡ Power Control** — on, off, graceful shutdown, force restart, graceful restart, and PXE boot — directly from the UI
+- **🔍 Deep Hardware Inventory** — CPUs, DIMMs, storage controllers & drives, firmware versions, network interfaces, and system event log
+- **🌡️ Thermal & Power Monitoring** — all temperature sensors with critical thresholds, all fans with RPM, and per-PSU wattage
+- **🔔 Clickable Alert Chips** — warning/critical alerts in the summary strip jump straight to the affected server card
+- **🚀 Launch BMC Console** — one-click button to open the native iDRAC or iLO web UI in a new tab
+- **🔄 Auto-Detect Model** — falls back through SKU → PartNumber → manager model for older iDRAC 8 / 13G servers that return blank fields
+- **⏱️ Zero Cold-Start** — BMC poll runs immediately on backend startup so the dashboard is never blank after a restart
 
 ---
 
@@ -39,6 +55,15 @@ cd /opt/depl0y && git pull origin main && sudo systemctl restart depl0y-backend
 ---
 
 ## Features
+
+### 🖧 iDRAC / iLO Out-of-Band Management *(New in v1.6.1)*
+- **Redfish Dashboard** — unified health, power, temperature, and wattage overview for all BMC-equipped servers
+- **Power Control** — on, off, graceful shutdown, force/graceful restart, PXE boot
+- **Hardware Inventory** — CPUs, DIMMs, storage, firmware, NICs, and system event log via Redfish
+- **Live Charts** — health doughnut, power state doughnut, per-server temperature bar chart (polled every 2 min)
+- **Clickable Alerts** — warning/critical chips jump directly to the affected server card
+- **Launch BMC Console** — one-click link to the native iDRAC or iLO web UI
+- **Multi-vendor** — Dell iDRAC (including iDRAC 8 / 13G) and HPE iLO via standard Redfish v1
 
 ### 📥 VM Import *(New in v1.6.0)*
 - **File Upload** — import OVA, OVF, VMDK, VHD, VHDX, QCOW2, RAW, or ZIP archives via drag & drop

@@ -139,7 +139,8 @@
     <div v-if="activeTab === 'all'" class="card">
       <div class="card-header">
         <h3>All Proxmox VMs</h3>
-        <button @click="fetchAllProxmoxVMs" class="btn btn-secondary" :disabled="allLoading">
+        <span class="refresh-countdown" v-if="!allLoading">Auto-refresh in {{ allCountdown }}s</span>
+        <button @click="fetchAllProxmoxVMs(true)" class="btn btn-secondary" :disabled="allLoading">
           {{ allLoading ? 'Refreshing…' : 'Refresh' }}
         </button>
       </div>
@@ -309,7 +310,7 @@
 </template>
 
 <script>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '@/services/api'
 import { useToast } from 'vue-toastification'
@@ -486,7 +487,11 @@ export default {
     const allSortField = ref('vmid')
     const allSortDirection = ref('asc')
 
-    const fetchAllProxmoxVMs = async () => {
+    const fetchAllProxmoxVMs = async (resetCountdown = false) => {
+      if (resetCountdown) {
+        const intervalSecs = parseInt(localStorage.getItem('depl0y_refresh_interval') || '30', 10)
+        resetAllCountdown(intervalSecs)
+      }
       allLoading.value = true
       allError.value = null
       try {
@@ -641,10 +646,61 @@ export default {
       return classMap[(status || '').toLowerCase()] || 'badge-info'
     }
 
+    // ── Auto-refresh ────────────────────────────────────────────────────────
+    const allCountdown = ref(0)
+    let managedInterval = null
+    let allInterval = null
+    let allTickInterval = null
+
+    const resetAllCountdown = (intervalSecs) => {
+      allCountdown.value = intervalSecs
+    }
+
+    const startAllIntervals = (intervalSecs) => {
+      clearInterval(allInterval)
+      clearInterval(allTickInterval)
+
+      resetAllCountdown(intervalSecs)
+
+      allInterval = setInterval(() => {
+        if (document.visibilityState === 'hidden') return
+        if (activeTab.value === 'all') fetchAllProxmoxVMs()
+        resetAllCountdown(intervalSecs)
+      }, intervalSecs * 1000)
+
+      allTickInterval = setInterval(() => {
+        if (document.visibilityState === 'hidden') return
+        if (allCountdown.value > 0) allCountdown.value--
+      }, 1000)
+    }
+
+    const handleVisibilityChange = () => {
+      // Resume tick immediately when page becomes visible again
+      if (document.visibilityState === 'visible' && activeTab.value === 'all') {
+        fetchAllProxmoxVMs()
+      }
+    }
+
     onMounted(() => {
       fetchVMs()
-      const interval = setInterval(fetchVMs, 30000)
-      return () => clearInterval(interval)
+
+      const intervalSecs = parseInt(localStorage.getItem('depl0y_refresh_interval') || '30', 10)
+
+      managedInterval = setInterval(() => {
+        if (document.visibilityState === 'hidden') return
+        if (activeTab.value === 'managed') fetchVMs()
+      }, intervalSecs * 1000)
+
+      startAllIntervals(intervalSecs)
+
+      document.addEventListener('visibilitychange', handleVisibilityChange)
+    })
+
+    onUnmounted(() => {
+      clearInterval(managedInterval)
+      clearInterval(allInterval)
+      clearInterval(allTickInterval)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
     })
 
     return {
@@ -685,6 +741,7 @@ export default {
       allStartVM,
       allStopVM,
       allShutdownVM,
+      allCountdown,
       // shared
       formatBytes,
       getStatusBadgeClass,
@@ -900,5 +957,11 @@ export default {
 
 .btn-secondary:hover {
   opacity: 0.9;
+}
+
+.refresh-countdown {
+  font-size: 0.75rem;
+  color: var(--text-muted, #64748b);
+  margin-right: 0.5rem;
 }
 </style>

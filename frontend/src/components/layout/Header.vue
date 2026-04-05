@@ -4,6 +4,10 @@
       <h2 class="page-title">{{ pageTitle }}</h2>
     </div>
 
+    <div class="header-center">
+      <GlobalSearch />
+    </div>
+
     <div class="header-right">
       <div class="user-info">
         <span class="username">{{ username }}</span>
@@ -21,9 +25,13 @@
 import { computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/store/auth'
+import GlobalSearch from '@/components/layout/GlobalSearch.vue'
 
 export default {
   name: 'Header',
+  components: {
+    GlobalSearch
+  },
   setup() {
     const router = useRouter()
     const route = useRoute()
@@ -63,28 +71,46 @@ export default {
 
 <style scoped>
 .header {
-  background-color: white;
-  border-bottom: 1px solid var(--border-color);
-  padding: 1rem 2rem;
+  background: linear-gradient(90deg, #1a2332 0%, #162030 100%);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 0.75rem 2rem;
   display: flex;
   justify-content: space-between;
   align-items: center;
   position: sticky;
   top: 0;
   z-index: 50;
+  gap: 1.5rem;
+}
+
+.header-left {
+  flex: 1;
+  min-width: 0;
 }
 
 .page-title {
-  font-size: 1.5rem;
+  font-size: 1.25rem;
   font-weight: 600;
-  color: var(--text-primary);
+  color: rgba(255, 255, 255, 0.9);
   margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.header-center {
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: center;
 }
 
 .header-right {
+  flex: 1;
   display: flex;
   align-items: center;
-  gap: 1.5rem;
+  justify-content: flex-end;
+  gap: 1.25rem;
+  min-width: 0;
 }
 
 .user-info {
@@ -95,16 +121,37 @@ export default {
 
 .username {
   font-weight: 500;
-  color: var(--text-primary);
+  color: rgba(255, 255, 255, 0.85);
+  white-space: nowrap;
+}
+
+/* Override the global btn-outline for the dark header */
+.btn.btn-outline {
+  border-color: rgba(255, 255, 255, 0.25);
+  color: rgba(255, 255, 255, 0.8);
+  background: transparent;
+  white-space: nowrap;
+}
+
+.btn.btn-outline:hover {
+  border-color: rgba(255, 255, 255, 0.5);
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+@media (max-width: 900px) {
+  .header-center {
+    display: none;
+  }
 }
 
 @media (max-width: 768px) {
   .header {
-    padding: 1rem;
+    padding: 0.75rem 1rem;
   }
 
   .page-title {
-    font-size: 1.25rem;
+    font-size: 1rem;
   }
 
   .user-info {

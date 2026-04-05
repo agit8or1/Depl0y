@@ -124,6 +124,8 @@ class ProxmoxNode(Base):
     disk_total = Column(Integer, nullable=True)  # Bytes
     disk_used = Column(Integer, nullable=True)  # Bytes
     uptime = Column(Integer, nullable=True)  # Seconds
+    vm_count = Column(Integer, default=0, nullable=True)   # Number of QEMU VMs on this node
+    lxc_count = Column(Integer, default=0, nullable=True)  # Number of LXC containers on this node
     last_updated = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Relationships

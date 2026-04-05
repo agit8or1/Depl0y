@@ -942,7 +942,7 @@ const loadStatus = async () => {
 
 const loadRrd = async () => {
   try {
-    const res = await api.pveVm.getRrdData(hostId.value, node.value, vmid.value, { timeframe: rrdTimeframe.value })
+    const res = await api.pveVm.getRrdData(hostId.value, node.value, vmid.value, { timeframe: rrdTimeframe.value, cf: 'AVERAGE' })
     rrdData.value = res.data
   } catch (e) {
     console.warn('RRD failed', e)
@@ -1395,7 +1395,12 @@ const doMigrate = async () => {
 
 // ── Console ────────────────────────────────────────────────────────────────────
 
-const openConsole = () => {
+const openConsole = async () => {
+  try {
+    await api.pveVm.getVncTicket(hostId.value, node.value, vmid.value)
+  } catch (e) {
+    console.warn('VNC ticket request failed', e)
+  }
   router.push(`/proxmox/${hostId.value}/nodes/${node.value}/console/${vmid.value}`)
 }
 

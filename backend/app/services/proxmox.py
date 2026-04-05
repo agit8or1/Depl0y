@@ -760,6 +760,22 @@ class ProxmoxService:
             logger.error(f"Failed to get VM config: {e}")
             return None
 
+    def get_vms(self, node_name: str) -> List[Dict[str, Any]]:
+        """Get list of QEMU VMs on a specific node"""
+        try:
+            return self.proxmox.nodes(node_name).qemu.get()
+        except Exception as e:
+            logger.error(f"Failed to get VMs for node {node_name}: {e}")
+            return []
+
+    def get_lxc(self, node_name: str) -> List[Dict[str, Any]]:
+        """Get list of LXC containers on a specific node"""
+        try:
+            return self.proxmox.nodes(node_name).lxc.get()
+        except Exception as e:
+            logger.error(f"Failed to get LXC containers for node {node_name}: {e}")
+            return []
+
     def get_all_vms(self) -> List[Dict[str, Any]]:
         """Get all VMs across all nodes in the cluster"""
         all_vms = []
@@ -837,6 +853,10 @@ def poll_proxmox_resources(db: Session, host_id: int) -> bool:
             if not resources:
                 continue
 
+            # Fetch VM and LXC counts for this node
+            vm_count = len(service.get_vms(node_name))
+            lxc_count = len(service.get_lxc(node_name))
+
             # Update or create node record
             node = (
                 db.query(ProxmoxNode)
@@ -856,6 +876,8 @@ def poll_proxmox_resources(db: Session, host_id: int) -> bool:
                 node.disk_total = resources["disk_total"]
                 node.disk_used = resources["disk_used"]
                 node.uptime = resources["uptime"]
+                node.vm_count = vm_count
+                node.lxc_count = lxc_count
                 node.last_updated = datetime.utcnow()
             else:
                 node = ProxmoxNode(
@@ -869,6 +891,8 @@ def poll_proxmox_resources(db: Session, host_id: int) -> bool:
                     disk_total=resources["disk_total"],
                     disk_used=resources["disk_used"],
                     uptime=resources["uptime"],
+                    vm_count=vm_count,
+                    lxc_count=lxc_count,
                     last_updated=datetime.utcnow(),
                 )
                 db.add(node)

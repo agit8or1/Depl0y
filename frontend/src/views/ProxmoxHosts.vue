@@ -72,7 +72,7 @@
     <div class="card">
       <div class="card-header">
         <h3>Cluster Nodes</h3>
-        <button @click="refreshAllNodes" class="btn btn-outline">
+        <button @click="handleRefreshAll" class="btn btn-outline">
           <span v-if="!loadingNodes">🔄 Refresh All</span>
           <span v-else>Loading...</span>
         </button>
@@ -121,6 +121,71 @@
                 <div class="stat">
                   <span class="stat-label">Uptime:</span>
                   <span class="stat-value">{{ formatUptime(node.uptime) }}</span>
+                </div>
+              </div>
+
+              <!-- Live Stats -->
+              <div class="node-live-stats">
+                <div class="live-stats-divider"></div>
+
+                <!-- CPU usage bar -->
+                <div class="live-stat-row">
+                  <span class="live-stat-label">Live CPU</span>
+                  <template v-if="getNodeStat(datacenter.id, node.node_name)">
+                    <div class="stat-bar-wrap">
+                      <div class="stat-bar">
+                        <div
+                          class="stat-bar-fill"
+                          :class="cpuBarClass(getNodeStat(datacenter.id, node.node_name).cpu)"
+                          :style="{ width: cpuPct(getNodeStat(datacenter.id, node.node_name).cpu) + '%' }"
+                        ></div>
+                      </div>
+                      <span class="stat-bar-label">{{ cpuPct(getNodeStat(datacenter.id, node.node_name).cpu) }}%</span>
+                    </div>
+                  </template>
+                  <span v-else class="stat-skeleton">—</span>
+                </div>
+
+                <!-- RAM usage bar -->
+                <div class="live-stat-row">
+                  <span class="live-stat-label">Live RAM</span>
+                  <template v-if="getNodeStat(datacenter.id, node.node_name)">
+                    <div class="stat-bar-wrap">
+                      <div class="stat-bar">
+                        <div
+                          class="stat-bar-fill"
+                          :class="ramBarClass(getNodeStat(datacenter.id, node.node_name).memory)"
+                          :style="{ width: ramPct(getNodeStat(datacenter.id, node.node_name).memory) + '%' }"
+                        ></div>
+                      </div>
+                      <span class="stat-bar-label">
+                        {{ formatGB(getNodeStat(datacenter.id, node.node_name).memory?.used) }} /
+                        {{ formatGB(getNodeStat(datacenter.id, node.node_name).memory?.total) }} GB
+                      </span>
+                    </div>
+                  </template>
+                  <span v-else class="stat-skeleton">—</span>
+                </div>
+
+                <!-- Uptime -->
+                <div class="live-stat-row">
+                  <span class="live-stat-label">Uptime</span>
+                  <template v-if="getNodeStat(datacenter.id, node.node_name)">
+                    <span class="stat-value text-sm">{{ formatUptime(getNodeStat(datacenter.id, node.node_name).uptime) }}</span>
+                  </template>
+                  <span v-else class="stat-skeleton">—</span>
+                </div>
+
+                <!-- VM / LXC count badges -->
+                <div class="live-stat-row">
+                  <span class="live-stat-label">Guests</span>
+                  <template v-if="getNodeStat(datacenter.id, node.node_name)">
+                    <div class="guest-badges">
+                      <span class="badge badge-info">{{ getNodeStat(datacenter.id, node.node_name).vmCount }} VMs</span>
+                      <span class="badge badge-secondary">{{ getNodeStat(datacenter.id, node.node_name).lxcCount }} LXC</span>
+                    </div>
+                  </template>
+                  <span v-else class="stat-skeleton">—</span>
                 </div>
               </div>
             </div>
@@ -343,6 +408,9 @@ export default {
     const showEditModal = ref(false)
     const useApiToken = ref(false)
 
+    // Live stats keyed by "${hostId}-${nodeName}"
+    const nodeStats = ref({})
+
     const editHost = ref({
       id: null, name: '', hostname: '', port: 8006,
       is_active: true, verify_ssl: false,
@@ -436,7 +504,7 @@ export default {
         toast.success('Polling started')
         setTimeout(() => {
           fetchHosts()
-          refreshAllNodes()
+          handleRefreshAll()
         }, 2000)
       } catch (error) {
         console.error('Failed to poll host:', error)
@@ -468,12 +536,87 @@ export default {
       }
     }
 
+    // Load live stats for all nodes in parallel after the node list is ready
+    const loadNodeStats = async () => {
+      if (allNodes.value.length === 0) return
+
+      const tasks = allNodes.value.map(node => {
+        const hostId = node.host_id
+        const nodeName = node.node_name
+        const key = `${hostId}-${nodeName}`
+
+        return Promise.allSettled([
+          api.pveNode.nodeStatus(hostId, nodeName),
+          api.pveNode.nodeVms(hostId, nodeName),
+          api.pveNode.containers(hostId, nodeName),
+        ]).then(([statusRes, vmsRes, lxcRes]) => {
+          const status = statusRes.status === 'fulfilled' ? statusRes.value.data : null
+          const vms = vmsRes.status === 'fulfilled' ? vmsRes.value.data : []
+          const lxcs = lxcRes.status === 'fulfilled' ? lxcRes.value.data : []
+
+          nodeStats.value = {
+            ...nodeStats.value,
+            [key]: {
+              cpu: status?.cpu ?? null,
+              memory: status?.memory ?? null,
+              uptime: status?.uptime ?? null,
+              vmCount: Array.isArray(vms) ? vms.filter(v => v.type === 'qemu' || !v.type).length : 0,
+              lxcCount: Array.isArray(lxcs) ? lxcs.length : 0,
+            }
+          }
+        }).catch(err => {
+          console.error(`Failed to load live stats for ${nodeName}:`, err)
+        })
+      })
+
+      await Promise.allSettled(tasks)
+    }
+
+    // Combined refresh: nodes first, then live stats async (non-blocking)
+    const handleRefreshAll = async () => {
+      await refreshAllNodes()
+      loadNodeStats()
+    }
+
     const datacentersWithNodes = computed(() => {
       return hosts.value.map(host => ({
         ...host,
         nodes: allNodes.value.filter(node => node.host_id === host.id)
       }))
     })
+
+    // Helper: retrieve live stats for a node (returns null if still loading)
+    const getNodeStat = (hostId, nodeName) => {
+      return nodeStats.value[`${hostId}-${nodeName}`] ?? null
+    }
+
+    // CPU helpers
+    const cpuPct = (cpu) => {
+      if (cpu == null) return 0
+      return Math.round(cpu * 100)
+    }
+    const cpuBarClass = (cpu) => {
+      const pct = cpuPct(cpu)
+      if (pct >= 90) return 'bar-danger'
+      if (pct >= 70) return 'bar-warning'
+      return 'bar-success'
+    }
+
+    // RAM helpers
+    const ramPct = (memory) => {
+      if (!memory || !memory.total) return 0
+      return Math.round((memory.used / memory.total) * 100)
+    }
+    const ramBarClass = (memory) => {
+      const pct = ramPct(memory)
+      if (pct >= 90) return 'bar-danger'
+      if (pct >= 70) return 'bar-warning'
+      return 'bar-success'
+    }
+    const formatGB = (bytes) => {
+      if (!bytes) return '0'
+      return (bytes / (1024 * 1024 * 1024)).toFixed(1)
+    }
 
     const formatUptime = (seconds) => {
       if (!seconds) return 'N/A'
@@ -547,7 +690,7 @@ export default {
 
     onMounted(() => {
       fetchHosts().then(() => {
-        refreshAllNodes()
+        handleRefreshAll()
       })
     })
 
@@ -562,6 +705,7 @@ export default {
       editHost,
       useApiToken,
       newHost,
+      nodeStats,
       datacentersWithNodes,
       addHost,
       openEdit,
@@ -569,10 +713,17 @@ export default {
       testConnection,
       pollHost,
       refreshAllNodes,
+      handleRefreshAll,
       deleteHost,
       formatDate,
       formatBytes,
-      formatUptime
+      formatUptime,
+      formatGB,
+      getNodeStat,
+      cpuPct,
+      cpuBarClass,
+      ramPct,
+      ramBarClass,
     }
   }
 }
@@ -763,5 +914,92 @@ export default {
 .stat-value {
   color: var(--text-primary);
   font-family: monospace;
+}
+
+/* Live stats section */
+.node-live-stats {
+  margin-top: 0.75rem;
+}
+
+.live-stats-divider {
+  border-top: 1px dashed var(--border-color);
+  margin-bottom: 0.75rem;
+}
+
+.live-stat-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+  margin-bottom: 0.5rem;
+}
+
+.live-stat-row:last-child {
+  margin-bottom: 0;
+}
+
+.live-stat-label {
+  color: var(--text-secondary);
+  font-weight: 500;
+  width: 4.5rem;
+  flex-shrink: 0;
+}
+
+.stat-bar-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.stat-bar {
+  flex: 1;
+  height: 6px;
+  background: var(--border-color);
+  border-radius: 3px;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.stat-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.4s ease;
+}
+
+.bar-success {
+  background-color: #22c55e;
+}
+
+.bar-warning {
+  background-color: #f59e0b;
+}
+
+.bar-danger {
+  background-color: #ef4444;
+}
+
+.stat-bar-label {
+  color: var(--text-primary);
+  font-family: monospace;
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.guest-badges {
+  display: flex;
+  gap: 0.375rem;
+}
+
+.badge-secondary {
+  background-color: var(--text-secondary, #6b7280);
+  color: #fff;
+}
+
+.stat-skeleton {
+  color: var(--text-secondary);
+  opacity: 0.45;
+  font-size: 0.875rem;
 }
 </style>

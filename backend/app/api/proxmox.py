@@ -89,6 +89,8 @@ class ProxmoxNodeResponse(BaseModel):
     disk_total: Optional[int]
     disk_used: Optional[int]
     uptime: Optional[int]
+    vm_count: Optional[int] = 0
+    lxc_count: Optional[int] = 0
     last_updated: datetime
 
     class Config:

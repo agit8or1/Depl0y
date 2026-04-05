@@ -204,11 +204,15 @@
         </tbody>
       </table>
     </div>
+
+    <div class="dashboard-footer">
+      <span class="last-updated">Last updated: {{ lastUpdatedSeconds }}s ago</span>
+    </div>
   </div>
 </template>
 
 <script>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import api from '@/services/api'
 
 export default {
@@ -238,6 +242,11 @@ export default {
     const hostsLoading = ref(true)
     const proxmoxHosts = ref([])
     const hostNodeCounts = ref({})
+
+    // Auto-refresh state
+    const lastUpdatedSeconds = ref(0)
+    let refreshInterval = null
+    let tickInterval = null
 
     const cpuPercentage = computed(() => {
       if (!resources.value) return 0
@@ -353,6 +362,24 @@ export default {
     onMounted(() => {
       fetchData()
       fetchPveData()
+
+      const intervalSecs = parseInt(localStorage.getItem('depl0y_refresh_interval') || '30', 10)
+      const intervalMs = intervalSecs * 1000
+
+      refreshInterval = setInterval(() => {
+        fetchData()
+        fetchPveData()
+        lastUpdatedSeconds.value = 0
+      }, intervalMs)
+
+      tickInterval = setInterval(() => {
+        lastUpdatedSeconds.value++
+      }, 1000)
+    })
+
+    onUnmounted(() => {
+      clearInterval(refreshInterval)
+      clearInterval(tickInterval)
     })
 
     return {
@@ -365,7 +392,8 @@ export default {
       pveStats,
       hostsLoading,
       proxmoxHosts,
-      hostNodeCounts
+      hostNodeCounts,
+      lastUpdatedSeconds
     }
   }
 }
@@ -657,5 +685,15 @@ export default {
 
 .host-link:hover {
   text-decoration: underline;
+}
+
+.dashboard-footer {
+  margin-top: 0.75rem;
+  text-align: right;
+}
+
+.last-updated {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
 }
 </style>

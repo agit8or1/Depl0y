@@ -36,3 +36,17 @@ def init_db():
     from app.models.database import Base
     import app.models.security  # ensure security tables are registered  # noqa: F401
     Base.metadata.create_all(bind=engine)
+
+    # Add new columns to proxmox_nodes if they don't already exist (migration helper)
+    from sqlalchemy import text
+    new_columns = [
+        ("vm_count", "INTEGER DEFAULT 0"),
+        ("lxc_count", "INTEGER DEFAULT 0"),
+    ]
+    with engine.connect() as conn:
+        for col_name, col_def in new_columns:
+            try:
+                conn.execute(text(f"ALTER TABLE proxmox_nodes ADD COLUMN {col_name} {col_def}"))
+                conn.commit()
+            except Exception:
+                pass  # Column already exists

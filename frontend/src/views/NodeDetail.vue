@@ -572,7 +572,7 @@ const loadNodeStatus = async () => {
 
 const loadRrd = async () => {
   try {
-    const res = await api.pveNode.nodeRrdData(hostId.value, node.value, { timeframe: rrdTimeframe.value })
+    const res = await api.pveNode.nodeRrdData(hostId.value, node.value, { timeframe: rrdTimeframe.value, cf: 'AVERAGE' })
     rrdData.value = res.data
   } catch (e) {
     console.warn('RRD failed', e)

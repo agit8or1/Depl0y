@@ -129,6 +129,26 @@ def run_auto_security_scans():
         db.close()
 
 
+def run_proxmox_node_poll():
+    """Poll all active Proxmox hosts to refresh node disk/CPU/RAM stats in the DB."""
+    from app.core.database import SessionLocal
+    from app.models.database import ProxmoxHost
+    from app.services.proxmox import poll_proxmox_resources
+
+    db = SessionLocal()
+    try:
+        hosts = db.query(ProxmoxHost).filter(ProxmoxHost.is_active == True).all()
+        for host in hosts:
+            try:
+                poll_proxmox_resources(db, host.id)
+            except Exception as e:
+                logger.error(f"Node poll failed for host {host.name}: {e}")
+    except Exception as e:
+        logger.error(f"Proxmox node poll job error: {e}")
+    finally:
+        db.close()
+
+
 def run_bmc_poll():
     """Poll all configured BMC servers every 2 minutes and update status cache."""
     from app.core.database import SessionLocal
@@ -217,6 +237,13 @@ def start_scheduler(update_hours: int = 24, scan_hours: int = 24):
         max_instances=1,
     )
     _scheduler.add_job(
+        run_proxmox_node_poll,
+        IntervalTrigger(minutes=5),
+        id="proxmox_node_poll",
+        max_instances=1,
+        next_run_time=datetime.utcnow(),  # run immediately on startup
+    )
+    _scheduler.add_job(
         run_bmc_poll,
         IntervalTrigger(minutes=2),
         id="bmc_poll",
@@ -225,7 +252,7 @@ def start_scheduler(update_hours: int = 24, scan_hours: int = 24):
     )
     _scheduler.start()
     _started = True
-    logger.info(f"Scheduler started — update checks every {update_hours}h, security scans every {scan_hours}h, BMC poll every 2m")
+    logger.info(f"Scheduler started — update checks every {update_hours}h, security scans every {scan_hours}h, node poll every 5m, BMC poll every 2m")
 
 
 def reschedule(update_hours: int = 24, scan_hours: int = 24):

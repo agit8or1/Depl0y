@@ -524,16 +524,17 @@ export default {
         await Promise.allSettled(
           hosts.value.map(async (host) => {
             try {
-              const res = await api.pveNode.clusterResources(host.id, 'vm')
+              const res = await api.pveNode.clusterResources(host.id)
               const items = Array.isArray(res.data) ? res.data : (res.data?.data || [])
               items.forEach(item => {
-                if (item.type && item.type !== 'qemu') return
+                if (!item.type || (item.type !== 'qemu' && item.type !== 'lxc')) return
                 results.push({
                   hostId: host.id,
                   hostName: host.name || String(host.id),
                   node: item.node,
                   vmid: item.vmid,
                   name: item.name,
+                  type: item.type || 'qemu',
                   status: item.status || 'unknown',
                   cpus: item.cpus,
                   cpu: item.cpu,

@@ -769,7 +769,7 @@ export default {
       this.addServerModal.saving = true
       this.addServerModal.error = null
       try {
-        await api.post('/api/v1/pbs-mgmt/', this.addServerForm)
+        await api.post('/api/v1/pbs/', this.addServerForm)
         this.closeAddServerModal()
         await this.fetchServers()
       } catch (e) {
@@ -782,7 +782,7 @@ export default {
     async confirmDeleteServer(srv) {
       if (!confirm(`Remove PBS server "${srv.name}"? This will not affect any data on the PBS server.`)) return
       try {
-        await api.delete(`/api/v1/pbs-mgmt/${srv.id}`)
+        await api.delete(`/api/v1/pbs/${srv.id}`)
         if (this.selectedServerId === srv.id) {
           this.selectedServerId = null
         }

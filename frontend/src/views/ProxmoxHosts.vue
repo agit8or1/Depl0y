@@ -79,6 +79,10 @@
             <span v-if="hostVersions[host.id]" class="version-chip">
               PVE {{ hostVersions[host.id] }}
             </span>
+            <span v-if="host.latitude && host.longitude" class="version-chip" title="Location set for federation map">
+              📍 {{ Number(host.latitude).toFixed(2) }}, {{ Number(host.longitude).toFixed(2) }}
+            </span>
+            <span v-else class="text-xs text-muted" style="margin-left:auto;" title="Click card to set location for federation map">📍 No location</span>
           </div>
 
           <!-- Cluster info row -->

@@ -352,64 +352,6 @@
       </div>
     </div>
 
-    <!-- ── Process List Section ───────────────────────────────────────────── -->
-    <div class="section-block">
-      <h3 class="section-title">Process Information</h3>
-      <div class="process-notice card">
-        <div class="process-notice__icon">&#9432;</div>
-        <div class="process-notice__content">
-          <strong>Per-process data not available via Proxmox API</strong>
-          <p class="text-sm text-muted mt-1">
-            The Proxmox VE API does not expose individual process lists for host nodes.
-            To inspect running processes, use the node's terminal (SSH or the built-in shell).
-          </p>
-          <div class="process-notice__actions mt-2">
-            <router-link
-              v-if="resolvedHostId && resolvedNode"
-              :to="`/proxmox/${resolvedHostId}/nodes/${resolvedNode}/terminal`"
-              class="btn btn-outline btn-sm"
-            >Open Node Terminal</router-link>
-            <a
-              v-if="nodeStatus"
-              :href="`https://${nodeHost}:8006`"
-              target="_blank"
-              rel="noopener"
-              class="btn btn-outline btn-sm"
-            >Open Proxmox UI</a>
-          </div>
-          <!-- Current top-level stats from nodeStatus if available -->
-          <div v-if="nodeStatus" class="process-summary mt-3">
-            <div class="process-summary__grid">
-              <div class="proc-stat">
-                <span class="proc-stat__label">CPU Load (current)</span>
-                <span class="proc-stat__val">{{ nodeCpuPct }}%</span>
-              </div>
-              <div class="proc-stat">
-                <span class="proc-stat__label">Load Avg 1m</span>
-                <span class="proc-stat__val">{{ loadAvg1m }}</span>
-              </div>
-              <div class="proc-stat">
-                <span class="proc-stat__label">Load Avg 5m</span>
-                <span class="proc-stat__val">{{ loadAvg5m }}</span>
-              </div>
-              <div class="proc-stat">
-                <span class="proc-stat__label">Load Avg 15m</span>
-                <span class="proc-stat__val">{{ loadAvg15m }}</span>
-              </div>
-              <div class="proc-stat">
-                <span class="proc-stat__label">Memory Used</span>
-                <span class="proc-stat__val">{{ formatBytes(nodeStatus.memory?.used) }}</span>
-              </div>
-              <div class="proc-stat">
-                <span class="proc-stat__label">Memory Free</span>
-                <span class="proc-stat__val">{{ formatBytes(nodeStatus.memory?.free) }}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
   </div>
 </template>
 

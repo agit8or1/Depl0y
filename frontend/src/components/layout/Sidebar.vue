@@ -212,7 +212,7 @@
 </template>
 
 <script>
-import { ref, computed, onMounted, defineComponent } from 'vue'
+import { ref, reactive, computed, onMounted, defineComponent } from 'vue'
 import { useAuthStore } from '@/store/auth'
 import { useRoute, useRouter } from 'vue-router'
 import api from '@/services/api'
@@ -307,29 +307,46 @@ export default {
     const unreadNotifications = ref(0)
 
     // ── Collapsed sections (persisted) ──────────────────────────────────────
-    const collapsedSections = ref(new Set())
+    // Use plain reactive object instead of Set for reliable Vue 3 reactivity
+    const collapsed = reactive({
+      overview: false,
+      compute: false,
+      infrastructure: false,
+      admin: false,
+      account: false,
+      favorites: false,
+    })
+
+    // Shim so template can keep using collapsedSections.has(key)
+    const collapsedSections = {
+      has: (key) => collapsed[key] === true
+    }
 
     const loadCollapsed = () => {
       try {
         const stored = localStorage.getItem(COLLAPSED_KEY)
-        if (stored) collapsedSections.value = new Set(JSON.parse(stored))
+        if (stored) {
+          const keys = JSON.parse(stored)
+          // Only restore if it's an array (old Set format)
+          if (Array.isArray(keys)) {
+            keys.forEach(k => { if (k in collapsed) collapsed[k] = true })
+          }
+        }
       } catch (e) {}
     }
 
     const saveCollapsed = () => {
       try {
-        localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...collapsedSections.value]))
+        const keys = Object.keys(collapsed).filter(k => collapsed[k])
+        localStorage.setItem(COLLAPSED_KEY, JSON.stringify(keys))
       } catch (e) {}
     }
 
     const toggleSection = (key) => {
-      if (collapsedSections.value.has(key)) {
-        collapsedSections.value.delete(key)
-      } else {
-        collapsedSections.value.add(key)
+      if (key in collapsed) {
+        collapsed[key] = !collapsed[key]
+        saveCollapsed()
       }
-      collapsedSections.value = new Set(collapsedSections.value)
-      saveCollapsed()
     }
 
     // ── Active section highlight ──────────────────────────────────────────
@@ -455,6 +472,7 @@ export default {
       unreadNotifications,
       handleNavClick,
       navigateTo,
+      collapsed,
       collapsedSections,
       toggleSection,
       activeSectionKey,

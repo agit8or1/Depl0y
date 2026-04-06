@@ -432,7 +432,10 @@
       <div
         v-for="widget in visibleLayout"
         :key="widget.id"
-        :class="['widget-card', dragging && dragging.id === widget.id ? 'widget-dragging' : '', widgetHasError(widget.id) ? 'widget-card--error' : '']"
+        :class="['widget-card',
+          dragging && dragging.id === widget.id ? 'widget-dragging' : '',
+          dropTarget && dropTarget.id === widget.id && dragging && dragging.id !== widget.id ? 'widget-drop-target' : '',
+          widgetHasError(widget.id) ? 'widget-card--error' : '']"
         :data-widget-id="widget.id"
         :style="widgetStyle(widget)"
       >
@@ -442,7 +445,7 @@
           @mousedown="startDrag($event, widget)"
           @touchstart.prevent="startDragTouch($event, widget)"
         >
-          <span class="widget-grip">⠿</span>
+          <span class="widget-grip" title="Drag to reorder">⠿</span>
           <span class="widget-title">{{ widgetMeta(widget.type).label }}</span>
           <div class="widget-controls">
             <!-- Per-widget last-updated + refresh -->
@@ -502,7 +505,7 @@
     <div v-if="initialLoading && layout.length === 0" class="widget-grid">
       <div v-for="i in 6" :key="i" class="widget-card" :style="{ gridColumn: 'span 1' }">
         <div class="widget-bar">
-          <span class="widget-grip">⠿</span>
+          <span class="widget-grip" title="Drag to reorder">⠿</span>
           <div class="widget-title-skel"></div>
         </div>
         <div class="widget-body">
@@ -729,6 +732,7 @@ export default {
     const settingsWidget = ref(null)
     const gridEl   = ref(null)
     const dragging = ref(null)
+    const dropTarget = ref(null)
     const lastUpdatedSeconds = ref(0)
     const lastUpdatedAt = ref(null)
     const initialLoading = ref(true)
@@ -1274,6 +1278,8 @@ export default {
       e.preventDefault()
       dragState = { widget, startX: e.clientX, startY: e.clientY, moved: false }
       dragging.value = widget
+      dropTarget.value = null
+      document.body.style.cursor = 'grabbing'
 
       const onMove = (ev) => {
         if (!dragState) return
@@ -1282,12 +1288,17 @@ export default {
         if (dx > 5 || dy > 5) dragState.moved = true
         if (!dragState.moved) return
         const target = getWidgetAtPoint(ev.clientX, ev.clientY, widget.id)
-        if (target && target !== widget) swapWidgets(widget.id, target.id)
+        dropTarget.value = target || null
       }
 
       const onUp = () => {
+        if (dragState && dragState.moved && dropTarget.value && dropTarget.value.id !== widget.id) {
+          swapWidgets(widget.id, dropTarget.value.id)
+        }
         dragState = null
         dragging.value = null
+        dropTarget.value = null
+        document.body.style.cursor = ''
         saveLayout()
         window.removeEventListener('mousemove', onMove)
         window.removeEventListener('mouseup', onUp)
@@ -1301,18 +1312,23 @@ export default {
       const touch = e.touches[0]
       dragState = { widget, startX: touch.clientX, startY: touch.clientY, moved: false }
       dragging.value = widget
+      dropTarget.value = null
 
       const onMove = (ev) => {
         if (!dragState) return
         const t = ev.touches[0]
         dragState.moved = true
         const target = getWidgetAtPoint(t.clientX, t.clientY, widget.id)
-        if (target && target !== widget) swapWidgets(widget.id, target.id)
+        dropTarget.value = target || null
       }
 
       const onEnd = () => {
+        if (dragState && dragState.moved && dropTarget.value && dropTarget.value.id !== widget.id) {
+          swapWidgets(widget.id, dropTarget.value.id)
+        }
         dragState = null
         dragging.value = null
+        dropTarget.value = null
         saveLayout()
         window.removeEventListener('touchmove', onMove)
         window.removeEventListener('touchend', onEnd)
@@ -1392,6 +1408,7 @@ export default {
       settingsWidget,
       gridEl,
       dragging,
+      dropTarget,
       lastUpdatedSeconds,
       lastUpdatedAt,
       initialLoading,
@@ -2319,10 +2336,18 @@ export default {
 }
 
 .widget-dragging {
-  opacity: 0.7;
-  transform: scale(0.98);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  opacity: 0.55;
+  transform: scale(0.97);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
   z-index: 100;
+  pointer-events: none;
+}
+
+.widget-drop-target {
+  border: 2px dashed var(--primary-color, #6366f1);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+  transform: scale(1.01);
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
 }
 
 /* ── Widget Title Bar ─────────────────────────────────────────────────────── */

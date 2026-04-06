@@ -1,14 +1,15 @@
 <template>
   <div class="disk-io-widget">
     <div v-if="loading && nodes.length === 0" class="wi-empty">Loading disk I/O...</div>
-    <div v-else-if="nodes.length === 0" class="wi-empty">No node data available.</div>
+    <div v-else-if="nodes.length === 0" class="wi-empty">No nodes available — add a Proxmox host.</div>
     <div v-else class="node-list">
       <div v-for="n in nodes" :key="n.key" class="node-row">
         <div class="node-header">
           <span class="node-name">{{ n.label }}</span>
           <span class="node-host">{{ n.hostName }}</span>
         </div>
-        <div class="io-bars">
+        <div v-if="n.noData" class="node-no-data">Not reported by Proxmox</div>
+        <div v-else class="io-bars">
           <div class="io-bar-row">
             <span class="io-label io-read">R</span>
             <div class="io-track">
@@ -86,31 +87,38 @@ export default {
         const result = []
         let maxRead = 0, maxWrite = 0
         rrdResults.forEach((res, idx) => {
-          if (res.status !== 'fulfilled') return
+          const key = `${nodeTargets[idx].hostId}::${nodeTargets[idx].node}`
+          const label = nodeTargets[idx].node
+          const hostName = nodeTargets[idx].hostName
+          if (res.status !== 'fulfilled') {
+            result.push({ key, label, hostName, noData: true })
+            return
+          }
           const rows = res.value.data || []
-          if (!rows.length) return
-          // Find latest non-null disk values
+          if (!rows.length) {
+            result.push({ key, label, hostName, noData: true })
+            return
+          }
+          // Find latest non-null disk values scanning backwards
           let diskRead = null, diskWrite = null
           for (let i = rows.length - 1; i >= 0; i--) {
             if (diskRead == null && rows[i].diskread != null) diskRead = rows[i].diskread
             if (diskWrite == null && rows[i].diskwrite != null) diskWrite = rows[i].diskwrite
             if (diskRead != null && diskWrite != null) break
           }
+          if (diskRead == null && diskWrite == null) {
+            result.push({ key, label, hostName, noData: true })
+            return
+          }
           const r = diskRead ?? 0
           const w = diskWrite ?? 0
           if (r > maxRead) maxRead = r
           if (w > maxWrite) maxWrite = w
-          result.push({
-            key: `${nodeTargets[idx].hostId}::${nodeTargets[idx].node}`,
-            label: nodeTargets[idx].node,
-            hostName: nodeTargets[idx].hostName,
-            diskRead: r,
-            diskWrite: w,
-          })
+          result.push({ key, label, hostName, diskRead: r, diskWrite: w, noData: false })
         })
 
-        // Attach computed max for bar scaling
-        result.forEach(n => { n.maxRead = maxRead || 1; n.maxWrite = maxWrite || 1 })
+        // Attach computed max for bar scaling (only affects non-noData rows)
+        result.forEach(n => { if (!n.noData) { n.maxRead = maxRead || 1; n.maxWrite = maxWrite || 1 } })
         nodes.value = result
       } catch {
         // silently ignore
@@ -205,6 +213,13 @@ export default {
 
 .io-fill--read  { background: #8b5cf6; }
 .io-fill--write { background: #ef4444; }
+
+.node-no-data {
+  font-size: 0.62rem;
+  color: var(--text-secondary);
+  font-style: italic;
+  padding: 0.1rem 0;
+}
 
 .io-val {
   font-size: 0.62rem;

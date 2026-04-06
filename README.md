@@ -86,10 +86,6 @@ cd /opt/depl0y && git pull origin main && sudo systemctl restart depl0y-backend
 
 ## Screenshots
 
-### Dashboard
-![Dashboard](screenshots/01-dashboard.png)
-*Real-time overview with clickable stat tiles, network traffic, disk usage per node, recent activity, and resource alerts*
-
 ### VM Management
 ![VM List](screenshots/02-vm-list.png)
 *Manage all VMs and LXC containers with status monitoring, fleet operations, and one-click controls*
@@ -101,10 +97,6 @@ cd /opt/depl0y && git pull origin main && sudo systemctl restart depl0y-backend
 ### Federation Map
 ![Federation](screenshots/04-federation.png)
 *Live OpenStreetMap showing all your datacenters with online (blue) / offline (red) pins — click for details*
-
-### Create VM
-![Create VM](screenshots/06-create-vm.png)
-*Intuitive VM creation wizard with cloud image support for 30-second deployments*
 
 ### Storage Management
 ![Storage](screenshots/08-storage.png)
@@ -125,10 +117,6 @@ cd /opt/depl0y && git pull origin main && sudo systemctl restart depl0y-backend
 ### iDRAC / iLO Dashboard
 ![iDRAC Dashboard](screenshots/13-idrac-dashboard.png)
 *Unified hardware health, power, temperature monitoring for all BMC-equipped servers*
-
-### Deploy LLM
-![Deploy LLM](screenshots/14-deploy-llm.png)
-*One-click LLM deployment with Simple Mode (4 questions) or Advanced Mode (full control)*
 
 ### API Explorer
 ![API Explorer](screenshots/15-api-explorer.png)

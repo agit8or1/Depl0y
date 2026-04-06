@@ -1041,6 +1041,27 @@ async def get_datacenter_summary(
         recent_tasks.sort(key=lambda x: x.get("starttime") or 0, reverse=True)
         recent_tasks = recent_tasks[:5]
 
+        # Fetch actual cluster name from PVE cluster status
+        cluster_name = None
+        try:
+            cluster_status = pve.cluster.status.get()
+            for item in cluster_status:
+                if item.get("type") == "cluster":
+                    cluster_name = item.get("name")
+                    break
+        except Exception:
+            pass
+
+        # Seed ALL type=node resources first so every node appears even with 0 guests
+        for r in resources:
+            if r.get("type") == "node":
+                n = r.get("node", "")
+                if n and n not in node_vm_map:
+                    node_vm_map[n] = {"vms": 0, "lxcs": 0, "name": n,
+                                      "cpu_pct": round(float(r.get("cpu", 0) or 0) * 100, 1),
+                                      "mem_pct": round((float(r.get("mem", 0) or 0) / float(r.get("maxmem", 1) or 1)) * 100, 1),
+                                      "status": r.get("status", "unknown")}
+
         # Node VM distribution
         node_distribution = list(node_vm_map.values())
         total_guests = sum(n["vms"] + n["lxcs"] for n in node_distribution)
@@ -1056,6 +1077,7 @@ async def get_datacenter_summary(
         response = {
             "host_id": host_id,
             "host_name": host.name,
+            "cluster_name": cluster_name,
             # VM / LXC counts
             "vms_total": vms_running + vms_stopped + vms_paused,
             "vms_running": vms_running,

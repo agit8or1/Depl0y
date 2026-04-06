@@ -318,7 +318,7 @@ async def get_dashboard_alerts(
             alerts.append({
                 "severity": "error",
                 "type": "offline_node",
-                "title": f"Node may be offline: {node.name}",
+                "title": f"Node may be offline: {node.node_name}",
                 "detail": "No telemetry data available for this node.",
             })
 
@@ -330,7 +330,7 @@ async def get_dashboard_alerts(
                 alerts.append({
                     "severity": "warning",
                     "type": "storage_near_full",
-                    "title": f"Storage near full on {node.name}",
+                    "title": f"Storage near full on {node.node_name}",
                     "detail": f"{pct:.1f}% used ({round(node.disk_used / (1024**3), 1)} GB / {round(node.disk_total / (1024**3), 1)} GB)",
                 })
 

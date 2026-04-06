@@ -20,17 +20,17 @@
         v-if="favorites.length > 0"
         class="nav-section-header"
         @click="toggleSection('favorites')"
-        :aria-expanded="!collapsedSections.has('favorites')"
+        :aria-expanded="!collapsed.favorites"
         role="button"
         tabindex="0"
         @keydown.enter.prevent="toggleSection('favorites')"
         @keydown.space.prevent="toggleSection('favorites')"
       >
         <span class="nav-section-label-text">{{ t('nav.section.favorites') }}</span>
-        <span class="nav-section-arrow" :class="{ 'arrow-collapsed': collapsedSections.has('favorites') }">›</span>
+        <span class="nav-section-arrow" :class="{ 'arrow-collapsed': collapsed.favorites }">›</span>
       </div>
       <transition name="section-collapse">
-        <div v-if="favorites.length > 0 && !collapsedSections.has('favorites')" class="nav-section-items">
+        <div v-if="favorites.length > 0 && !collapsed.favorites" class="nav-section-items">
           <div
             v-for="fav in favorites"
             :key="fav.path"
@@ -58,17 +58,17 @@
         class="nav-section-header"
         :class="{ 'nav-section-header--active': activeSectionKey === 'overview' }"
         @click="toggleSection('overview')"
-        :aria-expanded="!collapsedSections.has('overview')"
+        :aria-expanded="!collapsed.overview"
         role="button"
         tabindex="0"
         @keydown.enter.prevent="toggleSection('overview')"
         @keydown.space.prevent="toggleSection('overview')"
       >
         <span class="nav-section-label-text">{{ t('nav.section.overview') }}</span>
-        <span class="nav-section-arrow" :class="{ 'arrow-collapsed': collapsedSections.has('overview') }">›</span>
+        <span class="nav-section-arrow" :class="{ 'arrow-collapsed': collapsed.overview }">›</span>
       </div>
       <transition name="section-collapse">
-        <div v-if="!collapsedSections.has('overview')" class="nav-section-items">
+        <div v-if="!collapsed.overview" class="nav-section-items">
           <NavItem :to="'/'" :icon="'📊'" :label="t('nav.dashboard')" :badge="unreadNotifications || null" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
           <NavItem :to="'/federation'" :icon="'🌍'" :label="t('nav.federation')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
           <NavItem :to="'/datacenter'" :icon="'🏢'" :label="t('nav.datacenter')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
@@ -82,17 +82,17 @@
         class="nav-section-header"
         :class="{ 'nav-section-header--active': activeSectionKey === 'compute' }"
         @click="toggleSection('compute')"
-        :aria-expanded="!collapsedSections.has('compute')"
+        :aria-expanded="!collapsed.compute"
         role="button"
         tabindex="0"
         @keydown.enter.prevent="toggleSection('compute')"
         @keydown.space.prevent="toggleSection('compute')"
       >
         <span class="nav-section-label-text">{{ t('nav.section.compute') }}</span>
-        <span class="nav-section-arrow" :class="{ 'arrow-collapsed': collapsedSections.has('compute') }">›</span>
+        <span class="nav-section-arrow" :class="{ 'arrow-collapsed': collapsed.compute }">›</span>
       </div>
       <transition name="section-collapse">
-        <div v-if="!collapsedSections.has('compute')" class="nav-section-items">
+        <div v-if="!collapsed.compute" class="nav-section-items">
           <NavItem v-if="isOperator" :to="'/containers'" :icon="'📦'" :label="t('nav.containers')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
           <NavItem v-if="isOperator" :to="'/create-lxc'" :icon="'➕'" :label="t('nav.create_lxc')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
           <NavItem v-if="isOperator" :to="'/create-pve-vm'" :icon="'➕'" :label="t('nav.create_vm_pve')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
@@ -113,17 +113,17 @@
         class="nav-section-header"
         :class="{ 'nav-section-header--active': activeSectionKey === 'infrastructure' }"
         @click="toggleSection('infrastructure')"
-        :aria-expanded="!collapsedSections.has('infrastructure')"
+        :aria-expanded="!collapsed.infrastructure"
         role="button"
         tabindex="0"
         @keydown.enter.prevent="toggleSection('infrastructure')"
         @keydown.space.prevent="toggleSection('infrastructure')"
       >
         <span class="nav-section-label-text">{{ t('nav.section.infrastructure') }}</span>
-        <span class="nav-section-arrow" :class="{ 'arrow-collapsed': collapsedSections.has('infrastructure') }">›</span>
+        <span class="nav-section-arrow" :class="{ 'arrow-collapsed': collapsed.infrastructure }">›</span>
       </div>
       <transition name="section-collapse">
-        <div v-if="!collapsedSections.has('infrastructure')" class="nav-section-items">
+        <div v-if="!collapsed.infrastructure" class="nav-section-items">
           <NavItem :to="'/backup'" :icon="'💾'" :label="t('nav.backup')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
           <NavItem :to="'/snapshots'" :icon="'📷'" :label="t('nav.snapshots')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
           <NavItem v-if="isAdmin" :to="'/ha-management'" :icon="'🔄'" :label="t('nav.ha_management')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
@@ -149,17 +149,17 @@
           class="nav-section-header"
           :class="{ 'nav-section-header--active': activeSectionKey === 'admin' }"
           @click="toggleSection('admin')"
-          :aria-expanded="!collapsedSections.has('admin')"
+          :aria-expanded="!collapsed.admin"
           role="button"
           tabindex="0"
           @keydown.enter.prevent="toggleSection('admin')"
           @keydown.space.prevent="toggleSection('admin')"
         >
           <span class="nav-section-label-text">{{ t('nav.section.admin') }}</span>
-          <span class="nav-section-arrow" :class="{ 'arrow-collapsed': collapsedSections.has('admin') }">›</span>
+          <span class="nav-section-arrow" :class="{ 'arrow-collapsed': collapsed.admin }">›</span>
         </div>
         <transition name="section-collapse">
-          <div v-if="!collapsedSections.has('admin')" class="nav-section-items">
+          <div v-if="!collapsed.admin" class="nav-section-items">
             <NavItem :to="'/audit-log'" :icon="'🔍'" :label="t('nav.audit_log')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
             <NavItem v-if="linuxAgentEnabled" :to="'/linux-vms'" :icon="'🛡️'" :label="t('nav.linux_vm_security')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
             <NavItem :to="'/security'" :icon="'🔒'" :label="t('nav.security')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
@@ -179,17 +179,17 @@
         class="nav-section-header"
         :class="{ 'nav-section-header--active': activeSectionKey === 'account' }"
         @click="toggleSection('account')"
-        :aria-expanded="!collapsedSections.has('account')"
+        :aria-expanded="!collapsed.account"
         role="button"
         tabindex="0"
         @keydown.enter.prevent="toggleSection('account')"
         @keydown.space.prevent="toggleSection('account')"
       >
         <span class="nav-section-label-text">{{ t('nav.section.account') }}</span>
-        <span class="nav-section-arrow" :class="{ 'arrow-collapsed': collapsedSections.has('account') }">›</span>
+        <span class="nav-section-arrow" :class="{ 'arrow-collapsed': collapsed.account }">›</span>
       </div>
       <transition name="section-collapse">
-        <div v-if="!collapsedSections.has('account')" class="nav-section-items">
+        <div v-if="!collapsed.account" class="nav-section-items">
           <NavItem :to="'/about'" :icon="'ℹ️'" :label="t('nav.about')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
           <NavItem :to="'/documentation'" :icon="'📖'" :label="t('nav.documentation')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
           <NavItem :to="'/profile'" :icon="'👤'" :label="t('nav.my_profile')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
@@ -316,11 +316,6 @@ export default {
       account: false,
       favorites: false,
     })
-
-    // Shim so template can keep using collapsedSections.has(key)
-    const collapsedSections = {
-      has: (key) => collapsed[key] === true
-    }
 
     const loadCollapsed = () => {
       try {
@@ -473,7 +468,6 @@ export default {
       handleNavClick,
       navigateTo,
       collapsed,
-      collapsedSections,
       toggleSection,
       activeSectionKey,
       isActive,

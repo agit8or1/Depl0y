@@ -29,8 +29,7 @@
         <span class="nav-section-label-text">{{ t('nav.section.favorites') }}</span>
         <span class="nav-section-arrow" :class="{ 'arrow-collapsed': collapsed.favorites }">›</span>
       </div>
-      <transition name="section-collapse">
-        <div v-if="favorites.length > 0 && !collapsed.favorites" class="nav-section-items">
+        <div v-show="favorites.length > 0 && !collapsed.favorites" class="nav-section-items">
           <div
             v-for="fav in favorites"
             :key="fav.path"
@@ -51,7 +50,6 @@
             >★</button>
           </div>
         </div>
-      </transition>
 
       <!-- ── Overview ── -->
       <div
@@ -67,15 +65,13 @@
         <span class="nav-section-label-text">{{ t('nav.section.overview') }}</span>
         <span class="nav-section-arrow" :class="{ 'arrow-collapsed': collapsed.overview }">›</span>
       </div>
-      <transition name="section-collapse">
-        <div v-if="!collapsed.overview" class="nav-section-items">
+        <div v-show="!collapsed.overview" class="nav-section-items">
           <NavItem :to="'/'" :icon="'📊'" :label="t('nav.dashboard')" :badge="unreadNotifications || null" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
           <NavItem :to="'/federation'" :icon="'🌍'" :label="t('nav.federation')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
           <NavItem :to="'/datacenter'" :icon="'🏢'" :label="t('nav.datacenter')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
           <NavItem :to="'/cluster'" :icon="'🌐'" :label="t('nav.cluster')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
           <NavItem :to="'/tasks'" :icon="'📋'" :label="t('nav.tasklog')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
         </div>
-      </transition>
 
       <!-- ── Compute ── -->
       <div
@@ -91,8 +87,7 @@
         <span class="nav-section-label-text">{{ t('nav.section.compute') }}</span>
         <span class="nav-section-arrow" :class="{ 'arrow-collapsed': collapsed.compute }">›</span>
       </div>
-      <transition name="section-collapse">
-        <div v-if="!collapsed.compute" class="nav-section-items">
+        <div v-show="!collapsed.compute" class="nav-section-items">
           <NavItem v-if="isOperator" :to="'/containers'" :icon="'📦'" :label="t('nav.containers')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
           <NavItem v-if="isOperator" :to="'/create-lxc'" :icon="'➕'" :label="t('nav.create_lxc')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
           <NavItem v-if="isOperator" :to="'/create-pve-vm'" :icon="'➕'" :label="t('nav.create_vm_pve')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
@@ -106,7 +101,6 @@
           <NavItem v-if="isOperator" :to="'/bulk-ops'" :icon="'⚡'" :label="t('nav.bulk_ops')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
           <NavItem :to="'/vm-search'" :icon="'🔎'" :label="t('nav.vm_search')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
         </div>
-      </transition>
 
       <!-- ── Infrastructure ── -->
       <div
@@ -122,8 +116,7 @@
         <span class="nav-section-label-text">{{ t('nav.section.infrastructure') }}</span>
         <span class="nav-section-arrow" :class="{ 'arrow-collapsed': collapsed.infrastructure }">›</span>
       </div>
-      <transition name="section-collapse">
-        <div v-if="!collapsed.infrastructure" class="nav-section-items">
+        <div v-show="!collapsed.infrastructure" class="nav-section-items">
           <NavItem :to="'/backup'" :icon="'💾'" :label="t('nav.backup')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
           <NavItem :to="'/snapshots'" :icon="'📷'" :label="t('nav.snapshots')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
           <NavItem v-if="isAdmin" :to="'/ha-management'" :icon="'🔄'" :label="t('nav.ha_management')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
@@ -141,7 +134,6 @@
           <NavItem v-if="isAdmin" :to="'/storage-management'" :icon="'🗄️'" :label="t('nav.storage_management')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
           <NavItem v-if="isAdmin" :to="'/pools'" :icon="'🗂️'" :label="t('nav.resource_pools')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
         </div>
-      </transition>
 
       <!-- ── Admin ── -->
       <template v-if="isAdmin">
@@ -158,8 +150,7 @@
           <span class="nav-section-label-text">{{ t('nav.section.admin') }}</span>
           <span class="nav-section-arrow" :class="{ 'arrow-collapsed': collapsed.admin }">›</span>
         </div>
-        <transition name="section-collapse">
-          <div v-if="!collapsed.admin" class="nav-section-items">
+            <div v-show="!collapsed.admin" class="nav-section-items">
             <NavItem :to="'/audit-log'" :icon="'🔍'" :label="t('nav.audit_log')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
             <NavItem v-if="linuxAgentEnabled" :to="'/linux-vms'" :icon="'🛡️'" :label="t('nav.linux_vm_security')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
             <NavItem :to="'/security'" :icon="'🔒'" :label="t('nav.security')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
@@ -171,8 +162,7 @@
             <NavItem :to="'/integrations'" :icon="'🔗'" :label="t('nav.integrations')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
             <NavItem :to="'/api-explorer'" :icon="'⚡'" :label="t('nav.api_explorer')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
           </div>
-        </transition>
-      </template>
+        </template>
 
       <!-- ── Account ── -->
       <div
@@ -188,8 +178,7 @@
         <span class="nav-section-label-text">{{ t('nav.section.account') }}</span>
         <span class="nav-section-arrow" :class="{ 'arrow-collapsed': collapsed.account }">›</span>
       </div>
-      <transition name="section-collapse">
-        <div v-if="!collapsed.account" class="nav-section-items">
+        <div v-show="!collapsed.account" class="nav-section-items">
           <NavItem :to="'/about'" :icon="'ℹ️'" :label="t('nav.about')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
           <NavItem :to="'/documentation'" :icon="'📖'" :label="t('nav.documentation')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
           <NavItem :to="'/profile'" :icon="'👤'" :label="t('nav.my_profile')" :favorites="favorites" @click="handleNavClick" @toggle-fav="toggleFavorite" />
@@ -200,7 +189,6 @@
             <span class="nav-item-label">{{ t('nav.report_bug') }}</span>
           </a>
         </div>
-      </transition>
 
     </nav>
 

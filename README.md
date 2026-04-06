@@ -5,9 +5,23 @@
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)
 ![Vue.js](https://img.shields.io/badge/vue.js-3.x-green.svg)
-![Version](https://img.shields.io/badge/version-1.7.0-brightgreen.svg)
+![Version](https://img.shields.io/badge/version-1.8.0-brightgreen.svg)
 
 Depl0y is a free, open-source web-based control panel that simplifies the deployment, management, and import of virtual machines on Proxmox VE infrastructure. With an intuitive interface and powerful automation, Depl0y makes VM provisioning and day-2 operations accessible to everyone.
+
+---
+
+## ✨ What's New in v1.8.0 — UI Rewrite & Federation Map
+
+**Complete UI rewrite with dark mode, real-time widgets, and a live Leaflet federation map.**
+
+- **🌙 Full Dark Mode** — system-aware theme with proper dark variables across every view
+- **🗺️ Live Federation Map** — real OpenStreetMap/Leaflet map showing all your datacenters with online/offline pin colors; set precise lat/lng per datacenter
+- **📊 Redesigned Dashboard** — clickable stat tiles (Total VMs, Running, Nodes, Storage, Failed Tasks, Active Users), live Network Traffic widget, Disk Usage per-node widget
+- **🖥️ Datacenter Cards** — click any datacenter card to edit it; location (lat/lng) field for placing it on the federation map
+- **🔴 Live Cluster Stats** — all dashboard tiles are now router-links to their respective management pages
+- **🧩 Widget system** — modular, auto-refreshing widgets with skeleton loaders
+- **🔧 Bug fixes** — HA Groups 500 error, Templates cross-node storage 500, Create VM parse errors, audit route 404, welcome banner logic
 
 ---
 
@@ -31,14 +45,14 @@ Depl0y is a free, open-source web-based control panel that simplifies the deploy
 
 **Monitor and control your physical servers directly from Depl0y — no separate BMC console required.**
 
-- **🖧 Redfish Dashboard** — unified view of all BMC-enabled servers (ProxmoxHosts, PBS servers, standalones) with health, power state, temperature, and wattage at a glance
+- **🖧 Redfish Dashboard** — unified view of all BMC-enabled servers with health, power state, temperature, and wattage at a glance
 - **📊 Live Charts** — health doughnut, power state doughnut, and per-server temperature bar chart updated every 2 minutes
 - **⚡ Power Control** — on, off, graceful shutdown, force restart, graceful restart, and PXE boot — directly from the UI
 - **🔍 Deep Hardware Inventory** — CPUs, DIMMs, storage controllers & drives, firmware versions, network interfaces, and system event log
 - **🌡️ Thermal & Power Monitoring** — all temperature sensors with critical thresholds, all fans with RPM, and per-PSU wattage
 - **🔔 Clickable Alert Chips** — warning/critical alerts in the summary strip jump straight to the affected server card
 - **🚀 Launch BMC Console** — one-click button to open the native iDRAC or iLO web UI in a new tab
-- **🔄 Auto-Detect Model** — falls back through SKU → PartNumber → manager model for older iDRAC 8 / 13G servers that return blank fields
+- **🔄 Auto-Detect Model** — falls back through SKU → PartNumber → manager model for older iDRAC 8 / 13G servers
 - **⏱️ Zero Cold-Start** — BMC poll runs immediately on backend startup so the dashboard is never blank after a restart
 
 ---
@@ -48,7 +62,7 @@ Depl0y is a free, open-source web-based control panel that simplifies the deploy
 **Migrate your existing VMs into Proxmox in minutes — no manual disk juggling required.**
 
 - **📥 File Upload Import** — drag & drop OVA, OVF, VMDK, VHD, VHDX, QCOW2, or RAW images
-- **☁️ VMware Direct Import** — connect to ESXi or vCenter, browse VMs in a table, and pull them directly over the network without needing ovftool or a manual export
+- **☁️ VMware Direct Import** — connect to ESXi or vCenter, browse VMs in a table, and pull them directly over the network
 - **🔍 Auto-Parse Specs** — OVF/OVA descriptors parsed automatically for name, CPU, RAM, disk size, and OS type
 - **🔄 Disk Conversion** — VMDK, VHD, and VHDX converted to qcow2 via `qemu-img` automatically
 - **🚀 Full Proxmox Pipeline** — upload → convert → VM creation → `qm importdisk` → boot disk attached → VM record saved
@@ -70,7 +84,69 @@ cd /opt/depl0y && git pull origin main && sudo systemctl restart depl0y-backend
 
 ---
 
+## Screenshots
+
+### Dashboard
+![Dashboard](screenshots/01-dashboard.png)
+*Real-time overview with clickable stat tiles, network traffic, disk usage per node, recent activity, and resource alerts*
+
+### VM Management
+![VM List](screenshots/02-vm-list.png)
+*Manage all VMs and LXC containers with status monitoring, fleet operations, and one-click controls*
+
+### Proxmox Datacenters
+![Proxmox Hosts](screenshots/03-proxmox-hosts.png)
+*Click any datacenter card to edit it — set credentials, location (lat/lng), iDRAC/iLO, and deployment defaults*
+
+### Federation Map
+![Federation](screenshots/04-federation.png)
+*Live OpenStreetMap showing all your datacenters with online (blue) / offline (red) pins — click for details*
+
+### Create VM
+![Create VM](screenshots/06-create-vm.png)
+*Intuitive VM creation wizard with cloud image support for 30-second deployments*
+
+### Storage Management
+![Storage](screenshots/08-storage.png)
+*Browse and manage storage pools across all nodes*
+
+### Backup Manager
+![Backup](screenshots/09-backup.png)
+*Schedule and manage backups with PBS datastore browsing*
+
+### Audit Log
+![Audit Log](screenshots/10-audit-log.png)
+*Full audit trail of every user action and system change*
+
+### Integrations
+![Integrations](screenshots/11-integrations.png)
+*Slack, webhook, and alerting integrations with dark-mode support*
+
+### iDRAC / iLO Dashboard
+![iDRAC Dashboard](screenshots/13-idrac-dashboard.png)
+*Unified hardware health, power, temperature monitoring for all BMC-equipped servers*
+
+### Deploy LLM
+![Deploy LLM](screenshots/14-deploy-llm.png)
+*One-click LLM deployment with Simple Mode (4 questions) or Advanced Mode (full control)*
+
+### API Explorer
+![API Explorer](screenshots/15-api-explorer.png)
+*Built-in API explorer for all 100+ endpoints with request/response examples*
+
+### Cluster Status
+![Cluster Status](screenshots/17-cluster-status.png)
+*Cluster-wide status, node health, and HA resource overview*
+
+---
+
 ## Features
+
+### 🗺️ Federation & Multi-Datacenter *(New in v1.8.0)*
+- **Live Map** — real OpenStreetMap/Leaflet map with datacenter pins (blue = online, red = offline)
+- **Datacenter Location** — set lat/lng per datacenter to place it accurately on the map
+- **Federated Summary** — aggregate VM/node/storage stats across all registered Proxmox hosts
+- **Click-to-Edit** — click any datacenter card to open the edit dialog directly
 
 ### 🖧 iDRAC / iLO Out-of-Band Management *(New in v1.6.1)*
 - **Redfish Dashboard** — unified health, power, temperature, and wattage overview for all BMC-equipped servers
@@ -83,7 +159,7 @@ cd /opt/depl0y && git pull origin main && sudo systemctl restart depl0y-backend
 
 ### 📥 VM Import *(New in v1.6.0)*
 - **File Upload** — import OVA, OVF, VMDK, VHD, VHDX, QCOW2, RAW, or ZIP archives via drag & drop
-- **VMware Direct** — connect to ESXi or vCenter; browse all VMs with CPU/RAM/disk/power info; download VMDKs directly via datastore HTTP API
+- **VMware Direct** — connect to ESXi or vCenter; browse all VMs with CPU/RAM/disk/power info; download VMDKs directly
 - **Auto-Parse** — OVF descriptors extracted automatically for all VM specs
 - **Disk Conversion** — automatic VMDK/VHD/VHDX → qcow2 via qemu-img
 - **SSH Fallback** — if `qm importdisk` can't run via SSH, the command is shown for manual execution
@@ -117,9 +193,9 @@ cd /opt/depl0y && git pull origin main && sudo systemctl restart depl0y-backend
 
 ### 🔐 Security & Access Control
 - **Role-Based Access** — Admin, Operator, Viewer with route-level enforcement
-- **2FA / TOTP** — authenticator app support with QR code setup; cursor auto-focuses code field on login
+- **2FA / TOTP** — authenticator app support with QR code setup
 - **Encrypted Storage** — all passwords and API tokens encrypted at rest with Fernet
-- **Audit Logging** — every user action and system change recorded
+- **Audit Logging** — every user action and system change recorded with full trail at `/audit-log`
 - **Rate Limiting** — 100 req/min globally; security headers on all responses
 
 ### 🌐 Infrastructure
@@ -130,57 +206,12 @@ cd /opt/depl0y && git pull origin main && sudo systemctl restart depl0y-backend
 - **QEMU Guest Agent** — automatic installation; IP auto-fetch via agent
 
 ### 🎨 User Experience
-- **Modern UI** — responsive Vue.js 3 SPA with real-time status
+- **Dark Mode** — full dark theme with system preference detection
+- **Modern UI** — responsive Vue.js 3 SPA with real-time status and skeleton loaders
 - **RESTful API** — full Swagger/ReDoc documentation at `/api/v1/docs`
-- **In-App Documentation** — built-in docs and guides
+- **In-App API Explorer** — browse and test all 100+ API endpoints directly from the UI
+- **In-App Documentation** — built-in guides and feature docs
 - **Version Updates** — one-click update from GitHub with live progress
-
----
-
-## Screenshots
-
-### 📥 Import VM — Source Selection *(New in v1.6.0)*
-*Upload OVA/OVF/VMDK files or connect directly to VMware ESXi/vCenter to browse and pull VMs*
-
-### 🤖 Deploy LLM — Mode Selection
-![Deploy LLM Home](screenshots/13-deploy-llm-home.png)
-*Choose Simple Mode (4 questions, auto-configured) or Advanced Mode (full control over engine, model, GPU, and resources)*
-
-### Deploy LLM — Simple Mode Use Case
-![Simple Mode](screenshots/14-deploy-llm-simple-usecase.png)
-*Pick your use case and Depl0y selects the right model and hardware profile automatically*
-
-### Deploy LLM — Advanced Engine Selection
-![Advanced Engine](screenshots/17-deploy-llm-advanced-engine.png)
-*Choose from Ollama, llama.cpp, vLLM (OpenAI-compatible), or LocalAI*
-
-### Deploy LLM — Model Catalog
-![Model Catalog](screenshots/18-deploy-llm-advanced-models.png)
-*15+ models with RAM/VRAM/disk requirements shown for every option*
-
-### Dashboard
-![Dashboard](screenshots/01-dashboard.png)
-*Real-time overview of your infrastructure with resource usage, VM status, and quick actions*
-
-### Virtual Machines Management
-![VM List](screenshots/02-vm-list.png)
-*Manage all your VMs with status monitoring and one-click controls*
-
-### Easy VM Creation
-![Create VM](screenshots/03-create-vm-basic.png)
-*Intuitive VM creation wizard with cloud image support for 30-second deployments*
-
-### Proxmox Cluster Management
-![Proxmox Hosts](screenshots/06-proxmox-hosts.png)
-*Monitor multiple Proxmox nodes and datacenters from a single interface*
-
-### Cloud Images for Ultra-Fast Deployment
-![Cloud Images](screenshots/08-cloud-images.png)
-*Pre-configured OS images for instant VM deployment*
-
-### High Availability Management
-![HA Management](screenshots/10-ha-resources.png)
-*Configure automatic VM failover for business continuity*
 
 ---
 
@@ -207,9 +238,11 @@ This installs all dependencies, sets up the backend and frontend, configures ngi
 
 2. **Enable 2FA** — Settings → User Profile → Enable TOTP
 
-3. **Add a Proxmox host** — Proxmox Hosts → Add Host → test connection
+3. **Add a Proxmox host** — Proxmox Hosts → Add Datacenter → test connection
 
-4. **Deploy or import a VM** — Virtual Machines → Create VM, or Import VM → Upload / Connect to VMware
+4. **Set datacenter location** — Click a datacenter card → scroll to Location → enter lat/lng → Save
+
+5. **Deploy or import a VM** — Virtual Machines → Create VM, or Import VM → Upload / Connect to VMware
 
 📖 Full guide: [docs/INSTALLATION.md](docs/INSTALLATION.md)
 
@@ -294,6 +327,7 @@ LOG_LEVEL=INFO
 ┌─────────────────────────────────────┐
 │         Frontend (Vue.js 3)         │
 │   SPA · Pinia · Axios · Chart.js    │
+│   Leaflet · Dark Mode · Widgets     │
 └──────────────┬──────────────────────┘
                │ HTTP REST (/api/v1)
 ┌──────────────▼──────────────────────┐
@@ -309,7 +343,7 @@ LOG_LEVEL=INFO
 └─────────────┘ └─────────────────────┘
 ```
 
-**Key dependencies:** proxmoxer, pyVmomi, paramiko, SQLAlchemy, Pydantic, python-jose, APScheduler
+**Key dependencies:** proxmoxer, pyVmomi, paramiko, SQLAlchemy, Pydantic, python-jose, APScheduler, Leaflet
 
 ---
 
@@ -317,6 +351,7 @@ LOG_LEVEL=INFO
 
 - **Swagger UI:** `http://your-server/api/v1/docs`
 - **ReDoc:** `http://your-server/api/v1/redoc`
+- **In-App API Explorer:** Sidebar → API Explorer
 
 ---
 
@@ -350,9 +385,10 @@ cd frontend && npm run build
 - [x] Auto-scheduled update & security scan checks
 - [x] Linux VM security agent
 - [x] **VM Import** — file upload (OVA/VMDK/VHD/QCOW2) + VMware direct import
-- [ ] VM snapshots management UI
-- [ ] Backup automation
-- [ ] Scheduled deployments
+- [x] **Full Proxmox VE Management** — VM/LXC/node/cluster/backup/access management
+- [x] **iDRAC / iLO** — Redfish hardware monitoring and power control
+- [x] **Dark Mode** — full dark theme with system preference detection
+- [x] **Federation Map** — live Leaflet map with datacenter pins and lat/lng location settings
 - [ ] Prometheus / Grafana integration
 - [ ] Multi-language support
 - [ ] Mobile app

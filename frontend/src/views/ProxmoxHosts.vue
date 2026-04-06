@@ -44,7 +44,11 @@
           v-for="host in hosts"
           :key="host.id"
           class="host-card"
-          :class="hostCardClass(host)">
+          :class="hostCardClass(host)"
+          style="cursor: pointer"
+          @click="openEdit(host)"
+          title="Click to edit"
+          >
 
           <!-- Card header: status pulse + name -->
           <div class="host-card__header">
@@ -208,7 +212,7 @@
           </transition>
 
           <!-- Action buttons -->
-          <div class="host-card__actions flex gap-1 mt-1">
+          <div class="host-card__actions flex gap-1 mt-1" @click.stop>
             <router-link
               :to="`/proxmox/${host.id}/cluster`"
               class="btn btn-primary btn-sm flex-1 text-center">
@@ -237,7 +241,6 @@
               {{ testing[host.id] ? '...' : 'Test' }}
             </button>
             <button @click="pollHost(host.id)" class="btn btn-outline btn-sm" title="Force poll">Poll</button>
-            <button @click="openEdit(host)" class="btn btn-outline btn-sm" title="Edit">Edit</button>
             <button @click="deleteHost(host.id)" class="btn btn-danger btn-sm" title="Delete">Del</button>
           </div>
         </div>

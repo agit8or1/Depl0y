@@ -86,6 +86,10 @@ cd /opt/depl0y && git pull origin main && sudo systemctl restart depl0y-backend
 
 ## Screenshots
 
+### Dashboard
+![Dashboard](screenshots/01-dashboard.png)
+*Real-time overview with widget grid, node status, network traffic, disk I/O, resource trending, and quick actions*
+
 ### VM Management
 ![VM List](screenshots/02-vm-list.png)
 *Manage all VMs and LXC containers with status monitoring, fleet operations, and one-click controls*
@@ -97,6 +101,10 @@ cd /opt/depl0y && git pull origin main && sudo systemctl restart depl0y-backend
 ### Federation Map
 ![Federation](screenshots/04-federation.png)
 *Live OpenStreetMap showing all your datacenters with online (blue) / offline (red) pins — click for details*
+
+### Create VM
+![Create VM](screenshots/06-create-vm.png)
+*Create VMs natively in Proxmox — select host, node, storage, CPU, RAM, and OS in a guided wizard*
 
 ### Storage Management
 ![Storage](screenshots/08-storage.png)
@@ -117,6 +125,10 @@ cd /opt/depl0y && git pull origin main && sudo systemctl restart depl0y-backend
 ### iDRAC / iLO Dashboard
 ![iDRAC Dashboard](screenshots/13-idrac-dashboard.png)
 *Unified hardware health, power, temperature monitoring for all BMC-equipped servers*
+
+### Deploy LLM
+![Deploy LLM](screenshots/14-deploy-llm.png)
+*One-click LLM deployment — browse model catalog filtered by category and VRAM, deploy to any node*
 
 ### API Explorer
 ![API Explorer](screenshots/15-api-explorer.png)

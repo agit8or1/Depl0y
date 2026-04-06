@@ -79,10 +79,14 @@
             <span v-if="hostVersions[host.id]" class="version-chip">
               PVE {{ hostVersions[host.id] }}
             </span>
-            <span v-if="host.latitude && host.longitude" class="version-chip" title="Location set for federation map">
-              📍 {{ Number(host.latitude).toFixed(2) }}, {{ Number(host.longitude).toFixed(2) }}
-            </span>
-            <span v-else class="text-xs text-muted" style="margin-left:auto;" title="Click card to set location for federation map">📍 No location</span>
+            <button
+              class="loc-btn"
+              :class="host.latitude && host.longitude ? 'loc-btn--set' : 'loc-btn--unset'"
+              @click.stop="openLocationModal(host)"
+              :title="host.latitude && host.longitude ? 'Edit location' : 'Set location for federation map'"
+            >
+              📍 {{ host.latitude && host.longitude ? `${Number(host.latitude).toFixed(2)}, ${Number(host.longitude).toFixed(2)}` : 'Set location' }}
+            </button>
           </div>
 
           <!-- Cluster info row -->
@@ -838,6 +842,36 @@
       </div>
     </div>
 
+    <!-- Location Modal -->
+    <div v-if="showLocationModal" class="modal" @click.self="showLocationModal = false">
+      <div class="modal-content" style="max-width:420px;" @click.stop>
+        <div class="modal-header">
+          <h3>Set Datacenter Location</h3>
+          <button @click="showLocationModal = false" class="btn-close">×</button>
+        </div>
+        <div class="modal-body">
+          <p class="text-sm text-muted mb-2">
+            Enter the latitude and longitude for <strong>{{ locationHost?.name }}</strong> so it appears on the Federation map.
+            You can look up coordinates at <a href="https://www.latlong.net" target="_blank" rel="noopener">latlong.net</a>.
+          </p>
+          <div class="form-row-2">
+            <div class="form-group">
+              <label class="form-label">Latitude</label>
+              <input v-model.number="locationLat" type="number" step="any" min="-90" max="90" class="form-control" placeholder="e.g. 40.7128" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Longitude</label>
+              <input v-model.number="locationLng" type="number" step="any" min="-180" max="180" class="form-control" placeholder="e.g. -74.0060" />
+            </div>
+          </div>
+          <div class="flex gap-1 mt-2">
+            <button @click="saveLocation" class="btn btn-primary" :disabled="saving">{{ saving ? 'Saving...' : 'Save Location' }}</button>
+            <button @click="showLocationModal = false" class="btn btn-outline">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Add Host Wizard -->
     <AddHostWizard v-model="showAddModal" @host-added="onHostAdded" />
   </div>
@@ -864,6 +898,10 @@ export default {
     const saving = ref(false)
     const showAddModal = ref(false)
     const showEditModal = ref(false)
+    const showLocationModal = ref(false)
+    const locationHost = ref(null)
+    const locationLat = ref(null)
+    const locationLng = ref(null)
     const useApiToken = ref(false)
     const editAuthMethod = ref('token')
 
@@ -1478,6 +1516,29 @@ export default {
       showEditModal.value = true
     }
 
+    const openLocationModal = (host) => {
+      locationHost.value = host
+      locationLat.value = host.latitude ?? null
+      locationLng.value = host.longitude ?? null
+      showLocationModal.value = true
+    }
+
+    const saveLocation = async () => {
+      saving.value = true
+      try {
+        await api.proxmox.updateHost(locationHost.value.id, {
+          latitude: locationLat.value || null,
+          longitude: locationLng.value || null,
+        })
+        showLocationModal.value = false
+        await fetchHosts()
+      } catch (e) {
+        console.error('Failed to save location:', e)
+      } finally {
+        saving.value = false
+      }
+    }
+
     const saveEdit = async () => {
       saving.value = true
       try {
@@ -1562,6 +1623,12 @@ export default {
       onHostAdded,
       openEdit,
       saveEdit,
+      showLocationModal,
+      locationHost,
+      locationLat,
+      locationLng,
+      openLocationModal,
+      saveLocation,
       testConnection,
       testAllConnections,
       pollHost,
@@ -1759,6 +1826,32 @@ export default {
   font-size: 0.7rem;
   font-weight: 600;
   font-family: monospace;
+}
+
+/* Location button on card */
+.loc-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  border: none;
+  border-radius: 9999px;
+  padding: 0.1rem 0.5rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s;
+  margin-left: auto;
+}
+.loc-btn:hover { opacity: 0.75; }
+.loc-btn--set {
+  background: rgba(34, 197, 94, 0.12);
+  color: #16a34a;
+  border: 1px solid rgba(34, 197, 94, 0.25);
+}
+.loc-btn--unset {
+  background: rgba(245, 158, 11, 0.12);
+  color: #b45309;
+  border: 1px solid rgba(245, 158, 11, 0.25);
 }
 
 /* Cluster info rows */

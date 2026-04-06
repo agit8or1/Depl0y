@@ -110,32 +110,54 @@ export default {
         const hosts = (hostsRes.data || []).filter(h => h.is_active)
         if (!hosts.length) { loading.value = false; return }
 
-        const results = await Promise.allSettled(
-          hosts.map(h => api.pveNode.clusterResources(h.id))
+        // Fetch DB node lists for all hosts concurrently
+        const nodeListResults = await Promise.allSettled(
+          hosts.map(h => api.proxmox.listNodes(h.id))
         )
 
-        results.forEach((result, hIdx) => {
-          if (result.status !== 'fulfilled') return
+        // Build list of {hostId, nodeName} pairs
+        const nodePairs = []
+        nodeListResults.forEach((res, hIdx) => {
+          if (res.status !== 'fulfilled') return
           const host = hosts[hIdx]
-          ;(result.value.data || []).forEach(item => {
-            if (item.type !== 'node') return
-            const key = `${host.id}::${item.node}`
-            if (!nodesMap.value[key]) {
-              nodesMap.value[key] = {
-                key,
-                label: item.node,
-                netin: 0,
-                netout: 0,
-                histIn: Array(HISTORY_LEN).fill(0),
-                histOut: Array(HISTORY_LEN).fill(0),
-              }
-            }
-            const nd = nodesMap.value[key]
-            nd.netin  = item.netin  || 0
-            nd.netout = item.netout || 0
-            pushHistory(nd.histIn,  nd.netin)
-            pushHistory(nd.histOut, nd.netout)
+          ;(res.value.data || []).forEach(n => {
+            const name = n.node_name || n.node
+            if (name) nodePairs.push({ hostId: host.id, nodeName: name })
           })
+        })
+
+        if (!nodePairs.length) { loading.value = false; return }
+
+        // Fetch RRD data for each node concurrently
+        const rrdResults = await Promise.allSettled(
+          nodePairs.map(p => api.pveNode.nodeRrdData(p.hostId, p.nodeName, { timeframe: 'hour' }))
+        )
+
+        rrdResults.forEach((res, i) => {
+          if (res.status !== 'fulfilled') return
+          const { hostId, nodeName } = nodePairs[i]
+          const points = res.value.data || []
+          if (!points.length) return
+
+          const key = `${hostId}::${nodeName}`
+          if (!nodesMap.value[key]) {
+            nodesMap.value[key] = {
+              key,
+              label: nodeName,
+              netin: 0,
+              netout: 0,
+              histIn: Array(HISTORY_LEN).fill(0),
+              histOut: Array(HISTORY_LEN).fill(0),
+            }
+          }
+          const nd = nodesMap.value[key]
+          // Use last HISTORY_LEN points for history (replace on each poll)
+          const slice = points.slice(-HISTORY_LEN)
+          nd.histIn  = slice.map(p => p.netin  || 0)
+          nd.histOut = slice.map(p => p.netout || 0)
+          const last = points[points.length - 1]
+          nd.netin  = last.netin  || 0
+          nd.netout = last.netout || 0
         })
 
         nodes.value = Object.values(nodesMap.value)

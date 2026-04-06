@@ -2,7 +2,7 @@
 Database models for Depl0y
 """
 from datetime import datetime
-from sqlalchemy import Boolean, Column, Integer, String, DateTime, ForeignKey, Text, Enum, JSON, UniqueConstraint
+from sqlalchemy import Boolean, Column, Integer, String, DateTime, Float, ForeignKey, Text, Enum, JSON, UniqueConstraint
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 import enum
@@ -96,6 +96,10 @@ class ProxmoxHost(Base):
     last_poll = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    # Geographic location for federation map
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)
 
     # iDRAC / iLO out-of-band management
     idrac_hostname = Column(String(255), nullable=True)

@@ -38,6 +38,9 @@ class ProxmoxHostCreate(BaseModel):
     api_token_id: Optional[str] = None  # e.g., "mytoken" or "root@pam!mytoken"
     api_token_secret: Optional[str] = None
     verify_ssl: bool = False
+    # Geographic location for federation map
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
     # iDRAC / iLO out-of-band management (optional)
     idrac_hostname: Optional[str] = None
     idrac_port: Optional[int] = Field(443, ge=1, le=65535)
@@ -87,6 +90,9 @@ class ProxmoxHostUpdate(BaseModel):
     api_token_secret: Optional[str] = None
     verify_ssl: Optional[bool] = None
     is_active: Optional[bool] = None
+    # Geographic location for federation map
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
     # iDRAC / iLO fields
     idrac_hostname: Optional[str] = None
     idrac_port: Optional[int] = Field(None, ge=1, le=65535)
@@ -119,6 +125,9 @@ class ProxmoxHostResponse(BaseModel):
     last_poll: Optional[datetime]
     created_at: datetime
     updated_at: datetime
+    # Geographic location for federation map
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
     # iDRAC / iLO info (no password)
     idrac_hostname: Optional[str] = None
     idrac_port: Optional[int] = None
@@ -426,6 +435,8 @@ async def get_federation_summary(
             "memory_usage_pct": 0.0,
             "latency_ms": None,
             "quorate": None,
+            "latitude": host.latitude,
+            "longitude": host.longitude,
         }
         try:
             svc = ProxmoxService(host)

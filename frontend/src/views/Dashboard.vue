@@ -286,7 +286,7 @@
     <!-- ── Resource Summary Bar ── -->
     <div v-if="!initialLoading" class="resource-summary-bar">
       <!-- VMs -->
-      <div class="rsb-card">
+      <div class="rsb-card rsb-card-link" @click="$router.push('/vms')" role="link" tabindex="0" @keydown.enter="$router.push('/vms')">
         <div class="rsb-icon rsb-icon-vm">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
         </div>
@@ -302,7 +302,7 @@
         </div>
       </div>
       <!-- Nodes -->
-      <div class="rsb-card">
+      <div class="rsb-card rsb-card-link" @click="$router.push('/cluster')" role="link" tabindex="0" @keydown.enter="$router.push('/cluster')">
         <div class="rsb-icon rsb-icon-node">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
         </div>
@@ -317,7 +317,7 @@
         </div>
       </div>
       <!-- Storage -->
-      <div class="rsb-card">
+      <div class="rsb-card rsb-card-link" @click="$router.push('/storage-management')" role="link" tabindex="0" @keydown.enter="$router.push('/storage-management')">
         <div class="rsb-icon rsb-icon-storage">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
         </div>
@@ -332,7 +332,7 @@
         </div>
       </div>
       <!-- CPU -->
-      <div class="rsb-card" v-if="resourceStats">
+      <div class="rsb-card rsb-card-link" v-if="resourceStats" @click="$router.push('/node-monitor')" role="link" tabindex="0" @keydown.enter="$router.push('/node-monitor')">
         <div class="rsb-icon rsb-icon-cpu">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg>
         </div>
@@ -347,7 +347,7 @@
         </div>
       </div>
       <!-- RAM -->
-      <div class="rsb-card" v-if="resourceStats">
+      <div class="rsb-card rsb-card-link" v-if="resourceStats" @click="$router.push('/node-monitor')" role="link" tabindex="0" @keydown.enter="$router.push('/node-monitor')">
         <div class="rsb-icon rsb-icon-ram">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="5" width="22" height="14" rx="2"/><line x1="7" y1="9" x2="7" y2="15"/><line x1="11" y1="9" x2="11" y2="15"/><line x1="15" y1="9" x2="15" y2="15"/><line x1="19" y1="9" x2="19" y2="15"/></svg>
         </div>
@@ -416,10 +416,6 @@
         <span class="rt-label">Storage</span>
         <span class="rt-value">{{ diskUsedPct }}%</span>
         <span :class="['rt-arrow', trendClass(diskTrend)]" :title="trendTitle(diskTrend)">{{ trendArrow(diskTrend) }}</span>
-      </div>
-      <div class="rt-card">
-        <span class="rt-label">Used CPU Cores</span>
-        <span class="rt-value">{{ resourceStats.used_cpu_cores }} / {{ resourceStats.total_cpu_cores }}</span>
       </div>
       <div class="rt-card">
         <span class="rt-label">RAM Used</span>
@@ -664,7 +660,7 @@ const WIDGET_META = {
   backup_status:    { type: 'backup_status',    label: 'Backup Status',     icon: '🗄️', multi: false },
   system_info:      { type: 'system_info',      label: 'System Info',       icon: 'ℹ️', multi: false },
   network_traffic:  { type: 'network_traffic',  label: 'Network Traffic',   icon: '📶', multi: false },
-  disk_io:          { type: 'disk_io',          label: 'Disk I/O',          icon: '💿', multi: false },
+  disk_io:          { type: 'disk_io',          label: 'Disk Usage',        icon: '💿', multi: false },
   node_status_grid: { type: 'node_status_grid', label: 'Node Status Grid',  icon: '🔲', multi: false },
 }
 
@@ -835,6 +831,8 @@ export default {
     const showWelcomeBanner = ref(false)
 
     const checkWelcomeBanner = () => {
+      // Only show when there are no hosts configured
+      if (!noHostsConfigured.value) return
       if (localStorage.getItem(WELCOME_BANNER_KEY)) return
       showWelcomeBanner.value = true
     }
@@ -1338,9 +1336,7 @@ export default {
     onMounted(async () => {
       loadLayout()
       loadVisibility()
-      checkWelcomeBanner()
       tickInterval = setInterval(() => lastUpdatedSeconds.value++, 1000)
-      checkOnboarding()
 
       // Kick off all initial fetches
       await Promise.all([
@@ -1352,6 +1348,10 @@ export default {
       ])
       initialLoading.value = false
       lastUpdatedAt.value = new Date().toLocaleTimeString()
+
+      // Show welcome/onboarding only after host check resolves
+      checkWelcomeBanner()
+      checkOnboarding()
 
       // Refresh resources every 30s to track trends
       resourceInterval = setInterval(() => {
@@ -2763,7 +2763,22 @@ export default {
   border: 1px solid var(--border-color);
   border-radius: 0.5rem;
   padding: 0.7rem 0.9rem;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.1s;
+}
+
+.rsb-card-link {
+  cursor: pointer;
+}
+
+.rsb-card-link:hover {
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
+  transform: translateY(-1px);
+}
+
+.rsb-card-link:focus-visible {
+  outline: 2px solid var(--accent-color);
+  outline-offset: 2px;
 }
 
 .rsb-card:hover {

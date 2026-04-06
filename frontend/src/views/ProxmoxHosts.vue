@@ -770,6 +770,22 @@
             </div>
           </div>
 
+          <!-- Location -->
+          <div class="edit-section">
+            <h5 class="section-subtitle">Location</h5>
+            <p class="text-sm text-muted mb-1">Used to place this datacenter on the Federation map.</p>
+            <div class="form-row-2">
+              <div class="form-group">
+                <label class="form-label">Latitude</label>
+                <input v-model.number="editHost.latitude" type="number" step="any" min="-90" max="90" class="form-control" placeholder="e.g. 40.7128" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">Longitude</label>
+                <input v-model.number="editHost.longitude" type="number" step="any" min="-180" max="180" class="form-control" placeholder="e.g. -74.0060" />
+              </div>
+            </div>
+          </div>
+
           <!-- iDRAC / iLO -->
           <div class="edit-section">
             <h5 class="section-subtitle">iDRAC / iLO</h5>
@@ -875,6 +891,7 @@ export default {
       username: '', password: '',
       description: '',
       default_storage: '', default_bridge: '', default_node: '', iso_storage: '',
+      latitude: null, longitude: null,
       idrac_type: '', idrac_hostname: '', idrac_port: 443,
       idrac_username: '', idrac_password: '',
     })
@@ -1442,6 +1459,8 @@ export default {
         default_bridge: host.default_bridge || '',
         default_node: host.default_node || '',
         iso_storage: host.iso_storage || '',
+        latitude: host.latitude ?? null,
+        longitude: host.longitude ?? null,
         idrac_type: host.idrac_type || '',
         idrac_hostname: host.idrac_hostname || '',
         idrac_port: host.idrac_port || 443,

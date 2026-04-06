@@ -1,50 +1,29 @@
 <template>
   <div class="disk-io">
-    <div v-if="loading && nodes.length === 0" class="wl">Loading disk I/O...</div>
+    <div v-if="loading && nodes.length === 0" class="wl">Loading disk usage...</div>
     <div v-else-if="nodes.length === 0" class="we">No node data available.</div>
     <div v-else class="node-list">
       <div v-for="node in nodes" :key="node.key" class="node-row">
         <div class="node-header">
           <span class="node-name">{{ node.label }}</span>
           <div class="node-io">
-            <span class="io-read">R {{ fmtBps(node.diskread) }}</span>
-            <span class="io-write">W {{ fmtBps(node.diskwrite) }}</span>
+            <span class="io-read">{{ fmtGB(node.diskUsed) }}</span>
+            <span class="io-write">/ {{ fmtGB(node.diskTotal) }}</span>
           </div>
         </div>
 
-        <!-- Bar chart: last N samples as horizontal bars -->
-        <div class="bar-chart">
-          <svg :viewBox="`0 0 200 ${barH}`" preserveAspectRatio="none" class="bar-svg">
-            <!-- Read bars (blue) -->
-            <rect
-              v-for="(v, i) in node.histRead"
-              :key="'r'+i"
-              :x="barX(i)"
-              :y="barY(v, node.maxVal)"
-              :width="barW - 1"
-              :height="barHeight(v, node.maxVal)"
-              fill="var(--primary-color)"
-              opacity="0.75"
-              rx="1"
-            />
-            <!-- Write bars (amber) -->
-            <rect
-              v-for="(v, i) in node.histWrite"
-              :key="'w'+i"
-              :x="barX(i) + barW / 2"
-              :y="barY(v, node.maxVal)"
-              :width="barW / 2 - 1"
-              :height="barHeight(v, node.maxVal)"
-              fill="#f59e0b"
-              opacity="0.75"
-              rx="1"
-            />
-          </svg>
+        <!-- Usage bar -->
+        <div class="usage-track">
+          <div
+            class="usage-fill"
+            :style="{ width: usagePct(node) + '%' }"
+            :class="usagePct(node) > 85 ? 'fill-red' : usagePct(node) > 65 ? 'fill-amber' : 'fill-blue'"
+          ></div>
         </div>
 
         <div class="chart-legend">
-          <span class="leg-read">Read</span>
-          <span class="leg-write">Write</span>
+          <span class="leg-read">Used</span>
+          <span :class="usagePct(node) > 85 ? 'leg-warn' : 'leg-write'">{{ usagePct(node).toFixed(1) }}%</span>
         </div>
       </div>
     </div>
@@ -55,35 +34,26 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import api from '@/services/api'
 
-const HISTORY_LEN = 16
-const BAR_H = 44
-
-function fmtBps (bps) {
-  if (!bps || bps === 0) return '0 B/s'
-  if (bps >= 1e9) return (bps / 1e9).toFixed(1) + ' GB/s'
-  if (bps >= 1e6) return (bps / 1e6).toFixed(1) + ' MB/s'
-  if (bps >= 1e3) return (bps / 1e3).toFixed(0) + ' KB/s'
-  return Math.round(bps) + ' B/s'
+function fmtGB (bytes) {
+  if (!bytes) return '0 GB'
+  const gb = bytes / (1024 ** 3)
+  if (gb >= 1000) return (gb / 1024).toFixed(1) + ' TB'
+  return gb.toFixed(1) + ' GB'
 }
 
 export default {
   name: 'DiskIOWidget',
   setup () {
     const loading = ref(true)
-    const nodesMap = ref({})
     const nodes = ref([])
     let timer = null
 
-    const barW = 200 / HISTORY_LEN
-    const barH = BAR_H
+    const barH = 44
+    const barW = 0 // unused but keep for compat
 
-    const barX  = (i) => i * barW
-    const barY  = (v, max) => max > 0 ? (BAR_H - (v / max) * (BAR_H - 4) - 2) : BAR_H - 2
-    const barHeight = (v, max) => max > 0 ? Math.max(2, (v / max) * (BAR_H - 4)) : 2
-
-    const pushHistory = (arr, val) => {
-      arr.push(val)
-      if (arr.length > HISTORY_LEN) arr.shift()
+    const usagePct = (node) => {
+      if (!node.diskTotal || node.diskTotal === 0) return 0
+      return Math.min(100, (node.diskUsed / node.diskTotal) * 100)
     }
 
     const fetch = async () => {
@@ -92,37 +62,26 @@ export default {
         const hosts = (hostsRes.data || []).filter(h => h.is_active)
         if (!hosts.length) { loading.value = false; return }
 
-        const results = await Promise.allSettled(
-          hosts.map(h => api.pveNode.clusterResources(h.id))
+        const nodeListResults = await Promise.allSettled(
+          hosts.map(h => api.proxmox.listNodes(h.id))
         )
 
-        results.forEach((result, hIdx) => {
-          if (result.status !== 'fulfilled') return
-          const host = hosts[hIdx]
-          ;(result.value.data || []).forEach(item => {
-            if (item.type !== 'node') return
-            const key = `${host.id}::${item.node}`
-            if (!nodesMap.value[key]) {
-              nodesMap.value[key] = {
-                key,
-                label: item.node,
-                diskread: 0,
-                diskwrite: 0,
-                histRead:  Array(HISTORY_LEN).fill(0),
-                histWrite: Array(HISTORY_LEN).fill(0),
-                maxVal: 1,
-              }
-            }
-            const nd = nodesMap.value[key]
-            nd.diskread  = item.diskread  || 0
-            nd.diskwrite = item.diskwrite || 0
-            pushHistory(nd.histRead,  nd.diskread)
-            pushHistory(nd.histWrite, nd.diskwrite)
-            nd.maxVal = Math.max(...nd.histRead, ...nd.histWrite, 1)
+        const result = []
+        nodeListResults.forEach((res) => {
+          if (res.status !== 'fulfilled') return
+          ;(res.value.data || []).forEach(n => {
+            const name = n.node_name || n.node
+            if (!name) return
+            result.push({
+              key: `${n.host_id}::${name}`,
+              label: name,
+              diskUsed: n.disk_used || 0,
+              diskTotal: n.disk_total || 0,
+            })
           })
         })
 
-        nodes.value = Object.values(nodesMap.value)
+        nodes.value = result
       } catch (e) {
         // silently ignore
       } finally {
@@ -130,10 +89,10 @@ export default {
       }
     }
 
-    onMounted(() => { fetch(); timer = setInterval(fetch, 10000) })
+    onMounted(() => { fetch(); timer = setInterval(fetch, 30000) })
     onUnmounted(() => clearInterval(timer))
 
-    return { loading, nodes, fmtBps, barW, barH, barX, barY, barHeight }
+    return { loading, nodes, fmtGB, usagePct, barH, barW }
   }
 }
 </script>
@@ -172,7 +131,7 @@ export default {
 
 .node-io {
   display: flex;
-  gap: 0.6rem;
+  gap: 0.25rem;
   flex-shrink: 0;
 }
 
@@ -185,28 +144,32 @@ export default {
 
 .io-write {
   font-size: 0.68rem;
-  font-weight: 600;
-  color: #f59e0b;
+  font-weight: 400;
+  color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
 }
 
-.bar-chart {
+.usage-track {
   width: 100%;
-  border-radius: 0.25rem;
-  background: var(--background);
-  border: 1px solid var(--border-color);
+  height: 8px;
+  border-radius: 4px;
+  background: var(--border-color);
   overflow: hidden;
 }
 
-.bar-svg {
-  width: 100%;
-  height: 44px;
-  display: block;
+.usage-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.4s ease;
 }
+
+.fill-blue  { background: var(--primary-color); }
+.fill-amber { background: #f59e0b; }
+.fill-red   { background: #ef4444; }
 
 .chart-legend {
   display: flex;
-  gap: 0.75rem;
+  justify-content: space-between;
 }
 
 .leg-read {
@@ -215,21 +178,15 @@ export default {
   font-weight: 600;
 }
 
-.leg-read::before {
-  content: '■';
-  margin-right: 0.2rem;
-  font-size: 0.5rem;
-}
-
 .leg-write {
   font-size: 0.62rem;
-  color: #f59e0b;
-  font-weight: 600;
+  color: var(--text-secondary);
+  font-weight: 500;
 }
 
-.leg-write::before {
-  content: '■';
-  margin-right: 0.2rem;
-  font-size: 0.5rem;
+.leg-warn {
+  font-size: 0.62rem;
+  color: #ef4444;
+  font-weight: 600;
 }
 </style>

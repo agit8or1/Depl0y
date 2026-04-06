@@ -48,32 +48,47 @@ async def get_dashboard_stats(
     db: Session = Depends(get_db),
 ):
     """Get dashboard statistics - queries actual Proxmox data"""
+    import asyncio
+    from concurrent.futures import ThreadPoolExecutor
     from app.services.proxmox import ProxmoxService
 
-    # Query all active Proxmox hosts and get VM counts from Proxmox itself
+    # Query all active Proxmox hosts
     active_hosts = db.query(ProxmoxHost).filter(ProxmoxHost.is_active == True).all()
+
+    def fetch_resources_for_host(host):
+        """Use cluster/resources (single call) instead of per-node qemu.get()"""
+        try:
+            service = ProxmoxService(host)
+            # One API call returns all VMs/LXCs across all nodes
+            resources = service.proxmox.cluster.resources.get(type='vm')
+            return resources
+        except Exception as e:
+            logger.error(f"Failed to get resources from host {host.name}: {e}")
+            return []
+
+    # Fetch all hosts concurrently
+    loop = asyncio.get_event_loop()
+    with ThreadPoolExecutor(max_workers=min(len(active_hosts) or 1, 8)) as pool:
+        futures = [loop.run_in_executor(pool, fetch_resources_for_host, h) for h in active_hosts]
+        results = await asyncio.gather(*futures, return_exceptions=True)
 
     total_vms = 0
     running_vms = 0
     stopped_vms = 0
     paused_vms = 0
 
-    for host in active_hosts:
-        try:
-            service = ProxmoxService(host)
-            vms = service.get_all_vms()
-            total_vms += len(vms)
-
-            for vm in vms:
-                status = vm.get('status', '').lower()
-                if status == 'running':
-                    running_vms += 1
-                elif status == 'stopped':
-                    stopped_vms += 1
-                elif status == 'paused':
-                    paused_vms += 1
-        except Exception as e:
-            logger.error(f"Failed to get VMs from host {host.name}: {e}")
+    for resources in results:
+        if isinstance(resources, Exception) or not resources:
+            continue
+        for vm in resources:
+            total_vms += 1
+            status = vm.get('status', '').lower()
+            if status == 'running':
+                running_vms += 1
+            elif status == 'stopped':
+                stopped_vms += 1
+            elif status == 'paused':
+                paused_vms += 1
 
     # Datacenter count (number of Proxmox hosts)
     datacenters = len(active_hosts)
@@ -212,16 +227,28 @@ async def get_dashboard_summary(
 
     active_hosts = db.query(ProxmoxHost).filter(ProxmoxHost.is_active == True).all()
 
-    total_vms = 0
-    running_vms = 0
-    for host in active_hosts:
+    def fetch_vm_summary(host):
         try:
             service = ProxmoxService(host)
-            vms = service.get_all_vms()
-            total_vms += len(vms)
-            running_vms += sum(1 for v in vms if v.get("status", "").lower() == "running")
+            resources = service.proxmox.cluster.resources.get(type='vm')
+            return resources
         except Exception:
-            pass
+            return []
+
+    import asyncio
+    from concurrent.futures import ThreadPoolExecutor
+    loop = asyncio.get_event_loop()
+    with ThreadPoolExecutor(max_workers=min(len(active_hosts) or 1, 8)) as pool:
+        futures = [loop.run_in_executor(pool, fetch_vm_summary, h) for h in active_hosts]
+        results = await asyncio.gather(*futures, return_exceptions=True)
+
+    total_vms = 0
+    running_vms = 0
+    for resources in results:
+        if isinstance(resources, Exception) or not resources:
+            continue
+        total_vms += len(resources)
+        running_vms += sum(1 for v in resources if v.get("status", "").lower() == "running")
 
     node_count = db.query(ProxmoxNode).count()
 

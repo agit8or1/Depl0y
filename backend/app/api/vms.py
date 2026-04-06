@@ -141,25 +141,38 @@ async def list_vms(
     # Query all active Proxmox hosts and get VMs from Proxmox itself
     active_hosts = db.query(ProxmoxHost).filter(ProxmoxHost.is_active == True).all()
 
-    all_vms = []
-    for host in active_hosts:
+    import asyncio
+    from concurrent.futures import ThreadPoolExecutor
+
+    def fetch_for_host(host):
         try:
             service = ProxmoxService(host)
-            vms = service.get_all_vms()
-
-            # Convert to response format
-            for vm in vms:
-                all_vms.append({
-                    'vmid': vm.get('vmid'),
-                    'name': vm.get('name', f"VM {vm.get('vmid')}"),
-                    'status': vm.get('status', 'unknown'),
-                    'node': vm.get('node', 'unknown'),
-                    'cpus': vm.get('cpus', 0),
-                    'maxmem': vm.get('maxmem', 0),
-                    'maxdisk': vm.get('maxdisk', 0),
-                })
+            # Single API call for all VMs across all nodes
+            resources = service.proxmox.cluster.resources.get(type='vm')
+            return [r for r in resources if r.get('type') == 'qemu']
         except Exception as e:
             logger.error(f"Failed to get VMs from host {host.name}: {e}")
+            return []
+
+    loop = asyncio.get_event_loop()
+    with ThreadPoolExecutor(max_workers=min(len(active_hosts) or 1, 8)) as pool:
+        futures = [loop.run_in_executor(pool, fetch_for_host, h) for h in active_hosts]
+        results = await asyncio.gather(*futures, return_exceptions=True)
+
+    all_vms = []
+    for vms in results:
+        if isinstance(vms, Exception) or not vms:
+            continue
+        for vm in vms:
+            all_vms.append({
+                'vmid': vm.get('vmid'),
+                'name': vm.get('name', f"VM {vm.get('vmid')}"),
+                'status': vm.get('status', 'unknown'),
+                'node': vm.get('node', 'unknown'),
+                'cpus': vm.get('maxcpu', 0),
+                'maxmem': vm.get('maxmem', 0),
+                'maxdisk': vm.get('maxdisk', 0),
+            })
 
     return all_vms
 

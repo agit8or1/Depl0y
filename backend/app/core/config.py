@@ -95,7 +95,7 @@ class Settings(BaseSettings):
 
     # Rate limiting
     RATE_LIMIT_ENABLED: bool = True
-    RATE_LIMIT_DEFAULT: int = 100  # requests per minute per IP (general)
+    RATE_LIMIT_DEFAULT: int = 600  # requests per minute per IP (general)
     RATE_LIMIT_AUTH: int = 10      # requests per minute per IP (auth endpoints)
 
     # Logging

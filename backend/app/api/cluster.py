@@ -201,9 +201,9 @@ def list_replication(
     """List all replication jobs."""
     host = _get_host(host_id, db)
     try:
-        return _pve(host).replication.get()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        return _pve(host).cluster.replication.get()
+    except Exception:
+        return []
 
 
 @router.post("/{host_id}/replication")
@@ -216,7 +216,7 @@ def create_replication(
     """Create a replication job. Required fields: id, type ('local'), target, source (vmid)."""
     host = _get_host(host_id, db)
     try:
-        _pve(host).replication.post(**job)
+        _pve(host).cluster.replication.post(**job)
         return {"success": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -233,7 +233,7 @@ def update_replication(
     """Update a replication job."""
     host = _get_host(host_id, db)
     try:
-        _pve(host).replication(job_id).put(**job)
+        _pve(host).cluster.replication(job_id).put(**job)
         return {"success": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -249,7 +249,7 @@ def delete_replication(
     """Delete a replication job."""
     host = _get_host(host_id, db)
     try:
-        _pve(host).replication(job_id).delete()
+        _pve(host).cluster.replication(job_id).delete()
         return {"success": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -266,7 +266,7 @@ def force_replication(
     host = _get_host(host_id, db)
     try:
         # Proxmox replication schedule_now: POST /replication/{id}/schedule_now
-        result = _pve(host).replication(job_id).schedule_now.post()
+        result = _pve(host).cluster.replication(job_id).schedule_now.post()
         return {"success": True, "upid": result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -361,7 +361,7 @@ def replication_job_log(
         # job_id format: {vmid}-{target} or numeric id
         # Proxmox: GET /replication/{id}/log is not standard; we pull from task log instead
         # Return job status
-        status = _pve(host).replication(job_id).get()
+        status = _pve(host).cluster.replication(job_id).get()
         return status
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

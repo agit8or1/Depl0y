@@ -1221,7 +1221,7 @@ async function loadCloudImages() {
         const nodeList = nodesRes.data || []
         await Promise.allSettled(
           nodeList.map(async (nodeObj) => {
-            const node = nodeObj.node
+            const node = nodeObj.node_name || nodeObj.node
             try {
               // Get storage list for this node
               const storRes = await api.pveNode.listStorage(host.id, node)
@@ -1278,7 +1278,7 @@ async function loadIsoImages() {
 
         await Promise.allSettled(
           nodeList.map(async (nodeObj) => {
-            const node = nodeObj.node
+            const node = nodeObj.node_name || nodeObj.node
             try {
               const storRes = await api.pveNode.listStorage(host.id, node)
               const storages = storRes.data || []

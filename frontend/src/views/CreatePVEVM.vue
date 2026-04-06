@@ -41,7 +41,7 @@
             </div>
             <select v-else v-model="selectedNode" class="form-control" @change="onNodeChange">
               <option value="">Select a node...</option>
-              <option v-for="n in nodes" :key="n.node" :value="n.node">{{ n.node }}</option>
+              <option v-for="n in nodes" :key="n.node_name" :value="n.node_name">{{ n.node_name }}</option>
             </select>
           </div>
         </div>
@@ -294,7 +294,7 @@
             <span v-if="creating">
               <span class="spinner-inline"></span> Creating VM...
             </span>
-            <span v-else">Create VM</span>
+            <span v-else>Create VM</span>
           </button>
         </div>
       </div>

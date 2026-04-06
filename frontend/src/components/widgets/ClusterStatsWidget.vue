@@ -17,21 +17,21 @@
         <span class="tile-val">{{ data.node_count }}</span>
         <span class="tile-label">Nodes</span>
       </router-link>
-      <div class="stat-tile stat-amber">
+      <router-link to="/storage-management" class="stat-tile stat-amber">
         <span class="tile-icon">💾</span>
         <span class="tile-val">{{ data.storage_used_gb }}<span class="tile-unit">GB</span></span>
         <span class="tile-label">Storage Used</span>
-      </div>
-      <div class="stat-tile" :class="data.failed_tasks_24h > 0 ? 'stat-red' : 'stat-green'">
+      </router-link>
+      <router-link to="/audit-log" class="stat-tile" :class="data.failed_tasks_24h > 0 ? 'stat-red' : 'stat-green'">
         <span class="tile-icon">{{ data.failed_tasks_24h > 0 ? '⚠️' : '✅' }}</span>
         <span class="tile-val">{{ data.failed_tasks_24h }}</span>
         <span class="tile-label">Failed (24h)</span>
-      </div>
-      <div class="stat-tile">
+      </router-link>
+      <router-link to="/user-management" class="stat-tile">
         <span class="tile-icon">👤</span>
         <span class="tile-val">{{ data.active_users }}</span>
         <span class="tile-label">Active Users</span>
-      </div>
+      </router-link>
     </div>
   </div>
 </template>

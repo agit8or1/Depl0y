@@ -12,7 +12,7 @@
       </div>
       <div class="card-body">
         <div class="form-group" style="max-width: 400px; margin: 0;">
-          <label class="form-label">Select Host</label>
+          <label class="form-label">Select Datacenter</label>
           <select v-model="selectedHostId" class="form-control" @change="onHostChange">
             <option value="">— Select a host —</option>
             <option v-for="host in hosts" :key="host.id" :value="host.id">

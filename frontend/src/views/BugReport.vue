@@ -186,7 +186,7 @@ export default {
 }
 
 .card {
-  background: white;
+  background: var(--card-bg, #fff);
   border-radius: 0.5rem;
   box-shadow: var(--shadow-md);
   padding: 2rem;
@@ -286,7 +286,7 @@ export default {
   font-size: 0.8rem;
   color: var(--text-primary);
   word-break: break-all;
-  background-color: white;
+  background-color: var(--input-bg, #fff);
   padding: 0.5rem;
   border-radius: 0.25rem;
   border: 1px solid var(--border-color);
@@ -311,7 +311,7 @@ export default {
 }
 
 .btn-secondary {
-  background-color: white;
+  background-color: var(--card-bg, #fff);
   color: var(--text-primary);
   border: 1px solid var(--border-color);
 }

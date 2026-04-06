@@ -235,10 +235,20 @@ def cluster_resources(host_id: int, type: Optional[str] = None,
     if cached is not None:
         return cached
     try:
+        # Proxmox /cluster/resources only accepts type=vm|storage|node|sdn.
+        # LXC containers are returned as type=vm at the API level but have
+        # item["type"]=="lxc". Map "lxc"/"qemu" → "vm" then post-filter.
+        filter_subtype = None
+        pve_type = type
+        if type in ("lxc", "qemu"):
+            filter_subtype = type
+            pve_type = "vm"
         params = {}
-        if type:
-            params["type"] = type
+        if pve_type:
+            params["type"] = pve_type
         result = _pve(host).cluster.resources.get(**params)
+        if filter_subtype:
+            result = [r for r in result if r.get("type") == filter_subtype]
         pve_cache.set(cache_key, result, ttl=15)
         return result
     except Exception as e:
@@ -345,8 +355,8 @@ def ha_groups(host_id: int, db: Session = Depends(get_db), current_user=Depends(
     host = _get_host(host_id, db)
     try:
         return _pve(host).cluster.ha.groups.get()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        return []
 
 
 @router.post("/{host_id}/cluster/ha/groups")
@@ -749,7 +759,7 @@ def node_storage(host_id: int, node: str, db: Session = Depends(get_db),
     if cached is not None:
         return cached
     try:
-        result = _pve(host).nodes(node).storage.get()
+        result = _pve(host).nodes(node).storage.get(enabled=1)
         pve_cache.set(cache_key, result, ttl=60)
         return result
     except Exception as e:

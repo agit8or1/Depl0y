@@ -17,6 +17,8 @@
   --warning-color: #f59e0b;
   --background: #f8fafc;
   --surface: #ffffff;
+  --bg-card: #ffffff;
+  --bg-input: #ffffff;
   --text-primary: #0f172a;
   --text-secondary: #576070;
   --text-muted: #6e7f93;
@@ -38,6 +40,8 @@
   --warning-color: #d97706;
   --background: #f1f5f9;
   --surface: #ffffff;
+  --bg-card: #ffffff;
+  --bg-input: #ffffff;
   --text-primary: #0f172a;
   --text-secondary: #475569;
   --text-muted: #64748b;
@@ -55,6 +59,15 @@
   --warning-color: #f59e0b;
   --background: #0f1419;
   --surface: #1a2332;
+  --bg-card: #1e2a3b;
+  --bg-input: #243044;
+  --card-bg: #1e2a3b;
+  --input-bg: #243044;
+  --hover-bg: #243044;
+  --code-bg: #0f1419;
+  --btn-secondary-bg: #1e2a3b;
+  --btn-secondary-hover: #243044;
+  --card-background: #1e2a3b;
   --text-primary: #e2e8f0;
   --text-secondary: #94a3b8;
   --text-muted: #8fa3b8;
@@ -765,4 +778,28 @@ select.form-control {
   overflow: hidden;
   margin: 0;
   padding: 0;
+}
+
+/* ── Dark mode: override hardcoded white/light backgrounds in views ───────── */
+[data-theme="dark"] .modal-content,
+[data-theme="dark"] .modal-body,
+[data-theme="dark"] .modal-header,
+[data-theme="dark"] .modal-footer,
+[data-theme="dark"] .card,
+[data-theme="dark"] .panel,
+[data-theme="dark"] .tab-content,
+[data-theme="dark"] .dropdown-menu,
+[data-theme="dark"] .popover,
+[data-theme="dark"] .tooltip-inner {
+  background-color: var(--surface) !important;
+  color: var(--text-primary) !important;
+  border-color: var(--border-color) !important;
+}
+
+[data-theme="dark"] input:not([type="range"]):not([type="color"]):not([type="checkbox"]):not([type="radio"]),
+[data-theme="dark"] select,
+[data-theme="dark"] textarea {
+  background-color: var(--bg-input) !important;
+  color: var(--text-primary) !important;
+  border-color: var(--border-color) !important;
 }

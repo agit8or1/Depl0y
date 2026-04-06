@@ -1528,7 +1528,7 @@ export default {
   left: 2px;
   width: 1rem;
   height: 1rem;
-  background: white;
+  background: #f8fafc;
   border-radius: 50%;
   box-shadow: 0 1px 2px rgba(0,0,0,0.2);
   transition: left 0.2s;
@@ -1564,8 +1564,8 @@ export default {
   margin-bottom: 0.75rem;
   border-radius: 0.375rem;
   overflow: hidden;
-  background: #fff;
-  border: 1px solid #e5e7eb;
+  background: var(--card-bg, #fff);
+  border: 1px solid var(--border-color, #e5e7eb);
 }
 
 .slack-bar {
@@ -1908,7 +1908,7 @@ export default {
 }
 
 .wh-btn-delete {
-  background: #fff;
+  background: var(--card-bg, #fff);
   color: #dc2626;
   border-color: #fca5a5;
 }

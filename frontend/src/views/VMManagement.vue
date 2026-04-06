@@ -2535,10 +2535,10 @@ export default {
   transition: all 0.15s;
 }
 
-.tab-btn:hover { color: var(--text-primary); background: white; }
+.tab-btn:hover { color: var(--text-primary); background: var(--card-bg, #fff); }
 
 .tab-btn.active {
-  background: white;
+  background: var(--card-bg, #fff);
   color: var(--text-primary);
   box-shadow: 0 1px 4px rgba(0,0,0,0.1);
 }
@@ -3219,8 +3219,8 @@ export default {
   white-space: pre-wrap;
   word-break: break-word;
 }
-.conv-user { background: #eff6ff; border-bottom: 1px solid var(--border-color); }
-.conv-assistant { background: white; }
+.conv-user { background: var(--hover-bg, #eff6ff); border-bottom: 1px solid var(--border-color); }
+.conv-assistant { background: var(--card-bg, #fff); }
 
 /* RAG sections */
 .rag-section {

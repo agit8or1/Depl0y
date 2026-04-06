@@ -1200,7 +1200,7 @@ export default {
 }
 
 .modal-content {
-  background: white;
+  background: var(--card-bg, #fff);
   border-radius: 0.5rem;
   max-width: 600px;
   width: 90%;

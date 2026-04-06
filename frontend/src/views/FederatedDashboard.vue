@@ -111,87 +111,7 @@
           <span class="card-header-sub">Geographic overview of your infrastructure</span>
         </div>
         <div class="world-map-container">
-          <!-- Simplified SVG world map outline (Mercator projection placeholder) -->
-          <svg
-            class="world-map-svg"
-            viewBox="0 0 900 450"
-            xmlns="http://www.w3.org/2000/svg"
-            preserveAspectRatio="xMidYMid meet"
-          >
-            <!-- Background ocean -->
-            <rect width="900" height="450" fill="var(--map-ocean, rgba(59,130,246,0.05))" rx="8"/>
-
-            <!-- Simplified continent outlines (decorative, not to-scale) -->
-            <!-- North America -->
-            <path d="M 60 80 L 120 70 L 170 90 L 200 120 L 210 170 L 180 210 L 150 230 L 130 260 L 100 270 L 80 250 L 60 200 L 50 150 Z"
-              fill="var(--map-land, rgba(100,160,100,0.18))" stroke="var(--border-color)" stroke-width="0.8"/>
-            <!-- South America -->
-            <path d="M 140 280 L 180 270 L 210 290 L 220 330 L 210 380 L 190 400 L 160 410 L 140 390 L 130 350 L 125 310 Z"
-              fill="var(--map-land, rgba(100,160,100,0.18))" stroke="var(--border-color)" stroke-width="0.8"/>
-            <!-- Europe -->
-            <path d="M 390 60 L 440 55 L 460 75 L 450 100 L 430 110 L 400 105 L 380 90 Z"
-              fill="var(--map-land, rgba(100,160,100,0.18))" stroke="var(--border-color)" stroke-width="0.8"/>
-            <!-- Africa -->
-            <path d="M 390 130 L 450 120 L 480 150 L 490 210 L 470 280 L 440 320 L 410 330 L 380 310 L 360 260 L 360 200 L 370 160 Z"
-              fill="var(--map-land, rgba(100,160,100,0.18))" stroke="var(--border-color)" stroke-width="0.8"/>
-            <!-- Asia -->
-            <path d="M 470 50 L 620 40 L 700 60 L 740 90 L 750 130 L 720 160 L 670 170 L 620 160 L 570 150 L 520 140 L 490 120 L 465 95 Z"
-              fill="var(--map-land, rgba(100,160,100,0.18))" stroke="var(--border-color)" stroke-width="0.8"/>
-            <!-- Australia -->
-            <path d="M 680 280 L 760 270 L 800 300 L 810 340 L 790 370 L 750 380 L 710 370 L 680 340 L 670 310 Z"
-              fill="var(--map-land, rgba(100,160,100,0.18))" stroke="var(--border-color)" stroke-width="0.8"/>
-
-            <!-- Grid lines (longitude/latitude feel) -->
-            <line v-for="x in [180, 270, 360, 450, 540, 630, 720]" :key="'v'+x"
-              :x1="x" y1="0" :x2="x" y2="450"
-              stroke="var(--border-color)" stroke-width="0.4" opacity="0.4"/>
-            <line v-for="y in [90, 180, 270, 360]" :key="'h'+y"
-              x1="0" :y1="y" x2="900" :y2="y"
-              stroke="var(--border-color)" stroke-width="0.4" opacity="0.4"/>
-
-            <!-- Host datacenter pins -->
-            <g v-for="(host, idx) in summary.hosts" :key="'pin-'+host.host_id">
-              <!-- Pin position cycles through preset locations if no lat/lon -->
-              <circle
-                :cx="hostMapX(host, idx)"
-                :cy="hostMapY(host, idx)"
-                r="10"
-                :fill="host.status === 'online' ? 'rgba(59,130,246,0.2)' : 'rgba(239,68,68,0.15)'"
-                stroke="none"
-                class="host-pin-pulse"
-              />
-              <circle
-                :cx="hostMapX(host, idx)"
-                :cy="hostMapY(host, idx)"
-                r="5"
-                :fill="host.status === 'online' ? '#3b82f6' : '#ef4444'"
-                stroke="white"
-                stroke-width="1.5"
-                class="host-pin-dot"
-              />
-              <!-- Label -->
-              <text
-                :x="hostMapX(host, idx) + 8"
-                :y="hostMapY(host, idx) - 8"
-                font-size="9"
-                fill="var(--text-primary)"
-                class="host-pin-label"
-              >{{ host.host_name }}</text>
-            </g>
-
-            <!-- Connection lines between online hosts -->
-            <g v-if="summary.hosts.filter(h => h.status === 'online').length > 1">
-              <line
-                v-for="pair in hostConnectionPairs"
-                :key="pair.key"
-                :x1="pair.x1" :y1="pair.y1"
-                :x2="pair.x2" :y2="pair.y2"
-                stroke="rgba(59,130,246,0.25)"
-                stroke-width="1"
-                stroke-dasharray="4 3"
-              />
-            </g>
-          </svg>
+          <div ref="mapEl" class="leaflet-map"></div>
 
           <!-- Host legend below map -->
           <div class="map-legend">
@@ -508,9 +428,11 @@
 </template>
 
 <script>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/services/api'
+import L from 'leaflet'
+import 'leaflet/dist/leaflet.css'
 
 // Preset map coordinates (x, y in 900x450 viewBox) for hosts without lat/lon
 const MAP_PRESETS = [
@@ -906,17 +828,88 @@ export default {
       return 'badge-danger'
     }
 
+    // ── Leaflet map ──────────────────────────────────────────────────────────
+    const mapEl = ref(null)
+    let leafletMap = null
+    const leafletMarkers = []
+
+    // Default preset lat/lng positions (fallback when no coords on host)
+    const PRESET_LATLNG = [
+      [40.7, -74.0],   // New York
+      [37.8, -122.4],  // San Francisco
+      [51.5, -0.1],    // London
+      [48.9, 2.3],     // Paris
+      [35.7, 139.7],   // Tokyo
+      [-33.9, 151.2],  // Sydney
+      [-23.5, -46.6],  // São Paulo
+      [1.3, 103.8],    // Singapore
+    ]
+
+    const initMap = (hosts) => {
+      if (!mapEl.value) return
+      if (leafletMap) {
+        // Clear existing markers
+        leafletMarkers.forEach(m => m.remove())
+        leafletMarkers.length = 0
+      } else {
+        leafletMap = L.map(mapEl.value, {
+          center: [20, 0],
+          zoom: 2,
+          zoomControl: true,
+          scrollWheelZoom: false,
+        })
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+          maxZoom: 18,
+        }).addTo(leafletMap)
+      }
+
+      hosts.forEach((host, idx) => {
+        const lat = host.latitude  ?? PRESET_LATLNG[idx % PRESET_LATLNG.length][0]
+        const lng = host.longitude ?? PRESET_LATLNG[idx % PRESET_LATLNG.length][1]
+        const color = host.status === 'online' ? '#3b82f6' : '#ef4444'
+        const icon = L.divIcon({
+          className: '',
+          html: `<div style="width:14px;height:14px;border-radius:50%;background:${color};border:2px solid #fff;box-shadow:0 0 0 3px ${color}44;"></div>`,
+          iconSize: [14, 14],
+          iconAnchor: [7, 7],
+        })
+        const marker = L.marker([lat, lng], { icon })
+          .addTo(leafletMap)
+          .bindPopup(`<b>${host.host_name}</b><br>${host.api_url || ''}<br>Status: ${host.status}`)
+        leafletMarkers.push(marker)
+      })
+
+      // Fit bounds if we have markers
+      if (leafletMarkers.length > 0) {
+        const group = L.featureGroup(leafletMarkers)
+        leafletMap.fitBounds(group.getBounds().pad(0.3))
+      }
+    }
+
     onMounted(() => {
       fetchSummary().then(() => {
         fetchRecentTasks()
         computeMigrationCandidates()
+        if (summary.value?.hosts?.length) {
+          initMap(summary.value.hosts)
+        }
       })
+    })
+
+    onUnmounted(() => {
+      if (leafletMap) { leafletMap.remove(); leafletMap = null }
+    })
+
+    watch(() => summary.value?.hosts, (hosts) => {
+      if (hosts?.length) initMap(hosts)
     })
 
     return {
       loading,
       summary,
       fetchedAt,
+      mapEl,
       vmSearchQuery,
       vmSearchResults,
       vmSearchLoading,
@@ -932,8 +925,6 @@ export default {
       hostConnectionPairs,
       hostPairs,
       hostHealthPct,
-      hostMapX,
-      hostMapY,
       refresh,
       onVmSearchInput,
       navigateToVm,
@@ -1113,33 +1104,12 @@ export default {
   padding: 0.5rem 1rem 1rem;
 }
 
-.world-map-svg {
+.leaflet-map {
   width: 100%;
+  height: 380px;
   border-radius: 0.375rem;
   border: 1px solid var(--border-color);
-  overflow: visible;
-}
-
-.host-pin-pulse {
-  animation: ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;
-}
-
-@keyframes ping {
-  0%    { transform: scale(1); opacity: 0.8; }
-  75%   { transform: scale(2.5); opacity: 0; }
-  100%  { transform: scale(2.5); opacity: 0; }
-}
-
-.host-pin-dot {
-  filter: drop-shadow(0 1px 3px rgba(0,0,0,0.3));
-}
-
-.host-pin-label {
-  font-family: var(--font-sans, sans-serif);
-  font-weight: 600;
-  pointer-events: none;
-  fill: var(--text-primary);
-  font-size: 9px;
+  overflow: hidden;
 }
 
 .map-legend {

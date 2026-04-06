@@ -53,7 +53,7 @@
               <div class="status-dot-wrap" :title="hostStatusTooltip(host)">
                 <span class="status-pulse" :class="hostPulseClass(host)"></span>
               </div>
-              <h4 class="host-card__name">{{ host.name }}</h4>
+              <h4 class="host-card__name">{{ getFedSummary(host.id)?.cluster_name || host.name }}</h4>
             </div>
             <div class="flex align-center gap-1">
               <span :class="['badge', host.is_active ? 'badge-success' : 'badge-danger']">

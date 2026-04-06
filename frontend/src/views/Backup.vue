@@ -246,8 +246,8 @@
                   <label class="form-label">Node</label>
                   <select v-model="runNowNode" class="form-control">
                     <option value="">— Select node —</option>
-                    <option v-for="node in nodes" :key="node.node || node.name" :value="node.node || node.name">
-                      {{ node.node || node.name }}
+                    <option v-for="node in nodes" :key="node.node_name || node.node || node.name" :value="node.node_name || node.node || node.name">
+                      {{ node.node_name || node.node || node.name }}
                     </option>
                   </select>
                 </div>
@@ -283,8 +283,8 @@
                 <label class="form-label">Node</label>
                 <select v-model="manualBackup.node" class="form-control" @change="onNodeChange">
                   <option value="">— Select node —</option>
-                  <option v-for="node in nodes" :key="node.node || node.name" :value="node.node || node.name">
-                    {{ node.node || node.name }}
+                  <option v-for="node in nodes" :key="node.node_name || node.node || node.name" :value="node.node_name || node.node || node.name">
+                    {{ node.node_name || node.node || node.name }}
                   </option>
                 </select>
               </div>
@@ -386,8 +386,8 @@
               <label class="filter-label">Node</label>
               <select v-model="historyFilter.node" class="form-control form-control-sm" @change="fetchHistory">
                 <option value="">All nodes</option>
-                <option v-for="node in nodes" :key="node.node || node.name" :value="node.node || node.name">
-                  {{ node.node || node.name }}
+                <option v-for="node in nodes" :key="node.node_name || node.node || node.name" :value="node.node_name || node.node || node.name">
+                  {{ node.node_name || node.node || node.name }}
                 </option>
               </select>
             </div>
@@ -595,8 +595,8 @@
                 <label class="form-label">Node</label>
                 <select v-model="scheduleForm.node" class="form-control">
                   <option value="">All nodes</option>
-                  <option v-for="node in nodes" :key="node.node || node.name" :value="node.node || node.name">
-                    {{ node.node || node.name }}
+                  <option v-for="node in nodes" :key="node.node_name || node.node || node.name" :value="node.node_name || node.node || node.name">
+                    {{ node.node_name || node.node || node.name }}
                   </option>
                 </select>
               </div>
@@ -951,7 +951,7 @@ export default {
       allVms.value = []
       try {
         for (const node of nodes.value) {
-          const nodeName = node.node || node.name
+          const nodeName = node.node_name || node.node || node.name
           const [qemuRes, lxcRes] = await Promise.all([
             api.pveNode.nodeVms(selectedHostId.value, nodeName).catch(() => ({ data: {} })),
             api.pveNode.listContainers(selectedHostId.value, nodeName).catch(() => ({ data: [] }))

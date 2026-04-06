@@ -122,28 +122,28 @@
             <div class="card-header"><h4>CPU %</h4></div>
             <div class="chart-wrap">
               <Line v-if="cpuChartData" :data="cpuChartData" :options="lineChartOptions" />
-              <div v-else class="text-muted text-center text-sm pt-2">Loading chart...</div>
+              <div v-else class="text-muted text-center text-sm pt-2">{{ rrdLoaded ? 'No data' : 'Loading...' }}</div>
             </div>
           </div>
           <div class="card chart-card">
             <div class="card-header"><h4>Memory %</h4></div>
             <div class="chart-wrap">
               <Line v-if="memChartData" :data="memChartData" :options="lineChartOptions" />
-              <div v-else class="text-muted text-center text-sm pt-2">Loading chart...</div>
+              <div v-else class="text-muted text-center text-sm pt-2">{{ rrdLoaded ? 'No data' : 'Loading...' }}</div>
             </div>
           </div>
           <div class="card chart-card">
             <div class="card-header"><h4>Network I/O (bytes/s)</h4></div>
             <div class="chart-wrap">
               <Line v-if="netChartData" :data="netChartData" :options="bytesChartOptions" />
-              <div v-else class="text-muted text-center text-sm pt-2">Loading chart...</div>
+              <div v-else class="text-muted text-center text-sm pt-2">{{ rrdLoaded ? 'No data' : 'Loading...' }}</div>
             </div>
           </div>
           <div class="card chart-card">
             <div class="card-header"><h4>Disk I/O (bytes/s)</h4></div>
             <div class="chart-wrap">
               <Line v-if="diskChartData" :data="diskChartData" :options="bytesChartOptions" />
-              <div v-else class="text-muted text-center text-sm pt-2">Loading chart...</div>
+              <div v-else class="text-muted text-center text-sm pt-2">{{ rrdLoaded ? 'Not reported by Proxmox for this node' : 'Loading...' }}</div>
             </div>
           </div>
         </div>
@@ -1386,6 +1386,7 @@ const activeTab = ref('overview')
 
 // RRD
 const rrdData = ref(null)
+const rrdLoaded = ref(false)
 const rrdTimeframe = ref('hour')
 
 // Guests
@@ -1602,6 +1603,8 @@ const netChartData = computed(() => {
 
 const diskChartData = computed(() => {
   if (!rrdData.value?.length) return null
+  const hasData = rrdData.value.some(d => d.diskread != null || d.diskwrite != null)
+  if (!hasData) return null
   return {
     labels: makeLabels(rrdData.value),
     datasets: [
@@ -1679,6 +1682,8 @@ const loadRrd = async () => {
     rrdData.value = res.data
   } catch (e) {
     console.warn('RRD failed', e)
+  } finally {
+    rrdLoaded.value = true
   }
 }
 

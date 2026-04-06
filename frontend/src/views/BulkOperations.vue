@@ -1575,7 +1575,7 @@ export default {
       if (!migrateHostId.value) { targetNodes.value = []; return }
       try {
         const res = await api.proxmox.listNodes(migrateHostId.value)
-        targetNodes.value = (res.data || []).map(n => n.node || n.name)
+        targetNodes.value = (res.data || []).map(n => n.node_name || n.node || n.name)
       } catch (e) {
         toast.error('Failed to load target nodes')
       }

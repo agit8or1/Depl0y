@@ -641,6 +641,7 @@ import SystemInfoWidget      from '@/components/widgets/SystemInfoWidget.vue'
 // New widget imports
 import NetworkTrafficWidget  from '@/components/widgets/NetworkTrafficWidget.vue'
 import DiskIOWidget          from '@/components/widgets/DiskIOWidget.vue'
+import DiskThroughputWidget  from '@/components/widgets/DiskThroughputWidget.vue'
 import NodeStatusGrid        from '@/components/widgets/NodeStatusGrid.vue'
 import QuickStatsBar         from '@/components/widgets/QuickStatsBar.vue'
 
@@ -661,7 +662,8 @@ const WIDGET_META = {
   system_info:      { type: 'system_info',      label: 'System Info',       icon: 'ℹ️', multi: false },
   network_traffic:  { type: 'network_traffic',  label: 'Network Traffic',   icon: '📶', multi: false },
   disk_io:          { type: 'disk_io',          label: 'Disk Usage',        icon: '💿', multi: false },
-  node_status_grid: { type: 'node_status_grid', label: 'Node Status Grid',  icon: '🔲', multi: false },
+  node_status_grid:  { type: 'node_status_grid',  label: 'Node Status Grid',   icon: '🔲', multi: false },
+  disk_throughput:   { type: 'disk_throughput',   label: 'Disk I/O',           icon: '📀', multi: false },
 }
 
 const WIDGET_COMPONENTS = {
@@ -677,7 +679,8 @@ const WIDGET_COMPONENTS = {
   system_info:      markRaw(SystemInfoWidget),
   network_traffic:  markRaw(NetworkTrafficWidget),
   disk_io:          markRaw(DiskIOWidget),
-  node_status_grid: markRaw(NodeStatusGrid),
+  node_status_grid:  markRaw(NodeStatusGrid),
+  disk_throughput:   markRaw(DiskThroughputWidget),
 }
 
 const DEFAULT_LAYOUT = [
@@ -685,6 +688,7 @@ const DEFAULT_LAYOUT = [
   { id: 'w2', type: 'node_status_grid', colSpan: 2, collapsed: false, config: {} },
   { id: 'w3', type: 'network_traffic',  colSpan: 1, collapsed: false, config: {} },
   { id: 'w4', type: 'disk_io',          colSpan: 1, collapsed: false, config: {} },
+  { id: 'w10', type: 'disk_throughput', colSpan: 1, collapsed: false, config: {} },
   { id: 'w5', type: 'resource_usage',   colSpan: 1, collapsed: false, config: {} },
   { id: 'w6', type: 'top_vms',          colSpan: 1, collapsed: false, config: {} },
   { id: 'w7', type: 'alerts',           colSpan: 1, collapsed: false, config: {} },
@@ -710,6 +714,7 @@ export default {
     NetworkTrafficWidget,
     DiskIOWidget,
     NodeStatusGrid,
+    DiskThroughputWidget,
     QuickStatsBar,
     AddHostWizard,
     SkeletonLoader,
@@ -1211,7 +1216,15 @@ export default {
         const stored = localStorage.getItem(STORAGE_KEY)
         if (stored) {
           const parsed = JSON.parse(stored)
-          layout.value = parsed.map(w => ({ ...w, config: w.config || {} }))
+          const loaded = parsed.map(w => ({ ...w, config: w.config || {} }))
+          // Merge in any new widget types from DEFAULT_LAYOUT that are missing
+          const existingTypes = new Set(loaded.map(w => w.type))
+          for (const def of DEFAULT_LAYOUT) {
+            if (!existingTypes.has(def.type)) {
+              loaded.push({ ...def })
+            }
+          }
+          layout.value = loaded
           return
         }
       } catch (e) {}

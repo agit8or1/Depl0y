@@ -30,7 +30,7 @@
           <label class="form-label">Node</label>
           <select v-model="selectedNode" class="form-control" :disabled="!selectedHostId || loadingNodes" @change="onNodeChange">
             <option value="">{{ loadingNodes ? 'Loading...' : 'Select a node...' }}</option>
-            <option v-for="n in nodes" :key="n.node" :value="n.node">{{ n.node }}</option>
+            <option v-for="n in nodes" :key="n.node_name || n.node" :value="n.node_name || n.node">{{ n.node_name || n.node }}</option>
           </select>
         </div>
       </div>
@@ -963,7 +963,7 @@ export default {
       try {
         const res = await api.proxmox.listNodes(selectedHostId.value)
         nodes.value = res.data || []
-        if (nodes.value.length === 1) selectedNode.value = nodes.value[0].node
+        if (nodes.value.length === 1) selectedNode.value = nodes.value[0].node_name || nodes.value[0].node
       } catch {
         nodes.value = []
       } finally {

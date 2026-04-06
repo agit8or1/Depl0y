@@ -370,7 +370,7 @@
             <label class="form-label">Node <span class="req">*</span></label>
             <select v-model="dlForm.node" class="form-control" @change="onDlNodeChange">
               <option value="">Select node...</option>
-              <option v-for="n in dlNodes" :key="n.node" :value="n.node">{{ n.node }}</option>
+              <option v-for="n in dlNodes" :key="n.node_name || n.node" :value="n.node_name || n.node">{{ n.node_name || n.node }}</option>
             </select>
           </div>
 
@@ -455,7 +455,7 @@
             <label class="form-label">Node <span class="req">*</span></label>
             <select v-model="pveamDlForm.node" class="form-control" @change="onPveamDlNodeChange">
               <option value="">Select node...</option>
-              <option v-for="n in pveamNodes" :key="n.node" :value="n.node">{{ n.node }}</option>
+              <option v-for="n in pveamNodes" :key="n.node_name || n.node" :value="n.node_name || n.node">{{ n.node_name || n.node }}</option>
             </select>
           </div>
 
@@ -517,7 +517,7 @@
               <label class="form-label">Node <span class="req">*</span></label>
               <select v-model="isoForm.node" class="form-control" @change="onIsoNodeChange">
                 <option value="">Select node...</option>
-                <option v-for="n in isoNodes" :key="n.node" :value="n.node">{{ n.node }}</option>
+                <option v-for="n in isoNodes" :key="n.node_name || n.node" :value="n.node_name || n.node">{{ n.node_name || n.node }}</option>
               </select>
             </div>
 
@@ -663,7 +663,7 @@
             <label class="form-label">Target Node</label>
             <select v-model="cloneForm.target" class="form-control" @change="onCloneNodeChange">
               <option value="">Same as template ({{ cloneTarget?.node }})</option>
-              <option v-for="n in cloneNodes" :key="n.node" :value="n.node">{{ n.node }}</option>
+              <option v-for="n in cloneNodes" :key="n.node_name || n.node" :value="n.node_name || n.node">{{ n.node_name || n.node }}</option>
             </select>
           </div>
 
@@ -1127,7 +1127,7 @@ async function openCloneModal(tpl) {
 
   try {
     const res = await api.proxmox.listNodes(tpl.hostId)
-    cloneNodes.value = (res.data || []).filter(n => n.node !== tpl.node)
+    cloneNodes.value = (res.data || []).filter(n => (n.node_name || n.node) !== tpl.node)
   } catch (e) { console.warn(e) }
 
   await loadCloneStorages(tpl.hostId, tpl.node)

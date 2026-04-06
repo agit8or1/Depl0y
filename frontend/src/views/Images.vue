@@ -83,7 +83,7 @@
             <label class="form-label">Target Node *</label>
             <select v-model="quickDownloadForm.node" class="form-control" @change="onQuickNodeChange" :disabled="!quickDownloadForm.hostId || quickDownloadNodesLoading">
               <option value="">{{ quickDownloadNodesLoading ? 'Loading...' : 'Select node...' }}</option>
-              <option v-for="n in quickDownloadNodes" :key="n.node" :value="n.node">{{ n.node }}</option>
+              <option v-for="n in quickDownloadNodes" :key="n.node_name || n.node" :value="n.node_name || n.node">{{ n.node_name || n.node }}</option>
             </select>
           </div>
           <div class="form-group">
@@ -833,7 +833,7 @@
             <label class="form-label">Node</label>
             <select v-model="pxSelectedNode" class="form-control" @change="onPxNodeChange" :disabled="!pxSelectedHostId || pxNodesLoading">
               <option value="">{{ pxNodesLoading ? 'Loading...' : 'Select node...' }}</option>
-              <option v-for="node in pxNodes" :key="node.node" :value="node.node">
+              <option v-for="node in pxNodes" :key="node.node_name || node.node" :value="node.node_name || node.node">
                 {{ node.node }}
               </option>
             </select>
@@ -1027,7 +1027,7 @@
               <label class="form-label">Target Node *</label>
               <select v-model="copyToNodeForm.node" class="form-control" @change="onCopyNodeChange" :disabled="!copyToNodeForm.hostId || copyToNodeNodesLoading">
                 <option value="">{{ copyToNodeNodesLoading ? 'Loading...' : 'Select node...' }}</option>
-                <option v-for="n in copyToNodeNodes" :key="n.node" :value="n.node">{{ n.node }}</option>
+                <option v-for="n in copyToNodeNodes" :key="n.node_name || n.node" :value="n.node_name || n.node">{{ n.node_name || n.node }}</option>
               </select>
             </div>
             <div class="form-group">

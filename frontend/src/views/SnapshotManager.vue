@@ -54,7 +54,7 @@
             <label class="form-label">Node</label>
             <select v-model="sel.node" class="form-control" @change="onNodeChange" :disabled="!sel.hostId">
               <option value="">— Node —</option>
-              <option v-for="n in nodes" :key="n.node" :value="n.node">{{ n.node }}</option>
+              <option v-for="n in nodes" :key="n.node_name || n.node" :value="n.node_name || n.node">{{ n.node_name || n.node }}</option>
             </select>
           </div>
           <div class="form-group" style="min-width:160px; margin:0;">
@@ -327,7 +327,7 @@
             <label class="form-label">Node <span class="text-danger">*</span></label>
             <select v-model="createForm.targetNode" class="form-control" @change="onCreateNodeChange" :disabled="!createForm.targetHostId">
               <option value="">— Node —</option>
-              <option v-for="n in createNodes" :key="n.node" :value="n.node">{{ n.node }}</option>
+              <option v-for="n in createNodes" :key="n.node_name || n.node" :value="n.node_name || n.node">{{ n.node_name || n.node }}</option>
             </select>
           </div>
           <div v-if="!singleVmMode" class="form-group">
@@ -385,7 +385,7 @@
             <label class="form-label">Target Node</label>
             <select v-model="cloneForm.target" class="form-control">
               <option value="">Same node</option>
-              <option v-for="n in nodes" :key="n.node" :value="n.node">{{ n.node }}</option>
+              <option v-for="n in nodes" :key="n.node_name || n.node" :value="n.node_name || n.node">{{ n.node_name || n.node }}</option>
             </select>
           </div>
           <div class="form-group">
@@ -757,7 +757,7 @@ async function loadClusterWide() {
   const rows = []
   try {
     const nodesRes = await api.proxmox.listNodes(effectiveHostId.value)
-    const nodeList = (nodesRes.data || []).map(n => n.node)
+    const nodeList = (nodesRes.data || []).map(n => n.node_name || n.node)
     for (const node of nodeList) {
       try {
         const vmsRes = await api.pveNode.nodeVms(effectiveHostId.value, node)

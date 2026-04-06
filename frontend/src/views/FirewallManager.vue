@@ -332,7 +332,7 @@
               <label class="form-label mb-0">Node</label>
               <select v-model="selectedNode" class="form-control" @change="onNodeSelected" :disabled="loadingNodes">
                 <option value="">{{ loadingNodes ? 'Loading...' : '— Select Node —' }}</option>
-                <option v-for="n in nodeList" :key="n.node" :value="n.node">{{ n.node }}</option>
+                <option v-for="n in nodeList" :key="n.node_name || n.node" :value="n.node_name || n.node">{{ n.node_name || n.node }}</option>
               </select>
             </div>
             <template v-if="selectedNode && nodeFirewallOptions !== null">

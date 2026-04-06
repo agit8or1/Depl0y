@@ -844,16 +844,45 @@
 
     <!-- Location Modal -->
     <div v-if="showLocationModal" class="modal" @click.self="showLocationModal = false">
-      <div class="modal-content" style="max-width:420px;" @click.stop>
+      <div class="modal-content" style="max-width:440px;" @click.stop>
         <div class="modal-header">
-          <h3>Set Datacenter Location</h3>
+          <h3>Set Datacenter Location — {{ locationHost?.name }}</h3>
           <button @click="showLocationModal = false" class="btn-close">×</button>
         </div>
         <div class="modal-body">
           <p class="text-sm text-muted mb-2">
-            Enter the latitude and longitude for <strong>{{ locationHost?.name }}</strong> so it appears on the Federation map.
-            You can look up coordinates at <a href="https://www.latlong.net" target="_blank" rel="noopener">latlong.net</a>.
+            Type a city, address, or place name to search — or enter coordinates manually.
           </p>
+
+          <!-- Address search -->
+          <div class="form-group mb-2">
+            <label class="form-label">Search address / city</label>
+            <div class="loc-search-row">
+              <input
+                v-model="locationSearch"
+                class="form-control"
+                placeholder="e.g. New York, London, Sydney..."
+                @keydown.enter.prevent="geocodeLocation"
+              />
+              <button class="btn btn-outline btn-sm" @click="geocodeLocation" :disabled="geoLoading">
+                {{ geoLoading ? '…' : 'Find' }}
+              </button>
+            </div>
+            <div v-if="geoError" class="text-danger text-sm mt-1">{{ geoError }}</div>
+            <!-- Results dropdown -->
+            <div v-if="geoResults.length" class="geo-results">
+              <div
+                v-for="(r, i) in geoResults"
+                :key="i"
+                class="geo-result-item"
+                @click="applyGeoResult(r)"
+              >
+                {{ r.display_name }}
+              </div>
+            </div>
+          </div>
+
+          <!-- Manual coordinates -->
           <div class="form-row-2">
             <div class="form-group">
               <label class="form-label">Latitude</label>
@@ -864,8 +893,15 @@
               <input v-model.number="locationLng" type="number" step="any" min="-180" max="180" class="form-control" placeholder="e.g. -74.0060" />
             </div>
           </div>
+
+          <div v-if="locationLat && locationLng" class="text-sm text-muted mt-1">
+            📍 {{ Number(locationLat).toFixed(4) }}, {{ Number(locationLng).toFixed(4) }}
+          </div>
+
           <div class="flex gap-1 mt-2">
-            <button @click="saveLocation" class="btn btn-primary" :disabled="saving">{{ saving ? 'Saving...' : 'Save Location' }}</button>
+            <button @click="saveLocation" class="btn btn-primary" :disabled="saving || !locationLat || !locationLng">
+              {{ saving ? 'Saving...' : 'Save Location' }}
+            </button>
             <button @click="showLocationModal = false" class="btn btn-outline">Cancel</button>
           </div>
         </div>
@@ -902,6 +938,10 @@ export default {
     const locationHost = ref(null)
     const locationLat = ref(null)
     const locationLng = ref(null)
+    const locationSearch = ref('')
+    const geoLoading = ref(false)
+    const geoError = ref('')
+    const geoResults = ref([])
     const useApiToken = ref(false)
     const editAuthMethod = ref('token')
 
@@ -1520,7 +1560,42 @@ export default {
       locationHost.value = host
       locationLat.value = host.latitude ?? null
       locationLng.value = host.longitude ?? null
+      locationSearch.value = ''
+      geoError.value = ''
+      geoResults.value = []
       showLocationModal.value = true
+    }
+
+    const geocodeLocation = async () => {
+      if (!locationSearch.value.trim()) return
+      geoLoading.value = true
+      geoError.value = ''
+      geoResults.value = []
+      try {
+        const q = encodeURIComponent(locationSearch.value.trim())
+        const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${q}&format=json&limit=5`, {
+          headers: { 'Accept-Language': 'en' }
+        })
+        const data = await res.json()
+        if (!data.length) {
+          geoError.value = 'No results found. Try a different search.'
+        } else if (data.length === 1) {
+          applyGeoResult(data[0])
+        } else {
+          geoResults.value = data
+        }
+      } catch {
+        geoError.value = 'Geocoding failed — check internet connectivity.'
+      } finally {
+        geoLoading.value = false
+      }
+    }
+
+    const applyGeoResult = (r) => {
+      locationLat.value = parseFloat(r.lat)
+      locationLng.value = parseFloat(r.lon)
+      locationSearch.value = r.display_name
+      geoResults.value = []
     }
 
     const saveLocation = async () => {
@@ -1627,7 +1702,13 @@ export default {
       locationHost,
       locationLat,
       locationLng,
+      locationSearch,
+      geoLoading,
+      geoError,
+      geoResults,
       openLocationModal,
+      geocodeLocation,
+      applyGeoResult,
       saveLocation,
       testConnection,
       testAllConnections,
@@ -1853,6 +1934,32 @@ export default {
   color: #b45309;
   border: 1px solid rgba(245, 158, 11, 0.25);
 }
+
+/* Geocoding search */
+.loc-search-row {
+  display: flex;
+  gap: 0.5rem;
+}
+.loc-search-row .form-control { flex: 1; }
+
+.geo-results {
+  margin-top: 0.4rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  overflow: hidden;
+  max-height: 180px;
+  overflow-y: auto;
+  background: var(--card-bg, #fff);
+}
+.geo-result-item {
+  padding: 0.5rem 0.75rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border-color);
+}
+.geo-result-item:last-child { border-bottom: none; }
+.geo-result-item:hover { background: var(--hover-bg, #f3f4f6); }
 
 /* Cluster info rows */
 .host-card__cluster-info {

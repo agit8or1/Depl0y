@@ -2110,7 +2110,10 @@ async function submitAddPbsServer() {
     pbsServers.value = pbsServerList.value
   } catch (err) {
     console.error('Failed to add PBS server:', err)
-    addPbsServerModal.value.error = err.response?.data?.detail || 'Failed to add server'
+    const detail = err.response?.data?.detail
+    addPbsServerModal.value.error = Array.isArray(detail)
+      ? detail.map(e => e.msg || JSON.stringify(e)).join('; ')
+      : (detail || err.message || 'Failed to add server')
   } finally {
     addPbsServerModal.value.saving = false
   }

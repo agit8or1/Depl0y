@@ -1,5 +1,5 @@
 // Depl0y Service Worker
-const CACHE_VERSION = 'v16';
+const CACHE_VERSION = 'v17';
 const CACHE_NAME = `depl0y-${CACHE_VERSION}`;
 const STATIC_CACHE = `depl0y-static-${CACHE_VERSION}`;
 const OFFLINE_URL = '/offline.html';

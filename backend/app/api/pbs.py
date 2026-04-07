@@ -24,7 +24,7 @@ class PBSServerCreate(BaseModel):
     name: str
     hostname: str
     port: int = 8007
-    username: str
+    username: Optional[str] = 'root@pam'
     password: Optional[str] = None
     api_token_id: Optional[str] = None
     api_token_secret: Optional[str] = None
@@ -132,7 +132,7 @@ def create_pbs_server(
         name=data.name,
         hostname=data.hostname,
         port=data.port,
-        username=data.username,
+        username=data.username or 'root@pam',
         verify_ssl=data.verify_ssl,
         api_token_id=data.api_token_id,
         idrac_hostname=data.idrac_hostname,

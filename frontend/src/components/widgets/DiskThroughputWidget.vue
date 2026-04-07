@@ -77,35 +77,45 @@ export default {
 
         if (!nodeTargets.length) { loading.value = false; return }
 
-        // Fetch latest RRD point for each node (hour timeframe → last data point)
-        const rrdResults = await Promise.allSettled(
-          nodeTargets.map(t =>
-            api.pveNode.nodeRrdData(t.hostId, t.node, { timeframe: 'hour', cf: 'AVERAGE' })
+        // Fetch latest RRD point — try 'hour' and 'day' in parallel; prefer hour if non-null
+        const [hourResults, dayResults] = await Promise.all([
+          Promise.allSettled(
+            nodeTargets.map(t => api.pveNode.nodeRrdData(t.hostId, t.node, { timeframe: 'hour', cf: 'AVERAGE' }))
+          ),
+          Promise.allSettled(
+            nodeTargets.map(t => api.pveNode.nodeRrdData(t.hostId, t.node, { timeframe: 'day', cf: 'AVERAGE' }))
           )
-        )
+        ])
 
         const result = []
         let maxRead = 0, maxWrite = 0
-        rrdResults.forEach((res, idx) => {
-          const key = `${nodeTargets[idx].hostId}::${nodeTargets[idx].node}`
-          const label = nodeTargets[idx].node
-          const hostName = nodeTargets[idx].hostName
-          if (res.status !== 'fulfilled') {
-            result.push({ key, label, hostName, noData: true })
-            return
-          }
+
+        const extractIo = (res) => {
+          if (res.status !== 'fulfilled') return { r: null, w: null }
           const rows = res.value.data || []
-          if (!rows.length) {
-            result.push({ key, label, hostName, noData: true })
-            return
-          }
-          // Find latest non-null disk values scanning backwards
-          let diskRead = null, diskWrite = null
+          let r = null, w = null
           for (let i = rows.length - 1; i >= 0; i--) {
-            if (diskRead == null && rows[i].diskread != null) diskRead = rows[i].diskread
-            if (diskWrite == null && rows[i].diskwrite != null) diskWrite = rows[i].diskwrite
-            if (diskRead != null && diskWrite != null) break
+            if (r == null && rows[i].diskread != null) r = rows[i].diskread
+            if (w == null && rows[i].diskwrite != null) w = rows[i].diskwrite
+            if (r != null && w != null) break
           }
+          return { r, w }
+        }
+
+        nodeTargets.forEach((t, idx) => {
+          const key = `${t.hostId}::${t.node}`
+          const { label, hostName } = { label: t.node, hostName: t.hostName }
+
+          // Prefer hour data; fall back to day
+          let diskRead = null, diskWrite = null
+          const hour = extractIo(hourResults[idx])
+          if (hour.r != null || hour.w != null) {
+            diskRead = hour.r; diskWrite = hour.w
+          } else {
+            const day = extractIo(dayResults[idx])
+            diskRead = day.r; diskWrite = day.w
+          }
+
           if (diskRead == null && diskWrite == null) {
             result.push({ key, label, hostName, noData: true })
             return

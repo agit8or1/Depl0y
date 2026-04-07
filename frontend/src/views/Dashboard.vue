@@ -430,7 +430,7 @@
     <!-- Widget grid -->
     <div class="widget-grid" ref="gridEl">
       <div
-        v-for="widget in visibleLayout"
+        v-for="widget in displayLayout"
         :key="widget.id"
         :class="['widget-card',
           dragging && dragging.id === widget.id ? 'widget-dragging' : '',
@@ -1174,6 +1174,18 @@ export default {
       layout.value.filter(w => isWidgetVisible(w.type))
     )
 
+    // Live drag-preview: reorder tiles in real-time as cursor moves
+    const displayLayout = computed(() => {
+      if (!dragging.value || !dropTarget.value || dragging.value.id === dropTarget.value.id) {
+        return visibleLayout.value
+      }
+      const arr = visibleLayout.value.filter(w => w.id !== dragging.value.id)
+      const toIdx = arr.findIndex(w => w.id === dropTarget.value.id)
+      if (toIdx === -1) return visibleLayout.value
+      arr.splice(toIdx, 0, dragging.value)
+      return arr
+    })
+
     // ── Onboarding ────────────────────────────────────────────────────────────
     const ONBOARD_SKIP_KEY = 'depl0y_onboarding_skip'
     const showOnboarding = ref(false)
@@ -1293,7 +1305,7 @@ export default {
 
       const onUp = () => {
         if (dragState && dragState.moved && dropTarget.value && dropTarget.value.id !== widget.id) {
-          swapWidgets(widget.id, dropTarget.value.id)
+          moveWidget(widget.id, dropTarget.value.id)
         }
         dragState = null
         dragging.value = null
@@ -1324,7 +1336,7 @@ export default {
 
       const onEnd = () => {
         if (dragState && dragState.moved && dropTarget.value && dropTarget.value.id !== widget.id) {
-          swapWidgets(widget.id, dropTarget.value.id)
+          moveWidget(widget.id, dropTarget.value.id)
         }
         dragState = null
         dragging.value = null
@@ -1352,13 +1364,15 @@ export default {
       return null
     }
 
-    const swapWidgets = (idA, idB) => {
-      const idxA = layout.value.findIndex(w => w.id === idA)
-      const idxB = layout.value.findIndex(w => w.id === idB)
-      if (idxA === -1 || idxB === -1) return
-      const tmp = layout.value[idxA]
-      layout.value[idxA] = layout.value[idxB]
-      layout.value[idxB] = tmp
+    const moveWidget = (fromId, toId) => {
+      const arr = [...layout.value]
+      const fromIdx = arr.findIndex(w => w.id === fromId)
+      if (fromIdx === -1) return
+      const [item] = arr.splice(fromIdx, 1)
+      const toIdx = arr.findIndex(w => w.id === toId)
+      if (toIdx === -1) { arr.push(item); layout.value = arr; return }
+      arr.splice(toIdx, 0, item)
+      layout.value = arr
     }
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
@@ -1402,6 +1416,7 @@ export default {
     return {
       layout,
       visibleLayout,
+      displayLayout,
       showPicker,
       showCustomize,
       showShortcutsHint,

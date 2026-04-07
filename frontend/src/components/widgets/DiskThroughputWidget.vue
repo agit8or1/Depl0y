@@ -67,8 +67,9 @@ export default {
         const nodeAgg = {}  // nodeKey -> { key, label, hostName, diskRead, diskWrite }
         const nextStats = {}  // only keep entries for VMs seen this poll
 
+        // Use nocache endpoint so each poll gets fresh Proxmox counters for accurate delta rates
         const resourceResults = await Promise.allSettled(
-          hosts.map(h => api.pveNode.clusterResources(h.id))
+          hosts.map(h => api.pveNode.clusterResourcesFresh(h.id))
         )
 
         let seenVms = 0
@@ -138,12 +139,8 @@ export default {
       }
     }
 
-    // Two rapid polls at mount so first data appears after ~5s instead of waiting a full interval
-    onMounted(() => {
-      fetchData()
-      setTimeout(fetchData, 5000)
-      timer = setInterval(fetchData, 15000)
-    })
+    // Poll every 15s; first real data appears after second poll (~15s) since delta needs two readings
+    onMounted(() => { fetchData(); timer = setInterval(fetchData, 15000) })
     onUnmounted(() => clearInterval(timer))
 
     return { loading, measuring, nodes, fmtBps, barPct }

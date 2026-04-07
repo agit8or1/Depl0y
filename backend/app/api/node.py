@@ -227,13 +227,14 @@ def cluster_status(host_id: int, db: Session = Depends(get_db),
 
 
 @router.get("/{host_id}/cluster/resources")
-def cluster_resources(host_id: int, type: Optional[str] = None,
+def cluster_resources(host_id: int, type: Optional[str] = None, nocache: bool = False,
                       db: Session = Depends(get_db), current_user=Depends(get_current_user)):
     host = _get_host(host_id, db)
     cache_key = f"pve:{host_id}:cluster/resources:{type or ''}"
-    cached = pve_cache.get(cache_key)
-    if cached is not None:
-        return cached
+    if not nocache:
+        cached = pve_cache.get(cache_key)
+        if cached is not None:
+            return cached
     try:
         # Proxmox /cluster/resources only accepts type=vm|storage|node|sdn.
         # LXC containers are returned as type=vm at the API level but have

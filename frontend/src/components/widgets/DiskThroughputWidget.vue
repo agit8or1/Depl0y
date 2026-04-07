@@ -1,15 +1,15 @@
 <template>
   <div class="disk-io-widget">
     <div v-if="loading && nodes.length === 0" class="wi-empty">Loading disk I/O...</div>
-    <div v-else-if="nodes.length === 0" class="wi-empty">No nodes available — add a Proxmox host.</div>
+    <div v-else-if="measuring" class="wi-empty">Measuring I/O rates…</div>
+    <div v-else-if="nodes.length === 0" class="wi-empty">No running VMs — start a VM to see disk I/O.</div>
     <div v-else class="node-list">
       <div v-for="n in nodes" :key="n.key" class="node-row">
         <div class="node-header">
           <span class="node-name">{{ n.label }}</span>
           <span class="node-host">{{ n.hostName }}</span>
         </div>
-        <div v-if="n.noData" class="node-no-data">Not reported by Proxmox</div>
-        <div v-else class="io-bars">
+        <div class="io-bars">
           <div class="io-bar-row">
             <span class="io-label io-read">R</span>
             <div class="io-track">
@@ -46,90 +46,85 @@ export default {
   name: 'DiskThroughputWidget',
   setup() {
     const loading = ref(true)
+    const measuring = ref(false)
     const nodes = ref([])
     let timer = null
+    // Track previous disk counter values per VM to compute rates
+    let prevStats = {}  // vmKey -> { read, write, time }
 
     const barPct = (val, max) => {
       if (!max || max === 0) return 0
       return Math.min(100, (val / max) * 100)
     }
 
-    const fetch = async () => {
+    const fetchData = async () => {
       try {
         const hostsRes = await api.proxmox.listHosts()
         const hosts = (hostsRes.data || []).filter(h => h.is_active)
         if (!hosts.length) { loading.value = false; return }
 
-        // Get nodes from DB for each host
-        const nodeListResults = await Promise.allSettled(
-          hosts.map(h => api.proxmox.listNodes(h.id))
+        const now = Date.now()
+        const nodeAgg = {}  // nodeKey -> { key, label, hostName, diskRead, diskWrite }
+
+        // One call per host: cluster/resources returns all VMs with cumulative disk counters
+        const resourceResults = await Promise.allSettled(
+          hosts.map(h => api.pveNode.clusterResources(h.id))
         )
 
-        const nodeTargets = []
-        nodeListResults.forEach((res, idx) => {
+        let hasAnyPrev = false
+
+        resourceResults.forEach((res, hIdx) => {
           if (res.status !== 'fulfilled') return
-          const host = hosts[idx]
-          ;(res.value.data || []).forEach(n => {
-            const name = n.node_name || n.node
-            if (name) nodeTargets.push({ hostId: host.id, hostName: host.name || host.hostname, node: name })
+          const host = hosts[hIdx]
+          const items = (res.value.data || []).filter(
+            r => (r.type === 'qemu' || r.type === 'lxc') && r.status === 'running'
+          )
+
+          items.forEach(vm => {
+            const vmKey = `${host.id}::${vm.node}::${vm.vmid ?? vm.id ?? vm.name}`
+            const nodeKey = `${host.id}::${vm.node}`
+            const prev = prevStats[vmKey]
+
+            if (!nodeAgg[nodeKey]) {
+              nodeAgg[nodeKey] = {
+                key: nodeKey,
+                label: vm.node || 'unknown',
+                hostName: host.name || host.hostname || '',
+                diskRead: 0,
+                diskWrite: 0,
+              }
+            }
+
+            if (prev && (now - prev.time) > 1000) {
+              hasAnyPrev = true
+              const elapsed = (now - prev.time) / 1000
+              nodeAgg[nodeKey].diskRead  += Math.max(0, ((vm.diskread  || 0) - prev.read))  / elapsed
+              nodeAgg[nodeKey].diskWrite += Math.max(0, ((vm.diskwrite || 0) - prev.write)) / elapsed
+            }
+
+            prevStats[vmKey] = { read: vm.diskread || 0, write: vm.diskwrite || 0, time: now }
           })
         })
 
-        if (!nodeTargets.length) { loading.value = false; return }
-
-        // Fetch latest RRD point — try 'hour' and 'day' in parallel; prefer hour if non-null
-        const [hourResults, dayResults] = await Promise.all([
-          Promise.allSettled(
-            nodeTargets.map(t => api.pveNode.nodeRrdData(t.hostId, t.node, { timeframe: 'hour', cf: 'AVERAGE' }))
-          ),
-          Promise.allSettled(
-            nodeTargets.map(t => api.pveNode.nodeRrdData(t.hostId, t.node, { timeframe: 'day', cf: 'AVERAGE' }))
-          )
-        ])
-
-        const result = []
-        let maxRead = 0, maxWrite = 0
-
-        const extractIo = (res) => {
-          if (res.status !== 'fulfilled') return { r: null, w: null }
-          const rows = res.value.data || []
-          let r = null, w = null
-          for (let i = rows.length - 1; i >= 0; i--) {
-            if (r == null && rows[i].diskread != null) r = rows[i].diskread
-            if (w == null && rows[i].diskwrite != null) w = rows[i].diskwrite
-            if (r != null && w != null) break
-          }
-          return { r, w }
+        // First pass: no deltas yet — show "Measuring"
+        if (!hasAnyPrev && Object.keys(prevStats).length > 0) {
+          measuring.value = true
+          loading.value = false
+          return
         }
+        measuring.value = false
 
-        nodeTargets.forEach((t, idx) => {
-          const key = `${t.hostId}::${t.node}`
-          const { label, hostName } = { label: t.node, hostName: t.hostName }
+        const result = Object.values(nodeAgg)
+        if (!result.length) { loading.value = false; return }
 
-          // Prefer hour data; fall back to day
-          let diskRead = null, diskWrite = null
-          const hour = extractIo(hourResults[idx])
-          if (hour.r != null || hour.w != null) {
-            diskRead = hour.r; diskWrite = hour.w
-          } else {
-            const day = extractIo(dayResults[idx])
-            diskRead = day.r; diskWrite = day.w
-          }
-
-          if (diskRead == null && diskWrite == null) {
-            result.push({ key, label, hostName, noData: true })
-            return
-          }
-          const r = diskRead ?? 0
-          const w = diskWrite ?? 0
-          if (r > maxRead) maxRead = r
-          if (w > maxWrite) maxWrite = w
-          result.push({ key, label, hostName, diskRead: r, diskWrite: w, noData: false })
+        let maxRead = 0, maxWrite = 0
+        result.forEach(n => {
+          if (n.diskRead > maxRead) maxRead = n.diskRead
+          if (n.diskWrite > maxWrite) maxWrite = n.diskWrite
         })
+        result.forEach(n => { n.maxRead = maxRead || 1; n.maxWrite = maxWrite || 1 })
 
-        // Attach computed max for bar scaling (only affects non-noData rows)
-        result.forEach(n => { if (!n.noData) { n.maxRead = maxRead || 1; n.maxWrite = maxWrite || 1 } })
-        nodes.value = result
+        nodes.value = result.sort((a, b) => a.label.localeCompare(b.label))
       } catch {
         // silently ignore
       } finally {
@@ -137,10 +132,10 @@ export default {
       }
     }
 
-    onMounted(() => { fetch(); timer = setInterval(fetch, 30000) })
+    onMounted(() => { fetchData(); timer = setInterval(fetchData, 10000) })
     onUnmounted(() => clearInterval(timer))
 
-    return { loading, nodes, fmtBps, barPct }
+    return { loading, measuring, nodes, fmtBps, barPct }
   }
 }
 </script>
@@ -223,13 +218,6 @@ export default {
 
 .io-fill--read  { background: #8b5cf6; }
 .io-fill--write { background: #ef4444; }
-
-.node-no-data {
-  font-size: 0.62rem;
-  color: var(--text-secondary);
-  font-style: italic;
-  padding: 0.1rem 0;
-}
 
 .io-val {
   font-size: 0.62rem;

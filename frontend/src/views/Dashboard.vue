@@ -428,7 +428,7 @@
     </div>
 
     <!-- Widget grid -->
-    <div class="widget-grid" ref="gridEl">
+    <transition-group tag="div" name="widget-reorder" class="widget-grid" ref="gridEl">
       <div
         v-for="widget in displayLayout"
         :key="widget.id"
@@ -499,7 +499,7 @@
           />
         </div>
       </div>
-    </div>
+    </transition-group>
 
     <!-- Initial dashboard skeleton (before first load) -->
     <div v-if="initialLoading && layout.length === 0" class="widget-grid">
@@ -1352,7 +1352,8 @@ export default {
 
     const getWidgetAtPoint = (x, y, excludeId) => {
       if (!gridEl.value) return null
-      const cards = gridEl.value.querySelectorAll('.widget-card')
+      const el = gridEl.value.$el ?? gridEl.value
+      const cards = el.querySelectorAll('.widget-card')
       for (const card of cards) {
         if (card.dataset.widgetId === excludeId) continue
         const rect = card.getBoundingClientRect()
@@ -2350,12 +2351,18 @@ export default {
   border-color: rgba(239, 68, 68, 0.35);
 }
 
+/* FLIP animation: tiles slide smoothly to their new grid positions while dragging */
+.widget-reorder-move {
+  transition: transform 0.2s ease;
+}
+
 .widget-dragging {
-  opacity: 0.55;
-  transform: scale(0.97);
+  opacity: 0.45;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
   z-index: 100;
   pointer-events: none;
+  outline: 2px dashed var(--primary-color, #6366f1);
+  outline-offset: -2px;
 }
 
 .widget-drop-target {

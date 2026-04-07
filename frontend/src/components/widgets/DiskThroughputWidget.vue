@@ -65,12 +65,13 @@ export default {
 
         const now = Date.now()
         const nodeAgg = {}  // nodeKey -> { key, label, hostName, diskRead, diskWrite }
+        const nextStats = {}  // only keep entries for VMs seen this poll
 
-        // One call per host: cluster/resources returns all VMs with cumulative disk counters
         const resourceResults = await Promise.allSettled(
           hosts.map(h => api.pveNode.clusterResources(h.id))
         )
 
+        let seenVms = 0
         let hasAnyPrev = false
 
         resourceResults.forEach((res, hIdx) => {
@@ -81,7 +82,9 @@ export default {
           )
 
           items.forEach(vm => {
-            const vmKey = `${host.id}::${vm.node}::${vm.vmid ?? vm.id ?? vm.name}`
+            seenVms++
+            // Use String() to ensure consistent key type regardless of Proxmox response format
+            const vmKey = `${host.id}::${vm.node}::${String(vm.vmid ?? vm.id ?? vm.name ?? '')}`
             const nodeKey = `${host.id}::${vm.node}`
             const prev = prevStats[vmKey]
 
@@ -95,20 +98,23 @@ export default {
               }
             }
 
-            if (prev && (now - prev.time) > 1000) {
+            if (prev && (now - prev.time) > 500) {
               hasAnyPrev = true
               const elapsed = (now - prev.time) / 1000
               nodeAgg[nodeKey].diskRead  += Math.max(0, ((vm.diskread  || 0) - prev.read))  / elapsed
               nodeAgg[nodeKey].diskWrite += Math.max(0, ((vm.diskwrite || 0) - prev.write)) / elapsed
             }
 
-            prevStats[vmKey] = { read: vm.diskread || 0, write: vm.diskwrite || 0, time: now }
+            nextStats[vmKey] = { read: vm.diskread || 0, write: vm.diskwrite || 0, time: now }
           })
         })
 
-        // First pass: no deltas yet — show "Measuring"
-        if (!hasAnyPrev && Object.keys(prevStats).length > 0) {
-          measuring.value = true
+        // Replace prevStats with only currently-seen VMs to avoid stale keys
+        prevStats = nextStats
+
+        // Not enough data yet for a delta — only show "measuring" if no existing data
+        if (!hasAnyPrev) {
+          if (nodes.value.length === 0) measuring.value = true
           loading.value = false
           return
         }
@@ -126,13 +132,18 @@ export default {
 
         nodes.value = result.sort((a, b) => a.label.localeCompare(b.label))
       } catch {
-        // silently ignore
+        // silently ignore — keep existing nodes data on error
       } finally {
         loading.value = false
       }
     }
 
-    onMounted(() => { fetchData(); timer = setInterval(fetchData, 10000) })
+    // Two rapid polls at mount so first data appears after ~5s instead of waiting a full interval
+    onMounted(() => {
+      fetchData()
+      setTimeout(fetchData, 5000)
+      timer = setInterval(fetchData, 15000)
+    })
     onUnmounted(() => clearInterval(timer))
 
     return { loading, measuring, nodes, fmtBps, barPct }

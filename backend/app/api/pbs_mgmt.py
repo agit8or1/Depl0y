@@ -73,6 +73,55 @@ def list_pbs_servers(
     ]
 
 
+@router.get("/{server_id}/overview")
+def get_server_overview(
+    server_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Return version, hostname, CPU/memory/uptime and fingerprint for a PBS server."""
+    server = _get_pbs_server(db, server_id)
+    try:
+        svc = _make_service(server)
+        result: Dict[str, Any] = {
+            "hostname": server.hostname,
+            "version": None,
+            "fingerprint": None,
+            "cpu": None,
+            "memory": None,
+            "uptime": None,
+        }
+
+        # Version
+        try:
+            ver = svc._get("/version")
+            if ver:
+                result["version"] = ver.get("version")
+                result["fingerprint"] = ver.get("fingerprint")
+        except Exception:
+            pass
+
+        # Node status (CPU / memory / uptime)
+        try:
+            status = svc._get("/nodes/localhost/status")
+            if status:
+                result["cpu"] = status.get("cpu")
+                result["uptime"] = status.get("uptime")
+                mem_total = status.get("memory", {}).get("total")
+                mem_used = status.get("memory", {}).get("used")
+                if mem_total is not None:
+                    result["memory"] = {"total": mem_total, "used": mem_used or 0}
+        except Exception:
+            pass
+
+        return result
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Failed to get overview for PBS server %s: %s", server_id, exc)
+        raise HTTPException(status_code=502, detail=f"PBS API error: {exc}")
+
+
 @router.get("/{server_id}/test")
 def test_pbs_connection(
     server_id: int,

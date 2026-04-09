@@ -470,7 +470,7 @@
 </template>
 
 <script>
-import api from '@/services/api'
+import { axiosInstance as api } from '@/services/api'
 
 const REFRESH_INTERVAL_MS = 30000
 

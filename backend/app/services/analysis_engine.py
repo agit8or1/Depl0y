@@ -77,6 +77,7 @@ class AnalysisEngine:
                 if node.last_updated and (datetime.utcnow() - node.last_updated) > timedelta(minutes=15):
                     continue
 
+                node_name = node.node_name
                 cpu_pct = node.cpu_usage or 0
                 mem_pct = round(node.memory_used / node.memory_total * 100, 1) if node.memory_total else 0
 
@@ -88,9 +89,9 @@ class AnalysisEngine:
                         "category": "performance",
                         "severity": severity,
                         "host_id": node.host_id,
-                        "node": node.name,
-                        "title": f"Node {node.name} CPU at {cpu_pct}%",
-                        "detail": f"Node {node.name} on {host_name} is running at {cpu_pct}% CPU utilization.",
+                        "node": node_name,
+                        "title": f"Node {node_name} CPU at {cpu_pct}%",
+                        "detail": f"Node {node_name} on {host_name} is running at {cpu_pct}% CPU utilization.",
                         "suggestion": "Consider migrating some VMs to less-loaded nodes, or reviewing which VMs are consuming the most CPU.",
                         "metric_value": float(cpu_pct),
                         "metric_unit": "%",
@@ -104,9 +105,9 @@ class AnalysisEngine:
                         "category": "performance",
                         "severity": severity,
                         "host_id": node.host_id,
-                        "node": node.name,
-                        "title": f"Node {node.name} memory at {mem_pct}%",
-                        "detail": f"Node {node.name} on {host_name} has {mem_pct}% of RAM in use ({_fmt_bytes(node.memory_used)} / {_fmt_bytes(node.memory_total)}).",
+                        "node": node_name,
+                        "title": f"Node {node_name} memory at {mem_pct}%",
+                        "detail": f"Node {node_name} on {host_name} has {mem_pct}% of RAM in use ({_fmt_bytes(node.memory_used)} / {_fmt_bytes(node.memory_total)}).",
                         "suggestion": "Migrate memory-heavy VMs to other nodes, reduce VM RAM allocations, or add physical RAM to the host.",
                         "metric_value": float(mem_pct),
                         "metric_unit": "%",
@@ -120,9 +121,9 @@ class AnalysisEngine:
                         "category": "performance",
                         "severity": "info",
                         "host_id": node.host_id,
-                        "node": node.name,
-                        "title": f"Node {node.name} is underutilized",
-                        "detail": f"Node {node.name} is only using {cpu_pct}% CPU and {mem_pct}% RAM.",
+                        "node": node_name,
+                        "title": f"Node {node_name} is underutilized",
+                        "detail": f"Node {node_name} is only using {cpu_pct}% CPU and {mem_pct}% RAM.",
                         "suggestion": "Consider consolidating VMs from this node onto others and powering it down to save energy.",
                         "metric_value": float(cpu_pct),
                         "metric_unit": "%",
@@ -388,13 +389,13 @@ class AnalysisEngine:
                         "category": "performance",
                         "severity": "info",
                         "host_id": host_id,
-                        "node": most_loaded.name,
+                        "node": most_loaded.node_name,
                         "title": f"Cluster {host_name} has uneven load distribution",
                         "detail": (
-                            f"Node {most_loaded.name} is at {max_cpu}% CPU while "
-                            f"{least_loaded.name} is at {min_cpu}% CPU."
+                            f"Node {most_loaded.node_name} is at {max_cpu}% CPU while "
+                            f"{least_loaded.node_name} is at {min_cpu}% CPU."
                         ),
-                        "suggestion": f"Migrate some VMs from {most_loaded.name} to {least_loaded.name} to balance the load.",
+                        "suggestion": f"Migrate some VMs from {most_loaded.node_name} to {least_loaded.node_name} to balance the load.",
                         "metric_value": float(max_cpu),
                         "metric_unit": "%",
                         "threshold": None,

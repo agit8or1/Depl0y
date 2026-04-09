@@ -146,6 +146,9 @@ api.interceptors.response.use(
   }
 )
 
+// Named export for views that use the raw axios instance directly
+export { api as axiosInstance }
+
 export default {
   // Auth
   auth: {

@@ -546,7 +546,7 @@ export default {
       this.loading = true
       this.globalError = null
       try {
-        const res = await api.get('/api/v1/pbs-mgmt/')
+        const res = await api.get('/pbs-mgmt/')
         this.servers = res.data || []
         if (this.servers.length > 0 && !this.selectedServerId) {
           this.selectServer(this.servers[0])
@@ -565,8 +565,8 @@ export default {
       this.$set ? this.$set(this.loadingServerStats, serverId, true) : (this.loadingServerStats[serverId] = true)
       try {
         const [dsRes, jobRes] = await Promise.allSettled([
-          api.get(`/api/v1/pbs-mgmt/${serverId}/datastores`),
-          api.get(`/api/v1/pbs-mgmt/${serverId}/jobs`),
+          api.get(`/pbs-mgmt/${serverId}/datastores`),
+          api.get(`/pbs-mgmt/${serverId}/jobs`),
         ])
         const stats = {
           datastores: dsRes.status === 'fulfilled' ? (dsRes.value.data || []) : [],
@@ -609,7 +609,7 @@ export default {
       this.loadingOverview = true
       this.overviewData = null
       try {
-        const res = await api.get(`/api/v1/pbs-mgmt/${serverId}/overview`)
+        const res = await api.get(`/pbs-mgmt/${serverId}/overview`)
         this.overviewData = res.data || null
       } catch {
         this.overviewData = null
@@ -623,7 +623,7 @@ export default {
       if (!this.selectedServerId) return
       this.loadingDatastores = true
       try {
-        const res = await api.get(`/api/v1/pbs-mgmt/${this.selectedServerId}/datastores`)
+        const res = await api.get(`/pbs-mgmt/${this.selectedServerId}/datastores`)
         this.datastores = res.data || []
       } catch {
         this.datastores = []
@@ -650,7 +650,7 @@ export default {
       if (!this.selectedServerId) return
       this.loadingJobs = true
       try {
-        const res = await api.get(`/api/v1/pbs-mgmt/${this.selectedServerId}/jobs`)
+        const res = await api.get(`/pbs-mgmt/${this.selectedServerId}/jobs`)
         this.jobs = res.data || []
       } catch {
         this.jobs = []
@@ -664,7 +664,7 @@ export default {
       if (!jobId || !this.selectedServerId) return
       this.triggeringJob = jobId
       try {
-        await api.post(`/api/v1/pbs-mgmt/${this.selectedServerId}/jobs/${jobId}/run`)
+        await api.post(`/pbs-mgmt/${this.selectedServerId}/jobs/${jobId}/run`)
         this.jobRunResult = `Job "${jobId}" started successfully.`
         setTimeout(() => { if (this.jobRunResult) this.jobRunResult = null }, 6000)
       } catch (e) {
@@ -702,7 +702,7 @@ export default {
       this.loadingTapes = true
       this.tapeError = null
       try {
-        const res = await api.get(`/api/v1/pbs-mgmt/${this.selectedServerId}/tapes`)
+        const res = await api.get(`/pbs-mgmt/${this.selectedServerId}/tapes`)
         this.tapes = res.data || []
       } catch (e) {
         const status = e?.response?.status
@@ -722,7 +722,7 @@ export default {
       if (!this.selectedServerId) return
       this.loadingTasks = true
       try {
-        const res = await api.get(`/api/v1/pbs-mgmt/${this.selectedServerId}/tasks`)
+        const res = await api.get(`/pbs-mgmt/${this.selectedServerId}/tasks`)
         this.recentTasks = (res.data || []).slice(0, 50)
       } catch {
         this.recentTasks = []
@@ -769,7 +769,7 @@ export default {
       this.addServerModal.saving = true
       this.addServerModal.error = null
       try {
-        await api.post('/api/v1/pbs/', this.addServerForm)
+        await api.post('/pbs/', this.addServerForm)
         this.closeAddServerModal()
         await this.fetchServers()
       } catch (e) {
@@ -782,7 +782,7 @@ export default {
     async confirmDeleteServer(srv) {
       if (!confirm(`Remove PBS server "${srv.name}"? This will not affect any data on the PBS server.`)) return
       try {
-        await api.delete(`/api/v1/pbs/${srv.id}`)
+        await api.delete(`/pbs/${srv.id}`)
         if (this.selectedServerId === srv.id) {
           this.selectedServerId = null
         }

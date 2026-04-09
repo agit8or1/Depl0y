@@ -34,13 +34,14 @@ def init_db():
     Initialize database tables
     """
     from app.models.database import Base
-    import app.models.security      # ensure security tables are registered  # noqa: F401
-    import app.models.alert_models  # ensure alert tables are registered     # noqa: F401
+    import app.models.security       # ensure security tables are registered   # noqa: F401
+    import app.models.alert_models   # ensure alert tables are registered      # noqa: F401
+    import app.models.analysis_models  # ensure analysis tables are registered # noqa: F401
     Base.metadata.create_all(bind=engine)
 
     # Add new columns to proxmox_nodes if they don't already exist (migration helper)
     from sqlalchemy import text
-    new_columns = [
+    new_node_columns = [
         ("vm_count", "INTEGER DEFAULT 0"),
         ("lxc_count", "INTEGER DEFAULT 0"),
         ("idrac_hostname", "VARCHAR(255)"),
@@ -49,11 +50,30 @@ def init_db():
         ("idrac_password", "VARCHAR(255)"),
         ("idrac_type", "VARCHAR(20)"),
         ("idrac_use_ssh", "BOOLEAN DEFAULT 0"),
+        ("notes", "TEXT"),
+    ]
+    # Add new columns to proxmox_hosts if they don't already exist (migration helper)
+    new_host_columns = [
+        ("latitude", "REAL"),
+        ("longitude", "REAL"),
+        ("idrac_hostname", "VARCHAR(255)"),
+        ("idrac_port", "INTEGER DEFAULT 443"),
+        ("idrac_username", "VARCHAR(100)"),
+        ("idrac_password", "VARCHAR(255)"),
+        ("idrac_type", "VARCHAR(20)"),
+        ("idrac_use_ssh", "BOOLEAN DEFAULT 0"),
+        ("notes", "TEXT"),
     ]
     with engine.connect() as conn:
-        for col_name, col_def in new_columns:
+        for col_name, col_def in new_node_columns:
             try:
                 conn.execute(text(f"ALTER TABLE proxmox_nodes ADD COLUMN {col_name} {col_def}"))
+                conn.commit()
+            except Exception:
+                pass  # Column already exists
+        for col_name, col_def in new_host_columns:
+            try:
+                conn.execute(text(f"ALTER TABLE proxmox_hosts ADD COLUMN {col_name} {col_def}"))
                 conn.commit()
             except Exception:
                 pass  # Column already exists
@@ -236,6 +256,35 @@ def init_db():
                     acknowledged BOOLEAN NOT NULL DEFAULT 0,
                     acknowledged_at DATETIME,
                     acknowledged_by INTEGER REFERENCES users(id)
+                )
+            """))
+            conn.commit()
+        except Exception:
+            pass
+
+        # Create recommendations table for analysis engine
+        try:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS recommendations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    host_id INTEGER REFERENCES proxmox_hosts(id),
+                    node VARCHAR(100),
+                    vmid INTEGER,
+                    vm_name VARCHAR(200),
+                    resource_label VARCHAR(200),
+                    category VARCHAR(50) NOT NULL,
+                    rule_type VARCHAR(100) NOT NULL,
+                    severity VARCHAR(20) NOT NULL DEFAULT 'info',
+                    title VARCHAR(255) NOT NULL,
+                    detail TEXT,
+                    suggestion TEXT,
+                    metric_value REAL,
+                    metric_unit VARCHAR(20),
+                    threshold REAL,
+                    dismissed BOOLEAN NOT NULL DEFAULT 0,
+                    dismissed_at DATETIME,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
                 )
             """))
             conn.commit()

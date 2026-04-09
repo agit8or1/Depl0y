@@ -46,6 +46,7 @@ export default {
   'nav.linux_vm_security': 'Sécurité VM Linux',
   'nav.security': 'Sécurité',
   'nav.alert_rules': 'Règles d\'alerte',
+  'nav.analysis': 'Analyse',
   'nav.system_health': 'Santé du système',
   'nav.system_logs': 'Journaux système',
   'nav.users': 'Utilisateurs',

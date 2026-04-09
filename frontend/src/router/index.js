@@ -483,6 +483,12 @@ const router = createRouter({
       meta: { requiresAuth: true, requiresAdmin: true }
     },
     {
+      path: '/analysis',
+      name: 'Analysis',
+      component: () => import('@/views/Analysis.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
       path: '/notifications',
       name: 'NotificationCenter',
       component: () => import('@/views/NotificationCenter.vue'),

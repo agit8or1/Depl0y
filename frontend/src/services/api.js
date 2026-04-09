@@ -725,6 +725,7 @@ export default {
     ctSnapshots: (h, node, vmid) => api.get(`/pve-node/${h}/nodes/${node}/lxc/${vmid}/snapshots`),
     clusterResources: (h, type) => api.get(`/pve-node/${h}/cluster/resources`, { params: { type } }),
     clusterResourcesFresh: (h) => api.get(`/pve-node/${h}/cluster/resources`, { params: { nocache: true } }),
+    diskIoRates: (h) => api.get(`/pve-node/${h}/disk-io-rates`),
     // VM / LXC create
     createVm: (h, node, data) => api.post(`/pve-node/${h}/nodes/${node}/qemu`, data),
     createLxc: (h, node, data) => api.post(`/pve-node/${h}/nodes/${node}/lxc`, data),
@@ -1009,6 +1010,15 @@ export default {
     deleteRule: (id) => api.delete(`/alerts/rules/${id}`),
     toggleRule: (id) => api.post(`/alerts/rules/${id}/toggle`),
     evaluate: () => api.post('/alerts/evaluate'),
+  },
+
+  // Analysis / Recommendations
+  analysis: {
+    getRecommendations: (params) => api.get('/analysis/recommendations', { params }),
+    getSummary: () => api.get('/analysis/summary'),
+    dismiss: (id) => api.post(`/analysis/recommendations/${id}/dismiss`),
+    dismissAll: (category) => api.post('/analysis/recommendations/dismiss-all', null, { params: category ? { category } : {} }),
+    run: () => api.post('/analysis/run'),
   },
 
   // PVE Access Control — dedicated /pve-access router (users, groups, roles, ACL)

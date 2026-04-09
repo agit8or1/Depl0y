@@ -119,6 +119,7 @@
           <NavItem v-if="linuxAgentEnabled" :to="'/linux-vms'" :icon="'🛡️'" :label="t('nav.linux_vm_security')" @click="handleNavClick" />
           <NavItem :to="'/security'" :icon="'🔒'" :label="t('nav.security')" @click="handleNavClick" />
           <NavItem :to="'/alerts'" :icon="'🚨'" :label="t('nav.alert_rules')" @click="handleNavClick" />
+          <NavItem :to="'/analysis'" :icon="'🔬'" :label="t('nav.analysis')" @click="handleNavClick" />
           <NavItem :to="'/notifications'" :icon="'🔔'" :label="t('nav.notifications')" @click="handleNavClick" />
           <NavItem :to="'/system-health'" :icon="'💚'" :label="t('nav.system_health')" @click="handleNavClick" />
           <NavItem :to="'/system-logs'" :icon="'📜'" :label="t('nav.system_logs')" @click="handleNavClick" />
@@ -178,7 +179,7 @@ const SECTION_ROUTES = {
   overview: ['/', '/federation', '/datacenter', '/cluster', '/tasks'],
   compute: ['/containers', '/create-lxc', '/create-pve-vm', '/deploy', '/import-vm', '/llm-deploy', '/templates', '/vms', '/vm-management', '/vm-groups', '/bulk-ops', '/vm-search'],
   infrastructure: ['/backup', '/snapshots', '/ha-management', '/replication', '/idrac', '/network', '/sdn', '/firewall-manager', '/ceph', '/pve-users', '/node-monitor', '/pbs-management', '/images', '/proxmox', '/storage-management', '/pools'],
-  admin: ['/audit-log', '/linux-vms', '/security', '/alerts', '/notifications', '/system-health', '/system-logs', '/users', '/integrations', '/api-explorer'],
+  admin: ['/audit-log', '/linux-vms', '/security', '/alerts', '/analysis', '/notifications', '/system-health', '/system-logs', '/users', '/integrations', '/api-explorer'],
   account: ['/about', '/documentation', '/profile', '/settings', '/support'],
 }
 

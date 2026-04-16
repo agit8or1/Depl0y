@@ -46,8 +46,8 @@
           class="host-card"
           :class="hostCardClass(host)"
           style="cursor: pointer"
-          @click="openEdit(host)"
-          title="Click to edit"
+          @click="goToCluster(host)"
+          title="Click to open cluster"
           >
 
           <!-- Card header: status pulse + name -->
@@ -87,13 +87,16 @@
             >
               📍 {{ host.latitude && host.longitude ? `${Number(host.latitude).toFixed(2)}, ${Number(host.longitude).toFixed(2)}` : 'Set location' }}
             </button>
+            <span v-if="host.notes" class="notes-chip" :title="host.notes" @click.stop>📝</span>
           </div>
 
           <!-- Cluster info row -->
           <div v-if="getFedSummary(host.id)" class="host-card__cluster-info">
             <div class="cluster-info-row">
               <span class="ci-label">Cluster</span>
-              <span class="ci-value">{{ getFedSummary(host.id).cluster_name || '—' }}</span>
+              <span class="ci-value">
+                {{ getFedSummary(host.id).node_count > 1 ? (getFedSummary(host.id).cluster_name || '—') : 'Standalone' }}
+              </span>
             </div>
             <div class="cluster-info-row">
               <span class="ci-label">Nodes</span>
@@ -175,7 +178,7 @@
           <!-- Expand nodes toggle -->
           <button
             class="expand-nodes-btn"
-            @click="toggleExpandNodes(host.id)"
+            @click.stop="toggleExpandNodes(host.id)"
             :class="{ 'expand-nodes-btn--open': expandedHosts[host.id] }">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
               :style="{ transform: expandedHosts[host.id] ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }">
@@ -211,7 +214,7 @@
                     RAM {{ ramPct(getNodeStat(host.id, node.node_name).memory) }}%
                   </span>
                   <span class="inline-node-guests text-xs text-muted">
-                    {{ getNodeStat(host.id, node.node_name).vmCount }}v / {{ getNodeStat(host.id, node.node_name).lxcCount }}c
+                    {{ getNodeStat(host.id, node.node_name).vmCount }} VMs / {{ getNodeStat(host.id, node.node_name).lxcCount }} LXC
                   </span>
                 </template>
                 <span v-else class="text-xs text-muted">loading...</span>
@@ -241,6 +244,7 @@
               PVE UI
             </a>
             <button @click="openDetailDrawer(host)" class="btn btn-outline btn-sm" title="View Details">Details</button>
+            <button @click="openEdit(host)" class="btn btn-outline btn-sm" title="Edit settings, location, notes">⚙️ Edit</button>
             <button
               @click="testConnection(host.id)"
               class="btn btn-outline btn-sm"
@@ -249,6 +253,8 @@
               {{ testing[host.id] ? '...' : 'Test' }}
             </button>
             <button @click="pollHost(host.id)" class="btn btn-outline btn-sm" title="Force poll">Poll</button>
+            <button @click="openJoinCluster(host)" class="btn btn-outline btn-sm" title="Join this host to a cluster">Join Cluster</button>
+            <button v-if="getFedSummary(host.id)?.node_count > 1" @click="openUnjoinCluster(host)" class="btn btn-outline btn-sm" title="Remove a node from the cluster">Unjoin Node</button>
             <button @click="deleteHost(host.id)" class="btn btn-danger btn-sm" title="Delete">Del</button>
           </div>
         </div>
@@ -328,10 +334,16 @@
                   <router-link :to="`/proxmox/${datacenter.id}/nodes/${node.node_name}`" class="node-link">
                     {{ node.node_name }}
                   </router-link>
+                  <span v-if="node.notes" class="notes-chip ml-1" :title="node.notes">📝</span>
                 </h5>
-                <span :class="['badge', node.status === 'online' ? 'badge-success' : 'badge-danger']">
-                  {{ node.status || 'unknown' }}
-                </span>
+                <div class="flex align-center gap-1">
+                  <button class="btn-notes-edit" @click.stop="openNodeNotes(node)" :title="node.notes ? 'Edit notes' : 'Add notes'">
+                    {{ node.notes ? '📝' : '+ Note' }}
+                  </button>
+                  <span :class="['badge', node.status === 'online' ? 'badge-success' : 'badge-danger']">
+                    {{ node.status || 'unknown' }}
+                  </span>
+                </div>
               </div>
               <div class="node-stats">
                 <div class="stat">
@@ -785,6 +797,30 @@
           <div class="edit-section">
             <h5 class="section-subtitle">Location</h5>
             <p class="text-sm text-muted mb-1">Used to place this datacenter on the Federation map.</p>
+            <!-- Address lookup -->
+            <div class="form-group mb-2">
+              <label class="form-label">Address lookup</label>
+              <div class="loc-search-row">
+                <input
+                  v-model="editLocSearch"
+                  class="form-control"
+                  placeholder="Type an address or city to auto-fill coordinates..."
+                  @keydown.enter.prevent="geocodeEditLoc"
+                />
+                <button class="btn btn-outline btn-sm" @click="geocodeEditLoc" :disabled="editLocLoading">
+                  {{ editLocLoading ? '…' : 'Find' }}
+                </button>
+              </div>
+              <div v-if="editLocError" class="text-danger text-sm mt-1">{{ editLocError }}</div>
+              <div v-if="editLocResults.length" class="geo-results">
+                <div
+                  v-for="(r, i) in editLocResults"
+                  :key="i"
+                  class="geo-result-item"
+                  @click="applyEditLocResult(r)"
+                >{{ r.display_name }}</div>
+              </div>
+            </div>
             <div class="form-row-2">
               <div class="form-group">
                 <label class="form-label">Latitude</label>
@@ -794,6 +830,14 @@
                 <label class="form-label">Longitude</label>
                 <input v-model.number="editHost.longitude" type="number" step="any" min="-180" max="180" class="form-control" placeholder="e.g. -74.0060" />
               </div>
+            </div>
+          </div>
+
+          <!-- Notes -->
+          <div class="edit-section">
+            <h5 class="section-subtitle">Notes</h5>
+            <div class="form-group">
+              <textarea v-model="editHost.notes" class="form-control" rows="3" placeholder="Internal notes about this datacenter..."></textarea>
             </div>
           </div>
 
@@ -910,6 +954,128 @@
 
     <!-- Add Host Wizard -->
     <AddHostWizard v-model="showAddModal" @host-added="onHostAdded" />
+
+    <!-- Node Notes Modal -->
+    <div v-if="showNodeNotesModal" class="modal" @click.self="showNodeNotesModal = false">
+      <div class="modal-content" style="max-width: 420px;" @click.stop>
+        <div class="modal-header">
+          <h3>Notes — {{ nodeNotesTarget?.node_name }}</h3>
+          <button @click="showNodeNotesModal = false" class="btn-close">×</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <textarea v-model="nodeNotesText" class="form-control" rows="5" placeholder="Internal notes about this node..."></textarea>
+          </div>
+          <div class="flex gap-1 mt-2">
+            <button @click="saveNodeNotes" class="btn btn-primary" :disabled="savingNodeNotes">
+              {{ savingNodeNotes ? 'Saving...' : 'Save' }}
+            </button>
+            <button @click="showNodeNotesModal = false" class="btn btn-outline">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Unjoin Cluster Modal -->
+  <div v-if="showUnjoinClusterModal" class="modal-overlay" @click.self="showUnjoinClusterModal = false">
+    <div class="modal-container" style="max-width:460px">
+      <div class="modal-header">
+        <h3>Remove Node from Cluster</h3>
+        <button class="btn-close" @click="showUnjoinClusterModal = false">×</button>
+      </div>
+      <div class="modal-body">
+        <p class="text-sm text-muted mb-2">
+          Select which node to remove from the cluster. Run this from an <strong>active cluster member</strong> (not the node being removed).
+        </p>
+        <div class="form-group">
+          <label class="form-label">Active cluster member (host to run from) <span class="req">*</span></label>
+          <select v-model="unjoinMasterHostId" class="form-control">
+            <option value="">— Select host —</option>
+            <option v-for="h in hosts" :key="h.id" :value="h.id">{{ h.name }} ({{ h.hostname }})</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Node to remove <span class="req">*</span></label>
+          <input v-model="unjoinNodeName" class="form-control" placeholder="e.g. pve05" />
+          <p class="form-hint">Exact Proxmox node name (not the depl0y host name).</p>
+        </div>
+        <div v-if="unjoinError" class="alert alert-danger mt-1">{{ unjoinError }}</div>
+        <div v-if="unjoinSuccess" class="alert alert-success mt-1">{{ unjoinSuccess }}</div>
+        <div class="flex gap-1 mt-2">
+          <button
+            class="btn btn-danger"
+            @click="submitUnjoin"
+            :disabled="unjoining || !unjoinMasterHostId || !unjoinNodeName"
+          >
+            {{ unjoining ? 'Removing...' : 'Remove Node' }}
+          </button>
+          <button class="btn btn-outline" @click="showUnjoinClusterModal = false">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Join Cluster Modal -->
+  <div v-if="showJoinClusterModal" class="modal-overlay" @click.self="showJoinClusterModal = false">
+    <div class="modal-container" style="max-width:480px">
+      <div class="modal-header">
+        <h3>Join Cluster</h3>
+        <button class="btn-close" @click="showJoinClusterModal = false">×</button>
+      </div>
+      <div class="modal-body">
+        <p class="text-sm text-muted mb-2">
+          Join <strong>{{ joinClusterTarget?.name }}</strong> into an existing Proxmox cluster.
+        </p>
+
+        <div class="form-group">
+          <label class="form-label">Cluster to join <span class="req">*</span></label>
+          <select v-model="joinClusterMasterHostId" class="form-control" @change="fetchJoinInfo">
+            <option value="">— Select existing datacenter —</option>
+            <option v-for="h in joinableHosts" :key="h.id" :value="h.id">{{ h.name }} ({{ h.hostname }})</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Fingerprint</label>
+          <div class="input-with-badge">
+            <input
+              v-model="joinClusterFingerprint"
+              class="form-control"
+              placeholder="Auto-fetched or enter manually"
+              :disabled="fetchingJoinInfo"
+            />
+            <span v-if="fetchingJoinInfo" class="input-badge">Fetching...</span>
+          </div>
+          <p class="form-hint">TLS fingerprint of the cluster node. Auto-filled when you select a datacenter.</p>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Cluster node address</label>
+          <input v-model="joinClusterNodeAddr" class="form-control" placeholder="Auto-fetched IP or enter manually" />
+          <p class="form-hint">IP or hostname of the cluster master node.</p>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Root password of cluster node <span class="req">*</span></label>
+          <input v-model="joinClusterPassword" type="password" class="form-control" placeholder="root@pam password" autocomplete="new-password" />
+        </div>
+
+        <div v-if="joinClusterError" class="alert alert-danger mt-1">{{ joinClusterError }}</div>
+        <div v-if="joinClusterSuccess" class="alert alert-success mt-1">{{ joinClusterSuccess }}</div>
+
+        <div class="flex gap-1 mt-2">
+          <button
+            class="btn btn-primary"
+            @click="submitJoinCluster"
+            :disabled="joiningCluster || !joinClusterMasterHostId || !joinClusterPassword || !joinClusterFingerprint"
+          >
+            {{ joiningCluster ? 'Joining...' : 'Join Cluster' }}
+          </button>
+          <button class="btn btn-outline" @click="showJoinClusterModal = false">Cancel</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -935,6 +1101,10 @@ export default {
     const showAddModal = ref(false)
     const showEditModal = ref(false)
     const showLocationModal = ref(false)
+    const showNodeNotesModal = ref(false)
+    const nodeNotesTarget = ref(null)
+    const nodeNotesText = ref('')
+    const savingNodeNotes = ref(false)
     const locationHost = ref(null)
     const locationLat = ref(null)
     const locationLng = ref(null)
@@ -942,6 +1112,12 @@ export default {
     const geoLoading = ref(false)
     const geoError = ref('')
     const geoResults = ref([])
+
+    // Geocode refs for the Edit modal location section
+    const editLocSearch = ref('')
+    const editLocLoading = ref(false)
+    const editLocError = ref('')
+    const editLocResults = ref([])
     const useApiToken = ref(false)
     const editAuthMethod = ref('token')
 
@@ -977,9 +1153,106 @@ export default {
       description: '',
       default_storage: '', default_bridge: '', default_node: '', iso_storage: '',
       latitude: null, longitude: null,
+      notes: '',
       idrac_type: '', idrac_hostname: '', idrac_port: 443,
       idrac_username: '', idrac_password: '',
     })
+
+    // ── Join Cluster state ─────────────────────────────────────────────────
+    const showJoinClusterModal = ref(false)
+    const joinClusterTarget = ref(null)      // the host being joined
+    const joinClusterMasterHostId = ref('')  // the host whose cluster to join
+    const joinClusterFingerprint = ref('')
+    const joinClusterNodeAddr = ref('')
+    const joinClusterPassword = ref('')
+    const fetchingJoinInfo = ref(false)
+    const joiningCluster = ref(false)
+    const joinClusterError = ref('')
+    const joinClusterSuccess = ref('')
+
+    const joinableHosts = computed(() =>
+      hosts.value.filter(h => h.id !== joinClusterTarget.value?.id)
+    )
+
+    const openJoinCluster = (host) => {
+      joinClusterTarget.value = host
+      joinClusterMasterHostId.value = ''
+      joinClusterFingerprint.value = ''
+      joinClusterNodeAddr.value = ''
+      joinClusterPassword.value = ''
+      joinClusterError.value = ''
+      joinClusterSuccess.value = ''
+      showJoinClusterModal.value = true
+    }
+
+    const fetchJoinInfo = async () => {
+      if (!joinClusterMasterHostId.value) return
+      fetchingJoinInfo.value = true
+      joinClusterFingerprint.value = ''
+      joinClusterNodeAddr.value = ''
+      try {
+        const res = await api.cluster.getJoinInfo(joinClusterMasterHostId.value)
+        joinClusterFingerprint.value = res.data?.fingerprint || ''
+        joinClusterNodeAddr.value = res.data?.preferred_node_addr || ''
+      } catch (e) {
+        joinClusterError.value = 'Could not fetch join info: ' + (e.response?.data?.detail || e.message)
+      } finally {
+        fetchingJoinInfo.value = false
+      }
+    }
+
+    const submitJoinCluster = async () => {
+      joinClusterError.value = ''
+      joinClusterSuccess.value = ''
+      joiningCluster.value = true
+      try {
+        const masterHost = hosts.value.find(h => h.id === joinClusterMasterHostId.value)
+        const hostname = joinClusterNodeAddr.value || masterHost?.hostname || ''
+        await api.cluster.joinCluster(joinClusterTarget.value.id, {
+          hostname,
+          password: joinClusterPassword.value,
+          fingerprint: joinClusterFingerprint.value,
+        })
+        joinClusterSuccess.value = `${joinClusterTarget.value.name} successfully joined the cluster. The node will reconnect shortly.`
+        toast.success('Cluster join initiated!')
+      } catch (e) {
+        joinClusterError.value = e.response?.data?.detail || 'Cluster join failed.'
+      } finally {
+        joiningCluster.value = false
+      }
+    }
+
+    // ── Unjoin Cluster state ───────────────────────────────────────────────
+    const showUnjoinClusterModal = ref(false)
+    const unjoinMasterHostId = ref('')
+    const unjoinNodeName = ref('')
+    const unjoining = ref(false)
+    const unjoinError = ref('')
+    const unjoinSuccess = ref('')
+
+    const openUnjoinCluster = (host) => {
+      unjoinMasterHostId.value = host.id
+      unjoinNodeName.value = ''
+      unjoinError.value = ''
+      unjoinSuccess.value = ''
+      showUnjoinClusterModal.value = true
+    }
+
+    const submitUnjoin = async () => {
+      unjoinError.value = ''
+      unjoinSuccess.value = ''
+      unjoining.value = true
+      try {
+        await api.cluster.removeClusterNode(unjoinMasterHostId.value, unjoinNodeName.value)
+        unjoinSuccess.value = `Node "${unjoinNodeName.value}" removed from cluster.`
+        toast.success('Node removed from cluster')
+        await fetchHosts()
+      } catch (e) {
+        unjoinError.value = e.response?.data?.detail || 'Failed to remove node from cluster.'
+      } finally {
+        unjoining.value = false
+      }
+    }
 
     // ── Detail Drawer state ────────────────────────────────────────────────
     const showDetailDrawer = ref(false)
@@ -1527,6 +1800,10 @@ export default {
       return `${days}d ${hours}h ${minutes}m`
     }
 
+    const goToCluster = (host) => {
+      router.push(`/proxmox/${host.id}/cluster`)
+    }
+
     const openEdit = (host) => {
       editHost.value = {
         id: host.id,
@@ -1546,6 +1823,7 @@ export default {
         iso_storage: host.iso_storage || '',
         latitude: host.latitude ?? null,
         longitude: host.longitude ?? null,
+        notes: host.notes || '',
         idrac_type: host.idrac_type || '',
         idrac_hostname: host.idrac_hostname || '',
         idrac_port: host.idrac_port || 443,
@@ -1553,7 +1831,30 @@ export default {
         idrac_password: '',
       }
       editAuthMethod.value = host.token_id ? 'token' : 'password'
+      editLocSearch.value = ''
+      editLocError.value = ''
+      editLocResults.value = []
       showEditModal.value = true
+    }
+
+    const openNodeNotes = (node) => {
+      nodeNotesTarget.value = node
+      nodeNotesText.value = node.notes || ''
+      showNodeNotesModal.value = true
+    }
+
+    const saveNodeNotes = async () => {
+      if (!nodeNotesTarget.value) return
+      savingNodeNotes.value = true
+      try {
+        await api.proxmox.updateNodeIdrac(nodeNotesTarget.value.id, { notes: nodeNotesText.value || null })
+        nodeNotesTarget.value.notes = nodeNotesText.value || null
+        showNodeNotesModal.value = false
+      } catch (e) {
+        console.error('Failed to save node notes:', e)
+      } finally {
+        savingNodeNotes.value = false
+      }
     }
 
     const openLocationModal = (host) => {
@@ -1574,7 +1875,7 @@ export default {
       try {
         const q = encodeURIComponent(locationSearch.value.trim())
         const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${q}&format=json&limit=5`, {
-          headers: { 'Accept-Language': 'en' }
+          headers: { 'Accept-Language': 'en', 'User-Agent': 'depl0y/1.0 (datacenter-location-picker)' }
         })
         const data = await res.json()
         if (!data.length) {
@@ -1598,12 +1899,44 @@ export default {
       geoResults.value = []
     }
 
+    const geocodeEditLoc = async () => {
+      if (!editLocSearch.value.trim()) return
+      editLocLoading.value = true
+      editLocError.value = ''
+      editLocResults.value = []
+      try {
+        const q = encodeURIComponent(editLocSearch.value.trim())
+        const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${q}&format=json&limit=5`, {
+          headers: { 'Accept-Language': 'en', 'User-Agent': 'depl0y/1.0 (datacenter-location-picker)' }
+        })
+        const data = await res.json()
+        if (!data.length) {
+          editLocError.value = 'No results found. Try a different search.'
+        } else if (data.length === 1) {
+          applyEditLocResult(data[0])
+        } else {
+          editLocResults.value = data
+        }
+      } catch {
+        editLocError.value = 'Geocoding failed — check internet connectivity.'
+      } finally {
+        editLocLoading.value = false
+      }
+    }
+
+    const applyEditLocResult = (r) => {
+      editHost.value.latitude = parseFloat(r.lat)
+      editHost.value.longitude = parseFloat(r.lon)
+      editLocSearch.value = r.display_name
+      editLocResults.value = []
+    }
+
     const saveLocation = async () => {
       saving.value = true
       try {
         await api.proxmox.updateHost(locationHost.value.id, {
-          latitude: locationLat.value || null,
-          longitude: locationLng.value || null,
+          latitude: locationLat.value != null ? locationLat.value : null,
+          longitude: locationLng.value != null ? locationLng.value : null,
         })
         showLocationModal.value = false
         await fetchHosts()
@@ -1696,6 +2029,7 @@ export default {
       hostVersions,
       expandedHosts,
       onHostAdded,
+      goToCluster,
       openEdit,
       saveEdit,
       showLocationModal,
@@ -1710,6 +2044,18 @@ export default {
       geocodeLocation,
       applyGeoResult,
       saveLocation,
+      editLocSearch,
+      editLocLoading,
+      editLocError,
+      editLocResults,
+      geocodeEditLoc,
+      applyEditLocResult,
+      showNodeNotesModal,
+      nodeNotesTarget,
+      nodeNotesText,
+      savingNodeNotes,
+      openNodeNotes,
+      saveNodeNotes,
       testConnection,
       testAllConnections,
       pollHost,
@@ -1749,6 +2095,30 @@ export default {
       openDetailDrawer,
       closeDetailDrawer,
       formatTaskTime,
+      // Unjoin Cluster
+      showUnjoinClusterModal,
+      unjoinMasterHostId,
+      unjoinNodeName,
+      unjoining,
+      unjoinError,
+      unjoinSuccess,
+      openUnjoinCluster,
+      submitUnjoin,
+      // Join Cluster
+      showJoinClusterModal,
+      joinClusterTarget,
+      joinClusterMasterHostId,
+      joinClusterFingerprint,
+      joinClusterNodeAddr,
+      joinClusterPassword,
+      fetchingJoinInfo,
+      joiningCluster,
+      joinClusterError,
+      joinClusterSuccess,
+      joinableHosts,
+      openJoinCluster,
+      fetchJoinInfo,
+      submitJoinCluster,
     }
   }
 }
@@ -1924,6 +2294,18 @@ export default {
   margin-left: auto;
 }
 .loc-btn:hover { opacity: 0.75; }
+.notes-chip {
+  display: inline-flex; align-items: center; cursor: default;
+  font-size: 0.72rem; padding: 1px 4px; border-radius: 4px;
+  background: rgba(99, 102, 241, 0.1); border: 1px solid rgba(99, 102, 241, 0.2);
+  color: var(--text-secondary);
+}
+.btn-notes-edit {
+  background: none; border: 1px solid var(--border-color, #374151);
+  border-radius: 4px; padding: 1px 6px; font-size: 0.68rem;
+  color: var(--text-secondary); cursor: pointer;
+}
+.btn-notes-edit:hover { background: var(--bg-secondary); }
 .loc-btn--set {
   background: rgba(34, 197, 94, 0.12);
   color: #16a34a;
@@ -2414,6 +2796,22 @@ export default {
   font-size: 0.75rem;
   color: var(--text-secondary);
   margin-top: 0.2rem;
+}
+
+.input-with-badge {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.input-with-badge .form-control {
+  flex: 1;
+}
+.input-badge {
+  position: absolute;
+  right: 0.5rem;
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  pointer-events: none;
 }
 
 .form-row-2 {

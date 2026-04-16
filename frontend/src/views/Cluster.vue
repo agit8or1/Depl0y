@@ -293,19 +293,23 @@
           <div class="status-grid">
             <div class="status-item">
               <span class="status-label">Manager Status</span>
-              <span :class="['badge', haStatus.manager_status === 'active' ? 'badge-success' : 'badge-warning']">
-                {{ haStatus.manager_status || 'unknown' }}
+              <span :class="['badge', haStatus.master_node ? 'badge-success' : 'badge-warning']">
+                {{ haStatus.master_node ? 'Active' : 'No Master' }}
               </span>
             </div>
             <div class="status-item">
-              <span class="status-label">Quorum OK</span>
-              <span :class="['badge', haStatus.quorum_ok ? 'badge-success' : 'badge-danger']">
-                {{ haStatus.quorum_ok ? 'Yes' : 'No' }}
+              <span class="status-label">Quorum</span>
+              <span :class="['badge', haQuorumOk ? 'badge-success' : 'badge-danger']">
+                {{ haQuorumOk ? 'OK' : 'Degraded' }}
               </span>
             </div>
             <div class="status-item">
               <span class="status-label">Master Node</span>
               <span class="status-value">{{ haStatus.master_node || '—' }}</span>
+            </div>
+            <div class="status-item">
+              <span class="status-label">Nodes Online</span>
+              <span class="status-value">{{ haNodesOnline }} / {{ haNodesTotal }}</span>
             </div>
           </div>
         </div>
@@ -414,6 +418,11 @@ export default {
     const showJoinInfo = ref(false)
     const joinInfo = ref(null)
     const loadingJoinInfo = ref(false)
+
+    // ── HA status derived computed ─────────────────────────────────────────
+    const haNodesTotal = computed(() => Object.keys(haStatus.value?.node_status || {}).length)
+    const haNodesOnline = computed(() => Object.values(haStatus.value?.node_status || {}).filter(s => s === 'online').length)
+    const haQuorumOk = computed(() => haNodesTotal.value > 0 && haNodesOnline.value === haNodesTotal.value)
 
     // ── Computed cluster-level data ────────────────────────────────────────
     const clusterNodes = computed(() => {
@@ -656,7 +665,7 @@ export default {
       loading,
       clusterStatus,
       clusterOptions,
-      haStatus,
+      haStatus, haQuorumOk, haNodesOnline, haNodesTotal,
       clusterNodes,
       clusterName,
       clusterQuorate,

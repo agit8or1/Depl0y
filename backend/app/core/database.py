@@ -64,20 +64,25 @@ def init_db():
         ("idrac_use_ssh", "BOOLEAN DEFAULT 0"),
         ("notes", "TEXT"),
     ]
-    with engine.connect() as conn:
-        for col_name, col_def in new_node_columns:
-            try:
+    # Use a fresh connection per ALTER TABLE so that a failure (e.g. table didn't
+    # exist in an older version) doesn't leave the connection in a dirty transaction
+    # state that silently swallows all subsequent column additions.
+    for col_name, col_def in new_node_columns:
+        try:
+            with engine.connect() as conn:
                 conn.execute(text(f"ALTER TABLE proxmox_nodes ADD COLUMN {col_name} {col_def}"))
                 conn.commit()
-            except Exception:
-                pass  # Column already exists
-        for col_name, col_def in new_host_columns:
-            try:
+        except Exception:
+            pass  # Column already exists or table doesn't exist yet
+    for col_name, col_def in new_host_columns:
+        try:
+            with engine.connect() as conn:
                 conn.execute(text(f"ALTER TABLE proxmox_hosts ADD COLUMN {col_name} {col_def}"))
                 conn.commit()
-            except Exception:
-                pass  # Column already exists
+        except Exception:
+            pass  # Column already exists
 
+    with engine.connect() as conn:
         # Create api_keys table if it doesn't exist yet (for older deployments)
         try:
             conn.execute(text("""
@@ -157,16 +162,18 @@ def init_db():
         except Exception:
             pass
 
-        # Add TOTP columns to users table if missing
-        for col_name, col_def in [
-            ("totp_secret", "VARCHAR(32)"),
-            ("totp_enabled", "BOOLEAN NOT NULL DEFAULT 0"),
-        ]:
-            try:
+    # TOTP ALTER TABLE loop uses fresh connections (see pattern above)
+    for col_name, col_def in [
+        ("totp_secret", "VARCHAR(32)"),
+        ("totp_enabled", "BOOLEAN NOT NULL DEFAULT 0"),
+    ]:
+        try:
+            with engine.connect() as conn:
                 conn.execute(text(f"ALTER TABLE users ADD COLUMN {col_name} {col_def}"))
                 conn.commit()
-            except Exception:
-                pass
+        except Exception:
+            pass
+    with engine.connect() as conn:
 
         # Create totp_backup_codes table
         try:

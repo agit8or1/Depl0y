@@ -171,38 +171,57 @@ def run_bmc_poll():
             key = f"{stype}:{sid}"
             try:
                 pw = decrypt_data(obj.idrac_password)
-                client = RedfishClient(
-                    hostname=obj.idrac_hostname,
-                    username=obj.idrac_username,
-                    password=pw,
-                    port=obj.idrac_port or 443,
-                    bmc_type=obj.idrac_type or "idrac",
-                )
-                info = client.get_system_info()
-                # Also grab quick thermal + power data for dashboard gauges
-                max_temp_c = None
-                consumed_watts = None
-                try:
-                    thermal = client.get_thermal()
-                    temps = [t.get("reading_celsius") for t in thermal.get("temperatures", []) if t.get("reading_celsius") is not None]
-                    if temps:
-                        max_temp_c = max(temps)
-                except Exception:
-                    pass
-                try:
-                    power = client.get_power_usage()
-                    consumed_watts = (power.get("power_control") or [{}])[0].get("consumed_watts")
-                except Exception:
-                    pass
-                bmc_status_cache[key] = {
-                    "power_state": info.get("power_state"),
-                    "health": info.get("health"),
-                    "model": info.get("model"),
-                    "last_polled": datetime.utcnow().isoformat(),
-                    "error": None,
-                    "max_temp_c": max_temp_c,
-                    "consumed_watts": consumed_watts,
-                }
+                use_ssh = getattr(obj, "idrac_use_ssh", False)
+
+                if use_ssh:
+                    # SSH mode: connect via SSH to the host (not the BMC address)
+                    from app.services.ssh_hw import get_hardware_info, test_ssh
+                    # PVE hosts SSH to their main hostname; PBS/standalone SSH to idrac_hostname
+                    ssh_host = getattr(obj, "hostname", None) or obj.idrac_hostname
+                    hw = get_hardware_info(ssh_host, obj.idrac_username, pw)
+                    sys_info = hw.get("system", {})
+                    bmc_status_cache[key] = {
+                        "power_state": "On",
+                        "health": "OK",
+                        "model": sys_info.get("model", ""),
+                        "last_polled": datetime.utcnow().isoformat(),
+                        "error": None,
+                        "max_temp_c": None,
+                        "consumed_watts": None,
+                    }
+                else:
+                    # Redfish / BMC mode
+                    client = RedfishClient(
+                        hostname=obj.idrac_hostname,
+                        username=obj.idrac_username,
+                        password=pw,
+                        port=obj.idrac_port or 443,
+                        bmc_type=obj.idrac_type or "idrac",
+                    )
+                    info = client.get_system_info()
+                    max_temp_c = None
+                    consumed_watts = None
+                    try:
+                        thermal = client.get_thermal()
+                        temps = [t.get("reading_celsius") for t in thermal.get("temperatures", []) if t.get("reading_celsius") is not None]
+                        if temps:
+                            max_temp_c = max(temps)
+                    except Exception:
+                        pass
+                    try:
+                        power = client.get_power_usage()
+                        consumed_watts = (power.get("power_control") or [{}])[0].get("consumed_watts")
+                    except Exception:
+                        pass
+                    bmc_status_cache[key] = {
+                        "power_state": info.get("power_state"),
+                        "health": info.get("health"),
+                        "model": info.get("model"),
+                        "last_polled": datetime.utcnow().isoformat(),
+                        "error": None,
+                        "max_temp_c": max_temp_c,
+                        "consumed_watts": consumed_watts,
+                    }
             except Exception as e:
                 bmc_status_cache[key] = {
                     "power_state": None,

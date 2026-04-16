@@ -1157,13 +1157,13 @@ export default {
 .doc-page-header { margin-bottom: 2.5rem; }
 
 .doc-page-header h1 {
-  font-size: 2.25rem;
-  margin: 0 0 0.5rem 0;
+  font-size: 1.6rem;
+  margin: 0 0 0.4rem 0;
   color: var(--text-primary);
 }
 
 .doc-page-header p {
-  font-size: 1.05rem;
+  font-size: 0.95rem;
   color: var(--text-secondary);
   margin: 0 0 1rem 0;
 }
@@ -1185,7 +1185,7 @@ export default {
 }
 
 .section-title {
-  font-size: 1.6rem;
+  font-size: 1.2rem;
   margin: 0;
   color: var(--text-primary);
   display: flex;
@@ -1242,12 +1242,12 @@ export default {
 }
 
 .section-body :deep(code) {
-  background: var(--background, #f9fafb);
+  background: rgba(255,255,255,0.07);
   border: 1px solid var(--border-color);
   padding: 0.1rem 0.35rem;
   border-radius: 0.25rem;
-  font-size: 0.88em;
-  font-family: monospace;
+  font-size: 0.85em;
+  font-family: ui-monospace, 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
   color: var(--text-primary);
 }
 
@@ -1262,8 +1262,8 @@ export default {
   padding: 1rem 3rem 1rem 1rem;
   border-radius: 0.5rem;
   overflow-x: auto;
-  font-family: 'Fira Code', 'Cascadia Code', monospace;
-  font-size: 0.86rem;
+  font-family: ui-monospace, 'Cascadia Code', 'Fira Code', 'Consolas', 'Courier New', monospace;
+  font-size: 0.84rem;
   line-height: 1.6;
   margin: 0;
   white-space: pre;

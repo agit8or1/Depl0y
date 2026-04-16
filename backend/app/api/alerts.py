@@ -356,6 +356,79 @@ async def toggle_alert_rule(
         raise HTTPException(status_code=500, detail=str(exc))
 
 
+
+# ── VM Alert Mutes ────────────────────────────────────────────────────────────
+
+def _get_vm_mutes(db) -> list:
+    """Return the current VM mutes list from SystemSettings."""
+    import json
+    from app.models.database import SystemSettings
+    row = db.query(SystemSettings).filter(SystemSettings.key == "vm_alert_mutes").first()
+    if not row:
+        return []
+    try:
+        return json.loads(row.value)
+    except Exception:
+        return []
+
+
+def _save_vm_mutes(db, mutes: list) -> None:
+    """Persist VM mutes list to SystemSettings."""
+    import json
+    from app.models.database import SystemSettings
+    row = db.query(SystemSettings).filter(SystemSettings.key == "vm_alert_mutes").first()
+    val = json.dumps(mutes)
+    if row:
+        row.value = val
+    else:
+        row = SystemSettings(key="vm_alert_mutes", value=val, description="VMs muted from stop/down alerts")
+        db.add(row)
+    db.commit()
+
+
+class VmMuteIn(BaseModel):
+    host_id: int
+    vmid: str
+
+
+@router.get("/vm-mutes")
+async def list_vm_mutes(
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """List all VMs muted from stop/down alerts."""
+    return _get_vm_mutes(db)
+
+
+@router.post("/vm-mutes")
+async def add_vm_mute(
+    data: VmMuteIn,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Mute stop/down alerts for a specific VM."""
+    mutes = _get_vm_mutes(db)
+    entry = {"host_id": data.host_id, "vmid": str(data.vmid)}
+    if not any(m["host_id"] == entry["host_id"] and m["vmid"] == entry["vmid"] for m in mutes):
+        mutes.append(entry)
+        _save_vm_mutes(db, mutes)
+    return mutes
+
+
+@router.delete("/vm-mutes/{host_id}/{vmid}")
+async def remove_vm_mute(
+    host_id: int,
+    vmid: str,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Unmute stop/down alerts for a specific VM."""
+    mutes = _get_vm_mutes(db)
+    mutes = [m for m in mutes if not (m["host_id"] == host_id and m["vmid"] == vmid)]
+    _save_vm_mutes(db, mutes)
+    return mutes
+
+
 @router.post("/events/{event_id}/acknowledge")
 async def acknowledge_alert_event(
     event_id: int,

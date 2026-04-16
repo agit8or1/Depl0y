@@ -143,6 +143,10 @@
             <div class="card-header"><h4>Disk I/O (bytes/s)</h4></div>
             <div class="chart-wrap">
               <Line v-if="diskChartData" :data="diskChartData" :options="bytesChartOptions" />
+              <div v-else-if="diskIoLive" class="disk-io-live">
+                <div class="dil-row"><span class="dil-label dil-read">R</span><span class="dil-val">{{ fmtBps(diskIoLive.read) }}</span><span class="dil-hint">(VM aggregate)</span></div>
+                <div class="dil-row"><span class="dil-label dil-write">W</span><span class="dil-val">{{ fmtBps(diskIoLive.write) }}</span></div>
+              </div>
               <div v-else class="text-muted text-center text-sm pt-2">{{ rrdLoaded ? 'Not reported by Proxmox for this node' : 'Loading...' }}</div>
             </div>
           </div>
@@ -1389,6 +1393,16 @@ const rrdData = ref(null)
 const rrdLoaded = ref(false)
 const rrdTimeframe = ref('hour')
 
+// Live disk I/O (VM-aggregate fallback when Proxmox RRD has no disk data)
+const diskIoLive = ref(null)   // { read: bytes/s, write: bytes/s } or null
+const fmtBps = (b) => {
+  if (!b || !isFinite(b)) return '0 B/s'
+  if (b >= 1e9) return (b / 1e9).toFixed(1) + ' GB/s'
+  if (b >= 1e6) return (b / 1e6).toFixed(1) + ' MB/s'
+  if (b >= 1e3) return (b / 1e3).toFixed(0) + ' KB/s'
+  return b.toFixed(0) + ' B/s'
+}
+
 // Guests
 const guests = ref([])
 const loadingGuests = ref(false)
@@ -1684,6 +1698,17 @@ const loadRrd = async () => {
     console.warn('RRD failed', e)
   } finally {
     rrdLoaded.value = true
+  }
+  // If RRD has no disk data, fetch live aggregate from VM counters (two-call delta)
+  const hasRrdDisk = rrdData.value?.some(d => d.diskread != null || d.diskwrite != null)
+  if (!hasRrdDisk) {
+    try {
+      await api.pveNode.diskIoRates(hostId.value)  // prime the counter
+      await new Promise(r => setTimeout(r, 3000))
+      const r2 = await api.pveNode.diskIoRates(hostId.value)
+      const nodeEntry = (r2.data || []).find(n => n.node === node.value)
+      if (nodeEntry) diskIoLive.value = { read: nodeEntry.read || 0, write: nodeEntry.write || 0 }
+    } catch { /* ignore */ }
   }
 }
 
@@ -3363,4 +3388,14 @@ const copySshCommand = () => copyToClipboard(`ssh root@${node}`, { toast: true }
   color: var(--text-muted);
   user-select: none;
 }
+.disk-io-live {
+  display: flex; flex-direction: column; gap: 0.5rem;
+  padding: 1rem; justify-content: center; height: 100%;
+}
+.dil-row { display: flex; align-items: center; gap: 0.5rem; }
+.dil-label { font-size: 0.7rem; font-weight: 700; width: 14px; flex-shrink: 0; }
+.dil-read { color: #8b5cf6; }
+.dil-write { color: #ef4444; }
+.dil-val { font-size: 0.9rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.dil-hint { font-size: 0.65rem; color: var(--text-secondary); }
 </style>

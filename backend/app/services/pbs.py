@@ -5,7 +5,7 @@ Provides PBSService — a class that wraps the PBS HTTP API (port 8007)
 using the requests library and token-based authentication.
 
 PBS API token auth header format:
-  Authorization: PBSAPIToken={userid}!{tokenid}={secret}
+  Authorization: PBSAPIToken={userid}!{tokenid}:{secret}
 """
 import logging
 from typing import Any, Dict, List, Optional
@@ -47,8 +47,8 @@ class PBSService:
                 secret = server.api_token_secret
 
             # api_token_id is expected to be in the form "{userid}!{tokenid}",
-            # e.g. "root@pam!mytoken".  PBS auth header = PBSAPIToken=<id>=<secret>
-            return {"Authorization": f"PBSAPIToken={server.api_token_id}={secret}"}
+            # e.g. "root@pam!mytoken".  PBS auth header = PBSAPIToken=<id>:<secret>
+            return {"Authorization": f"PBSAPIToken={server.api_token_id}:{secret}"}
 
         # Fallback: try password auth via the userid!tokenid convention using
         # the stored username and password fields (not recommended for PBS but
@@ -345,6 +345,37 @@ class PBSService:
         Returns the UPID of the started task.
         """
         return self._post(f"/config/sync/{job_id}/run")
+
+    def get_tapes(self) -> Dict[str, Any]:
+        """
+        Return tape library info: drives, changers, and media inventory.
+
+        PBS exposes these at /tape/drive, /tape/changer, and
+        /tape/changer/{changer}/inventory (requires a changer to be configured).
+        Returns a summary dict so the frontend has a single endpoint to call.
+        """
+        result: Dict[str, Any] = {"drives": [], "changers": [], "media": []}
+        for key, path in (("drives", "/tape/drive"), ("changers", "/tape/changer")):
+            try:
+                data = self._get(path)
+                if isinstance(data, list):
+                    result[key] = data
+            except Exception:
+                pass
+
+        # Fetch inventory from each changer
+        for changer in result["changers"]:
+            name = changer.get("name") or changer.get("id")
+            if not name:
+                continue
+            try:
+                inv = self._get(f"/tape/changer/{name}/inventory")
+                if isinstance(inv, list):
+                    result["media"].extend(inv)
+            except Exception:
+                pass
+
+        return result
 
     def get_task_log(self, upid: str) -> List[str]:
         """

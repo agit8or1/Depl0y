@@ -297,6 +297,70 @@
     </div>
 
     <!-- ══════════════════════════════════════════════════════════════════ -->
+    <!-- TAB: VM Mutes                                                       -->
+    <!-- ══════════════════════════════════════════════════════════════════ -->
+    <div v-if="activeTab === 'mutes'" class="tab-content">
+      <div class="toolbar">
+        <div class="toolbar-left">
+          <input
+            v-model="mutesSearch"
+            class="filter-input"
+            placeholder="Search VMs..."
+            aria-label="Search VMs"
+          />
+        </div>
+        <div class="toolbar-right">
+          <span class="total-label">{{ vmMutes.length }} muted</span>
+        </div>
+      </div>
+
+      <div v-if="loadingMutes" class="loading-state">
+        <div class="spinner"></div>
+        Loading VMs...
+      </div>
+
+      <div v-else-if="filteredMuteVms.length === 0" class="empty-state">
+        <div class="empty-icon">&#128276;</div>
+        <div class="empty-title">No VMs found</div>
+        <div class="empty-sub">VMs from all Proxmox hosts will appear here.</div>
+      </div>
+
+      <div v-else>
+        <p class="mutes-hint">Muted VMs will not trigger "VM stopped unexpectedly" alerts.</p>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>VM Name</th>
+              <th>VMID</th>
+              <th>Node</th>
+              <th>Host</th>
+              <th>Status</th>
+              <th>Mute Alerts</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="vm in filteredMuteVms" :key="`${vm.host_id}-${vm.vmid}`">
+              <td>{{ vm.name || '—' }}</td>
+              <td class="col-muted">{{ vm.vmid }}</td>
+              <td class="col-muted">{{ vm.node || '—' }}</td>
+              <td class="col-muted">{{ vm.host_name || vm.host_id }}</td>
+              <td>
+                <span class="status-dot" :class="vm.status === 'running' ? 'dot-green' : 'dot-gray'"></span>
+                {{ vm.status || '—' }}
+              </td>
+              <td>
+                <label class="toggle-switch" :title="isMuted(vm) ? 'Unmute this VM' : 'Mute this VM'">
+                  <input type="checkbox" :checked="isMuted(vm)" @change="toggleMute(vm)" />
+                  <span class="toggle-slider"></span>
+                </label>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════════════ -->
     <!-- Create / Edit Rule Modal                                           -->
     <!-- ══════════════════════════════════════════════════════════════════ -->
     <div v-if="showRuleModal" class="modal-overlay" @click.self="closeModal" role="dialog" aria-modal="true" :aria-label="editingRule ? 'Edit Alert Rule' : 'Create Alert Rule'">
@@ -552,6 +616,7 @@ export default {
         { id: 'active',  label: 'Active Alerts' },
         { id: 'rules',   label: 'Alert Rules' },
         { id: 'history', label: 'Alert History' },
+        { id: 'mutes',   label: 'VM Mutes' },
       ],
 
       loading: false,
@@ -585,6 +650,12 @@ export default {
 
       ruleTypes: RULE_TYPES,
 
+      // VM Mutes
+      vmMutes: [],
+      allVms: [],
+      loadingMutes: false,
+      mutesSearch: '',
+
       // Auto-refresh
       refreshInterval: null,
       countdownInterval: null,
@@ -607,12 +678,25 @@ export default {
     selectedRuleType() {
       return RULE_TYPES.find(rt => rt.value === this.ruleForm.rule_type) || null
     },
+    filteredMuteVms() {
+      const q = this.mutesSearch.trim().toLowerCase()
+      return this.allVms.filter(vm => {
+        if (!q) return true
+        return (
+          String(vm.vmid).includes(q) ||
+          (vm.name || '').toLowerCase().includes(q) ||
+          (vm.node || '').toLowerCase().includes(q) ||
+          (vm.host_name || '').toLowerCase().includes(q)
+        )
+      })
+    },
   },
 
   watch: {
     activeTab(tab) {
       if (tab === 'history') this.loadHistory()
       if (tab === 'rules') this.loadRules()
+      if (tab === 'mutes') this.loadMutes()
     },
   },
 
@@ -686,6 +770,63 @@ export default {
         this.hosts = res.data?.items || res.data || []
       } catch (e) {
         console.warn('Failed to load hosts:', e)
+      }
+    },
+
+    async loadMutes() {
+      this.loadingMutes = true
+      try {
+        const mutesRes = await api.alerts.listVmMutes().catch(() => ({ data: [] }))
+        this.vmMutes = mutesRes.data || []
+
+        // Load all VMs across all hosts using cluster resources
+        if (!this.hosts.length) await this.loadHosts()
+        const allVms = []
+        await Promise.allSettled(this.hosts.map(async (host) => {
+          try {
+            const res = await api.pveNode.clusterResources(host.id, 'vm')
+            const vms = res.data || []
+            vms.forEach(vm => {
+              if (vm.type === 'qemu') {
+                allVms.push({
+                  vmid: vm.vmid,
+                  name: vm.name,
+                  node: vm.node,
+                  status: vm.status,
+                  host_id: host.id,
+                  host_name: host.name,
+                })
+              }
+            })
+          } catch (e) {
+            // skip unreachable hosts
+          }
+        }))
+        allVms.sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+        this.allVms = allVms
+      } catch (e) {
+        console.warn('Failed to load VM mutes:', e)
+      } finally {
+        this.loadingMutes = false
+      }
+    },
+
+    isMuted(vm) {
+      return this.vmMutes.some(m => m.host_id === vm.host_id && String(m.vmid) === String(vm.vmid))
+    },
+
+    async toggleMute(vm) {
+      try {
+        if (this.isMuted(vm)) {
+          const res = await api.alerts.removeVmMute(vm.host_id, String(vm.vmid))
+          this.vmMutes = res.data || []
+        } else {
+          const res = await api.alerts.addVmMute(vm.host_id, String(vm.vmid))
+          this.vmMutes = res.data || []
+        }
+      } catch (e) {
+        console.warn('Failed to toggle VM mute:', e)
+        await this.loadMutes()
       }
     },
 
@@ -1626,4 +1767,22 @@ select option {
   outline: 2px solid #3b82f6;
   outline-offset: 0;
 }
+
+/* ── VM Mutes tab ────────────────────────────────────────────────────── */
+.mutes-hint {
+  font-size: 0.8rem;
+  color: var(--text-muted, #8fa3b8);
+  margin-bottom: 0.75rem;
+}
+
+.status-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  margin-right: 0.35rem;
+  vertical-align: middle;
+}
+.dot-green { background: #22c55e; }
+.dot-gray  { background: #6b7280; }
 </style>

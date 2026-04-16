@@ -64,16 +64,9 @@
           <div class="hb-row" v-for="host in summary.hosts" :key="host.host_id">
             <span :class="['hb-dot', host.status === 'online' ? 'dot-online' : 'dot-offline']"></span>
             <span class="hb-name">{{ host.host_name }}</span>
-            <div class="hb-bar-wrap">
-              <div class="hb-bar">
-                <div
-                  class="hb-bar-fill"
-                  :class="barClass(hostHealthPct(host))"
-                  :style="{ width: hostHealthPct(host) + '%' }"
-                ></div>
-              </div>
-            </div>
-            <span class="hb-pct">{{ hostHealthPct(host) }}%</span>
+            <span :class="['hb-health-text', healthTextClass(hostHealthPct(host))]">
+              {{ hostHealthPct(host) }}% Health
+            </span>
             <span :class="['badge', 'badge-sm', statusBadgeClass(host.status)]">{{ host.status }}</span>
           </div>
         </div>
@@ -797,6 +790,12 @@ export default {
       return 'bar-success'
     }
 
+    const healthTextClass = (pct) => {
+      if (pct >= 80) return 'health-text-good'
+      if (pct >= 60) return 'health-text-warn'
+      return 'health-text-bad'
+    }
+
     const storageUsedPct = (host) => {
       if (!host.storage_total_gb) return 0
       return Math.round((host.storage_used_gb / host.storage_total_gb) * 100)
@@ -933,6 +932,7 @@ export default {
       healthBadgeClass,
       latencyBadgeClass,
       barClass,
+      healthTextClass,
       storageUsedPct,
       formatGB,
       formatDate,
@@ -1073,31 +1073,16 @@ export default {
   text-overflow: ellipsis;
 }
 
-.hb-bar-wrap {
+.hb-health-text {
   flex: 1;
-}
-
-.hb-bar {
-  height: 6px;
-  background: var(--border-color);
-  border-radius: 3px;
-  overflow: hidden;
-}
-
-.hb-bar-fill {
-  height: 100%;
-  border-radius: 3px;
-  transition: width 0.4s ease;
-}
-
-.hb-pct {
-  width: 36px;
-  text-align: right;
+  font-size: 0.78rem;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
-  color: var(--text-secondary);
-  font-size: 0.75rem;
-  flex-shrink: 0;
 }
+
+.health-text-good { color: #22c55e; }
+.health-text-warn { color: #f59e0b; }
+.health-text-bad  { color: #ef4444; }
 
 /* ── World Map ───────────────────────────────────────────────────────────── */
 .world-map-container {

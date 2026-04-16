@@ -26,7 +26,7 @@ def get_app_version():
         # Fallback to hardcoded version if database query fails
         pass
 
-    return "1.8.0"  # v1.8.0: VM Groups, Bulk Ops, SDN, Storage Mgmt, Snapshot Manager, full router coverage
+    return "1.9.0"
 
 
 class Settings(BaseSettings):

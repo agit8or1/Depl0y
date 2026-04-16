@@ -53,17 +53,11 @@
       </div>
       <div v-show="!collapsed.compute" class="nav-section-items">
         <NavItem v-if="isOperator" :to="'/containers'" :icon="'📦'" :label="t('nav.containers')" @click="handleNavClick" />
-        <NavItem v-if="isOperator" :to="'/create-lxc'" :icon="'➕'" :label="t('nav.create_lxc')" @click="handleNavClick" />
-        <NavItem v-if="isOperator" :to="'/create-pve-vm'" :icon="'➕'" :label="t('nav.create_vm_pve')" @click="handleNavClick" />
-        <NavItem v-if="isOperator" :to="'/deploy'" :icon="'🚀'" :label="t('nav.deploy_vm')" @click="handleNavClick" />
-        <NavItem v-if="isOperator" :to="'/import-vm'" :icon="'📥'" :label="t('nav.import_vm')" @click="handleNavClick" />
-        <NavItem v-if="isOperator" :to="'/llm-deploy'" :icon="'🤖'" :label="t('nav.llm_deploy')" @click="handleNavClick" />
         <NavItem :to="'/templates'" :icon="'📄'" :label="t('nav.templates')" @click="handleNavClick" />
         <NavItem :to="'/vms'" :icon="'🖥️'" :label="t('nav.vms')" @click="handleNavClick" />
         <NavItem v-if="isOperator" :to="'/vm-management'" :icon="'🛠️'" :label="t('nav.vm_management')" @click="handleNavClick" />
         <NavItem v-if="isOperator" :to="'/vm-groups'" :icon="'🗃️'" :label="t('nav.vm_groups')" @click="handleNavClick" />
         <NavItem v-if="isOperator" :to="'/bulk-ops'" :icon="'⚡'" :label="t('nav.bulk_ops')" @click="handleNavClick" />
-        <NavItem :to="'/vm-search'" :icon="'🔎'" :label="t('nav.vm_search')" @click="handleNavClick" />
       </div>
 
       <!-- ── Infrastructure ── -->
@@ -81,21 +75,37 @@
         <span class="nav-section-arrow" :class="{ 'arrow-collapsed': collapsed.infrastructure }">›</span>
       </div>
       <div v-show="!collapsed.infrastructure" class="nav-section-items">
-        <NavItem :to="'/backup'" :icon="'💾'" :label="t('nav.backup')" @click="handleNavClick" />
-        <NavItem :to="'/snapshots'" :icon="'📷'" :label="t('nav.snapshots')" @click="handleNavClick" />
+        <NavItem :to="'/proxmox'" :icon="'🌐'" :label="t('nav.proxmox_hosts')" @click="handleNavClick" />
         <NavItem v-if="isAdmin" :to="'/ha-management'" :icon="'🔄'" :label="t('nav.ha_management')" @click="handleNavClick" />
         <NavItem v-if="isOperator" :to="'/replication'" :icon="'🔁'" :label="t('nav.replication')" @click="handleNavClick" />
         <NavItem v-if="isOperator" :to="'/idrac'" :icon="'🖧'" :label="t('nav.idrac')" @click="handleNavClick" />
+        <NavItem v-if="isOperator" :to="'/node-monitor'" :icon="'📡'" :label="t('nav.node_monitor')" @click="handleNavClick" />
         <NavItem v-if="isOperator" :to="'/network'" :icon="'🔌'" :label="t('nav.network')" @click="handleNavClick" />
         <NavItem v-if="isAdmin" :to="'/sdn'" :icon="'🕸️'" :label="t('nav.sdn')" @click="handleNavClick" />
         <NavItem v-if="isOperator" :to="'/firewall-manager'" :icon="'🛡️'" :label="t('nav.firewall')" @click="handleNavClick" />
-        <NavItem v-if="isAdmin" :to="'/ceph'" :icon="'🪨'" :label="t('nav.ceph')" @click="handleNavClick" />
-        <NavItem v-if="isAdmin" :to="'/pve-users'" :icon="'👤'" :label="t('nav.pve_users')" @click="handleNavClick" />
-        <NavItem v-if="isOperator" :to="'/node-monitor'" :icon="'📡'" :label="t('nav.node_monitor')" @click="handleNavClick" />
+      </div>
+
+      <!-- ── Storage ── -->
+      <div
+        class="nav-section-header"
+        :class="{ 'nav-section-header--active': activeSectionKey === 'storage' }"
+        @click="toggleSection('storage')"
+        :aria-expanded="!collapsed.storage"
+        role="button"
+        tabindex="0"
+        @keydown.enter.prevent="toggleSection('storage')"
+        @keydown.space.prevent="toggleSection('storage')"
+      >
+        <span class="nav-section-label-text">Storage</span>
+        <span class="nav-section-arrow" :class="{ 'arrow-collapsed': collapsed.storage }">›</span>
+      </div>
+      <div v-show="!collapsed.storage" class="nav-section-items">
+        <NavItem :to="'/backup'" :icon="'💾'" :label="t('nav.backup')" @click="handleNavClick" />
+        <NavItem :to="'/snapshots'" :icon="'📷'" :label="t('nav.snapshots')" @click="handleNavClick" />
         <NavItem v-if="isAdmin" :to="'/pbs-management'" :icon="'🗄️'" :label="t('nav.pbs_management')" @click="handleNavClick" />
-        <NavItem :to="'/images'" :icon="'💿'" :label="t('nav.images')" @click="handleNavClick" />
-        <NavItem :to="'/proxmox'" :icon="'🌐'" :label="t('nav.proxmox_hosts')" @click="handleNavClick" />
         <NavItem v-if="isAdmin" :to="'/storage-management'" :icon="'🗄️'" :label="t('nav.storage_management')" @click="handleNavClick" />
+        <NavItem :to="'/images'" :icon="'💿'" :label="t('nav.images')" @click="handleNavClick" />
+        <NavItem v-if="isAdmin" :to="'/ceph'" :icon="'🪨'" :label="t('nav.ceph')" @click="handleNavClick" />
         <NavItem v-if="isAdmin" :to="'/pools'" :icon="'🗂️'" :label="t('nav.resource_pools')" @click="handleNavClick" />
       </div>
 
@@ -124,6 +134,7 @@
           <NavItem :to="'/system-health'" :icon="'💚'" :label="t('nav.system_health')" @click="handleNavClick" />
           <NavItem :to="'/system-logs'" :icon="'📜'" :label="t('nav.system_logs')" @click="handleNavClick" />
           <NavItem :to="'/users'" :icon="'👥'" :label="t('nav.users')" @click="handleNavClick" />
+          <NavItem :to="'/pve-users'" :icon="'👤'" :label="t('nav.pve_users')" @click="handleNavClick" />
           <NavItem :to="'/integrations'" :icon="'🔗'" :label="t('nav.integrations')" @click="handleNavClick" />
           <NavItem :to="'/api-explorer'" :icon="'⚡'" :label="t('nav.api_explorer')" @click="handleNavClick" />
         </div>
@@ -178,8 +189,9 @@ const COLLAPSED_KEY = 'sidebar_collapsed_sections'
 const SECTION_ROUTES = {
   overview: ['/', '/federation', '/datacenter', '/cluster', '/tasks'],
   compute: ['/containers', '/create-lxc', '/create-pve-vm', '/deploy', '/import-vm', '/llm-deploy', '/templates', '/vms', '/vm-management', '/vm-groups', '/bulk-ops', '/vm-search'],
-  infrastructure: ['/backup', '/snapshots', '/ha-management', '/replication', '/idrac', '/network', '/sdn', '/firewall-manager', '/ceph', '/pve-users', '/node-monitor', '/pbs-management', '/images', '/proxmox', '/storage-management', '/pools'],
-  admin: ['/audit-log', '/linux-vms', '/security', '/alerts', '/analysis', '/notifications', '/system-health', '/system-logs', '/users', '/integrations', '/api-explorer'],
+  infrastructure: ['/ha-management', '/replication', '/idrac', '/network', '/sdn', '/firewall-manager', '/node-monitor', '/proxmox'],
+  storage: ['/backup', '/snapshots', '/pbs-management', '/storage-management', '/images', '/ceph', '/pools'],
+  admin: ['/audit-log', '/linux-vms', '/security', '/alerts', '/analysis', '/notifications', '/system-health', '/system-logs', '/users', '/pve-users', '/integrations', '/api-explorer'],
   account: ['/about', '/documentation', '/profile', '/settings', '/support'],
 }
 
@@ -209,6 +221,7 @@ export default {
       overview: false,
       compute: false,
       infrastructure: false,
+      storage: false,
       admin: false,
       account: false,
     })

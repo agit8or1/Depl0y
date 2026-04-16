@@ -5,10 +5,13 @@
         <h2>Datacenter</h2>
         <p class="text-muted">Aggregate view across all Proxmox hosts</p>
       </div>
-      <button @click="refresh" class="btn btn-outline btn-sm" :disabled="loading">
-        <span v-if="loading">Loading...</span>
-        <span v-else>Refresh</span>
-      </button>
+      <div class="page-header-right">
+        <button @click="refresh" class="btn btn-outline btn-sm" :disabled="loading">
+          <span v-if="loading">Loading...</span>
+          <span v-else>Refresh</span>
+        </button>
+        <button @click="showAddModal = true" class="btn btn-primary btn-sm">+ Add PVE Host</button>
+      </div>
     </div>
 
     <!-- Global loading indicator -->
@@ -352,9 +355,13 @@
           </div>
 
           <div class="host-card-footer">
-            <router-link :to="`/proxmox/${panel.hostId}/cluster`" class="btn btn-outline btn-sm">
+            <router-link :to="`/proxmox/${panel.hostId}/cluster`" class="host-link">
               View Cluster &rarr;
             </router-link>
+            <div class="host-card-actions">
+              <button class="btn btn-xs btn-secondary" @click.stop="openEdit(panel.hostId)">Edit</button>
+              <button class="btn btn-xs btn-danger" @click.stop="deleteHost(panel.hostId)">Delete</button>
+            </div>
           </div>
         </div>
       </div>
@@ -894,6 +901,128 @@
         </div>
       </div>
     </template>
+
+  <!-- Add PVE Host Wizard -->
+  <AddHostWizard v-model="showAddModal" @host-added="fetchAll" />
+
+  <!-- Delete PVE Host Confirmation Modal -->
+  <div v-if="showDeleteModal" class="dc-modal-overlay" @click.self="cancelDelete">
+    <div class="dc-modal dc-modal--danger">
+      <div class="dc-modal-header">
+        <h3>Remove PVE Host</h3>
+        <button class="dc-modal-close" @click="cancelDelete">×</button>
+      </div>
+      <div class="dc-modal-body" style="gap:0.6rem;">
+        <div class="delete-warning-icon">&#9888;</div>
+        <p class="delete-warning-text">
+          You are about to remove <strong>{{ deleteTarget?.name }}</strong> from depl0y.
+          This will delete all associated monitoring history, alert rules, and cached data.
+          The Proxmox host itself will not be affected.
+        </p>
+        <div v-if="deleteTarget" class="delete-host-info">
+          <div class="dhi-row"><span class="dhi-label">Host</span><span class="dhi-val">{{ deleteTarget.hostname }}</span></div>
+          <div class="dhi-row"><span class="dhi-label">VMs</span><span class="dhi-val">{{ deleteTargetPanel?.vmsTotal ?? '—' }}</span></div>
+          <div class="dhi-row"><span class="dhi-label">LXC</span><span class="dhi-val">{{ deleteTargetPanel?.lxcTotal ?? '—' }}</span></div>
+          <div class="dhi-row"><span class="dhi-label">Nodes</span><span class="dhi-val">{{ deleteTargetPanel?.nodeCount ?? '—' }}</span></div>
+        </div>
+        <div class="dc-form-group" style="margin-top:0.5rem;">
+          <label class="delete-confirm-label">Type <strong>{{ deleteTarget?.name }}</strong> to confirm:</label>
+          <input
+            v-model="deleteConfirmText"
+            class="form-control"
+            :placeholder="deleteTarget?.name"
+            @keydown.enter="confirmDelete"
+          />
+        </div>
+      </div>
+      <div class="dc-modal-footer">
+        <button class="btn btn-secondary" @click="cancelDelete">Cancel</button>
+        <button
+          class="btn btn-danger"
+          @click="confirmDelete"
+          :disabled="deleteConfirmText !== deleteTarget?.name || deleteDeleting"
+        >
+          {{ deleteDeleting ? 'Removing...' : 'Remove Host' }}
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Edit Datacenter Modal -->
+  <div v-if="showEditModal" class="dc-modal-overlay" @click.self="showEditModal = false">
+    <div class="dc-modal">
+      <div class="dc-modal-header">
+        <h3>Edit Datacenter</h3>
+        <button class="dc-modal-close" @click="showEditModal = false">×</button>
+      </div>
+      <div class="dc-modal-body">
+        <div class="dc-form-group">
+          <label>Name</label>
+          <input v-model="editForm.name" class="form-control" placeholder="Datacenter name" />
+        </div>
+        <div class="dc-form-row">
+          <div class="dc-form-group">
+            <label>Hostname / IP</label>
+            <input v-model="editForm.hostname" class="form-control" placeholder="pve.example.com" />
+          </div>
+          <div class="dc-form-group dc-form-group--narrow">
+            <label>Port</label>
+            <input v-model.number="editForm.port" type="number" class="form-control" />
+          </div>
+        </div>
+        <div class="dc-form-group">
+          <label>Description</label>
+          <input v-model="editForm.description" class="form-control" placeholder="Optional description" />
+        </div>
+
+        <!-- Location -->
+        <div class="dc-section-label">Location (Federation Map)</div>
+        <div class="dc-form-group">
+          <label>Address lookup</label>
+          <div class="dc-search-row">
+            <input
+              v-model="editLocSearch"
+              class="form-control"
+              placeholder="Type an address or city..."
+              @keydown.enter.prevent="geocodeEditLoc"
+            />
+            <button class="btn btn-outline btn-sm" @click="geocodeEditLoc" :disabled="editLocLoading">
+              {{ editLocLoading ? '…' : 'Find' }}
+            </button>
+          </div>
+          <div v-if="editLocError" class="dc-form-error">{{ editLocError }}</div>
+          <div v-if="editLocResults.length" class="geo-results">
+            <div
+              v-for="(r, i) in editLocResults"
+              :key="i"
+              class="geo-result-item"
+              @click="applyEditLocResult(r)"
+            >{{ r.display_name }}</div>
+          </div>
+        </div>
+        <div class="dc-form-row">
+          <div class="dc-form-group">
+            <label>Latitude</label>
+            <input v-model.number="editForm.latitude" type="number" step="any" class="form-control" placeholder="e.g. 40.7128" />
+          </div>
+          <div class="dc-form-group">
+            <label>Longitude</label>
+            <input v-model.number="editForm.longitude" type="number" step="any" class="form-control" placeholder="e.g. -74.0060" />
+          </div>
+        </div>
+        <div v-if="editForm.latitude != null && editForm.longitude != null" class="dc-coord-preview">
+          📍 {{ Number(editForm.latitude).toFixed(4) }}, {{ Number(editForm.longitude).toFixed(4) }}
+        </div>
+      </div>
+      <div class="dc-modal-footer">
+        <button class="btn btn-secondary" @click="showEditModal = false">Cancel</button>
+        <button class="btn btn-primary" @click="saveEdit" :disabled="editSaving">
+          {{ editSaving ? 'Saving...' : 'Save Changes' }}
+        </button>
+      </div>
+    </div>
+  </div>
+
   </div>
 </template>
 
@@ -903,6 +1032,7 @@ import { useRouter } from 'vue-router'
 import { useToast } from 'vue-toastification'
 import api from '@/services/api'
 import { formatBytes } from '@/utils/proxmox'
+import AddHostWizard from '@/components/AddHostWizard.vue'
 
 const router = useRouter()
 const toast = useToast()
@@ -915,6 +1045,23 @@ const loadError = ref(false)
 
 // Datacenter summaries per host
 const datacenterSummaries = ref({})  // hostId -> summary object
+
+// Host management
+const showAddModal = ref(false)
+const showEditModal = ref(false)
+const editingHost = ref(null)
+const editForm = ref({})
+
+// Delete confirmation
+const showDeleteModal = ref(false)
+const deleteTarget = ref(null)
+const deleteConfirmText = ref('')
+const deleteDeleting = ref(false)
+const editSaving = ref(false)
+const editLocSearch = ref('')
+const editLocLoading = ref(false)
+const editLocError = ref('')
+const editLocResults = ref([])
 
 // Top VMs state
 const topVms = ref([])
@@ -1246,6 +1393,10 @@ const hostPanels = computed(() => {
   })
 })
 
+const deleteTargetPanel = computed(() =>
+  deleteTarget.value ? hostPanels.value.find(p => p.hostId === deleteTarget.value.id) : null
+)
+
 // ── Filtered + sorted resource table ──────────────────────────────────────
 const filteredResources = computed(() => {
   if (groupByNode.value) return []
@@ -1501,6 +1652,104 @@ function storageBarClass(used, total) {
 function setTimeframe(tf) {
   selectedTimeframe.value = tf
   fetchTrendData()
+}
+
+// ── Host management ────────────────────────────────────────────────────────
+function openEdit(hostId) {
+  const host = hosts.value.find(h => h.id === hostId)
+  if (!host) return
+  editingHost.value = host
+  editForm.value = {
+    name: host.name || '',
+    hostname: host.hostname || '',
+    port: host.port || 8006,
+    latitude: host.latitude ?? null,
+    longitude: host.longitude ?? null,
+    description: host.description || '',
+  }
+  editLocSearch.value = ''
+  editLocError.value = ''
+  editLocResults.value = []
+  showEditModal.value = true
+}
+
+async function saveEdit() {
+  editSaving.value = true
+  try {
+    await api.proxmox.updateHost(editingHost.value.id, editForm.value)
+    toast.success('Datacenter updated')
+    showEditModal.value = false
+    await fetchAll()
+  } catch (e) {
+    toast.error('Failed to update datacenter')
+    console.error(e)
+  } finally {
+    editSaving.value = false
+  }
+}
+
+function deleteHost(hostId) {
+  const host = hosts.value.find(h => h.id === hostId)
+  if (!host) return
+  deleteTarget.value = host
+  deleteConfirmText.value = ''
+  showDeleteModal.value = true
+}
+
+function cancelDelete() {
+  showDeleteModal.value = false
+  deleteTarget.value = null
+  deleteConfirmText.value = ''
+}
+
+async function confirmDelete() {
+  if (!deleteTarget.value || deleteConfirmText.value !== deleteTarget.value.name) return
+  deleteDeleting.value = true
+  try {
+    await api.proxmox.deleteHost(deleteTarget.value.id)
+    toast.success(`"${deleteTarget.value.name}" removed`)
+    showDeleteModal.value = false
+    deleteTarget.value = null
+    deleteConfirmText.value = ''
+    await fetchAll()
+  } catch (e) {
+    toast.error('Failed to remove host')
+    console.error(e)
+  } finally {
+    deleteDeleting.value = false
+  }
+}
+
+async function geocodeEditLoc() {
+  if (!editLocSearch.value.trim()) return
+  editLocLoading.value = true
+  editLocError.value = ''
+  editLocResults.value = []
+  try {
+    const q = encodeURIComponent(editLocSearch.value.trim())
+    const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${q}&format=json&limit=5`, {
+      headers: { 'Accept-Language': 'en', 'User-Agent': 'depl0y/1.0 (datacenter-location-picker)' }
+    })
+    const data = await res.json()
+    if (!data.length) {
+      editLocError.value = 'No results found.'
+    } else if (data.length === 1) {
+      applyEditLocResult(data[0])
+    } else {
+      editLocResults.value = data
+    }
+  } catch {
+    editLocError.value = 'Geocoding failed.'
+  } finally {
+    editLocLoading.value = false
+  }
+}
+
+function applyEditLocResult(r) {
+  editForm.value.latitude = parseFloat(r.lat)
+  editForm.value.longitude = parseFloat(r.lon)
+  editLocSearch.value = r.display_name
+  editLocResults.value = []
 }
 
 // ── Data loading ───────────────────────────────────────────────────────────
@@ -2339,7 +2588,7 @@ onUnmounted(() => {
 }
 
 .host-card-header {
-  padding: 1rem 1.25rem 0.75rem;
+  padding: 0.75rem 1rem 0.6rem;
   border-bottom: 1px solid var(--border-color);
 }
 
@@ -2351,7 +2600,7 @@ onUnmounted(() => {
 }
 
 .host-name {
-  font-size: 1rem;
+  font-size: 0.875rem;
   font-weight: 600;
   color: var(--text-primary);
 }
@@ -2359,18 +2608,191 @@ onUnmounted(() => {
 .host-addr { margin-top: 0.1rem; }
 
 .host-card-body {
-  padding: 0.875rem 1.25rem;
+  padding: 0.75rem 1rem;
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 0.625rem;
+  gap: 0.5rem;
 }
 
 .host-card-footer {
-  padding: 0.75rem 1.25rem;
+  padding: 0.5rem 1rem;
   border-top: 1px solid var(--border-color);
   display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.host-link {
+  font-size: 0.75rem;
+  color: var(--primary-color, #3b82f6);
+  text-decoration: none;
+  opacity: 0.8;
+}
+.host-link:hover { opacity: 1; text-decoration: underline; }
+
+.host-card-actions {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.page-header-right {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+/* ── Edit modal ──────────────────────────────────────────────────────────── */
+.dc-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+.dc-modal {
+  background: var(--card-bg, #1e2a3a);
+  border: 1px solid var(--border-color, rgba(255,255,255,0.1));
+  border-radius: 0.75rem;
+  width: 100%;
+  max-width: 480px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+.dc-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border-color, rgba(255,255,255,0.08));
+}
+.dc-modal-header h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+.dc-modal-close {
+  background: none;
+  border: none;
+  color: var(--text-muted, #8fa3b8);
+  font-size: 1.4rem;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0 0.2rem;
+}
+.dc-modal-body {
+  padding: 1rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.dc-modal-footer {
+  display: flex;
   justify-content: flex-end;
+  gap: 0.5rem;
+  padding: 0.75rem 1.25rem;
+  border-top: 1px solid var(--border-color, rgba(255,255,255,0.08));
+}
+.dc-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.dc-form-group label {
+  font-size: 0.8rem;
+  color: var(--text-secondary, #94a3b8);
+  font-weight: 500;
+}
+.dc-form-group--narrow { max-width: 90px; }
+.dc-form-row {
+  display: flex;
+  gap: 0.75rem;
+}
+.dc-form-row .dc-form-group { flex: 1; }
+.dc-section-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted, #8fa3b8);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding-top: 0.25rem;
+  border-top: 1px solid var(--border-color, rgba(255,255,255,0.06));
+}
+.dc-search-row {
+  display: flex;
+  gap: 0.5rem;
+}
+.dc-form-error {
+  font-size: 0.78rem;
+  color: #f87171;
+  margin-top: 0.2rem;
+}
+.dc-coord-preview {
+  font-size: 0.78rem;
+  color: var(--text-muted, #8fa3b8);
+}
+
+/* ── Shared geo-results (reused from ProxmoxHosts) ───────────────────────── */
+.geo-results {
+  border: 1px solid var(--border-color, rgba(255,255,255,0.1));
+  border-radius: 0.4rem;
+  margin-top: 0.3rem;
+  overflow: hidden;
+}
+.geo-result-item {
+  padding: 0.5rem 0.75rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+  color: var(--text-primary, #f1f5f9);
+  border-bottom: 1px solid var(--border-color, rgba(255,255,255,0.06));
+}
+.geo-result-item:last-child { border-bottom: none; }
+.geo-result-item:hover { background: rgba(59,130,246,0.12); }
+
+.btn-xs {
+  padding: 0.18rem 0.55rem;
+  font-size: 0.72rem;
+  border-radius: 0.3rem;
+}
+
+/* ── Delete confirmation modal ───────────────────────────────────────────── */
+.dc-modal--danger .dc-modal-header {
+  border-bottom-color: rgba(239, 68, 68, 0.25);
+}
+.delete-warning-icon {
+  font-size: 2rem;
+  text-align: center;
+  color: #f59e0b;
+}
+.delete-warning-text {
+  margin: 0;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--text-primary);
+}
+.delete-host-info {
+  background: rgba(239, 68, 68, 0.06);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  border-radius: 0.4rem;
+  padding: 0.6rem 0.8rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.dhi-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.82rem;
+}
+.dhi-label { color: var(--text-muted, #9aabb8); }
+.dhi-val { font-weight: 600; }
+.delete-confirm-label {
+  font-size: 0.82rem;
+  color: var(--text-muted, #9aabb8);
+  display: block;
+  margin-bottom: 0.35rem;
 }
 
 /* ── Resource bars ───────────────────────────────────────────────────────── */
@@ -2381,7 +2803,8 @@ onUnmounted(() => {
 }
 
 .resource-label {
-  min-width: 130px;
+  min-width: 60px;
+  font-size: 0.78rem;
   color: var(--text-primary);
   white-space: nowrap;
 }

@@ -212,8 +212,103 @@
             </div>
           </div>
 
-          <!-- ── Step 2: Configure Defaults ── -->
+          <!-- ── Step 2: Cluster Setup ── -->
           <div v-if="currentStep === 2" class="step-content">
+            <!-- Already in a cluster — nothing to do -->
+            <div v-if="testResult && testResult.success && testResult.node_count > 1" class="info-banner">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              This node is already part of the cluster <strong>{{ testResult.cluster_name }}</strong> ({{ testResult.node_count }} nodes). No cluster setup needed.
+            </div>
+
+            <!-- Standalone — offer join or create -->
+            <div v-else>
+              <p class="step-intro">This node is standalone. Optionally join it to an existing cluster or create a new one.</p>
+
+              <div class="cluster-action-options">
+                <label :class="['cluster-action-card', form.cluster_action === 'none' ? 'cluster-action-card--active' : '']">
+                  <input type="radio" v-model="form.cluster_action" value="none" />
+                  <div class="cac-body">
+                    <div class="cac-title">Keep as standalone</div>
+                    <div class="cac-desc">This node will be monitored independently in depl0y.</div>
+                  </div>
+                </label>
+
+                <label :class="['cluster-action-card', form.cluster_action === 'join' ? 'cluster-action-card--active' : '']">
+                  <input type="radio" v-model="form.cluster_action" value="join" />
+                  <div class="cac-body">
+                    <div class="cac-title">Join an existing cluster</div>
+                    <div class="cac-desc">Add this node to a Proxmox cluster already managed by depl0y.</div>
+                  </div>
+                </label>
+
+                <label :class="['cluster-action-card', form.cluster_action === 'create' ? 'cluster-action-card--active' : '']">
+                  <input type="radio" v-model="form.cluster_action" value="create" />
+                  <div class="cac-body">
+                    <div class="cac-title">Create a new cluster</div>
+                    <div class="cac-desc">Initialize a new Proxmox cluster from this standalone node.</div>
+                  </div>
+                </label>
+              </div>
+
+              <!-- Join fields -->
+              <div v-if="form.cluster_action === 'join'" class="cluster-action-fields">
+                <div class="warn-banner mb-1">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                  Joining a cluster restarts the <code>pve-cluster</code> service on this node (~30 seconds downtime). The node must not already be in a cluster.
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Target cluster <span class="req">*</span></label>
+                  <div v-if="loadingHosts" class="form-hint">Scanning for clusters…</div>
+                  <div v-else-if="!loadingHosts && existingHosts.length === 0" class="info-banner">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                    No existing clusters found. All configured hosts are standalone. Add this node first, then use "Create a new cluster" instead.
+                  </div>
+                  <select v-else v-model="form.join_host_id" class="form-control">
+                    <option value="">— Select a cluster —</option>
+                    <option v-for="h in existingHosts" :key="h.id" :value="h.id">
+                      {{ h._clusterName || h.name }} — {{ h.hostname }} ({{ h._nodeCount }} nodes)
+                    </option>
+                  </select>
+                  <p v-if="existingHosts.length > 0" class="form-hint">Only multi-node Proxmox clusters are shown. depl0y will use the cluster node's hostname as the join endpoint.</p>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">
+                    Cluster fingerprint <span class="req">*</span>
+                    <span v-if="fetchingFingerprint" class="form-hint" style="display:inline"> fetching…</span>
+                    <span v-else-if="form.join_fingerprint" class="form-hint" style="display:inline; color: #22c55e"> ✓ auto-fetched</span>
+                  </label>
+                  <input v-model="form.join_fingerprint" class="form-control" placeholder="SHA256:AA:BB:CC:… (auto-fetched from cluster)" autocomplete="off" />
+                  <p class="form-hint">Required by Proxmox. Auto-fetched from the target cluster. Find manually: Datacenter → <code>pvenode get</code> → <code>fingerprint</code>.</p>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Root password of cluster node <span class="req">*</span></label>
+                  <input v-model="form.join_password" type="password" class="form-control" placeholder="Proxmox root password" autocomplete="new-password" />
+                  <p class="form-hint">Required by Proxmox to authenticate the cluster join request.</p>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Corosync link0 override <span class="form-optional">(optional)</span></label>
+                  <input v-model="form.join_link0" class="form-control" placeholder="e.g. 10.10.0.5 (leave blank to auto-detect)" autocomplete="off" />
+                  <p class="form-hint">Override the corosync ring 0 address for this node.</p>
+                </div>
+              </div>
+
+              <!-- Create fields -->
+              <div v-if="form.cluster_action === 'create'" class="cluster-action-fields">
+                <div class="warn-banner mb-1">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                  Creating a cluster restarts cluster services on this node. Other standalone nodes can join this cluster afterward.
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Cluster name <span class="req">*</span></label>
+                  <input v-model="form.cluster_name" class="form-control" placeholder="e.g. prod-cluster" autocomplete="off" />
+                  <p class="form-hint">Lowercase letters, digits, and hyphens only.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ── Step 3: Configure Defaults ── -->
+          <div v-if="currentStep === 3" class="step-content">
             <p class="step-intro">Set default storage pools, networking, and monitoring options for this datacenter.</p>
 
             <div class="form-group">
@@ -277,8 +372,8 @@
             </div>
           </div>
 
-          <!-- ── Step 3: iDRAC / BMC Setup ── -->
-          <div v-if="currentStep === 3" class="step-content">
+          <!-- ── Step 4: iDRAC / BMC Setup ── -->
+          <div v-if="currentStep === 4" class="step-content">
             <p class="step-intro">Optionally configure out-of-band BMC management (Dell iDRAC, HPE iLO) for hardware control such as remote power, sensor data, and event logs.</p>
 
             <div class="form-group">
@@ -340,14 +435,25 @@
             </div>
           </div>
 
-          <!-- ── Step 4: Review & Add ── -->
-          <div v-if="currentStep === 4" class="step-content">
+          <!-- ── Step 5: Review & Add ── -->
+          <div v-if="currentStep === 5" class="step-content">
             <div v-if="addSuccess" class="success-panel">
               <div class="success-icon">
                 <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
               </div>
               <h3 class="success-title">Host Added Successfully!</h3>
-              <p class="success-sub">Your Proxmox datacenter has been added to Depl0y.</p>
+              <p class="success-sub">Your Proxmox host has been added to depl0y.</p>
+              <div v-if="clusterJoinResult" :class="['cluster-join-result', clusterJoinResult.success ? 'cluster-join-result--ok' : 'cluster-join-result--fail']">
+                <template v-if="clusterJoinResult.success && clusterJoinResult.action === 'join'">
+                  Joined cluster on <strong>{{ clusterJoinResult.clusterHost }}</strong> successfully.
+                </template>
+                <template v-else-if="clusterJoinResult.success && clusterJoinResult.action === 'create'">
+                  Cluster <strong>{{ clusterJoinResult.clusterName }}</strong> created successfully.
+                </template>
+                <template v-else>
+                  {{ clusterJoinResult.error }}
+                </template>
+              </div>
               <div class="success-actions">
                 <button class="btn btn-primary" @click="goDashboard">Go to Dashboard</button>
                 <button class="btn btn-outline" @click="addAnother">Add Another</button>
@@ -380,6 +486,14 @@
                 <div v-if="testResult && testResult.success" class="review-row">
                   <span class="review-label">Cluster</span>
                   <span class="review-value">{{ testResult.cluster_name || 'Standalone' }} ({{ testResult.node_count }} node{{ testResult.node_count !== 1 ? 's' : '' }})</span>
+                </div>
+                <div v-if="form.cluster_action === 'join' && form.join_host_id" class="review-row">
+                  <span class="review-label">Cluster Action</span>
+                  <span class="review-value">Join cluster on {{ existingHosts.find(h => h.id === form.join_host_id)?.name || form.join_host_id }}</span>
+                </div>
+                <div v-else-if="form.cluster_action === 'create' && form.cluster_name" class="review-row">
+                  <span class="review-label">Cluster Action</span>
+                  <span class="review-value">Create new cluster "{{ form.cluster_name }}"</span>
                 </div>
                 <div v-if="form.default_storage" class="review-row">
                   <span class="review-label">Default VM Storage</span>
@@ -472,6 +586,7 @@ export default {
     const steps = [
       { label: 'Connection' },
       { label: 'Verify Cluster' },
+      { label: 'Cluster Setup' },
       { label: 'Defaults' },
       { label: 'BMC / iDRAC' },
       { label: 'Review & Add' },
@@ -506,13 +621,20 @@ export default {
       token_value: '',
       password: '',
       verify_ssl: false,
-      // step 2
+      // step 2 — cluster setup
+      cluster_action: 'none',   // 'none' | 'join' | 'create'
+      join_host_id: '',         // existing host to join
+      join_password: '',        // root password of that cluster node
+      join_fingerprint: '',     // SHA256 fingerprint of cluster cert
+      join_link0: '',           // optional corosync link override
+      cluster_name: '',         // for create
+      // step 3
       default_storage: '',
       default_iso_storage: '',
       default_bridge: '',
       monitoring_enabled: true,
       poll_interval: 60,
-      // step 3
+      // step 4
       has_bmc: false,
       idrac_type: '',
       idrac_hostname: '',
@@ -521,6 +643,42 @@ export default {
       idrac_password: '',
       idrac_use_ssh: false,
     })
+
+    // Existing hosts (for cluster join dropdown — clusters only)
+    const existingHosts = ref([])
+    const loadingHosts = ref(false)
+    const clusterJoinResult = ref(null)   // result after submit
+    const fetchingFingerprint = ref(false)
+
+    async function loadExistingHosts() {
+      loadingHosts.value = true
+      existingHosts.value = []
+      try {
+        const res = await api.proxmox.listHosts()
+        const allHosts = res.data || []
+        // Fetch cluster status for each host and keep only real clusters (node_count > 1)
+        const results = await Promise.allSettled(
+          allHosts.map(h =>
+            api.cluster.getClusterStatus(h.id)
+              .then(r => ({ host: h, status: r.data }))
+              .catch(() => ({ host: h, status: null }))
+          )
+        )
+        existingHosts.value = results
+          .filter(r => r.status === 'fulfilled')
+          .map(r => r.value)
+          .filter(({ status }) => status && status.node_count > 1)
+          .map(({ host, status }) => ({
+            ...host,
+            _clusterName: status.cluster?.name || '',
+            _nodeCount: status.node_count,
+          }))
+      } catch (e) {
+        existingHosts.value = []
+      } finally {
+        loadingHosts.value = false
+      }
+    }
 
     // URL normalisation
     const normalizeUrl = () => {
@@ -625,6 +783,9 @@ export default {
       }
       if (currentStep.value < steps.length - 1 && canAdvance.value) {
         currentStep.value++
+        if (currentStep.value === 2) {
+          loadExistingHosts()
+        }
       }
     }
 
@@ -718,7 +879,46 @@ export default {
           payload.idrac_use_ssh = form.value.idrac_use_ssh
         }
 
-        await api.proxmox.createHost(payload)
+        const createRes = await api.proxmox.createHost(payload)
+        const newHostId = createRes.data?.id
+
+        // Cluster setup — join or create after host is registered
+        clusterJoinResult.value = null
+        if (newHostId && form.value.cluster_action === 'join' && form.value.join_host_id) {
+          const targetHost = existingHosts.value.find(h => h.id === form.value.join_host_id)
+          const clusterNodeHostname = form.value.join_node_addr || targetHost?.hostname || ''
+          try {
+            const fingerprint = form.value.join_fingerprint?.trim() || null
+            if (!fingerprint) {
+              throw new Error('Cluster fingerprint is required. Select a cluster from the dropdown — it will be auto-fetched, or enter it manually.')
+            }
+
+            await api.cluster.joinCluster(newHostId, {
+              hostname: clusterNodeHostname,
+              password: form.value.join_password,
+              fingerprint,
+              link0: form.value.join_link0 || undefined,
+            })
+            clusterJoinResult.value = { success: true, action: 'join', clusterHost: targetHost?.name }
+          } catch (e) {
+            clusterJoinResult.value = {
+              success: false,
+              action: 'join',
+              error: e.response?.data?.detail || 'Cluster join failed — host was added to depl0y but cluster join did not complete.',
+            }
+          }
+        } else if (newHostId && form.value.cluster_action === 'create' && form.value.cluster_name) {
+          try {
+            await api.cluster.createCluster(newHostId, { clustername: form.value.cluster_name })
+            clusterJoinResult.value = { success: true, action: 'create', clusterName: form.value.cluster_name }
+          } catch (e) {
+            clusterJoinResult.value = {
+              success: false,
+              action: 'create',
+              error: e.response?.data?.detail || 'Cluster creation failed — host was added to depl0y but cluster was not created.',
+            }
+          }
+        }
 
         addSuccess.value = true
         toast.success('Proxmox host added successfully!')
@@ -742,6 +942,7 @@ export default {
       testResult.value = null
       addError.value = null
       addSuccess.value = false
+      clusterJoinResult.value = null
       form.value = {
         name: '',
         api_url: '',
@@ -751,6 +952,12 @@ export default {
         token_value: '',
         password: '',
         verify_ssl: false,
+        cluster_action: 'none',
+        join_host_id: '',
+        join_password: '',
+        join_fingerprint: '',
+        join_link0: '',
+        cluster_name: '',
         default_storage: '',
         default_iso_storage: '',
         default_bridge: '',
@@ -774,6 +981,23 @@ export default {
       }
     })
 
+    // Auto-fetch fingerprint + preferred node addr when user picks a target cluster
+    watch(() => form.value.join_host_id, async (hostId) => {
+      form.value.join_fingerprint = ''
+      form.value.join_node_addr = ''
+      if (!hostId) return
+      fetchingFingerprint.value = true
+      try {
+        const res = await api.cluster.getJoinInfo(hostId)
+        form.value.join_fingerprint = res.data?.fingerprint || ''
+        form.value.join_node_addr = res.data?.preferred_node_addr || ''
+      } catch {
+        // If fetch fails, leave empty — user must enter manually
+      } finally {
+        fetchingFingerprint.value = false
+      }
+    })
+
     return {
       steps,
       currentStep,
@@ -793,6 +1017,10 @@ export default {
       vmStorages,
       isoStorages,
       networkBridges,
+      existingHosts,
+      loadingHosts,
+      fetchingFingerprint,
+      clusterJoinResult,
       normalizeUrl,
       validateField,
       validateStep0,
@@ -1419,6 +1647,74 @@ export default {
   border-radius: 0.5rem;
   padding: 1rem;
   margin-top: 0.75rem;
+}
+
+/* ── Cluster setup step ───────────────────────────────────────────────────── */
+.cluster-action-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-bottom: 1.25rem;
+}
+.cluster-action-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  background: var(--background);
+}
+.cluster-action-card input[type="radio"] {
+  margin-top: 0.2rem;
+  flex-shrink: 0;
+  accent-color: var(--primary-color);
+}
+.cluster-action-card--active {
+  border-color: var(--primary-color);
+  background: rgba(59,130,246,0.06);
+}
+.cac-title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.cac-desc {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  margin-top: 0.15rem;
+}
+.cluster-action-fields {
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+  padding: 1rem;
+  background: var(--background);
+  margin-top: 0.25rem;
+}
+.mb-1 { margin-bottom: 1rem; }
+.form-optional {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  font-weight: 400;
+}
+.cluster-join-result {
+  border-radius: 0.375rem;
+  padding: 0.6rem 0.9rem;
+  font-size: 0.82rem;
+  width: 100%;
+  text-align: left;
+}
+.cluster-join-result--ok {
+  background: rgba(34,197,94,0.1);
+  border: 1px solid rgba(34,197,94,0.3);
+  color: #22c55e;
+}
+.cluster-join-result--fail {
+  background: rgba(239,68,68,0.08);
+  border: 1px solid rgba(239,68,68,0.25);
+  color: #dc2626;
 }
 
 .skip-note {

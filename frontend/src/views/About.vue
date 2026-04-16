@@ -209,33 +209,6 @@
       </div>
     </div>
 
-    <!-- Check for Updates -->
-    <div class="section-card card">
-      <h3 class="section-title">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-        Updates
-      </h3>
-      <div class="updates-section">
-        <div class="updates-row">
-          <div class="updates-info">
-            <span class="updates-current">Current version: <strong>v{{ version }}</strong></span>
-            <span v-if="updateStatus === 'up-to-date'" class="update-badge update-ok">Up to date</span>
-            <span v-else-if="updateStatus === 'available'" class="update-badge update-avail">Update available!</span>
-            <span v-else-if="updateStatus === 'pre-release'" class="update-badge update-pre">Pre-release</span>
-            <span v-if="latestVersion && updateStatus !== 'loading'" class="updates-latest">Latest release: <strong>v{{ latestVersion }}</strong></span>
-          </div>
-          <button class="check-update-btn" @click="checkForUpdates" :disabled="updateChecking">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-            {{ updateChecking ? 'Checking...' : 'Check for Updates' }}
-          </button>
-        </div>
-        <div v-if="updateReleaseNotes" class="update-notes">
-          <p class="update-notes-label">Release notes:</p>
-          <pre class="update-notes-body">{{ updateReleaseNotes }}</pre>
-        </div>
-        <p v-if="updateError" class="update-error">{{ updateError }}</p>
-      </div>
-    </div>
 
     <!-- License -->
     <div class="section-card card">
@@ -363,7 +336,7 @@ SOFTWARE.</pre>
 import { ref, onMounted } from 'vue'
 import api from '@/services/api'
 
-const CURRENT_VERSION = '1.8.0'
+const CURRENT_VERSION = '1.9.0'
 
 export default {
   name: 'About',
@@ -569,49 +542,6 @@ export default {
       }
     }
 
-    // Update check
-    const updateChecking = ref(false)
-    const updateStatus = ref(null)   // 'up-to-date' | 'available' | 'pre-release' | 'loading'
-    const latestVersion = ref(null)
-    const updateReleaseNotes = ref(null)
-    const updateError = ref(null)
-
-    const _compareVersions = (a, b) => {
-      const parse = v => (v || '').replace(/^v/, '').split('.').map(Number)
-      const av = parse(a)
-      const bv = parse(b)
-      for (let i = 0; i < 3; i++) {
-        if ((av[i] || 0) > (bv[i] || 0)) return 1
-        if ((av[i] || 0) < (bv[i] || 0)) return -1
-      }
-      return 0
-    }
-
-    const checkForUpdates = async () => {
-      updateChecking.value = true
-      updateStatus.value = 'loading'
-      updateError.value = null
-      updateReleaseNotes.value = null
-      try {
-        const res = await fetch('https://api.github.com/repos/agit8or1/Depl0y/releases/latest', {
-          headers: { Accept: 'application/vnd.github+json' }
-        })
-        if (!res.ok) throw new Error(`GitHub API ${res.status}`)
-        const data = await res.json()
-        latestVersion.value = (data.tag_name || '').replace(/^v/, '')
-        updateReleaseNotes.value = data.body ? data.body.slice(0, 600) + (data.body.length > 600 ? '…' : '') : null
-        const cmp = _compareVersions(version.value, latestVersion.value)
-        if (cmp < 0) updateStatus.value = 'available'
-        else if (cmp > 0) updateStatus.value = 'pre-release'
-        else updateStatus.value = 'up-to-date'
-      } catch (e) {
-        updateError.value = 'Could not reach GitHub. Check your network connection.'
-        updateStatus.value = null
-      } finally {
-        updateChecking.value = false
-      }
-    }
-
     // License toggle
     const showLicense = ref(false)
 
@@ -620,7 +550,7 @@ export default {
         const response = await api.system.getInfo()
         if (response.data?.version) version.value = response.data.version
       } catch {
-        version.value = '1.8.0'
+        version.value = '1.9.0'
       }
       fetchHealthInfo()
     })
@@ -639,13 +569,6 @@ export default {
       healthInfo,
       healthLoading,
       fetchHealthInfo,
-      // Updates
-      updateChecking,
-      updateStatus,
-      latestVersion,
-      updateReleaseNotes,
-      updateError,
-      checkForUpdates,
       // License
       showLicense,
     }

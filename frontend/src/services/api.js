@@ -886,6 +886,7 @@ export default {
     getJoinInfo: (hostId) => api.get(`/cluster/${hostId}/config/join`),
     joinCluster: (hostId, data) => api.post(`/cluster/${hostId}/config/join`, data),
     createCluster: (hostId, data) => api.post(`/cluster/${hostId}/config`, data),
+    removeClusterNode: (hostId, node) => api.delete(`/cluster/${hostId}/config/nodes/${encodeURIComponent(node)}`),
   },
 
   // PVE Console — ticket endpoints (/pve-console/...)
@@ -1013,6 +1014,9 @@ export default {
     deleteRule: (id) => api.delete(`/alerts/rules/${id}`),
     toggleRule: (id) => api.post(`/alerts/rules/${id}/toggle`),
     evaluate: () => api.post('/alerts/evaluate'),
+    listVmMutes: () => api.get('/alerts/vm-mutes'),
+    addVmMute: (host_id, vmid) => api.post('/alerts/vm-mutes', { host_id, vmid }),
+    removeVmMute: (host_id, vmid) => api.delete(`/alerts/vm-mutes/${host_id}/${vmid}`),
   },
 
   // Analysis / Recommendations

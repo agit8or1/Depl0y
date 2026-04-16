@@ -88,10 +88,6 @@
           @click="activeTab = 'datastores'; fetchDatastores()"
         >Datastores</button>
         <button
-          :class="['tab-btn', activeTab === 'jobs' ? 'tab-btn--active' : '']"
-          @click="activeTab = 'jobs'; fetchJobs()"
-        >Backup Jobs</button>
-        <button
           :class="['tab-btn', activeTab === 'tapes' ? 'tab-btn--active' : '']"
           @click="activeTab = 'tapes'; fetchTapes()"
         >Tapes</button>
@@ -117,10 +113,6 @@
             <div class="overview-item">
               <span class="overview-label">Hostname</span>
               <span class="overview-value">{{ overviewData.hostname || selectedServer.hostname }}</span>
-            </div>
-            <div class="overview-item">
-              <span class="overview-label">Fingerprint</span>
-              <span class="overview-value text-mono text-xs">{{ overviewData.fingerprint || '—' }}</span>
             </div>
             <div class="overview-item">
               <span class="overview-label">CPU Usage</span>
@@ -234,63 +226,6 @@
                 </div>
               </div>
             </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- ── Backup Jobs Tab ── -->
-      <div v-if="activeTab === 'jobs'">
-        <div class="card">
-          <div class="card-header">
-            <h3>Backup Jobs</h3>
-            <button @click="fetchJobs" class="btn btn-outline btn-sm">Refresh</button>
-          </div>
-          <div v-if="loadingJobs" class="loading-spinner"></div>
-          <div v-else-if="jobs.length === 0" class="text-muted p-2 text-sm">No backup jobs configured on this server.</div>
-          <div v-else class="table-container">
-            <table class="table">
-              <thead>
-                <tr>
-                  <th>Job ID</th>
-                  <th>Datastore</th>
-                  <th>Schedule</th>
-                  <th>Mode</th>
-                  <th>Last Run</th>
-                  <th>Status</th>
-                  <th>Next Run</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="job in jobs" :key="job.id || job['job-id']">
-                  <td><strong>{{ job.id || job['job-id'] || '—' }}</strong></td>
-                  <td>{{ job.store || job.datastore || '—' }}</td>
-                  <td><code class="cron-text">{{ job.schedule || '—' }}</code></td>
-                  <td>{{ job.mode || '—' }}</td>
-                  <td class="text-sm text-muted">
-                    {{ job['last-run-endtime'] ? formatRelativeTime(job['last-run-endtime']) : 'Never' }}
-                  </td>
-                  <td>
-                    <span :class="['job-status-badge', `job-status-badge--${jobStatusClass(job)}`]">
-                      {{ jobStatusLabel(job) }}
-                    </span>
-                  </td>
-                  <td class="text-sm text-muted">
-                    {{ job['next-run'] ? formatDate(job['next-run']) : '—' }}
-                  </td>
-                  <td>
-                    <button
-                      @click="triggerJob(job)"
-                      class="btn btn-outline btn-sm"
-                      :disabled="triggeringJob === (job.id || job['job-id'])"
-                      title="Run this job now"
-                    >
-                      {{ triggeringJob === (job.id || job['job-id']) ? 'Starting...' : 'Run Now' }}
-                    </button>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
           </div>
         </div>
       </div>
@@ -437,6 +372,7 @@
               type="password"
               class="form-control"
               placeholder="Token secret value"
+              autocomplete="new-password"
               required
             />
           </div>
@@ -848,8 +784,6 @@ export default {
           this.fetchJobs()
         } else if (this.activeTab === 'datastores') {
           this.fetchDatastores()
-        } else if (this.activeTab === 'jobs') {
-          this.fetchJobs()
         } else if (this.activeTab === 'tasks') {
           this.fetchRecentTasks()
         }

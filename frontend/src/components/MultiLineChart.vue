@@ -247,7 +247,7 @@ const toSY = (v) => {
 
 // Compute paths for each series
 const computedSeries = computed(() => {
-  return props.series.map((s, _i) => {
+  return props.series.filter(s => s != null).map((s, _i) => {
     const pts = (s.data || [])
       .filter(d => d != null && typeof d.value === 'number' && isFinite(d.value))
       .map(d => ({ sx: toSX(d.time), sy: toSY(d.value), value: d.value, time: d.time }))
@@ -339,7 +339,7 @@ const onMouseMove = (e) => {
 
   // For each series, find nearest point
   const points = computedSeries.value.map(s => {
-    if (!s.pts || !s.pts.length) return null
+    if (!s || !s.pts || !s.pts.length) return null
     let nearest = null
     let minDist = Infinity
     s.pts.forEach(pt => {

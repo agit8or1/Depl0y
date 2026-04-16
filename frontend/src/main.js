@@ -40,8 +40,32 @@ if ('serviceWorker' in navigator) {
       .catch((err) => {
         console.warn('[SW] Registration failed:', err)
       })
+
+    // When SW sends SW_UPDATED, reload to pick up new asset hashes
+    navigator.serviceWorker.addEventListener('message', (event) => {
+      if (event.data?.type === 'SW_UPDATED') {
+        window.location.reload()
+      }
+    })
   })
 }
+
+// ── Chunk load error recovery ────────────────────────────────────────────────
+// After a deploy, old cached index.js references stale chunk hashes → 404.
+// Catch these and force a hard reload so the browser fetches fresh assets.
+router.onError((err) => {
+  const isChunkError = err?.message && (
+    err.message.includes('Unable to preload') ||
+    err.message.includes('Failed to fetch') ||
+    err.message.includes('Importing a module script failed') ||
+    err.message.includes('Loading chunk') ||
+    err.message.includes('Loading CSS chunk')
+  )
+  if (isChunkError) {
+    console.warn('[App] Stale chunk detected — reloading for fresh assets')
+    window.location.reload()
+  }
+})
 
 const app = createApp(App)
 

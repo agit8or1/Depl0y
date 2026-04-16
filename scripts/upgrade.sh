@@ -59,6 +59,14 @@ else
     fi
 fi
 
+# Inject build timestamp into service worker to bust stale caches
+BUILD_TS=$(date +%Y%m%d%H%M%S)
+SW_FILE="$INSTALL_DIR/frontend/dist/sw.js"
+if [ -f "$SW_FILE" ]; then
+    sed -i "s/const CACHE_VERSION = '[^']*'/const CACHE_VERSION = 'v${BUILD_TS}'/" "$SW_FILE"
+    echo "   ✓ Service worker cache version set to v${BUILD_TS}"
+fi
+
 echo "📦 Copying scripts..."
 sudo cp -r "$EXTRACT_DIR/scripts/"* "$INSTALL_DIR/scripts/" 2>/dev/null || true
 

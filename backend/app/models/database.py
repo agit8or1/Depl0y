@@ -101,6 +101,9 @@ class ProxmoxHost(Base):
     latitude = Column(Float, nullable=True)
     longitude = Column(Float, nullable=True)
 
+    # Notes
+    notes = Column(Text, nullable=True)
+
     # iDRAC / iLO out-of-band management
     idrac_hostname = Column(String(255), nullable=True)
     idrac_port = Column(Integer, default=443, nullable=True)
@@ -140,6 +143,9 @@ class ProxmoxNode(Base):
     idrac_password = Column(String(255), nullable=True)  # Encrypted
     idrac_type = Column(String(20), nullable=True)  # "idrac", "ilo", or None
     idrac_use_ssh = Column(Boolean, default=False, nullable=True)
+
+    # Notes
+    notes = Column(Text, nullable=True)
 
     # Relationships
     host = relationship("ProxmoxHost", back_populates="nodes")

@@ -94,7 +94,21 @@ def cluster_config_join(
     host = _get_host(host_id, db)
     try:
         result = _pve(host).cluster.config.join.get()
-        return result
+        # Extract fingerprint from the preferred node's pve_fp field.
+        # Proxmox returns fingerprint per-node in nodelist[].pve_fp, not at top level.
+        preferred_node = result.get("preferred_node")
+        fingerprint = None
+        preferred_addr = None
+        for node in result.get("nodelist", []):
+            if node.get("name") == preferred_node:
+                fingerprint = node.get("pve_fp")
+                preferred_addr = node.get("pve_addr") or node.get("ring0_addr")
+                break
+        if not fingerprint and result.get("nodelist"):
+            first = result["nodelist"][0]
+            fingerprint = first.get("pve_fp")
+            preferred_addr = first.get("pve_addr") or first.get("ring0_addr")
+        return {**result, "fingerprint": fingerprint, "preferred_node_addr": preferred_addr}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -122,6 +136,25 @@ def join_cluster(
         if body.link0:
             params["link0"] = body.link0
         result = _pve(host).cluster.config.join.post(**params)
+        return {"success": True, "result": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/{host_id}/config/nodes/{node}")
+def remove_cluster_node(
+    host_id: int,
+    node: str,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_admin),
+):
+    """
+    Remove a node from the cluster (run from an active cluster member, not the node being removed).
+    Proxmox API: DELETE /cluster/config/nodes/{node}
+    """
+    host = _get_host(host_id, db)
+    try:
+        result = _pve(host).cluster.config.nodes(node).delete()
         return {"success": True, "result": result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

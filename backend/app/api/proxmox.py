@@ -93,6 +93,8 @@ class ProxmoxHostUpdate(BaseModel):
     # Geographic location for federation map
     latitude: Optional[float] = None
     longitude: Optional[float] = None
+    # Notes
+    notes: Optional[str] = None
     # iDRAC / iLO fields
     idrac_hostname: Optional[str] = None
     idrac_port: Optional[int] = Field(None, ge=1, le=65535)
@@ -128,6 +130,8 @@ class ProxmoxHostResponse(BaseModel):
     # Geographic location for federation map
     latitude: Optional[float] = None
     longitude: Optional[float] = None
+    # Notes
+    notes: Optional[str] = None
     # iDRAC / iLO info (no password)
     idrac_hostname: Optional[str] = None
     idrac_port: Optional[int] = None
@@ -154,6 +158,7 @@ class ProxmoxNodeResponse(BaseModel):
     vm_count: Optional[int] = 0
     lxc_count: Optional[int] = 0
     last_updated: datetime
+    notes: Optional[str] = None
     idrac_hostname: Optional[str] = None
     idrac_port: Optional[int] = None
     idrac_username: Optional[str] = None
@@ -171,6 +176,7 @@ class NodeIdracUpdate(BaseModel):
     idrac_password: Optional[str] = None
     idrac_type: Optional[str] = None
     idrac_use_ssh: Optional[bool] = None
+    notes: Optional[str] = None
 
 
 class TestConnectionRequest(BaseModel):
@@ -384,9 +390,14 @@ async def create_proxmox_host(
         idrac_type=host_data.idrac_type,
     )
 
-    db.add(new_host)
-    db.commit()
-    db.refresh(new_host)
+    try:
+        db.add(new_host)
+        db.commit()
+        db.refresh(new_host)
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Database error creating host '{host_data.name}': {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}. The database schema may be out of date — restart the backend to apply migrations.")
 
     # Test connection
     try:
@@ -612,9 +623,20 @@ async def update_proxmox_host(
     if host_data.idrac_use_ssh is not None:
         host.idrac_use_ssh = host_data.idrac_use_ssh
 
+    if host_data.latitude is not None:
+        host.latitude = host_data.latitude
+    if host_data.longitude is not None:
+        host.longitude = host_data.longitude
+    if host_data.notes is not None:
+        host.notes = host_data.notes or None
+
     host.updated_at = datetime.utcnow()
     db.commit()
     db.refresh(host)
+
+    # Invalidate federation summary cache so map updates immediately
+    for key in (f"proxmox:version:{host_id}", f"datacenter:summary:{host_id}", "federation:summary"):
+        pve_cache.delete(key) if hasattr(pve_cache, "delete") else None
 
     return host
 
@@ -830,6 +852,8 @@ async def update_node_idrac(
         node.idrac_type = data.idrac_type or None
     if data.idrac_use_ssh is not None:
         node.idrac_use_ssh = data.idrac_use_ssh
+    if data.notes is not None:
+        node.notes = data.notes or None
 
     db.commit()
     db.refresh(node)

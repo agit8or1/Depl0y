@@ -428,25 +428,26 @@
     </div>
 
     <!-- Widget grid -->
-    <transition-group tag="div" name="widget-reorder" class="widget-grid" ref="gridEl">
+    <div class="widget-grid" ref="gridEl">
       <div
         v-for="widget in displayLayout"
         :key="widget.id"
         :class="['widget-card',
           dragging && dragging.id === widget.id ? 'widget-dragging' : '',
           dropTarget && dropTarget.id === widget.id && dragging && dragging.id !== widget.id ? 'widget-drop-target' : '',
-          widgetHasError(widget.id) ? 'widget-card--error' : '']"
+          widgetHasError(widget.id) ? 'widget-card--error' : '',
+          (widget.colSpan || 1) >= 3 ? 'widget-card--full' : '']"
         :data-widget-id="widget.id"
-        :style="widgetStyle(widget)"
       >
         <!-- Widget title bar -->
         <div
           class="widget-bar"
           @mousedown="startDrag($event, widget)"
           @touchstart.prevent="startDragTouch($event, widget)"
+          @click.self="navigateWidget(widget)"
         >
           <span class="widget-grip" title="Drag to reorder">⠿</span>
-          <span class="widget-title">{{ widgetMeta(widget.type).label }}</span>
+          <span class="widget-title" style="cursor:pointer" @click.stop="navigateWidget(widget)">{{ widgetMeta(widget.type).label }}</span>
           <div class="widget-controls">
             <!-- Per-widget last-updated + refresh -->
             <span v-if="widgetLastUpdated(widget.id)" class="widget-ts" :title="'Last updated: ' + widgetLastUpdated(widget.id)">
@@ -499,11 +500,11 @@
           />
         </div>
       </div>
-    </transition-group>
+    </div>
 
     <!-- Initial dashboard skeleton (before first load) -->
     <div v-if="initialLoading && layout.length === 0" class="widget-grid">
-      <div v-for="i in 6" :key="i" class="widget-card" :style="{ gridColumn: 'span 1' }">
+      <div v-for="i in 6" :key="i" class="widget-card">
         <div class="widget-bar">
           <span class="widget-grip" title="Drag to reorder">⠿</span>
           <div class="widget-title-skel"></div>
@@ -653,20 +654,20 @@ const VISIBILITY_KEY     = 'dashboard_widget_visibility'
 const WELCOME_BANNER_KEY = 'depl0y_welcome_banner_dismissed'
 
 const WIDGET_META = {
-  cluster_stats:    { type: 'cluster_stats',    label: 'Cluster Stats',     icon: '🖥️', multi: false },
-  recent_tasks:     { type: 'recent_tasks',     label: 'Recent Tasks',      icon: '📋', multi: false },
-  alerts:           { type: 'alerts',           label: 'Alerts',            icon: '⚠️', multi: false },
-  resource_usage:   { type: 'resource_usage',   label: 'Resource Usage',    icon: '📊', multi: false },
+  cluster_stats:    { type: 'cluster_stats',    label: 'Cluster Stats',     icon: '🖥️', multi: false, link: '/proxmox' },
+  recent_tasks:     { type: 'recent_tasks',     label: 'Recent Tasks',      icon: '📋', multi: false, link: '/tasks' },
+  alerts:           { type: 'alerts',           label: 'Alerts',            icon: '⚠️', multi: false, link: '/alerts' },
+  resource_usage:   { type: 'resource_usage',   label: 'Resource Usage',    icon: '📊', multi: false, link: '/node-monitor' },
   quick_actions:    { type: 'quick_actions',    label: 'Quick Actions',     icon: '⚡', multi: false },
-  activity_feed:    { type: 'activity_feed',    label: 'Activity Feed',     icon: '📡', multi: false },
-  top_vms:          { type: 'top_vms',          label: 'Top VMs',           icon: '🏆', multi: false },
-  storage_overview: { type: 'storage_overview', label: 'Storage Overview',  icon: '💾', multi: false },
-  backup_status:    { type: 'backup_status',    label: 'Backup Status',     icon: '🗄️', multi: false },
-  system_info:      { type: 'system_info',      label: 'System Info',       icon: 'ℹ️', multi: false },
-  network_traffic:  { type: 'network_traffic',  label: 'Network Traffic',   icon: '📶', multi: false },
-  disk_io:          { type: 'disk_io',          label: 'Disk Usage',        icon: '💿', multi: false },
-  node_status_grid:  { type: 'node_status_grid',  label: 'Node Status Grid',   icon: '🔲', multi: false },
-  disk_throughput:   { type: 'disk_throughput',   label: 'Disk I/O',           icon: '📀', multi: false },
+  activity_feed:    { type: 'activity_feed',    label: 'Activity Feed',     icon: '📡', multi: false, link: '/audit' },
+  top_vms:          { type: 'top_vms',          label: 'Top VMs',           icon: '🏆', multi: false, link: '/vms' },
+  storage_overview: { type: 'storage_overview', label: 'Storage Overview',  icon: '💾', multi: false, link: '/storage-management' },
+  backup_status:    { type: 'backup_status',    label: 'Backup Status',     icon: '🗄️', multi: false, link: '/backup' },
+  system_info:      { type: 'system_info',      label: 'System Info',       icon: 'ℹ️', multi: false, link: '/settings' },
+  network_traffic:  { type: 'network_traffic',  label: 'Network Traffic',   icon: '📶', multi: false, link: '/node-monitor' },
+  disk_io:          { type: 'disk_io',          label: 'Disk Usage',        icon: '💿', multi: false, link: '/storage-management' },
+  node_status_grid:  { type: 'node_status_grid',  label: 'Node Status Grid',   icon: '🔲', multi: false, link: '/cluster' },
+  disk_throughput:   { type: 'disk_throughput',   label: 'Disk I/O',           icon: '📀', multi: false, link: '/node-monitor' },
 }
 
 const WIDGET_COMPONENTS = {
@@ -687,16 +688,16 @@ const WIDGET_COMPONENTS = {
 }
 
 const DEFAULT_LAYOUT = [
-  { id: 'w1', type: 'cluster_stats',    colSpan: 1, collapsed: false, config: {} },
-  { id: 'w2', type: 'node_status_grid', colSpan: 2, collapsed: false, config: {} },
-  { id: 'w3', type: 'network_traffic',  colSpan: 1, collapsed: false, config: {} },
-  { id: 'w4', type: 'disk_io',          colSpan: 1, collapsed: false, config: {} },
-  { id: 'w10', type: 'disk_throughput', colSpan: 1, collapsed: false, config: {} },
-  { id: 'w5', type: 'resource_usage',   colSpan: 1, collapsed: false, config: {} },
-  { id: 'w6', type: 'top_vms',          colSpan: 1, collapsed: false, config: {} },
-  { id: 'w7', type: 'alerts',           colSpan: 1, collapsed: false, config: {} },
-  { id: 'w8', type: 'activity_feed',    colSpan: 1, collapsed: false, config: {} },
-  { id: 'w9', type: 'recent_tasks',     colSpan: 1, collapsed: false, config: {} },
+  { id: 'w1',  type: 'cluster_stats',    colSpan: 1, collapsed: false, config: {} },
+  { id: 'w2',  type: 'node_status_grid', colSpan: 2, collapsed: false, config: {} },
+  { id: 'w5',  type: 'resource_usage',   colSpan: 1, collapsed: false, config: {} },
+  { id: 'w3',  type: 'network_traffic',  colSpan: 1, collapsed: false, config: {} },
+  { id: 'w10', type: 'disk_throughput',  colSpan: 1, collapsed: false, config: {} },
+  { id: 'w6',  type: 'top_vms',          colSpan: 1, collapsed: false, config: {} },
+  { id: 'w4',  type: 'disk_io',          colSpan: 1, collapsed: false, config: {} },
+  { id: 'w7',  type: 'alerts',           colSpan: 1, collapsed: false, config: {} },
+  { id: 'w9',  type: 'recent_tasks',     colSpan: 2, collapsed: false, config: {} },
+  { id: 'w8',  type: 'activity_feed',    colSpan: 1, collapsed: false, config: {} },
 ]
 
 let _idCounter = 100
@@ -1174,17 +1175,8 @@ export default {
       layout.value.filter(w => isWidgetVisible(w.type))
     )
 
-    // Live drag-preview: reorder tiles in real-time as cursor moves
-    const displayLayout = computed(() => {
-      if (!dragging.value || !dropTarget.value || dragging.value.id === dropTarget.value.id) {
-        return visibleLayout.value
-      }
-      const arr = visibleLayout.value.filter(w => w.id !== dragging.value.id)
-      const toIdx = arr.findIndex(w => w.id === dropTarget.value.id)
-      if (toIdx === -1) return visibleLayout.value
-      arr.splice(toIdx, 0, dragging.value)
-      return arr
-    })
+    // During drag, layout.value is mutated directly; displayLayout just mirrors it
+    const displayLayout = computed(() => visibleLayout.value)
 
     // ── Onboarding ────────────────────────────────────────────────────────────
     const ONBOARD_SKIP_KEY = 'depl0y_onboarding_skip'
@@ -1257,7 +1249,13 @@ export default {
     const widgetComponent = (type) => WIDGET_COMPONENTS[type] || null
     const allWidgetTypes = computed(() => Object.values(WIDGET_META))
     const isWidgetAdded = (type) => layout.value.some(w => w.type === type)
-    const widgetStyle = (widget) => ({ gridColumn: `span ${widget.colSpan || 1}` })
+    const widgetStyle = () => ({})
+
+    const navigateWidget = (widget) => {
+      if (justDragged) { justDragged = false; return }
+      const meta = widgetMeta(widget.type)
+      if (meta?.link) router.push(meta.link)
+    }
 
     // ── Add / remove ─────────────────────────────────────────────────────────
     const addWidget = (type) => {
@@ -1284,29 +1282,94 @@ export default {
 
     // ── Drag-to-reorder (mouse) ───────────────────────────────────────────────
     let dragState = null
+    let ghostEl = null
+    let justDragged = false
+
+    function createGhost(cardEl, clientX, clientY) {
+      const rect = cardEl.getBoundingClientRect()
+      const clone = cardEl.cloneNode(true)
+      clone.style.cssText = `
+        position: fixed;
+        left: ${rect.left}px;
+        top: ${rect.top}px;
+        width: ${rect.width}px;
+        height: ${rect.height}px;
+        margin: 0;
+        opacity: 0.88;
+        pointer-events: none;
+        z-index: 9999;
+        box-shadow: 0 12px 36px rgba(0,0,0,0.28);
+        border-radius: 0.5rem;
+        transform: scale(1.03);
+        transition: none;
+        cursor: grabbing;
+      `
+      document.body.appendChild(clone)
+      return {
+        el: clone,
+        offsetX: clientX - rect.left,
+        offsetY: clientY - rect.top,
+      }
+    }
+
+    function moveGhost(x, y) {
+      if (!ghostEl) return
+      ghostEl.el.style.left = (x - ghostEl.offsetX) + 'px'
+      ghostEl.el.style.top  = (y - ghostEl.offsetY) + 'px'
+    }
+
+    function removeGhost() {
+      if (ghostEl) { ghostEl.el.remove(); ghostEl = null }
+    }
 
     const startDrag = (e, widget) => {
       if (e.button !== 0) return
       e.preventDefault()
-      dragState = { widget, startX: e.clientX, startY: e.clientY, moved: false }
-      dragging.value = widget
-      dropTarget.value = null
+      const cardEl = e.currentTarget.closest('.widget-card')
+      const originalLayout = [...layout.value]
+      let hasMoved = false
+      dragState = { widget, startX: e.clientX, startY: e.clientY, moved: false, cardEl }
       document.body.style.cursor = 'grabbing'
+
+      const applyPreview = (targetId) => {
+        const arr = [...originalLayout]
+        const fromIdx = arr.findIndex(w => w.id === widget.id)
+        if (fromIdx === -1) return
+        const [item] = arr.splice(fromIdx, 1)
+        const toIdx = arr.findIndex(w => w.id === targetId)
+        if (toIdx === -1) return
+        arr.splice(toIdx, 0, item)
+        layout.value = arr
+      }
 
       const onMove = (ev) => {
         if (!dragState) return
         const dx = Math.abs(ev.clientX - dragState.startX)
         const dy = Math.abs(ev.clientY - dragState.startY)
-        if (dx > 5 || dy > 5) dragState.moved = true
+        if (!dragState.moved && (dx > 4 || dy > 4)) {
+          dragState.moved = true
+          dragging.value = widget
+          dropTarget.value = null
+          ghostEl = createGhost(dragState.cardEl, dragState.startX, dragState.startY)
+        }
         if (!dragState.moved) return
+        moveGhost(ev.clientX, ev.clientY)
         const target = getWidgetAtPoint(ev.clientX, ev.clientY, widget.id)
-        dropTarget.value = target || null
+        if (target && target.id !== widget.id) {
+          hasMoved = true
+          dropTarget.value = target
+          applyPreview(target.id)
+        }
       }
 
       const onUp = () => {
-        if (dragState && dragState.moved && dropTarget.value && dropTarget.value.id !== widget.id) {
-          moveWidget(widget.id, dropTarget.value.id)
+        if (dragState?.moved) {
+          justDragged = true
+          if (!hasMoved) layout.value = originalLayout
+          // else: layout.value already reflects the final drop position
         }
+        // simple click (no movement): layout was never mutated, no re-assign needed
+        removeGhost()
         dragState = null
         dragging.value = null
         dropTarget.value = null
@@ -1322,22 +1385,46 @@ export default {
 
     const startDragTouch = (e, widget) => {
       const touch = e.touches[0]
-      dragState = { widget, startX: touch.clientX, startY: touch.clientY, moved: false }
-      dragging.value = widget
-      dropTarget.value = null
+      const cardEl = e.currentTarget.closest('.widget-card')
+      const originalLayout = [...layout.value]
+      let hasMoved = false
+      dragState = { widget, startX: touch.clientX, startY: touch.clientY, moved: false, cardEl }
+
+      const applyPreview = (targetId) => {
+        const arr = [...originalLayout]
+        const fromIdx = arr.findIndex(w => w.id === widget.id)
+        if (fromIdx === -1) return
+        const [item] = arr.splice(fromIdx, 1)
+        const toIdx = arr.findIndex(w => w.id === targetId)
+        if (toIdx === -1) return
+        arr.splice(toIdx, 0, item)
+        layout.value = arr
+      }
 
       const onMove = (ev) => {
         if (!dragState) return
         const t = ev.touches[0]
-        dragState.moved = true
+        const dx = Math.abs(t.clientX - dragState.startX)
+        const dy = Math.abs(t.clientY - dragState.startY)
+        if (!dragState.moved && (dx > 6 || dy > 6)) {
+          dragState.moved = true
+          dragging.value = widget
+          dropTarget.value = null
+          ghostEl = createGhost(dragState.cardEl, dragState.startX, dragState.startY)
+        }
+        if (!dragState.moved) return
+        moveGhost(t.clientX, t.clientY)
         const target = getWidgetAtPoint(t.clientX, t.clientY, widget.id)
-        dropTarget.value = target || null
+        if (target && target.id !== widget.id) {
+          hasMoved = true
+          dropTarget.value = target
+          applyPreview(target.id)
+        }
       }
 
       const onEnd = () => {
-        if (dragState && dragState.moved && dropTarget.value && dropTarget.value.id !== widget.id) {
-          moveWidget(widget.id, dropTarget.value.id)
-        }
+        if (dragState?.moved && !hasMoved) layout.value = originalLayout
+        removeGhost()
         dragState = null
         dragging.value = null
         dropTarget.value = null
@@ -1346,13 +1433,13 @@ export default {
         window.removeEventListener('touchend', onEnd)
       }
 
-      window.addEventListener('touchmove', onMove, { passive: true })
+      window.addEventListener('touchmove', onMove, { passive: false })
       window.addEventListener('touchend', onEnd)
     }
 
     const getWidgetAtPoint = (x, y, excludeId) => {
       if (!gridEl.value) return null
-      const el = gridEl.value.$el ?? gridEl.value
+      const el = gridEl.value
       const cards = el.querySelectorAll('.widget-card')
       for (const card of cards) {
         if (card.dataset.widgetId === excludeId) continue
@@ -1433,6 +1520,7 @@ export default {
       widgetMeta,
       widgetComponent,
       widgetStyle,
+      navigateWidget,
       isWidgetAdded,
       isWidgetVisible,
       toggleWidgetVisibility,
@@ -2327,20 +2415,26 @@ export default {
   max-height: 400px;
 }
 
-/* ── Widget Grid ──────────────────────────────────────────────────────────── */
+/* ── Widget Grid — CSS column masonry (each column is independent) ────────── */
 .widget-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 0.75rem;
-  align-items: start;
+  column-count: 3;
+  column-gap: 0.5rem;
 }
 
 .widget-card {
+  break-inside: avoid;
+  display: block;
+  margin-bottom: 0.5rem;
   background: var(--surface);
   border: 1px solid var(--border-color);
   border-radius: 0.5rem;
   overflow: hidden;
-  transition: box-shadow 0.2s, transform 0.2s;
+  transition: box-shadow 0.2s;
+}
+
+/* Full-width tiles (colSpan 3) span all columns */
+.widget-card--full {
+  column-span: all;
 }
 
 .widget-card:hover {
@@ -2351,25 +2445,20 @@ export default {
   border-color: rgba(239, 68, 68, 0.35);
 }
 
-/* FLIP animation: tiles slide smoothly to their new grid positions while dragging */
-.widget-reorder-move {
-  transition: transform 0.2s ease;
-}
-
+/* Dragging tile becomes a hollow placeholder — the ghost follows the cursor */
 .widget-dragging {
-  opacity: 0.45;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
-  z-index: 100;
+  opacity: 0.15;
   pointer-events: none;
   outline: 2px dashed var(--primary-color, #6366f1);
   outline-offset: -2px;
+  box-shadow: none;
 }
 
 .widget-drop-target {
-  border: 2px dashed var(--primary-color, #6366f1);
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
-  transform: scale(1.01);
-  transition: transform 0.12s ease, box-shadow 0.12s ease;
+  outline: 2px solid var(--primary-color, #6366f1);
+  outline-offset: -2px;
+  box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.18);
+  transition: box-shadow 0.1s ease;
 }
 
 /* ── Widget Title Bar ─────────────────────────────────────────────────────── */
@@ -2380,11 +2469,12 @@ export default {
   padding: 0.45rem 0.65rem;
   background: var(--background);
   border-bottom: 1px solid var(--border-color);
-  cursor: grab;
+  cursor: default;
   user-select: none;
   -webkit-user-select: none;
 }
 
+.widget-bar:has(.widget-grip:hover) { cursor: grab; }
 .widget-bar:active { cursor: grabbing; }
 
 .widget-grip {
@@ -2393,6 +2483,7 @@ export default {
   opacity: 0.5;
   letter-spacing: -1px;
   flex-shrink: 0;
+  cursor: grab;
 }
 
 .widget-title {
@@ -2636,12 +2727,12 @@ export default {
 
 /* ── Responsive ──────────────────────────────────────────────────────────── */
 @media (max-width: 1024px) {
-  .widget-grid { grid-template-columns: repeat(2, 1fr); }
+  .widget-grid { column-count: 2; }
 }
 
 @media (max-width: 640px) {
-  .widget-grid { grid-template-columns: 1fr; }
-  .widget-card { grid-column: span 1 !important; }
+  .widget-grid { column-count: 1; }
+  .widget-card--full { column-span: none; }
   .picker-grid { grid-template-columns: repeat(2, 1fr); }
   .customize-grid { flex-direction: column; }
   .resource-trending-row { flex-direction: column; }

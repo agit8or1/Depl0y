@@ -1,5 +1,7 @@
 // Depl0y Service Worker
-const CACHE_VERSION = 'v23';
+// NOTE: deploy.sh replaces CACHE_VERSION with a build timestamp on every deploy.
+// Bump the fallback here only when testing locally.
+const CACHE_VERSION = 'v28';
 const CACHE_NAME = `depl0y-${CACHE_VERSION}`;
 const STATIC_CACHE = `depl0y-static-${CACHE_VERSION}`;
 const OFFLINE_URL = '/offline.html';
@@ -23,18 +25,23 @@ self.addEventListener('install', (event) => {
   self.skipWaiting();
 });
 
-// ── Activate: clean up old cache versions ───────────────────────────────────
+// ── Activate: clean up old cache versions, then tell clients to reload ───────
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((cacheNames) => {
-      return Promise.all(
+    caches.keys()
+      .then((cacheNames) => Promise.all(
         cacheNames
           .filter((name) => name !== CACHE_NAME && name !== STATIC_CACHE)
           .map((name) => caches.delete(name))
-      );
-    })
+      ))
+      .then(() => self.clients.claim())
+      .then(() => self.clients.matchAll({ type: 'window' }))
+      .then((clients) => {
+        clients.forEach((client) => {
+          client.postMessage({ type: 'SW_UPDATED' });
+        });
+      })
   );
-  self.clients.claim();
 });
 
 // ── Fetch: strategy dispatch ─────────────────────────────────────────────────

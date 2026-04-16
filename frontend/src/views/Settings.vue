@@ -1,6 +1,15 @@
 <template>
   <div class="settings-page">
+    <!-- Settings Tab Bar -->
+    <div class="settings-tab-bar">
+      <button :class="['stab', activeSettingsTab === 'profile' ? 'stab--active' : '']" @click="activeSettingsTab = 'profile'">Profile</button>
+      <button :class="['stab', activeSettingsTab === 'appearance' ? 'stab--active' : '']" @click="activeSettingsTab = 'appearance'">Appearance</button>
+      <button :class="['stab', activeSettingsTab === 'proxmox' ? 'stab--active' : '']" @click="activeSettingsTab = 'proxmox'">Proxmox</button>
+      <button :class="['stab', activeSettingsTab === 'notifications' ? 'stab--active' : '']" @click="activeSettingsTab = 'notifications'">Notifications</button>
+      <button :class="['stab', activeSettingsTab === 'system' ? 'stab--active' : '']" @click="activeSettingsTab = 'system'">System</button>
+    </div>
     <!-- User Profile Section -->
+    <div v-show="activeSettingsTab === 'profile'" class="settings-tab-content">
     <div class="card">
       <div class="card-header">
         <h3>User Profile</h3>
@@ -82,8 +91,10 @@
         </div>
       </div>
     </div>
+    </div> <!-- end settings-tab-content -->
 
     <!-- Cloud Image Setup Section -->
+    <div v-show="activeSettingsTab === 'proxmox'" class="settings-tab-content">
     <div class="card">
       <div class="card-header">
         <h3>Cloud Image Setup</h3>
@@ -151,8 +162,10 @@
         </div>
       </div>
     </div>
+    </div> <!-- end settings-tab-content -->
 
     <!-- Appearance Section -->
+    <div v-show="activeSettingsTab === 'appearance'" class="settings-tab-content">
     <div class="card">
       <div class="card-header">
         <h3>Appearance</h3>
@@ -351,8 +364,10 @@
 
       </div>
     </div>
+    </div> <!-- end settings-tab-content -->
 
     <!-- Proxmox Integration Section -->
+    <div v-show="activeSettingsTab === 'proxmox'" class="settings-tab-content">
     <div class="card">
       <div class="card-header">
         <h3>Proxmox Integration</h3>
@@ -555,8 +570,10 @@
         </div>
       </div>
     </div>
+    </div> <!-- end settings-tab-content -->
 
     <!-- System Updates Section -->
+    <div v-show="activeSettingsTab === 'system'" class="settings-tab-content">
     <div class="card">
       <div class="card-header">
         <h3>🔄 System Updates</h3>
@@ -671,6 +688,14 @@
                 </select>
                 <p class="text-xs text-muted">Used when displaying timestamps in reports and logs</p>
               </div>
+              <div class="form-group">
+                <label class="form-label">Temperature Unit</label>
+                <select v-model="tempUnit" class="form-control" @change="saveTempUnit">
+                  <option value="C">Celsius (°C)</option>
+                  <option value="F">Fahrenheit (°F)</option>
+                </select>
+                <p class="text-xs text-muted">Controls how temperatures are displayed in iDRAC/iLO monitoring</p>
+              </div>
             </div>
           </div>
 
@@ -712,10 +737,12 @@
         <div v-if="generalError" class="error-message" style="margin-top:1rem;">{{ generalError }}</div>
       </div>
     </div>
+    </div> <!-- end settings-tab-content -->
 
     <!-- ═══════════════════════════════════════════════════════════════════
          EMAIL / SMTP SETTINGS (admin only)
          ═══════════════════════════════════════════════════════════════════ -->
+    <div v-show="activeSettingsTab === 'notifications'" class="settings-tab-content">
     <div class="card" v-if="user && user.role === 'admin'">
       <div class="card-header">
         <h3>Email / SMTP Configuration</h3>
@@ -810,10 +837,12 @@
         <div v-if="smtpError" class="error-message" style="margin-top:1rem;">{{ smtpError }}</div>
       </div>
     </div>
+    </div> <!-- end settings-tab-content -->
 
     <!-- ═══════════════════════════════════════════════════════════════════
          SECURITY (admin only)
          ═══════════════════════════════════════════════════════════════════ -->
+    <div v-show="activeSettingsTab === 'system'" class="settings-tab-content">
     <div class="card" v-if="user && user.role === 'admin'">
       <div class="card-header">
         <h3>Security</h3>
@@ -959,10 +988,12 @@
         <div v-if="securitySettingsError" class="error-message" style="margin-top:0.75rem;">{{ securitySettingsError }}</div>
       </div>
     </div>
+    </div> <!-- end settings-tab-content -->
 
     <!-- ═══════════════════════════════════════════════════════════════════
          NOTIFICATIONS (all users)
          ═══════════════════════════════════════════════════════════════════ -->
+    <div v-show="activeSettingsTab === 'notifications'" class="settings-tab-content">
     <div class="card">
       <div class="card-header">
         <h3>Notifications</h3>
@@ -1081,10 +1112,12 @@
 
       </div>
     </div>
+    </div> <!-- end settings-tab-content -->
 
     <!-- ═══════════════════════════════════════════════════════════════════
          PROXMOX VM DEFAULTS (admin only)
          ═══════════════════════════════════════════════════════════════════ -->
+    <div v-show="activeSettingsTab === 'proxmox'" class="settings-tab-content">
     <div class="card" v-if="user && user.role === 'admin'">
       <div class="card-header">
         <h3>Proxmox VM Defaults</h3>
@@ -1196,10 +1229,12 @@
         <div v-if="backupDefaultsError" class="error-message" style="margin-top:1rem;">{{ backupDefaultsError }}</div>
       </div>
     </div>
+    </div> <!-- end settings-tab-content -->
 
     <!-- ═══════════════════════════════════════════════════════════════════
          SYSTEM TAB (admin only)
          ═══════════════════════════════════════════════════════════════════ -->
+    <div v-show="activeSettingsTab === 'system'" class="settings-tab-content">
     <div class="card" v-if="user && user.role === 'admin'">
       <div class="card-header">
         <h3>System</h3>
@@ -1515,6 +1550,7 @@
         </div>
       </div>
     </div>
+    </div> <!-- end settings-tab-content -->
 
     <!-- Unsaved changes warning banner -->
     <div v-if="hasDirtySection" class="unsaved-changes-banner">
@@ -1643,6 +1679,7 @@
     </div>
 
     <!-- Linux VM Agent Section (Admin Only) -->
+    <div v-show="activeSettingsTab === 'system'" class="settings-tab-content">
     <div class="card" v-if="user && user.role === 'admin'">
       <div class="card-header">
         <h3>Linux VM Security Agent</h3>
@@ -1699,8 +1736,10 @@
         </div>
       </div>
     </div>
+    </div> <!-- end settings-tab-content -->
 
     <!-- Notification Rules & In-App Test (Admin Only) -->
+    <div v-show="activeSettingsTab === 'notifications'" class="settings-tab-content">
     <div class="card" v-if="user && user.role === 'admin'">
       <div class="card-header">
         <h3>Notification Rules</h3>
@@ -1903,6 +1942,7 @@
         </div>
       </div>
     </div>
+    </div> <!-- end settings-tab-content -->
 
     <!-- Add Webhook Modal -->
     <div v-if="showAddWebhookModal" class="modal" @click="closeAddWebhookModal">
@@ -1995,6 +2035,7 @@
     <!-- ═══════════════════════════════════════════════════════════════════
          ADVANCED (admin only)
          ═══════════════════════════════════════════════════════════════════ -->
+    <div v-show="activeSettingsTab === 'system'" class="settings-tab-content">
     <div class="card" v-if="user && user.role === 'admin'">
       <div class="card-header">
         <h3>Advanced</h3>
@@ -2273,6 +2314,7 @@
         </div>
       </div>
     </div>
+    </div> <!-- end settings-tab-content -->
 
     <!-- Cluster SSH Password Prompt Modal -->
     <div v-if="showClusterSSHPrompt" class="modal" @click="showClusterSSHPrompt = false">
@@ -2415,6 +2457,9 @@ export default {
 
   setup() {
     const toast = useToast()
+
+    // ── Active settings tab ───────────────────────────────────────────────
+    const activeSettingsTab = ref('profile')
 
     // ── Dirty tracking for unsaved-changes warning ─────────────────────────
     const _dirty = ref({})  // { section: true/false }
@@ -3299,6 +3344,11 @@ export default {
 
     // ── General Settings ────────────────────────────────────────────────────
     const generalLoading = ref(false)
+    const tempUnit = ref(localStorage.getItem('depl0y_temp_unit') || 'C')
+    const saveTempUnit = () => {
+      localStorage.setItem('depl0y_temp_unit', tempUnit.value)
+    }
+
     const savingGeneral = ref(false)
     const generalError = ref(null)
     const generalValidationErrors = ref({})
@@ -4060,6 +4110,9 @@ export default {
     })
 
     return {
+      activeSettingsTab,
+      // Temperature unit
+      tempUnit, saveTempUnit,
       // Theme
       themeOptions,
       currentTheme,
@@ -5213,22 +5266,22 @@ export default {
   display: flex;
   gap: 1rem;
   align-items: flex-start;
-  padding: 1.5rem;
-  background: #d1fae5;
-  border: 2px solid #10b981;
+  padding: 1.25rem 1.5rem;
+  background: rgba(16, 185, 129, 0.08);
+  border: 1px solid rgba(16, 185, 129, 0.3);
   border-radius: 0.5rem;
-  color: #065f46;
+  color: inherit;
 }
 
 .warning-box {
   display: flex;
   gap: 1rem;
   align-items: flex-start;
-  padding: 1.5rem;
-  background: #fef3c7;
-  border: 2px solid #f59e0b;
+  padding: 1.25rem 1.5rem;
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.3);
   border-radius: 0.5rem;
-  color: #92400e;
+  color: inherit;
 }
 
 .status-icon {
@@ -5991,4 +6044,31 @@ export default {
   gap: 0.75rem;
   flex-wrap: wrap;
 }
+
+.settings-tab-bar {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--border-color, rgba(255,255,255,0.08));
+  margin-bottom: 1.25rem;
+  overflow-x: auto;
+}
+.stab {
+  padding: 0.6rem 1.1rem;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-muted, #8fa3b8);
+  font-size: 0.875rem;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.15s, border-color 0.15s;
+}
+.stab:hover { color: var(--text-primary, #f1f5f9); }
+.stab--active {
+  color: var(--text-primary, #f1f5f9);
+  border-bottom-color: var(--accent-color, #3b82f6);
+  font-weight: 500;
+}
+.settings-tab-content { display: flex; flex-direction: column; gap: 1.25rem; }
+
 </style>

@@ -101,7 +101,10 @@
           <tbody>
             <tr v-for="vm in filteredVMs" :key="vm.vmid">
               <td><strong>{{ vm.vmid }}</strong></td>
-              <td>{{ vm.name }}</td>
+              <td>
+                {{ vm.name }}
+                <span v-if="vm.description" class="notes-chip ml-1" :title="vm.description">📝</span>
+              </td>
               <td>
                 <span class="badge badge-info">{{ vm.node }}</span>
               </td>
@@ -445,6 +448,7 @@
                 <a class="vm-name-link" @click.stop="navigateToVM(vm)" style="cursor: pointer;">
                   {{ vm.name || '(no name)' }}
                 </a>
+                <span v-if="vm.description" class="notes-chip ml-1" :title="vm.description">📝</span>
               </td>
               <td>
                 <span :class="['badge', getStatusBadgeClass(vm.status)]">
@@ -572,6 +576,7 @@
                 <td><strong>{{ vm.vmid }}</strong></td>
                 <td>
                   <a class="vm-name-link" @click.stop="navigateToVM(vm)" style="cursor:pointer;">{{ vm.name || '(no name)' }}</a>
+                  <span v-if="vm.description" class="notes-chip ml-1" :title="vm.description">📝</span>
                 </td>
                 <td>
                   <span :class="['badge', getStatusBadgeClass(vm.status)]">{{ vm.status }}</span>
@@ -1791,6 +1796,13 @@ export default {
 /* ── VM name link ─────────────────────────────────────────────────────────── */
 .vm-name-link { color: var(--primary-color, #3b82f6); text-decoration: none; }
 .vm-name-link:hover { text-decoration: underline; }
+.notes-chip {
+  display: inline-flex; align-items: center; cursor: default; font-size: 0.72rem;
+  padding: 1px 4px; border-radius: 4px;
+  background: rgba(99, 102, 241, 0.1); border: 1px solid rgba(99, 102, 241, 0.2);
+  color: var(--text-secondary);
+}
+.ml-1 { margin-left: 0.25rem; }
 
 /* ── Clickable row ────────────────────────────────────────────────────────── */
 .row-clickable { cursor: pointer; transition: background 0.1s; }

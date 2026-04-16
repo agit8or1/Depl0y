@@ -69,7 +69,7 @@
             </div>
           </div>
           <div class="dash-chart-card dash-chart-card--wide">
-            <div class="dash-chart-title">Temperature (°C) — max per server</div>
+            <div class="dash-chart-title">Temperature ({{ tempLabel }}) — max per server</div>
             <div class="dash-chart-wrap dash-chart-wrap--bar">
               <Bar :data="tempBarData" :options="tempBarOptions" />
             </div>
@@ -107,7 +107,6 @@
                 <td class="text-xs font-bold">{{ srv.name }}</td>
                 <td class="text-xs">
                   <span :class="['type-pill', `type-pill--${srv._stype}`]">{{ typeLabel(srv._stype) }}</span>
-                  <span v-if="srv._isNode" class="type-pill type-pill--node ml-1">Node</span>
                 </td>
                 <td class="text-xs">
                   <span v-if="srv._status?.power_state" :class="['power-badge', srv._status.power_state === 'On' ? 'power-on' : 'power-off']">{{ srv._status.power_state }}</span>
@@ -120,7 +119,7 @@
                 </td>
                 <td class="text-xs">
                   <span v-if="srv._status?.max_temp_c != null" :class="['temp-badge', srv._status.max_temp_c >= 75 ? 'temp-hot' : srv._status.max_temp_c >= 55 ? 'temp-warm' : 'temp-ok']">
-                    {{ srv._status.max_temp_c }}°C
+                    {{ toDisplay(srv._status.max_temp_c) }}{{ tempLabel }}
                   </span>
                   <span v-else class="text-muted">—</span>
                 </td>
@@ -148,7 +147,6 @@
             <div class="status-left">
               <span class="srv-name">{{ srv.name }}</span>
               <span :class="['type-pill', `type-pill--${srv._stype}`]">{{ typeLabel(srv._stype) }}</span>
-              <span v-if="srv._isNode" class="type-pill type-pill--node">Node</span>
               <span v-if="srv.idrac_type" :class="['type-pill', `type-pill--bmctype`]" :title="srv.idrac_hostname">{{ bmcTypeLabel(srv.idrac_type) }}</span>
               <span v-if="srv.idrac_hostname" class="text-xs text-muted font-mono">{{ srv.idrac_hostname }}</span>
               <span v-if="srv._status" :class="['health-badge', `health-${(srv._status.health || 'unknown').toLowerCase()}`]">
@@ -169,7 +167,7 @@
               </template>
               <template v-else>
                 <button @click="openConfigBMC(srv)" class="btn btn-outline btn-sm">{{ srv.idrac_hostname ? 'Edit BMC' : 'Configure BMC' }}</button>
-                <button @click="deleteNode(srv)" class="btn btn-danger btn-sm">Delete</button>
+                <button @click="deletePBS(srv)" class="btn btn-danger btn-sm">Delete</button>
               </template>
               <a v-if="srv.idrac_hostname" :href="`https://${srv.idrac_hostname}:${srv.idrac_port || 443}`" target="_blank" rel="noopener" class="btn btn-outline btn-sm">Launch ↗</a>
               <button @click="testConnection(srv)" class="btn btn-outline btn-sm">Test</button>
@@ -186,11 +184,16 @@
 
           <!-- Details panel (expanded) — always visible when expanded -->
           <div v-if="srv._expanded" class="details-panel">
+            <!-- Loading bar — always shown while fetching, even with cached data -->
+            <div v-if="srv._loading" class="details-fetch-bar">
+              <div class="details-fetch-bar__fill"></div>
+            </div>
+
             <div class="details-close">
               <button @click="collapseServer(srv)" class="btn btn-outline btn-sm">✕ Close</button>
             </div>
 
-            <!-- Loading / error states -->
+            <!-- Full loading state (no cached data yet) -->
             <div v-if="srv._loading && !srv._info" class="details-loading">
               <div class="loading-spinner"></div>
               <span class="text-muted text-sm">Connecting to BMC…</span>
@@ -322,7 +325,7 @@
               </div>
               <div class="charts-row mt-2" v-if="srv._thermal || srv._powerUsage">
                 <div class="chart-section" v-if="srv._thermal?.temperatures?.length">
-                  <h4>Temperatures (°C)</h4>
+                  <h4>Temperatures ({{ tempLabel }})</h4>
                   <div class="chart-wrapper">
                     <Bar :data="tempChartData(srv._thermal)" :options="tempChartOptions" />
                   </div>
@@ -669,56 +672,6 @@
       </div>
     </div>
 
-    <!-- ── Add PVE Host Modal ── -->
-    <div v-if="showPVEModal" class="modal-overlay" @click.self="showPVEModal = false">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h3>Add PVE Host</h3>
-          <button class="modal-close" @click="showPVEModal = false">×</button>
-        </div>
-        <div class="modal-body">
-          <div class="form-group">
-            <label class="form-label">Hostname / IP *</label>
-            <input v-model="pveForm.hostname" class="form-control" placeholder="pve.example.com" />
-          </div>
-          <div class="form-group">
-            <label class="form-label">Display Name</label>
-            <input v-model="pveForm.name" class="form-control" placeholder="Defaults to hostname" />
-          </div>
-          <hr style="border:none;border-top:1px solid var(--border-color);margin:0.75rem 0" />
-          <p class="text-muted text-xs mb-1">iDRAC / iLO (optional — can be added later)</p>
-          <div class="form-group">
-            <label class="form-label">BMC Type</label>
-            <select v-model="pveForm.idrac_type" class="form-control">
-              <option value="idrac">Dell iDRAC</option>
-              <option value="ilo">HPE iLO</option>
-              <option value="ipmi">Generic IPMI</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label class="form-label">BMC Hostname / IP</label>
-            <input v-model="pveForm.idrac_hostname" class="form-control" placeholder="192.168.1.200" />
-          </div>
-          <div class="form-group">
-            <label class="form-label">BMC Port</label>
-            <input v-model.number="pveForm.idrac_port" type="number" class="form-control" placeholder="443" />
-          </div>
-          <div class="form-group">
-            <label class="form-label">BMC Username</label>
-            <input v-model="pveForm.idrac_username" class="form-control" placeholder="root" />
-          </div>
-          <div class="form-group">
-            <label class="form-label">BMC Password</label>
-            <input v-model="pveForm.idrac_password" type="password" class="form-control" />
-          </div>
-        </div>
-        <div class="modal-footer">
-          <button @click="showPVEModal = false" class="btn btn-outline">Cancel</button>
-          <button @click="savePVE()" class="btn btn-primary" :disabled="pveSaving">{{ pveSaving ? 'Saving…' : 'Save' }}</button>
-        </div>
-      </div>
-    </div>
-
     <!-- ── Add/Edit Standalone BMC Modal ── -->
     <div v-if="showStandaloneModal" class="modal-overlay" @click.self="showStandaloneModal = false">
       <div class="modal-content">
@@ -854,10 +807,17 @@ export default {
   setup() {
     const toast = useToast()
     const loading = ref(true)
+
+    // ── Temperature unit (C/F) ──
+    const tempUnit = ref(localStorage.getItem('depl0y_temp_unit') || 'C')
+    const toDisplay = (c) => {
+      if (c == null) return null
+      return tempUnit.value === 'F' ? Math.round(c * 9 / 5 + 32) : c
+    }
+    const tempLabel = computed(() => tempUnit.value === 'F' ? '°F' : '°C')
     const polling = ref(false)
 
     const allProxmox = ref([])
-    const allPveNodes = ref([])
     const allPBS = ref([])
     const allStandalone = ref([])
     let _pollInterval = null
@@ -890,40 +850,7 @@ export default {
       _sshHardware: null,
     })
 
-    // ── Node wrapping (per-node entries from Proxmox cluster nodes) ──
-    const wrapNode = (node, parentHost) => ({
-      ...node,
-      _key: `pve-node:${node.id}`,
-      _stype: 'pve',
-      _isNode: true,
-      _hostId: parentHost.id,
-      hostname: parentHost.hostname,
-      name: node.node_name,
-      _status: null,
-      _info: null,
-      _thermal: null,
-      _powerUsage: null,
-      _logs: null,
-      _loading: false,
-      _actioning: false,
-      _expanded: false,
-      _error: null,
-      _activeTab: 'overview',
-      _hardware: null,
-      _network: null,
-      _firmware: null,
-      _sensors: null,
-      _hwLoading: false,
-      _netLoading: false,
-      _fwLoading: false,
-      _sensorsLoading: false,
-      _useSSH: node.idrac_use_ssh || false,
-      _redfishOK: false,
-      _sshHardware: null,
-    })
-
     const allServers = computed(() => [
-      ...allPveNodes.value,
       ...allPBS.value,
       ...allStandalone.value,
     ])
@@ -984,11 +911,11 @@ export default {
       const temps = srv._thermal?.temperatures || []
       for (const t of temps) {
         if (t.health && t.health !== 'OK') {
-          const crit = t.upper_threshold_critical ? ` (threshold: ${t.upper_threshold_critical}°C)` : ''
+          const crit = t.upper_threshold_critical ? ` (threshold: ${toDisplay(t.upper_threshold_critical)}${tempLabel.value})` : ''
           issues.push({
             level: t.health.toLowerCase() === 'critical' ? 'critical' : 'warn',
             label: `High temperature: ${t.name}`,
-            detail: `${t.reading_celsius}°C${crit}`,
+            detail: `${toDisplay(t.reading_celsius)}${tempLabel.value}${crit}`,
           })
         }
       }
@@ -1100,8 +1027,8 @@ export default {
       return {
         labels: servers.map(s => s.name),
         datasets: [{
-          label: '°C',
-          data: servers.map(s => s._status.max_temp_c),
+          label: tempLabel.value,
+          data: servers.map(s => toDisplay(s._status.max_temp_c)),
           backgroundColor: servers.map(s =>
             s._status.max_temp_c >= 75 ? 'rgba(220,38,38,0.8)'
             : s._status.max_temp_c >= 55 ? 'rgba(217,119,6,0.8)'
@@ -1119,15 +1046,15 @@ export default {
       cutout: '60%',
     }
 
-    const tempBarOptions = {
+    const tempBarOptions = computed(() => ({
       responsive: true,
       maintainAspectRatio: false,
-      plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => `${ctx.raw}°C` } } },
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => `${ctx.raw}${tempLabel.value}` } } },
       scales: {
-        y: { min: 0, ticks: { font: { size: 10 }, callback: v => `${v}°C` } },
+        y: { min: 0, ticks: { font: { size: 10 }, callback: v => `${v}${tempLabel.value}` } },
         x: { ticks: { font: { size: 9 }, maxRotation: 30 } }
       }
-    }
+    }))
 
     // ── Load lists ──
     const loadAll = async () => {
@@ -1143,21 +1070,6 @@ export default {
         allPBS.value = pbsRes.data.map(s => wrapServer(s, 'pbs'))
         allStandalone.value = saRes.data.map(b => wrapServer(b, 'standalone'))
 
-        // Fetch cluster nodes for each PVE host and create per-node entries
-        const nodeResults = await Promise.allSettled(
-          pveRes.data.map(host => api.proxmox.listNodes(host.id).then(r => ({ host, nodes: r.data })))
-        )
-        const nodeEntries = []
-        for (const result of nodeResults) {
-          if (result.status === 'fulfilled') {
-            const { host, nodes } = result.value
-            for (const node of nodes) {
-              nodeEntries.push(wrapNode(node, host))
-            }
-          }
-        }
-        allPveNodes.value = nodeEntries
-
         applyStatusCache(statusRes.data)
       } catch (e) {
         toast.error('Failed to load server list')
@@ -1168,8 +1080,7 @@ export default {
 
     const applyStatusCache = (cache) => {
       for (const srv of allServers.value) {
-        // Node entries: status is keyed by the parent host id (iDRAC polling is per-host BMC)
-        const key = srv._isNode ? `pve:${srv._hostId}` : `${srv._stype}:${srv.id}`
+        const key = `${srv._stype}:${srv.id}`
         if (cache[key]) srv._status = cache[key]
       }
     }
@@ -1488,32 +1399,6 @@ export default {
 
     // ── API call dispatch by server type ──
     const _apiFns = (srv) => {
-      // Node entries: iDRAC polling uses the parent host id (BMC is shared per host)
-      if (srv._isNode) {
-        const hostId = srv._hostId
-        return {
-          getInfo: () => api.idrac.getInfo(hostId),
-          getThermal: () => api.idrac.getThermal(hostId),
-          getPowerUsage: () => api.idrac.getPowerUsage(hostId),
-          getLogs: () => api.idrac.getLogs(hostId),
-          getSensors: () => api.idrac.getSensors(hostId),
-          test: () => api.idrac.testConnection(hostId),
-          testSsh: () => api.idrac.testSsh(hostId),
-          powerAction: (action) => api.idrac.powerAction(hostId, action),
-          getManager: () => api.idrac.getManager(hostId),
-          getNetwork: () => api.idrac.getNetwork(hostId),
-          patchNetwork: (ifaceId, config) => api.idrac.patchNetwork(hostId, ifaceId, config),
-          getProcessors: () => api.idrac.getProcessors(hostId),
-          getMemory: () => api.idrac.getMemory(hostId),
-          getStorage: () => api.idrac.getStorage(hostId),
-          getFirmware: () => api.idrac.getFirmware(hostId),
-          getSshHardware: () => api.idrac.getSshHardware(hostId),
-          getSshNetwork: () => api.idrac.getSshNetwork(hostId),
-          getSshFirmware: () => api.idrac.getSshFirmware(hostId),
-          getSshLogs: () => api.idrac.getSshLogs(hostId),
-          runSshUpdate: () => api.idrac.runSshUpdate(hostId),
-        }
-      }
       if (srv._stype === 'pbs') return {
         getInfo: () => api.pbs.getIdracInfo(srv.id),
         getThermal: () => api.pbs.getIdracThermal(srv.id),
@@ -1696,14 +1581,6 @@ export default {
         if (_bmcTarget._stype === 'pbs') {
           const res = await api.pbs.update(_bmcTarget.id, payload)
           Object.assign(_bmcTarget, res.data)
-        } else if (_bmcTarget._isNode) {
-          const res = await api.proxmox.updateNodeIdrac(_bmcTarget.id, payload)
-          const updated = res.data
-          _bmcTarget.idrac_hostname = updated.idrac_hostname
-          _bmcTarget.idrac_port = updated.idrac_port
-          _bmcTarget.idrac_username = updated.idrac_username
-          _bmcTarget.idrac_type = updated.idrac_type
-          _bmcTarget.idrac_use_ssh = updated.idrac_use_ssh
         } else {
           const res = await api.proxmox.updateHost(_bmcTarget.id, payload)
           Object.assign(_bmcTarget, res.data)
@@ -1739,14 +1616,6 @@ export default {
         if (_bmcTarget._stype === 'pbs') {
           const res = await api.pbs.update(_bmcTarget.id, payload)
           Object.assign(_bmcTarget, res.data)
-        } else if (_bmcTarget._isNode) {
-          const res = await api.proxmox.updateNodeIdrac(_bmcTarget.id, payload)
-          const updated = res.data
-          _bmcTarget.idrac_hostname = updated.idrac_hostname
-          _bmcTarget.idrac_port = updated.idrac_port
-          _bmcTarget.idrac_username = updated.idrac_username
-          _bmcTarget.idrac_type = updated.idrac_type
-          _bmcTarget.idrac_use_ssh = updated.idrac_use_ssh
         } else {
           const res = await api.proxmox.updateHost(_bmcTarget.id, payload)
           Object.assign(_bmcTarget, res.data)
@@ -1820,60 +1689,15 @@ export default {
       }
     }
 
-    const deleteNode = async (srv) => {
-      const label = srv.name || srv.hostname || srv.address || `#${srv.id}`
-      if (srv._isNode) {
-        // Node entries cannot be independently deleted — they are discovered from the host
-        toast.warning('Node entries are auto-discovered from the Proxmox host. To remove, delete the parent Proxmox host.')
-        return
-      }
-      if (!confirm(`Delete "${label}" from tracking? This removes it from Depl0y but does not affect the actual host.`)) return
+    const deletePBS = async (srv) => {
+      const label = srv.name || srv.hostname || `#${srv.id}`
+      if (!confirm(`Delete "${label}" from tracking? This removes it from Depl0y but does not affect the actual server.`)) return
       try {
-        await api.proxmox.deleteHost(srv.id)
-        allProxmox.value = allProxmox.value.filter(s => s.id !== srv.id)
-        allPveNodes.value = allPveNodes.value.filter(s => s._hostId !== srv.id)
+        await api.pbs.delete(srv.id)
+        allPBS.value = allPBS.value.filter(s => s.id !== srv.id)
         toast.success('Removed')
       } catch (e) {
         toast.error(e.response?.data?.detail || 'Failed to delete')
-      }
-    }
-
-    // ── PVE Add Modal ──
-    const showPVEModal = ref(false)
-    const pveSaving = ref(false)
-    const pveForm = ref({})
-
-    const openAddPVE = () => {
-      pveForm.value = { hostname: '', name: '', idrac_type: 'idrac', idrac_hostname: '', idrac_port: 443, idrac_username: 'root', idrac_password: '' }
-      showPVEModal.value = true
-    }
-
-    const savePVE = async () => {
-      if (!pveForm.value.hostname) { toast.error('Hostname is required'); return }
-      pveSaving.value = true
-      try {
-        const payload = {
-          hostname: pveForm.value.hostname,
-          name: pveForm.value.name || pveForm.value.hostname,
-          port: 8006,
-          username: 'root@pam',
-          verify_ssl: false,
-        }
-        if (pveForm.value.idrac_hostname) {
-          payload.idrac_type = pveForm.value.idrac_type
-          payload.idrac_hostname = pveForm.value.idrac_hostname
-          payload.idrac_port = pveForm.value.idrac_port
-          payload.idrac_username = pveForm.value.idrac_username
-          if (pveForm.value.idrac_password) payload.idrac_password = pveForm.value.idrac_password
-        }
-        const res = await api.proxmox.createHost(payload)
-        allProxmox.value.push(wrapServer(res.data, 'pve'))
-        toast.success('PVE host added')
-        showPVEModal.value = false
-      } catch (e) {
-        toast.error(e.response?.data?.detail || 'Failed to add PVE host')
-      } finally {
-        pveSaving.value = false
       }
     }
 
@@ -1914,7 +1738,7 @@ export default {
     const tempChartData = (thermal) => {
       const temps = thermal.temperatures || []
       const labels = temps.map(t => t.name)
-      const values = temps.map(t => t.reading_celsius)
+      const values = temps.map(t => toDisplay(t.reading_celsius))
       const bgColors = temps.map(t =>
         t.upper_threshold_critical && t.reading_celsius >= t.upper_threshold_critical - 5
           ? 'rgba(220,38,38,0.75)'
@@ -1922,7 +1746,7 @@ export default {
           ? 'rgba(245,158,11,0.75)'
           : 'rgba(37,99,235,0.65)'
       )
-      return { labels, datasets: [{ label: '°C', data: values, backgroundColor: bgColors, borderRadius: 3 }] }
+      return { labels, datasets: [{ label: tempLabel.value, data: values, backgroundColor: bgColors, borderRadius: 3 }] }
     }
 
     const fanChartData = (thermal) => {
@@ -2000,6 +1824,7 @@ export default {
     })
 
     return {
+      tempUnit, toDisplay, tempLabel,
       loading, polling, allServers, typeLabel, bmcTypeLabel, dash, alertedServers, alertLevel, alertReason, healthIssues, recentAlertLogs,
       powerHistory, powerEventClass,
       healthChartData, powerStateChartData, tempBarData, dashChartOptions, tempBarOptions,
@@ -2008,8 +1833,7 @@ export default {
       showUpdateModal, updateOutput, updateRunning, updateSuccess, runUpdate,
       netEditForm, netSaving, startNetEdit, cancelNetEdit, saveNetwork,
       showBMCModal, bmcForm, bmcSaving, openConfigBMC, saveBMC, clearBMC,
-      showStandaloneModal, standaloneForm, standaloneSaving, openAddStandalone, openEditStandalone, saveStandalone, deleteStandalone, deleteNode,
-      showPVEModal, pveForm, pveSaving, openAddPVE, savePVE,
+      showStandaloneModal, standaloneForm, standaloneSaving, openAddStandalone, openEditStandalone, saveStandalone, deleteStandalone, deletePBS,
       showPBSModal, pbsForm, pbsSaving, openAddPBS, savePBS,
       pollNow,
       tempChartData, fanChartData, powerChartData,
@@ -2072,7 +1896,6 @@ export default {
 .type-pill--pve { background: #dbeafe; color: #1e40af; }
 .type-pill--pbs { background: #fef3c7; color: #92400e; }
 .type-pill--standalone { background: #f3e8ff; color: #6b21a8; }
-.type-pill--node { background: #dcfce7; color: #15803d; }
 
 .power-badge, .health-badge {
   display: inline-block;
@@ -2101,7 +1924,28 @@ export default {
 /* Details panel */
 .details-panel {
   border-top: 1px solid var(--border-color);
-  padding: 1rem 1.25rem;
+  padding: 0 1.25rem 1rem;
+  position: relative;
+}
+
+/* Animated progress bar across the top of the details panel while loading */
+.details-fetch-bar {
+  height: 3px;
+  background: var(--border-color);
+  margin: 0 -1.25rem 0.75rem;
+  overflow: hidden;
+}
+.details-fetch-bar__fill {
+  height: 100%;
+  width: 40%;
+  background: var(--primary-color, #3b82f6);
+  border-radius: 0 3px 3px 0;
+  animation: fetch-slide 1.4s ease-in-out infinite;
+}
+@keyframes fetch-slide {
+  0%   { transform: translateX(-100%); }
+  60%  { transform: translateX(300%); }
+  100% { transform: translateX(300%); }
 }
 
 .details-close {

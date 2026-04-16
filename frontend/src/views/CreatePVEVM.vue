@@ -79,6 +79,30 @@
             </div>
           </div>
 
+          <div class="form-group">
+            <label class="form-label">Installation Method *</label>
+            <div class="radio-group">
+              <label class="radio-label">
+                <input type="radio" v-model="imageSource" value="iso" />
+                <span>ISO Image</span>
+              </label>
+              <label class="radio-label">
+                <input type="radio" v-model="imageSource" value="cloud_image" />
+                <span>Cloud Image (Fast, includes cloud-init)</span>
+              </label>
+            </div>
+          </div>
+
+          <div v-if="imageSource === 'cloud_image'" class="form-group">
+            <label class="form-label">Cloud Image *</label>
+            <select v-model="cloudImageId" class="form-control" required>
+              <option :value="null">Select cloud image...</option>
+              <option v-for="img in cloudImages" :key="img.id" :value="img.id">
+                {{ img.name }}{{ img.version ? ' (' + img.version + ')' : '' }}
+              </option>
+            </select>
+          </div>
+
           <div class="grid grid-cols-2 gap-2">
             <div class="form-group">
               <label class="form-label">OS Type *</label>
@@ -149,7 +173,8 @@
           </div>
         </div>
 
-        <div class="form-section">
+        <!-- ISO Section (only when imageSource === 'iso') -->
+        <div v-if="imageSource === 'iso'" class="form-section">
           <h4 class="section-title">ISO Image</h4>
           <div class="grid grid-cols-2 gap-2">
             <div class="form-group">
@@ -177,6 +202,25 @@
               </select>
               <small class="form-help">{{ isoStorage ? '' : 'Select an ISO storage first' }}</small>
             </div>
+          </div>
+        </div>
+
+        <!-- Cloud-init config (only when imageSource === 'cloud_image') -->
+        <div v-if="imageSource === 'cloud_image'" class="form-section">
+          <h4 class="section-title">Cloud-Init Configuration</h4>
+          <div class="grid grid-cols-2 gap-2">
+            <div class="form-group">
+              <label class="form-label">Username *</label>
+              <input v-model="ciUser" class="form-control" placeholder="e.g. ubuntu" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Password *</label>
+              <input v-model="ciPassword" type="password" autocomplete="new-password" class="form-control" placeholder="VM login password" />
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">SSH Public Key <span class="text-muted text-sm">(optional)</span></label>
+            <textarea v-model="sshKey" class="form-control" rows="3" placeholder="ssh-rsa AAAA... user@host"></textarea>
           </div>
         </div>
 
@@ -332,6 +376,9 @@ export default {
       vmName: '',
       osType: 'l26',
       startAfterCreate: false,
+      imageSource: 'iso',
+      cloudImages: [],
+      cloudImageId: null,
 
       // Loading flags
       loadingNodes: false,
@@ -351,6 +398,9 @@ export default {
       isos: [],
       allNetworks: [],
       bridge: '',
+      ciUser: '',
+      ciPassword: '',
+      sshKey: '',
 
       // Step 3
       creating: false,
@@ -376,10 +426,19 @@ export default {
       return this.allNetworks.filter(n => n.type === 'bridge')
     },
     canGoStep2() {
+      if (this.imageSource === 'cloud_image' && !this.cloudImageId) return false
       return this.selectedHostId && this.selectedNode && this.vmid && this.vmName.trim()
     },
     canGoStep3() {
-      return this.cores > 0 && this.memory >= 256 && this.diskSize > 0 && this.diskStorage && this.bridge
+      const base = this.cores > 0 && this.memory >= 256 && this.diskSize > 0 && this.diskStorage && this.bridge
+      if (this.imageSource === 'cloud_image') {
+        return base && this.ciUser.trim() && this.ciPassword.trim()
+      }
+      return base
+    },
+    selectedNodeId() {
+      const n = this.nodes.find(x => x.node_name === this.selectedNode)
+      return n ? n.id : null
     },
   },
 
@@ -546,15 +605,39 @@ export default {
       this.creating = true
       this.createError = ''
       try {
-        const payload = this.buildPayload()
-        await api.pveNode.createVm(this.selectedHostId, this.selectedNode, payload)
-        this.$router.push(`/proxmox/${this.selectedHostId}/nodes/${this.selectedNode}/vms/${this.vmid}`)
+        if (this.imageSource === 'cloud_image') {
+          const payload = {
+            name: this.vmName.trim(),
+            hostname: this.vmName.trim(),
+            proxmox_host_id: this.selectedHostId,
+            node_id: this.selectedNodeId,
+            node: this.selectedNode,
+            cloud_image_id: this.cloudImageId,
+            os_type: this.osType,
+            cpu_cores: this.cores,
+            cpu_sockets: 1,
+            memory: this.memory,
+            disk_size: this.diskSize,
+            storage: this.diskStorage,
+            network_bridge: this.bridge,
+            username: this.ciUser.trim(),
+            password: this.ciPassword,
+            ssh_key: this.sshKey.trim() || null,
+            start: this.startAfterCreate,
+          }
+          const r = await api.vms.create(payload)
+          this.$router.push(`/vms`)
+        } else {
+          const payload = this.buildPayload()
+          await api.pveNode.createVm(this.selectedHostId, this.selectedNode, payload)
+          this.$router.push(`/proxmox/${this.selectedHostId}/nodes/${this.selectedNode}/vms/${this.vmid}`)
+        }
       } catch (e) {
         console.error('Failed to create VM:', e)
         const detail = e.response?.data?.detail
-        this.createError = typeof detail === 'string'
-          ? detail
-          : 'Failed to create VM. Check the console for details.'
+        this.createError = Array.isArray(detail)
+          ? detail.map(d => d.msg || JSON.stringify(d)).join('; ')
+          : (typeof detail === 'string' ? detail : 'Failed to create VM. Check the console for details.')
       } finally {
         this.creating = false
       }
@@ -563,6 +646,7 @@ export default {
 
   mounted() {
     this.loadHosts()
+    api.cloudImages.list().then(r => { this.cloudImages = r.data || [] }).catch(() => {})
   },
 }
 </script>
@@ -672,6 +756,20 @@ export default {
 
 .form-group {
   margin-bottom: 1rem;
+}
+
+.radio-group {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.radio-label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+  font-size: 0.875rem;
+  color: var(--text-primary);
 }
 
 .form-label {

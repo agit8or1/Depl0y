@@ -797,6 +797,8 @@ export default {
 
       if (hostId.value) {
         loadClusterData()
+        loadVmList()
+        loadNodeList()
       }
     }
 
@@ -996,7 +998,8 @@ export default {
       loadingVms.value = true
       try {
         const res = await api.pveNode.clusterResources(hostId.value, 'vm')
-        vmList.value = (res.data || []).sort((a, b) => (a.vmid || 0) - (b.vmid || 0))
+        const data = Array.isArray(res.data) ? res.data : (Array.isArray(res.data?.data) ? res.data.data : [])
+        vmList.value = data.sort((a, b) => (a.vmid || 0) - (b.vmid || 0))
       } catch (e) {
         toast.error('Failed to load VM list')
       } finally {

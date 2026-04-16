@@ -248,11 +248,24 @@ class AlertEngine:
                             ):
                                 recent_stop_vmids.add(vmid_str)
 
+                        # Load muted VMs for this host
+                        try:
+                            import json
+                            from app.models.database import SystemSettings
+                            mute_row = db.query(SystemSettings).filter(SystemSettings.key == "vm_alert_mutes").first()
+                            muted_vmids = set()
+                            if mute_row:
+                                for m in json.loads(mute_row.value or "[]"):
+                                    if m.get("host_id") == host.id:
+                                        muted_vmids.add(str(m.get("vmid", "")))
+                        except Exception:
+                            muted_vmids = set()
+
                         for vm in vms:
                             status = vm.get("status", "")
                             vmid = str(vm.get("vmid", ""))
                             name = vm.get("name", vmid)
-                            if status == "stopped" and vmid not in recent_stop_vmids:
+                            if status == "stopped" and vmid not in recent_stop_vmids and vmid not in muted_vmids:
                                 key = f"vm_unexpected_stop:{host.id}:{node_name}:{vmid}"
                                 # Only fire once per cooldown — don't spam for long-stopped VMs
                                 self._fire_builtin(

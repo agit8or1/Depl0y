@@ -421,8 +421,8 @@
             <div v-if="vmStorageStats.length > 0" class="storage-chart-section">
               <h4 class="section-subtitle">Backup Storage Usage per VM</h4>
               <div class="vm-storage-bars">
-                <div v-for="stat in vmStorageStats.slice(0, 15)" :key="stat.vmid" class="vm-bar-row">
-                  <span class="vm-bar-label">VM {{ stat.vmid }}</span>
+                <div v-for="stat in vmStorageStats.slice(0, 30)" :key="stat.vmid" class="vm-bar-row">
+                  <span class="vm-bar-label">{{ stat.name ? `${stat.name} (${stat.vmid})` : `VM ${stat.vmid}` }}</span>
                   <div class="vm-bar-track">
                     <div
                       class="vm-bar-fill"
@@ -884,8 +884,12 @@ export default {
           counts[vmid] = (counts[vmid] || 0) + 1
         }
       }
+      const vmMap = {}
+      for (const vm of allVms.value) {
+        vmMap[String(vm.vmid)] = vm.name || null
+      }
       return Object.entries(counts)
-        .map(([vmid, count]) => ({ vmid, count }))
+        .map(([vmid, count]) => ({ vmid, name: vmMap[vmid] || null, count }))
         .sort((a, b) => b.count - a.count)
     })
 
@@ -1205,7 +1209,7 @@ export default {
       if (!selectedHostId.value) return
       loadingHistory.value = true
       try {
-        const params = { limit: 500 }
+        const params = { limit: 2000 }
         if (historyFilter.value.node) params.node = historyFilter.value.node
         const res = await api.pveNode.getBackupHistory(selectedHostId.value, params)
         historyTasks.value = res.data || []

@@ -11,9 +11,14 @@ from app.services.task_tracker import task_tracker
 from app.core.cache import pve_cache
 import logging
 import re
+import time as _time
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+# ── Disk I/O rate tracking (backend-side, survives between requests) ──────────
+_disk_io_prev: dict = {}   # host_id -> {vmKey: {read, write, time}}
+_disk_io_rates: dict = {}  # host_id -> [{node, read, write}]  (last good result)
 
 
 # ── Validated create request models ──────────────────────────────────────────
@@ -254,6 +259,56 @@ def cluster_resources(host_id: int, type: Optional[str] = None, nocache: bool = 
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{host_id}/disk-io-rates")
+def get_disk_io_rates(host_id: int, db: Session = Depends(get_db),
+                      current_user=Depends(get_current_user)):
+    """Return per-node disk I/O rates (B/s) computed from VM counter deltas.
+    First call primes the state and returns the last cached result (or []).
+    Subsequent calls return live rates. State persists for the backend lifetime."""
+    host = _get_host(host_id, db)
+    try:
+        resources = _pve(host).cluster.resources.get()
+    except Exception as e:
+        # Return last known good rates rather than an error
+        return _disk_io_rates.get(host_id, [])
+
+    now = _time.time()
+    prev = _disk_io_prev.get(host_id, {})
+    next_prev = {}
+    node_agg: dict = {}
+
+    vms = [r for r in resources
+           if r.get("type") in ("qemu", "lxc") and r.get("status") == "running"]
+
+    for vm in vms:
+        vm_key = f"{vm.get('node', '')}::{vm.get('vmid', '')}"
+        node = vm.get("node", "unknown")
+        read_bytes = vm.get("diskread") or 0
+        write_bytes = vm.get("diskwrite") or 0
+
+        if vm_key in prev:
+            elapsed = now - prev[vm_key]["time"]
+            if elapsed > 0.5:
+                r_rate = max(0.0, (read_bytes  - prev[vm_key]["read"]))  / elapsed
+                w_rate = max(0.0, (write_bytes - prev[vm_key]["write"])) / elapsed
+                if node not in node_agg:
+                    node_agg[node] = {"node": node, "read": 0.0, "write": 0.0}
+                node_agg[node]["read"]  += r_rate
+                node_agg[node]["write"] += w_rate
+
+        next_prev[vm_key] = {"read": read_bytes, "write": write_bytes, "time": now}
+
+    _disk_io_prev[host_id] = next_prev
+
+    rates = sorted(node_agg.values(), key=lambda x: x["node"])
+    if rates:
+        _disk_io_rates[host_id] = rates  # cache last good result
+        return rates
+
+    # No rates yet (first call) — return last cached if available
+    return _disk_io_rates.get(host_id, [])
 
 
 @router.get("/{host_id}/cluster/nextid")
@@ -777,6 +832,10 @@ def storage_content(host_id: int, node: str, storage: str, content: Optional[str
     try:
         return _pve(host).nodes(node).storage(storage).content.get(**params)
     except Exception as e:
+        # Storage may not be accessible on this node (e.g. local storage on another node)
+        err = str(e).lower()
+        if any(k in err for k in ("not found", "does not exist", "storage", "permission", "500")):
+            return []
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -991,7 +1050,7 @@ def run_backup_schedule_now(host_id: int, id: str, data: dict = Body(default={})
 
 @router.get("/{host_id}/backup/history")
 def backup_task_history(host_id: int, node: Optional[str] = None,
-                        limit: int = 200, start: int = 0,
+                        limit: int = 2000, start: int = 0,
                         db: Session = Depends(get_db),
                         current_user=Depends(get_current_user)):
     """Return completed backup tasks across all (or a specific) node(s)."""
@@ -1004,10 +1063,12 @@ def backup_task_history(host_id: int, node: Optional[str] = None,
             nodes_to_query = [r["node"] for r in resources if "node" in r]
 
         all_tasks: List[Dict[str, Any]] = []
+        # Fetch enough per-node so multi-node clusters aren't truncated
+        per_node_limit = max(limit, 500) * len(nodes_to_query) if nodes_to_query else limit
         for n in nodes_to_query:
             try:
                 tasks = _pve(host).nodes(n).tasks.get(
-                    limit=limit, start=start, typefilter="vzdump"
+                    limit=per_node_limit, start=start, typefilter="vzdump"
                 )
                 for t in tasks:
                     t["_node"] = n

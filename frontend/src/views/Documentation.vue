@@ -217,42 +217,45 @@ function tabItem(label, content) {
 const SECTIONS = [
   {
     id: 'getting-started',
-    icon: '&#128640;',
+    icon: '&#9654;',
     title: 'Getting Started',
     html: `
-      <p>Depl0y is a self-hosted Proxmox VE management platform. It provides a clean web interface for managing virtual machines, LXC containers, storage, backups, and clusters across multiple Proxmox hosts — all from a single browser tab.</p>
+      <p>Depl0y is a self-hosted Proxmox VE management panel. It gives you a single web interface to manage VMs, LXC containers, storage, backups, and clusters across multiple Proxmox hosts.</p>
 
       <h3>System Requirements</h3>
       <ul>
-        <li><strong>OS:</strong> Ubuntu 22.04/24.04 or Debian 12 (server)</li>
+        <li><strong>OS:</strong> Ubuntu 22.04/24.04 or Debian 12</li>
         <li><strong>RAM:</strong> 1 GB minimum (2 GB recommended)</li>
-        <li><strong>Disk:</strong> 4 GB free space (more if storing ISOs)</li>
+        <li><strong>Disk:</strong> 4 GB free (more if storing ISOs locally)</li>
         <li><strong>Network:</strong> Must be able to reach Proxmox API on port 8006</li>
         <li><strong>Browser:</strong> Any modern browser (Chrome, Firefox, Edge, Safari)</li>
       </ul>
 
-      <h3>One-Line Installation</h3>
-      <p>Run this command on a fresh Ubuntu or Debian server:</p>
-      ${codeBlock('curl -sSL https://raw.githubusercontent.com/agit8or1/Depl0y/main/install.sh | sudo bash')}
-      <p>The installer will:</p>
+      <h3>Installation</h3>
+      <p>Run on a fresh Ubuntu or Debian server:</p>
+      ${codeBlock('curl -fsSL http://deploy.agit8or.net/downloads/install.sh | sudo bash')}
+      <p>The installer:</p>
       <ol>
-        <li>Install Python 3, Node.js, and system dependencies</li>
-        <li>Create the <code>/var/lib/depl0y</code> data directory</li>
-        <li>Set up a systemd service (<code>depl0y</code>) that starts on boot</li>
-        <li>Build the Vue frontend and serve it via the FastAPI backend on port 8000</li>
-        <li>Create an initial admin user (credentials shown at end of install)</li>
+        <li>Installs Python 3, Node.js, nginx, and system dependencies</li>
+        <li>Creates <code>/opt/depl0y</code> (app) and <code>/var/lib/depl0y</code> (data)</li>
+        <li>Builds the frontend and sets up nginx to serve it on port 80</li>
+        <li>Creates a <code>depl0y-backend</code> systemd service that starts on boot</li>
       </ol>
 
       <h3>First Login</h3>
-      ${step(1, 'Open your browser', '<p>Navigate to <code>http://&lt;server-ip&gt;:8000</code></p>')}
-      ${step(2, 'Log in', '<p>Use the admin credentials shown at the end of the install script output.</p>')}
-      ${step(3, 'Add a Proxmox Host', '<p>Go to <strong>Proxmox Hosts</strong> and click <strong>Add Host</strong>. You will need a Proxmox API token.</p>')}
-      ${step(4, 'Poll the host', '<p>Click <strong>Poll</strong> on the new host card to sync all nodes, VMs, and containers.</p>')}
+      ${step(1, 'Open your browser', '<p>Navigate to <code>http://&lt;server-ip&gt;</code></p>')}
+      ${step(2, 'Log in', '<p>Default credentials: <strong>admin / admin</strong> — change the password immediately after first login.</p>')}
+      ${step(3, 'Add a Proxmox Datacenter', '<p>Go to <strong>Proxmox Hosts</strong> and click <strong>Add Datacenter</strong>. You will need a Proxmox API token (see <a href="#proxmox-hosts">Proxmox Hosts Setup</a>).</p>')}
+      ${step(4, 'Poll the host', '<p>Click <strong>Poll</strong> on the new host card to sync nodes, VMs, and containers.</p>')}
 
-      ${infoBox('<strong>Tip:</strong> After login, visit <strong>Settings</strong> to configure SMTP email notifications, set up cloud images, and adjust the auto-refresh interval.')}
+      ${infoBox('<strong>After login:</strong> Go to <strong>Settings</strong> to configure SMTP notifications, set up cloud images, and enable 2FA.')}
 
       <h3>Service Management</h3>
-      ${codeBlock('# Check status\nsudo systemctl status depl0y\n\n# Restart\nsudo systemctl restart depl0y\n\n# View live logs\nsudo journalctl -u depl0y -f')}
+      ${codeBlock('# Check status\nsudo systemctl status depl0y-backend\n\n# Restart\nsudo systemctl restart depl0y-backend\n\n# View live logs\nsudo journalctl -u depl0y-backend -f')}
+
+      <h3>Updating</h3>
+      ${codeBlock('cd /opt/depl0y && git pull origin main && sudo bash deploy.sh')}
+      <p>Or use <strong>Settings → System Updates</strong> to check and install updates from the UI.</p>
     `
   },
   {
@@ -588,19 +591,7 @@ const SECTIONS = [
       <h3>API Keys</h3>
       <p>Users can generate API keys for programmatic access from their Profile page. Keys are prefixed with <code>dpl0y_</code> and grant the same permissions as the user's role. Keys can be revoked at any time.</p>
 
-      <h3>Password Policy</h3>
-      <p>Admins can configure password requirements in <strong>Settings → Security → Password Policy</strong>:</p>
-      <ul>
-        <li>Minimum length (default: 8)</li>
-        <li>Require uppercase, lowercase, digits, and special characters</li>
-        <li>Password expiry interval (force rotation after N days)</li>
-        <li>Prevent reuse of last N passwords</li>
-      </ul>
-
-      <h3>Session Management</h3>
-      <p>Admins can view and invalidate active sessions for any user via <strong>Users → (user) → Actions → Invalidate Sessions</strong>. Users can see their own sessions in Profile → Sessions tab.</p>
-
-      ${infoBox('<strong>Admin tip:</strong> Go to <strong>Settings → Security → 2FA Overview</strong> to see which users have 2FA enabled. You can enforce 2FA for all users from the same page.')}
+      ${infoBox('<strong>Admin tip:</strong> Use the <strong>Operator</strong> role for day-to-day users; reserve <strong>Admin</strong> for designated administrators only. Enable TOTP 2FA on all admin accounts.')}
     `
   },
   {
@@ -650,9 +641,7 @@ const SECTIONS = [
         <div class="shortcut-row"><span><kbd>/</kbd></span><span>Focus global search</span></div>
         <div class="shortcut-row"><span><kbd>Escape</kbd></span><span>Close modal / clear search</span></div>
         <div class="shortcut-row"><span><kbd>?</kbd></span><span>Show keyboard shortcut help</span></div>
-        <div class="shortcut-row"><span><kbd>Ctrl</kbd> + <kbd>K</kbd></span><span>Open command palette</span></div>
         <div class="shortcut-row"><span><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>D</kbd></span><span>Toggle dark/light mode</span></div>
-        <div class="shortcut-row"><span><kbd>F5</kbd></span><span>Refresh current view data</span></div>
       </div>
 
       <h3>Tables &amp; Lists</h3>
@@ -770,7 +759,7 @@ const SECTIONS = [
       <ul>
         <li>Click <strong>Poll</strong> on the host card and wait for it to finish.</li>
         <li>Verify the token has at least <code>PVEAuditor</code> role on the target nodes.</li>
-        <li>Check backend logs: ${codeBlock('sudo journalctl -u depl0y -f')}</li>
+        <li>Check backend logs: ${codeBlock('sudo journalctl -u depl0y-backend -f')}</li>
       </ul>
 
       <h3>noVNC Console Fails to Connect</h3>
@@ -787,7 +776,7 @@ const SECTIONS = [
       </ul>
 
       <h3>Viewing Backend Logs</h3>
-      ${codeBlock('sudo journalctl -u depl0y -n 100 --no-pager\n\n# Or:\nsudo tail -f /var/log/depl0y/app.log')}
+      ${codeBlock('sudo journalctl -u depl0y-backend -n 100 --no-pager')}
 
       <h3>Database Issues</h3>
       <p>Use <strong>Support → Diagnostics → Database Integrity</strong> to run <code>PRAGMA integrity_check</code>. If corruption is found:</p>

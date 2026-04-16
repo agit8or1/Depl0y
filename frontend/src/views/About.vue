@@ -550,7 +550,7 @@ export default {
         const response = await api.system.getInfo()
         if (response.data?.version) version.value = response.data.version
       } catch {
-        version.value = '1.9.0'
+        version.value = '2.0.0'
       }
       fetchHealthInfo()
     })

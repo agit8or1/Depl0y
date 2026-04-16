@@ -63,28 +63,28 @@
 
       <!-- Filled areas (render behind lines) -->
       <template v-if="fillArea">
-        <path
-          v-for="(s, i) in computedSeries"
-          :key="'area' + i"
-          v-if="s.areaPath"
-          :d="s.areaPath"
-          :fill="`url(#${gradBase}-${i})`"
-          :clip-path="`url(#${clipId})`"
-        />
+        <template v-for="(s, i) in computedSeries" :key="'area' + i">
+          <path
+            v-if="s.areaPath"
+            :d="s.areaPath"
+            :fill="`url(#${gradBase}-${i})`"
+            :clip-path="`url(#${clipId})`"
+          />
+        </template>
       </template>
 
       <!-- Lines -->
-      <path
-        v-for="(s, i) in computedSeries"
-        :key="'line' + i"
-        v-if="s.linePath"
-        :d="s.linePath"
-        :stroke="s.color"
-        stroke-width="2"
-        fill="none"
-        class="chart-line"
-        :clip-path="`url(#${clipId})`"
-      />
+      <template v-for="(s, i) in computedSeries" :key="'line' + i">
+        <path
+          v-if="s.linePath"
+          :d="s.linePath"
+          :stroke="s.color"
+          stroke-width="2"
+          fill="none"
+          class="chart-line"
+          :clip-path="`url(#${clipId})`"
+        />
+      </template>
 
       <!-- Hover crosshair -->
       <template v-if="hoverX !== null">
@@ -94,17 +94,17 @@
           stroke="rgba(255,255,255,0.25)" stroke-width="1"
         />
         <!-- Hover dots per series -->
-        <circle
-          v-for="(s, i) in computedSeries"
-          :key="'dot' + i"
-          v-if="hoverPoints[i]"
-          :cx="hoverPoints[i].sx"
-          :cy="hoverPoints[i].sy"
-          r="4"
-          :fill="s.color"
-          stroke="white"
-          stroke-width="1.5"
-        />
+        <template v-for="(s, i) in computedSeries" :key="'dot' + i">
+          <circle
+            v-if="hoverPoints[i]"
+            :cx="hoverPoints[i].sx"
+            :cy="hoverPoints[i].sy"
+            r="4"
+            :fill="s.color"
+            stroke="white"
+            stroke-width="1.5"
+          />
+        </template>
       </template>
     </svg>
 

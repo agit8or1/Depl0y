@@ -851,6 +851,7 @@ export default {
     })
 
     const allServers = computed(() => [
+      ...allProxmox.value,
       ...allPBS.value,
       ...allStandalone.value,
     ])

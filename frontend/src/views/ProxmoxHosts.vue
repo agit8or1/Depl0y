@@ -1453,8 +1453,9 @@ export default {
             api.pveNode.containers(host.id, node.node_name),
           ]).then(([statusRes, vmsRes, lxcRes]) => {
             const status = statusRes.status === 'fulfilled' ? statusRes.value.data : null
-            const vms = vmsRes.status === 'fulfilled' ? vmsRes.value.data : []
-            const lxcs = lxcRes.status === 'fulfilled' ? lxcRes.value.data : []
+            const vmsData = vmsRes.status === 'fulfilled' ? vmsRes.value.data : {}
+            const vms = Array.isArray(vmsData) ? vmsData : (vmsData?.vms ?? [])
+            const lxcs = lxcRes.status === 'fulfilled' ? (lxcRes.value.data?.containers ?? lxcRes.value.data ?? []) : []
             nodeStats.value = {
               ...nodeStats.value,
               [key]: {
@@ -1462,7 +1463,7 @@ export default {
                 memory: status?.memory ?? null,
                 rootfs: status?.rootfs ?? null,
                 uptime: status?.uptime ?? null,
-                vmCount: Array.isArray(vms) ? vms.filter(v => v.type === 'qemu' || !v.type).length : 0,
+                vmCount: Array.isArray(vms) ? vms.length : 0,
                 lxcCount: Array.isArray(lxcs) ? lxcs.length : 0,
               }
             }
@@ -1801,15 +1802,16 @@ export default {
           api.pveNode.containers(hostId, nodeName),
         ]).then(([statusRes, vmsRes, lxcRes]) => {
           const status = statusRes.status === 'fulfilled' ? statusRes.value.data : null
-          const vms = vmsRes.status === 'fulfilled' ? vmsRes.value.data : []
-          const lxcs = lxcRes.status === 'fulfilled' ? lxcRes.value.data : []
+          const vmsData = vmsRes.status === 'fulfilled' ? vmsRes.value.data : {}
+          const vms = Array.isArray(vmsData) ? vmsData : (vmsData?.vms ?? [])
+          const lxcs = lxcRes.status === 'fulfilled' ? (lxcRes.value.data?.containers ?? lxcRes.value.data ?? []) : []
 
           return [key, {
             cpu: status?.cpu ?? null,
             memory: status?.memory ?? null,
             rootfs: status?.rootfs ?? null,
             uptime: status?.uptime ?? null,
-            vmCount: Array.isArray(vms) ? vms.filter(v => v.type === 'qemu' || !v.type).length : 0,
+            vmCount: Array.isArray(vms) ? vms.length : 0,
             lxcCount: Array.isArray(lxcs) ? lxcs.length : 0,
           }]
         }).catch(err => {

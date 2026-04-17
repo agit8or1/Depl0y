@@ -138,8 +138,39 @@ class AnalysisEngine:
     def _check_vms(self, db) -> List[Dict]:
         recs = []
         try:
-            from app.models.database import ProxmoxHost
+            from app.models.database import ProxmoxHost, PBSServer
             from app.services.proxmox import ProxmoxService
+            from app.services.pbs import PBSService
+
+            # Build a set of VMIDs that have a recent PBS backup (last 7 days)
+            pbs_backed_up_vmids: set = set()
+            cutoff_ts = (datetime.utcnow() - timedelta(days=7)).timestamp()
+            try:
+                pbs_servers = db.query(PBSServer).filter(PBSServer.is_active == True).all()
+                for pbs in pbs_servers:
+                    try:
+                        pbs_svc = PBSService(pbs)
+                        datastores = pbs_svc.get_datastores()
+                        for ds in datastores:
+                            ds_name = ds.get("store") or ds.get("name")
+                            if not ds_name:
+                                continue
+                            try:
+                                groups = pbs_svc.get_groups(ds_name)
+                                for g in groups:
+                                    backup_id = g.get("backup-id") or g.get("id")
+                                    last_backup = g.get("last-backup") or 0
+                                    if backup_id and last_backup > cutoff_ts:
+                                        try:
+                                            pbs_backed_up_vmids.add(int(backup_id))
+                                        except (ValueError, TypeError):
+                                            pass
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
+            except Exception:
+                pass
 
             hosts = db.query(ProxmoxHost).filter(ProxmoxHost.is_active == True).all()
             for host in hosts:
@@ -153,7 +184,7 @@ class AnalysisEngine:
                         try:
                             vms = service.proxmox.nodes(node_name).qemu.get()
                             for vm in vms:
-                                vm_recs = self._analyze_vm(host, node_name, vm, service)
+                                vm_recs = self._analyze_vm(host, node_name, vm, service, pbs_backed_up_vmids)
                                 recs.extend(vm_recs)
                         except Exception as e:
                             logger.debug(f"VM check skip {node_name}: {e}")
@@ -163,7 +194,7 @@ class AnalysisEngine:
             logger.error(f"_check_vms error: {exc}")
         return recs
 
-    def _analyze_vm(self, host, node_name: str, vm: Dict, service) -> List[Dict]:
+    def _analyze_vm(self, host, node_name: str, vm: Dict, service, pbs_backed_up_vmids: set = None) -> List[Dict]:
         recs = []
         vmid = vm.get("vmid")
         vm_name = vm.get("name", f"VM {vmid}")
@@ -235,19 +266,27 @@ class AnalysisEngine:
                     "threshold": 15.0,
                 })
 
-        # No recent backup — check task log
+        # No recent backup — check Proxmox task log AND PBS
         try:
-            tasks = service.proxmox.nodes(node_name).tasks.get(
-                vmid=vmid, typefilter="vzdump", limit=5
-            )
-            recent_backup = False
-            cutoff = datetime.utcnow() - timedelta(days=7)
-            for task in tasks:
-                started = task.get("starttime") or 0
-                task_time = datetime.utcfromtimestamp(started) if started else None
-                if task_time and task_time > cutoff and task.get("status") == "OK":
-                    recent_backup = True
-                    break
+            # PBS check first (fast set lookup)
+            recent_backup = bool(pbs_backed_up_vmids and vmid in pbs_backed_up_vmids)
+
+            # Proxmox vzdump task log check (only needed if PBS didn't find a backup)
+            if not recent_backup:
+                try:
+                    tasks = service.proxmox.nodes(node_name).tasks.get(
+                        vmid=vmid, typefilter="vzdump", limit=5
+                    )
+                    cutoff = datetime.utcnow() - timedelta(days=7)
+                    for task in tasks:
+                        started = task.get("starttime") or 0
+                        task_time = datetime.utcfromtimestamp(started) if started else None
+                        if task_time and task_time > cutoff and task.get("status") == "OK":
+                            recent_backup = True
+                            break
+                except Exception:
+                    pass
+
             if not recent_backup and not template:
                 recs.append({
                     "rule_type": "vm_no_backup",
@@ -258,8 +297,8 @@ class AnalysisEngine:
                     "vmid": vmid,
                     "vm_name": vm_name,
                     "title": f"VM {vm_name} has no backup in 7 days",
-                    "detail": f"No successful vzdump backup found for VM {vm_name} (ID {vmid}) in the last 7 days.",
-                    "suggestion": "Add this VM to a backup job in Proxmox datacenter → backup, or configure Depl0y backup schedules.",
+                    "detail": f"No successful backup found for VM {vm_name} (ID {vmid}) in the last 7 days (checked Proxmox task log and PBS).",
+                    "suggestion": "Add this VM to a backup job in Proxmox datacenter → backup, or configure a PBS backup schedule.",
                     "metric_value": None,
                     "metric_unit": None,
                     "threshold": None,

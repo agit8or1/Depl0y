@@ -63,8 +63,7 @@ class CloneRequest(BaseModel):
 class MigrateRequest(BaseModel):
     target: str  # target node name
     online: bool = True
-    with_local_disks: bool = False
-    targetstorage: Optional[str] = None   # '1' = same, or storage name, or 'src:dst,...'
+    targetstorage: Optional[str] = None   # storage name on target node for disk images
     bwlimit: Optional[int] = None         # KiB/s, 0 = unlimited
     migration_type: Optional[str] = None  # 'secure' or 'insecure'
     migration_network: Optional[str] = None  # CIDR for migration traffic
@@ -449,12 +448,10 @@ def migrate_vm(host_id: int, node: str, vmid: int, req: MigrateRequest,
                db: Session = Depends(get_db), current_user=Depends(require_operator)):
     host = _get_host(host_id, db)
     try:
+        # Note: with_local_disks was removed in Proxmox VE 8+/9 API schema
         kwargs: dict = {"target": req.target, "online": int(req.online)}
         if req.targetstorage:
             kwargs["targetstorage"] = req.targetstorage
-            kwargs["with_local_disks"] = 1  # required when moving disks to a target storage
-        elif req.with_local_disks:
-            kwargs["with_local_disks"] = 1
         if req.bwlimit is not None and req.bwlimit >= 0:
             kwargs["bwlimit"] = req.bwlimit
         if req.migration_type and req.migration_type != "secure":

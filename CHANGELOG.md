@@ -5,6 +5,13 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.7] - 2026-04-17 🚀 VM Migrate — Remove Invalid Proxmox 9 Parameters
+
+### Fixed
+- **Migrate 400 "with_local_disks not defined in schema"** — `with_local_disks` was removed from the Proxmox VE 8+/9 qemu/migrate API schema. Removed it from `MigrateRequest`, backend kwargs, and frontend modal entirely. `targetstorage` alone is sufficient to move disk images in Proxmox 9
+
+---
+
 ## [2.1.6] - 2026-04-17 🚀 VM Migrate — Smart Storage Detection
 
 ### Fixed

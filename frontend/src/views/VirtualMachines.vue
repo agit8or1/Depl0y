@@ -855,10 +855,6 @@
             <input id="migrate-online" type="checkbox" v-model="migrateOnline" :disabled="migrateRunning || migrateVm?.status !== 'running'" />
             <label for="migrate-online" style="margin:0;">Live migration (online, VM stays running)</label>
           </div>
-          <div class="form-group" style="display:flex;align-items:center;gap:0.5rem;">
-            <input id="migrate-localdisks" type="checkbox" v-model="migrateWithLocalDisks" :disabled="migrateRunning" />
-            <label for="migrate-localdisks" style="margin:0;">Allow migration with local disks</label>
-          </div>
         </div>
         <div class="modal-footer">
           <button @click="showMigrateModal = false" class="btn btn-secondary" :disabled="migrateRunning">Cancel</button>
@@ -1796,7 +1792,6 @@ export default {
     const migrateVm = ref(null)
     const migrateTarget = ref('')
     const migrateOnline = ref(true)
-    const migrateWithLocalDisks = ref(false)
     const migrateTargetStorage = ref('')
     const migrateBwlimit = ref('')
     const migrateMigrationType = ref('secure')
@@ -1812,7 +1807,6 @@ export default {
       migrateVm.value = vm
       migrateTarget.value = ''
       migrateOnline.value = vm.status === 'running'
-      migrateWithLocalDisks.value = false
       migrateTargetStorage.value = ''
       migrateBwlimit.value = ''
       migrateMigrationType.value = 'secure'
@@ -1868,7 +1862,7 @@ export default {
         const payload = {
           target: migrateTarget.value,
           online: migrateOnline.value,
-          with_local_disks: migrateWithLocalDisks.value,
+
           migration_type: migrateMigrationType.value || undefined,
         }
         if (migrateTargetStorage.value) payload.targetstorage = migrateTargetStorage.value
@@ -2136,7 +2130,7 @@ export default {
       suspendVm, resumeVm,
       showSnapshotModal, snapshotVm, snapshotName, snapshotDesc, snapshotVmState, snapshotRunning,
       openSnapshotModal, runSnapshot,
-      showMigrateModal, migrateVm, migrateTarget, migrateOnline, migrateWithLocalDisks,
+      showMigrateModal, migrateVm, migrateTarget, migrateOnline,
       migrateTargetStorage, migrateBwlimit, migrateMigrationType, migrateMigrationNetwork,
       migrateRunning, migrateNodes, migrateTargetStorages, migrateStorageLoading, migrateVmDiskStorages,
       openMigrateModal, runMigrate,

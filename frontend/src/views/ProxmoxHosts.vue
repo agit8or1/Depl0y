@@ -101,6 +101,26 @@
             <div class="cluster-info-row">
               <span class="ci-label">Nodes</span>
               <span class="ci-value">{{ getFedSummary(host.id).node_count }}</span>
+              <button
+                class="btn btn-outline btn-xs"
+                style="margin-left:0.5rem;padding:1px 6px;font-size:0.7rem;"
+                @click.stop="refreshClusterNodes(host.id)"
+                :disabled="refreshingNodes[host.id]"
+                title="Fetch live cluster membership from Proxmox"
+              >{{ refreshingNodes[host.id] ? '…' : '⟳ Refresh' }}</button>
+            </div>
+            <!-- Live node list (shown after clicking Refresh) -->
+            <div v-if="hostClusterNodes[host.id]" class="cluster-node-list">
+              <div
+                v-for="n in hostClusterNodes[host.id]"
+                :key="n.name"
+                class="cluster-node-item"
+              >
+                <span :class="n.online ? 'node-dot online' : 'node-dot offline'"></span>
+                <span class="node-name">{{ n.name }}</span>
+                <span class="node-status">{{ n.online ? 'online' : 'offline' }}</span>
+              </div>
+              <div v-if="hostClusterNodeError[host.id]" class="node-error">{{ hostClusterNodeError[host.id] }}</div>
             </div>
             <div class="cluster-info-row">
               <span class="ci-label">VMs / LXC</span>
@@ -1140,6 +1160,10 @@ export default {
     const hostVersions = ref({})
     // Per-host expand-nodes toggle
     const expandedHosts = ref({})
+    // Per-host live cluster node list (fetched on demand)
+    const hostClusterNodes = ref({})
+    const hostClusterNodeError = ref({})
+    const refreshingNodes = ref({})
 
     // Test-all state
     const testingAll = ref(false)
@@ -1661,6 +1685,20 @@ export default {
       }
     }
 
+    const refreshClusterNodes = async (hostId) => {
+      refreshingNodes.value = { ...refreshingNodes.value, [hostId]: true }
+      hostClusterNodeError.value = { ...hostClusterNodeError.value, [hostId]: '' }
+      try {
+        const res = await api.cluster.getClusterStatus(hostId)
+        hostClusterNodes.value = { ...hostClusterNodes.value, [hostId]: res.data?.nodes || [] }
+      } catch (e) {
+        hostClusterNodeError.value = { ...hostClusterNodeError.value, [hostId]: e.response?.data?.detail || 'Failed to fetch cluster nodes' }
+        hostClusterNodes.value = { ...hostClusterNodes.value, [hostId]: [] }
+      } finally {
+        refreshingNodes.value = { ...refreshingNodes.value, [hostId]: false }
+      }
+    }
+
     const refreshAllNodes = async () => {
       loadingNodes.value = true
       try {
@@ -2081,6 +2119,10 @@ export default {
       testConnection,
       testAllConnections,
       pollHost,
+      refreshClusterNodes,
+      hostClusterNodes,
+      hostClusterNodeError,
+      refreshingNodes,
       refreshAllNodes,
       handleRefreshAll,
       deleteHost,
@@ -2393,6 +2435,33 @@ export default {
 .ci-value {
   color: var(--text-primary);
 }
+
+.cluster-node-list {
+  margin-top: 0.35rem;
+  padding: 0.4rem 0.5rem;
+  background: rgba(0,0,0,0.15);
+  border-radius: 0.375rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+.cluster-node-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.78rem;
+}
+.node-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.node-dot.online  { background: #22c55e; }
+.node-dot.offline { background: #ef4444; }
+.node-name { color: var(--text-primary); }
+.node-status { color: var(--text-secondary); font-size: 0.72rem; margin-left: auto; }
+.node-error { color: #f87171; font-size: 0.75rem; }
 
 /* Resource bars */
 .host-card__resources {

@@ -5,6 +5,14 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.1] - 2026-04-17 🔄 Tasks: Live Proxmox Running-Task Poll
+
+### Fixed
+- **Tasks page shows completed status for tasks still running in Proxmox** — the "Running Tasks" section was computed from a one-time snapshot of the task list that was loaded when the PVE tab was opened. Tasks started after page load or still running after a backend restart were not tracked. Now polls Proxmox directly every 5s using `?running=1` filter across all hosts/nodes, so running tasks are always live and accurate regardless of in-memory state
+- **Backend `node_tasks` endpoint** — added `running` query param pass-through to Proxmox so the frontend can request only currently-running tasks
+
+---
+
 ## [2.2.0] - 2026-04-17 🔕 Alert Snooze Durations + Task Progress Fix
 
 ### Added

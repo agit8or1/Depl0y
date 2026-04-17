@@ -561,6 +561,7 @@ import SkeletonLoader from '@/components/SkeletonLoader.vue'
 const PAGE_SIZE = 50
 const DEPL_POLL_INTERVAL = 5000   // 5s refresh for Depl0y running tasks
 const RUNNING_POLL_INTERVAL = 5000
+const LIVE_RUNNING_INTERVAL = 5000  // 5s live Proxmox running task poll
 
 export default {
   name: 'Tasks',
@@ -787,6 +788,8 @@ export default {
     const filterTimeRange = ref(savedTaskFilter.timeRange || '')
 
     let runningPollTimer = null
+    let liveRunningTimer = null
+    const liveRunning = ref([])   // live running tasks polled directly from Proxmox
     const stoppingTask = ref({})
     const detailTask = ref(null)
     const detailLog = ref('')
@@ -813,9 +816,45 @@ export default {
       new Notification(title, { body, icon: '/favicon.ico' })
     }
 
-    const runningTasks = computed(() => tasks.value.filter(t => !t.status || t.status === 'running'))
+    // runningTasks shows liveRunning (from direct Proxmox poll) merged with
+    // any tasks already in tasks.value that are still marked running.
+    const runningTasks = computed(() => {
+      const liveKeys = new Set(liveRunning.value.map(t => t.upid))
+      // Include tasks from liveRunning + tasks.value that are running but not yet in liveRunning
+      const fromHistory = tasks.value.filter(t => (!t.status || t.status === 'running') && !liveKeys.has(t.upid))
+      return [...liveRunning.value, ...fromHistory]
+    })
+
+    async function fetchLivePveRunning() {
+      // Query Proxmox directly for currently-running tasks across all visible hosts
+      const collected = []
+      const hostsToQuery = hosts.value.length ? hosts.value : []
+      for (const h of hostsToQuery) {
+        try {
+          const nodeList = nodes.value.length && selectedHostId.value === h.id
+            ? nodes.value
+            : (await api.proxmox.listNodes(h.id).catch(() => ({ data: [] }))).data || []
+          for (const n of nodeList) {
+            const nodeName = n.node_name || n.node
+            try {
+              const res = await api.pveNode.tasks(h.id, nodeName, { limit: 50, running: 1 })
+              for (const t of (res.data || [])) {
+                collected.push({
+                  ...t,
+                  _key: `${h.id}-${nodeName}-${t.upid}`,
+                  _hostId: h.id,
+                  _node: nodeName,
+                })
+              }
+            } catch { /* ignore per-node error */ }
+          }
+        } catch { /* ignore per-host error */ }
+      }
+      liveRunning.value = collected
+    }
 
     async function pollRunningTasks() {
+      // Also update status in tasks.value for completed notification
       const running = tasks.value.filter(t => !t.status || t.status === 'running')
       for (const task of running) {
         try {
@@ -836,6 +875,17 @@ export default {
 
     function stopRunningPoll() {
       if (runningPollTimer) { clearInterval(runningPollTimer); runningPollTimer = null }
+    }
+
+    function startLiveRunningPoll() {
+      if (liveRunningTimer) return
+      fetchLivePveRunning()
+      liveRunningTimer = setInterval(fetchLivePveRunning, LIVE_RUNNING_INTERVAL)
+    }
+
+    function stopLiveRunningPoll() {
+      if (liveRunningTimer) { clearInterval(liveRunningTimer); liveRunningTimer = null }
+      liveRunning.value = []
     }
 
     const effectiveType = computed(() => filterType.value === 'custom' ? customType.value : filterType.value)
@@ -1158,6 +1208,7 @@ export default {
     watch(activeTab, async (tab) => {
       if (tab === 'depl0y') {
         stopRunningPoll()
+        stopLiveRunningPoll()
         await loadDeplRunning()
         await loadDeplHistory()
         startDeplPoll()
@@ -1165,6 +1216,7 @@ export default {
         stopDeplPoll()
         await loadTasks(true)
         startRunningPoll()
+        startLiveRunningPoll()
       }
     })
 
@@ -1190,6 +1242,7 @@ export default {
 
     onUnmounted(() => {
       stopRunningPoll()
+      stopLiveRunningPoll()
       stopDeplPoll()
       stopCountdown()
       if (detailPollTimer) { clearInterval(detailPollTimer); detailPollTimer = null }
@@ -1209,7 +1262,7 @@ export default {
       hosts, nodes, tasks, loading, loadingMore, hasMore,
       selectedHostId, selectedNode, filterType, customType, filterVmid, filterStatus, filterTimeRange,
       pveSearch,
-      runningTasks, displayedTasks, stoppingTask,
+      runningTasks, liveRunning, displayedTasks, stoppingTask,
       detailTask, detailLog, detailLoading, detailTaskRunning, logCopied, detailLogEl,
       expandedPveRows, expandedPveLogs,
       loadTasks, loadMore, onHostChange, onFilterChange, onLocalFilter,

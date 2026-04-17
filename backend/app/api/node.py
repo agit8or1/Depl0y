@@ -759,6 +759,7 @@ def node_vms(host_id: int, node: str, db: Session = Depends(get_db),
 @router.get("/{host_id}/nodes/{node}/tasks")
 def node_tasks(host_id: int, node: str, limit: int = 50, start: int = 0,
                vmid: Optional[int] = None, typefilter: Optional[str] = None,
+               running: Optional[int] = None,
                db: Session = Depends(get_db), current_user=Depends(get_current_user)):
     host = _get_host(host_id, db)
     params: Dict[str, Any] = {"limit": limit, "start": start}
@@ -766,6 +767,8 @@ def node_tasks(host_id: int, node: str, limit: int = 50, start: int = 0,
         params["vmid"] = vmid
     if typefilter:
         params["typefilter"] = typefilter
+    if running is not None:
+        params["running"] = running
     try:
         return _pve(host).nodes(node).tasks.get(**params)
     except Exception as e:

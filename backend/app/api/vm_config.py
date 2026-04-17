@@ -450,10 +450,11 @@ def migrate_vm(host_id: int, node: str, vmid: int, req: MigrateRequest,
     host = _get_host(host_id, db)
     try:
         kwargs: dict = {"target": req.target, "online": int(req.online)}
-        if req.with_local_disks:
-            kwargs["with_local_disks"] = 1
         if req.targetstorage:
             kwargs["targetstorage"] = req.targetstorage
+            kwargs["with_local_disks"] = 1  # required when moving disks to a target storage
+        elif req.with_local_disks:
+            kwargs["with_local_disks"] = 1
         if req.bwlimit is not None and req.bwlimit >= 0:
             kwargs["bwlimit"] = req.bwlimit
         if req.migration_type and req.migration_type != "secure":

@@ -827,11 +827,13 @@
           <div class="form-group">
             <label>Target Storage</label>
             <select v-model="migrateTargetStorage" class="form-control" :disabled="migrateRunning || !migrateTarget">
-              <option value="">{{ migrateStorageLoading ? 'Loading…' : migrateTarget ? 'Same as source (default)' : 'Select target node first' }}</option>
-              <option v-if="migrateTarget" value="1">Same as source</option>
+              <option value="">{{ migrateStorageLoading ? 'Loading…' : migrateTarget ? 'Auto / shared storage only' : 'Select target node first' }}</option>
               <option v-for="s in migrateTargetStorages" :key="s.storage" :value="s.storage">{{ s.storage }} ({{ s.type }})</option>
             </select>
-            <small class="text-muted">Where to place disk images on the target node</small>
+            <small v-if="migrateVmDiskStorages.length" class="text-muted">
+              VM disks on: <strong>{{ migrateVmDiskStorages.join(', ') }}</strong> — select a target storage to move them
+            </small>
+            <small v-else class="text-muted">Required if VM has disks on local (non-shared) storage</small>
           </div>
           <div class="form-group">
             <label>Migration Type</label>
@@ -1804,6 +1806,7 @@ export default {
     const migrateNodes = ref([])
     const migrateTargetStorages = ref([])
     const migrateStorageLoading = ref(false)
+    const migrateVmDiskStorages = ref([])  // source storage names used by VM disks
 
     const openMigrateModal = async (vm) => {
       migrateVm.value = vm
@@ -1814,15 +1817,30 @@ export default {
       migrateBwlimit.value = ''
       migrateMigrationType.value = 'secure'
       migrateMigrationNetwork.value = ''
-      migrateForce.value = false
       migrateNodes.value = []
       migrateTargetStorages.value = []
+      migrateVmDiskStorages.value = []
       showMigrateModal.value = true
-      try {
-        const res = await api.proxmox.listNodes(vm.hostId)
-        migrateNodes.value = (res.data || []).filter(n => n.node_name !== vm.node)
-          .map(n => ({ node: n.node_name, status: n.status }))
-      } catch { migrateNodes.value = [] }
+
+      // Fetch nodes and VM config in parallel
+      const [nodesRes, configRes] = await Promise.allSettled([
+        api.proxmox.listNodes(vm.hostId),
+        api.pveVm.getConfig(vm.hostId, vm.node, vm.vmid),
+      ])
+      migrateNodes.value = nodesRes.status === 'fulfilled'
+        ? (nodesRes.value.data || []).filter(n => n.node_name !== vm.node).map(n => ({ node: n.node_name, status: n.status }))
+        : []
+      if (configRes.status === 'fulfilled') {
+        const cfg = configRes.value.data || {}
+        const diskKeys = ['virtio', 'scsi', 'ide', 'sata']
+        const storages = new Set()
+        Object.entries(cfg).forEach(([k, v]) => {
+          if (diskKeys.some(d => k.startsWith(d)) && typeof v === 'string' && v.includes(':')) {
+            storages.add(v.split(':')[0])
+          }
+        })
+        migrateVmDiskStorages.value = [...storages]
+      }
     }
 
     watch(migrateTarget, async (node) => {
@@ -1832,7 +1850,12 @@ export default {
       migrateStorageLoading.value = true
       try {
         const res = await api.pveNode.listStorage(migrateVm.value.hostId, node)
-        migrateTargetStorages.value = (res.data || []).filter(s => s.content && s.content.includes('images'))
+        const storages = (res.data || []).filter(s => s.content && s.content.includes('images'))
+        migrateTargetStorages.value = storages
+        // Auto-select: prefer a storage whose name matches source, else first available
+        const sourceStorages = migrateVmDiskStorages.value
+        const match = storages.find(s => sourceStorages.includes(s.storage))
+        migrateTargetStorage.value = match ? match.storage : (storages[0]?.storage || '')
       } catch { migrateTargetStorages.value = [] }
       finally { migrateStorageLoading.value = false }
     })
@@ -1846,7 +1869,6 @@ export default {
           target: migrateTarget.value,
           online: migrateOnline.value,
           with_local_disks: migrateWithLocalDisks.value,
-          force: migrateForce.value,
           migration_type: migrateMigrationType.value || undefined,
         }
         if (migrateTargetStorage.value) payload.targetstorage = migrateTargetStorage.value
@@ -2115,8 +2137,8 @@ export default {
       showSnapshotModal, snapshotVm, snapshotName, snapshotDesc, snapshotVmState, snapshotRunning,
       openSnapshotModal, runSnapshot,
       showMigrateModal, migrateVm, migrateTarget, migrateOnline, migrateWithLocalDisks,
-      migrateTargetStorage, migrateBwlimit, migrateMigrationType, migrateMigrationNetwork, migrateForce,
-      migrateRunning, migrateNodes, migrateTargetStorages, migrateStorageLoading,
+      migrateTargetStorage, migrateBwlimit, migrateMigrationType, migrateMigrationNetwork,
+      migrateRunning, migrateNodes, migrateTargetStorages, migrateStorageLoading, migrateVmDiskStorages,
       openMigrateModal, runMigrate,
       showCloneModal, cloneVm, cloneNewId, cloneName, cloneTarget, cloneFull, cloneRunning, cloneNodes,
       openCloneModal, runClone,

@@ -5,6 +5,14 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.6] - 2026-04-17 🚀 VM Migrate — Smart Storage Detection
+
+### Fixed
+- **Migrate 500 "storage not available on node"** — backend now auto-sets `with_local_disks=1` whenever `targetstorage` is provided (required by Proxmox when moving disk images). Frontend now fetches VM config on modal open, detects which source storages the VM's disks use, and auto-selects a matching or first-available storage on the target node. Removed the misleading "Same as source" (value=`1`) option which fails when storage names differ between nodes
+- **Migrate modal now shows VM disk storages** — hint text below the target storage dropdown shows exactly which storages the VM's disks live on, making it clear why a target storage is required
+
+---
+
 ## [2.1.5] - 2026-04-17 ⚙️ Running Tasks Widget + Migrate 500 Fix
 
 ### Fixed

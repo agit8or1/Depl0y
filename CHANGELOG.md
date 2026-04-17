@@ -5,7 +5,14 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.1.2] - 2026-04-17 🖱️ VM Actions Submenu Fix
+## [2.1.3] - 2026-04-17 🖱️ VM Actions Submenu Fix (Complete)
+
+### Fixed
+- **VM submenu items unclickable + hover flashing** — replaced the `position:fixed` overlay approach with a `document mousedown` listener. The overlay (`z-index:199`) was physically intercepting all pointer events including hover, making menu items unreachable regardless of z-index. Removed both overlay divs and added `handleMenuOutsideClick` that closes the active menu only when clicking outside `.more-menu-wrap` / `.col-toggle-wrap`
+
+---
+
+## [2.1.2] - 2026-04-17 🖱️ VM Actions Submenu Fix (Partial)
 
 ### Fixed
 - **VM submenu items unclickable** — clicking Migrate, Clone, Snapshot, etc. from the ⋮ menu did nothing. Root cause: the click-outside overlay (`position: fixed; z-index: 199`) was intercepting clicks before they could reach the menu buttons. Fixed by adding `z-index: 300` to `.more-menu-wrap` and `.col-toggle-wrap` (creating an explicit stacking context above the overlay) and raising `.more-menu` / `.col-menu` to `z-index: 1000`

@@ -601,12 +601,6 @@
       </div>
     </div>
 
-    <!-- More-menu click-outside handler -->
-    <div v-if="openMoreMenuKey" class="col-menu-overlay" @click="openMoreMenuKey = null"></div>
-
-    <!-- Column visibility click-outside handler -->
-    <div v-if="showColMenu" class="col-menu-overlay" @click="showColMenu = false"></div>
-
     <!-- Delete Confirmation Modal -->
     <div v-if="showDeleteConfirmModal" class="modal-overlay" @click="closeDeleteModal">
       <div class="modal-content" @click.stop>
@@ -1707,6 +1701,11 @@ export default {
     const openMoreMenuKey = ref(null)
     const toggleMoreMenu = (key) => { openMoreMenuKey.value = openMoreMenuKey.value === key ? null : key }
 
+    const handleMenuOutsideClick = (e) => {
+      if (!e.target.closest('.more-menu-wrap')) openMoreMenuKey.value = null
+      if (!e.target.closest('.col-toggle-wrap')) showColMenu.value = false
+    }
+
     // ── Suspend / Resume ─────────────────────────────────────────────────────
     const suspendVm = async (vm) => {
       vm._busy = true
@@ -2016,6 +2015,7 @@ export default {
       }, intervalSecs * 1000)
       startAllIntervals(intervalSecs)
       document.addEventListener('visibilitychange', handleVisibilityChange)
+      document.addEventListener('mousedown', handleMenuOutsideClick)
     })
 
     onUnmounted(() => {
@@ -2023,6 +2023,7 @@ export default {
       clearInterval(allInterval)
       clearInterval(allTickInterval)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
+      document.removeEventListener('mousedown', handleMenuOutsideClick)
     })
 
     return {
@@ -2193,7 +2194,6 @@ export default {
   transition: background 0.1s;
 }
 .col-menu-item:hover { background: var(--background); }
-.col-menu-overlay { position: fixed; inset: 0; z-index: 199; }
 
 /* ── Group by node toggle ──────────────────────────────────────────────────── */
 .toggle-label {

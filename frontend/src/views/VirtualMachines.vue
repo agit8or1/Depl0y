@@ -219,6 +219,11 @@
             Group by node
           </label>
 
+          <label class="toggle-label" style="margin-left:8px;">
+            <input type="checkbox" v-model="showTemplates" />
+            Show templates<span v-if="templateCount > 0"> ({{ templateCount }})</span>
+          </label>
+
           <span class="filter-count">Showing {{ filteredAllVMs.length }} of {{ allVMs.length }} VM{{ allVMs.length !== 1 ? 's' : '' }}</span>
         </div>
         <button v-if="allSearch || allStatusFilter || activeTagFilters.size > 0" @click="allSearch = ''; allStatusFilter = ''; activeTagFilters = new Set()" class="btn btn-sm btn-secondary">
@@ -1193,6 +1198,7 @@ export default {
     const allError = ref(null)
     const allSearch = ref(savedFilter.search || '')
     const allStatusFilter = ref(savedFilter.status || '')
+    const showTemplates = ref(false)  // hide cloud-init templates by default
     const allSortField = ref('vmid')
     const allSortDirection = ref('asc')
 
@@ -1346,6 +1352,7 @@ export default {
                 description: item.description || '',
                 netin: item.netin,
                 netout: item.netout,
+                template: item.template || 0,
                 _busy: false,
               })
             })
@@ -1399,8 +1406,15 @@ export default {
       }
     }
 
+    const templateCount = computed(() => allVMs.value.filter(vm => vm.template).length)
+
     const filteredAllVMs = computed(() => {
       let list = allVMs.value
+
+      // Hide templates (cloud-init base images) unless explicitly shown
+      if (!showTemplates.value) {
+        list = list.filter(vm => !vm.template)
+      }
 
       if (allStatusFilter.value) {
         list = list.filter(vm => vm.status.toLowerCase() === allStatusFilter.value.toLowerCase())
@@ -2106,6 +2120,7 @@ export default {
       showDeleteModal, closeDeleteModal, deleteVM, clearFilter,
       allVMs, allLoading, allError, allSearch, allStatusFilter, allSortField, allSortDirection,
       allPartialFailedHosts, allTimeoutWarning,
+      showTemplates, templateCount,
       filteredAllVMs, groupedVMs, fetchAllProxmoxVMs, allSortBy,
       navigateToVM, allStartVM, allStopVM, allShutdownVM, allCountdown, openConsole,
       exportCSV,

@@ -50,8 +50,8 @@ def get_running_tasks(db: Session = Depends(get_db), current_user=Depends(get_cu
                     try:
                         node_tasks = pve.nodes(node.node_name).tasks.get(limit=100)
                         for t in node_tasks:
-                            # Running tasks in Proxmox have an empty status string
-                            if t.get("status", "x") == "" and t.get("upid") not in tracked_upids:
+                            # Running tasks in Proxmox have status absent or empty string
+                            if not t.get("status") and t.get("upid") not in tracked_upids:
                                 pve_running.append({
                                     "upid": t.get("upid"),
                                     "host_id": host.id,

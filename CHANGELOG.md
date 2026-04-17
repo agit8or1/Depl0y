@@ -5,6 +5,16 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.5] - 2026-04-17 🏷️ Hide Cloud-Init Templates from VM List + Fix Running Task Detection
+
+### Added
+- **VM list: hide cloud-init templates by default** — VMs converted to Proxmox templates (`template=1`) are now excluded from the VM list by default. A "Show templates (N)" checkbox in the filter bar lets you toggle visibility. Template count is shown in the badge. This prevents cloud-init base images from being counted in resource totals or cluttering the VM list
+
+### Fixed
+- **Running task detection** — `GET /tasks/running` used `t.get("status", "x") == ""` which missed tasks where Proxmox omits the `status` key entirely for actively-running tasks. Changed to `not t.get("status")` to correctly catch absent key, `None`, and empty string — backup jobs and other running tasks now appear reliably
+
+---
+
 ## [2.2.4] - 2026-04-17 🔄 Running Tasks: Show All Proxmox Tasks (Not Just Depl0y-Initiated)
 
 ### Added

@@ -136,9 +136,14 @@ def join_cluster(
         if body.link0:
             params["link0"] = body.link0
         result = _pve(host).cluster.config.join.post(**params)
-        return {"success": True, "result": result}
+        return {"success": True, "join_initiated": True, "result": result}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        err = str(e)
+        # pve-cluster restarts on join — the API connection may drop mid-call.
+        # A connection reset/timeout here still means the join was initiated.
+        if any(s in err.lower() for s in ("connection", "reset", "timeout", "eof", "broken pipe", "remotedisconnected")):
+            return {"success": True, "join_initiated": True, "result": "Join initiated (node restarting pve-cluster)"}
+        raise HTTPException(status_code=500, detail=err)
 
 
 @router.delete("/{host_id}/config/nodes/{node}")

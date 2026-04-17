@@ -1062,9 +1062,18 @@
         </div>
 
         <div v-if="joinClusterError" class="alert alert-danger mt-1">{{ joinClusterError }}</div>
-        <div v-if="joinClusterSuccess" class="alert alert-success mt-1">{{ joinClusterSuccess }}</div>
+        <div v-if="joinClusterSuccess" class="alert alert-success mt-1">
+          {{ joinClusterSuccess }}
+          <div style="margin-top:0.5rem;font-size:0.8rem;opacity:0.85;">
+            Once the node finishes syncing (30-60s), it will appear under the selected datacenter.
+            You can then <strong>delete this separate host entry</strong> — it's no longer needed.
+          </div>
+          <button class="btn btn-danger btn-sm" style="margin-top:0.5rem;" @click="deleteHostAfterJoin">
+            Delete "{{ joinClusterTarget?.name }}" host entry now
+          </button>
+        </div>
 
-        <div class="flex gap-1 mt-2">
+        <div v-if="!joinClusterSuccess" class="flex gap-1 mt-2">
           <button
             class="btn btn-primary"
             @click="submitJoinCluster"
@@ -1213,12 +1222,25 @@ export default {
           password: joinClusterPassword.value,
           fingerprint: joinClusterFingerprint.value,
         })
-        joinClusterSuccess.value = `${joinClusterTarget.value.name} successfully joined the cluster. The node will reconnect shortly.`
+        joinClusterSuccess.value = `${joinClusterTarget.value.name} join initiated successfully.`
         toast.success('Cluster join initiated!')
       } catch (e) {
         joinClusterError.value = e.response?.data?.detail || 'Cluster join failed.'
       } finally {
         joiningCluster.value = false
+      }
+    }
+
+    const deleteHostAfterJoin = async () => {
+      const id = joinClusterTarget.value?.id
+      if (!id) return
+      try {
+        await api.proxmox.deleteHost(id)
+        showJoinClusterModal.value = false
+        toast.success('Host entry deleted.')
+        fetchHosts()
+      } catch (e) {
+        toast.error('Could not delete host: ' + (e.response?.data?.detail || e.message))
       }
     }
 
@@ -2119,6 +2141,7 @@ export default {
       openJoinCluster,
       fetchJoinInfo,
       submitJoinCluster,
+      deleteHostAfterJoin,
     }
   }
 }

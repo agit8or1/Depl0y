@@ -1120,8 +1120,6 @@ export default {
 
     // Watch disk[0].size changes to reset active preset if user types manually
     watch(() => disks.value[0]?.size, () => { activePreset.value = '' })
-    watch(() => formData.value.cpu_cores, () => { activePreset.value = '' })
-    watch(() => formData.value.memory, () => { activePreset.value = '' })
 
     // ---------- NICs ----------
     const nics = ref([{ model: 'virtio', bridge: '', vlan: null, mac: '', macMode: 'random', macError: '', rate: null, firewall: false, linkdown: false }])
@@ -1205,6 +1203,10 @@ export default {
       ip_address: '', gateway: '', netmask: '24', dns_servers: '8.8.8.8,8.8.4.4',
       searchdomain: '', upgrade_packages: false,
     })
+
+    // Reset active preset when user manually changes CPU/memory (must be after formData declaration)
+    watch(() => formData.value.cpu_cores, () => { activePreset.value = '' })
+    watch(() => formData.value.memory, () => { activePreset.value = '' })
 
     // ---------- Selected node object (for summary) ----------
     const selectedNodeObj = computed(() => {

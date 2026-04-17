@@ -142,13 +142,16 @@ class AlertEngine:
         self._check_login_failures(db)
 
     def _check_node_offline(self, db):
-        """Fire if any Proxmox node hasn't been updated for > 5 minutes."""
+        """Fire if any Proxmox node hasn't been updated for > 10 minutes."""
         try:
-            from app.models.database import ProxmoxNode
-            cutoff = datetime.utcnow() - timedelta(minutes=5)
+            from app.models.database import ProxmoxNode, ProxmoxHost
+            cutoff = datetime.utcnow() - timedelta(minutes=10)
+            # Only check nodes whose host still exists and is active
+            active_host_ids = {h.id for h in db.query(ProxmoxHost).filter(ProxmoxHost.is_active == True).all()}
             stale_nodes = db.query(ProxmoxNode).filter(
                 ProxmoxNode.last_updated < cutoff,
                 ProxmoxNode.status == "online",
+                ProxmoxNode.host_id.in_(active_host_ids),
             ).all()
             for node in stale_nodes:
                 key = f"node_offline:{node.id}"

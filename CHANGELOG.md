@@ -5,6 +5,15 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.3] - 2026-04-17 🔕 Fix False "Node offline" Alerts
+
+### Fixed
+- **False "Node offline: pve05" critical alert** — alert engine was checking all `proxmox_nodes` rows including orphaned records from deleted hosts. Orphaned nodes are never polled so their `last_updated` stays old forever, causing spurious critical alerts. Alert engine now only checks nodes whose `host_id` maps to an existing active host. Also increased the offline threshold from 5 → 10 minutes to tolerate backend restarts during deployments
+- **Cleanup** — deleted 1 orphaned `proxmox_nodes` row (pve05 on deleted host ID 2) from the database
+- **Dismissed** — the false pve05 critical alert has been acknowledged
+
+---
+
 ## [2.2.2] - 2026-04-17 🔧 Fix Live Task Poll 500 Error
 
 ### Fixed

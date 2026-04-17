@@ -1037,11 +1037,11 @@
   </div>
 
   <!-- Join Cluster Modal -->
-  <div v-if="showJoinClusterModal" class="modal-overlay" @click.self="showJoinClusterModal = false">
+  <div v-if="showJoinClusterModal" class="modal-overlay" @click.self="closeJoinModal">
     <div class="modal-container" style="max-width:480px">
       <div class="modal-header">
         <h3>Join Cluster</h3>
-        <button class="btn-close" @click="showJoinClusterModal = false">×</button>
+        <button class="btn-close" @click="closeJoinModal">×</button>
       </div>
       <div class="modal-body">
         <p class="text-sm text-muted mb-2">
@@ -1082,15 +1082,20 @@
         </div>
 
         <div v-if="joinClusterError" class="alert alert-danger mt-1">{{ joinClusterError }}</div>
-        <div v-if="joinClusterSuccess" class="alert alert-success mt-1">
-          {{ joinClusterSuccess }}
-          <div style="margin-top:0.5rem;font-size:0.8rem;opacity:0.85;">
-            Once the node finishes syncing (30-60s), it will appear under the selected datacenter.
-            You can then <strong>delete this separate host entry</strong> — it's no longer needed.
-          </div>
-          <button class="btn btn-danger btn-sm" style="margin-top:0.5rem;" @click="deleteHostAfterJoin">
-            Delete "{{ joinClusterTarget?.name }}" host entry now
-          </button>
+
+        <!-- Post-join verification status -->
+        <div v-if="joinVerifyStatus === 'verifying'" class="alert alert-info mt-1" style="background:rgba(59,130,246,0.12);border:1px solid rgba(59,130,246,0.3);color:#93c5fd;">
+          <span style="animation:spin 1s linear infinite;display:inline-block;margin-right:0.4rem;">⟳</span>
+          Polling cluster — waiting for <strong>{{ joinClusterTarget?.name }}</strong> to appear as a node… (up to 3 min)
+          <button class="btn btn-outline btn-sm" style="margin-top:0.5rem;display:block;" @click="deleteHostAfterJoin">Delete host entry manually instead</button>
+        </div>
+        <div v-if="joinVerifyStatus === 'confirmed'" class="alert alert-success mt-1">
+          {{ joinClusterSuccess }} The standalone host entry has been removed automatically.
+        </div>
+        <div v-if="joinVerifyStatus === 'timeout'" class="alert alert-danger mt-1">
+          Verification timed out — the node did not appear in the cluster within 3 minutes.
+          Check Proxmox directly (<code>pvecm status</code> on the cluster master) then delete the host entry manually if the join succeeded.
+          <button class="btn btn-danger btn-sm" style="margin-top:0.5rem;display:block;" @click="deleteHostAfterJoin">Delete host entry</button>
         </div>
 
         <div v-if="!joinClusterSuccess" class="flex gap-1 mt-2">
@@ -1101,7 +1106,7 @@
           >
             {{ joiningCluster ? 'Joining...' : 'Join Cluster' }}
           </button>
-          <button class="btn btn-outline" @click="showJoinClusterModal = false">Cancel</button>
+          <button class="btn btn-outline" @click="closeJoinModal">Cancel</button>
         </div>
       </div>
     </div>
@@ -1208,6 +1213,7 @@ export default {
     )
 
     const openJoinCluster = (host) => {
+      _stopJoinPoll()
       joinClusterTarget.value = host
       joinClusterMasterHostId.value = ''
       joinClusterFingerprint.value = ''
@@ -1215,6 +1221,7 @@ export default {
       joinClusterPassword.value = ''
       joinClusterError.value = ''
       joinClusterSuccess.value = ''
+      joinVerifyStatus.value = ''
       showJoinClusterModal.value = true
     }
 
@@ -1234,11 +1241,25 @@ export default {
       }
     }
 
+    const joinVerifyStatus = ref('')   // '' | 'verifying' | 'confirmed' | 'timeout'
+    let _joinPollTimer = null
+
+    const _stopJoinPoll = () => {
+      if (_joinPollTimer) { clearInterval(_joinPollTimer); _joinPollTimer = null }
+    }
+
     const submitJoinCluster = async () => {
       joinClusterError.value = ''
       joinClusterSuccess.value = ''
       joiningCluster.value = true
       try {
+        // Snapshot the master's current node names BEFORE the join
+        let knownNodes = []
+        try {
+          const pre = await api.cluster.getClusterStatus(joinClusterMasterHostId.value)
+          knownNodes = (pre.data?.nodes || []).map(n => n.name)
+        } catch (_) { /* non-fatal */ }
+
         const masterHost = hosts.value.find(h => h.id === joinClusterMasterHostId.value)
         const hostname = joinClusterNodeAddr.value || masterHost?.hostname || ''
         await api.cluster.joinCluster(joinClusterTarget.value.id, {
@@ -1246,21 +1267,62 @@ export default {
           password: joinClusterPassword.value,
           fingerprint: joinClusterFingerprint.value,
         })
-        joinClusterSuccess.value = `${joinClusterTarget.value.name} join initiated successfully.`
-        toast.success('Cluster join initiated!')
+        joinClusterSuccess.value = 'Join initiated.'
+        joinVerifyStatus.value = 'verifying'
+        toast.success('Cluster join initiated — verifying…')
+
+        // Poll the master cluster status until the new node appears (max 3 min)
+        const targetId = joinClusterTarget.value.id
+        const masterId = joinClusterMasterHostId.value
+        const deadline = Date.now() + 3 * 60 * 1000
+        _stopJoinPoll()
+        _joinPollTimer = setInterval(async () => {
+          if (Date.now() > deadline) {
+            _stopJoinPoll()
+            joinVerifyStatus.value = 'timeout'
+            return
+          }
+          try {
+            const res = await api.cluster.getClusterStatus(masterId)
+            const nodes = res.data?.nodes || []
+            const newNode = nodes.find(n => !knownNodes.includes(n.name))
+            if (newNode) {
+              _stopJoinPoll()
+              joinVerifyStatus.value = 'confirmed'
+              joinClusterSuccess.value = `${newNode.name} confirmed in cluster.`
+              toast.success(`${newNode.name} joined — removing standalone host entry…`)
+              await new Promise(r => setTimeout(r, 1500))
+              try {
+                await api.proxmox.deleteHost(targetId)
+                toast.success('Standalone host entry removed.')
+              } catch (_) { /* ignore — user can delete manually */ }
+              showJoinClusterModal.value = false
+              fetchHosts()
+            }
+          } catch (_) { /* Proxmox API may be briefly unavailable while cluster syncs */ }
+        }, 6000)
       } catch (e) {
         joinClusterError.value = e.response?.data?.detail || 'Cluster join failed.'
+        joinVerifyStatus.value = ''
       } finally {
         joiningCluster.value = false
       }
     }
 
+    const closeJoinModal = () => {
+      _stopJoinPoll()
+      showJoinClusterModal.value = false
+      joinVerifyStatus.value = ''
+    }
+
     const deleteHostAfterJoin = async () => {
+      _stopJoinPoll()
       const id = joinClusterTarget.value?.id
       if (!id) return
       try {
         await api.proxmox.deleteHost(id)
         showJoinClusterModal.value = false
+        joinVerifyStatus.value = ''
         toast.success('Host entry deleted.')
         fetchHosts()
       } catch (e) {
@@ -2183,6 +2245,8 @@ export default {
       openJoinCluster,
       fetchJoinInfo,
       submitJoinCluster,
+      joinVerifyStatus,
+      closeJoinModal,
       deleteHostAfterJoin,
     }
   }
@@ -3226,6 +3290,8 @@ export default {
 }
 .btn-close:hover { color: var(--text-primary); }
 .alert { padding: 0.6rem 0.8rem; border-radius: 0.375rem; font-size: 0.85rem; }
+.alert-info { background: rgba(59,130,246,0.12); border: 1px solid rgba(59,130,246,0.3); color: #93c5fd; }
+@keyframes spin { to { transform: rotate(360deg); } }
 .alert-danger { background: rgba(239,68,68,0.12); border: 1px solid rgba(239,68,68,0.3); color: #f87171; }
 .alert-success { background: rgba(34,197,94,0.12); border: 1px solid rgba(34,197,94,0.3); color: #4ade80; }
 </style>

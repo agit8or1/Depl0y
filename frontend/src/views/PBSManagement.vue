@@ -154,10 +154,11 @@
               <div class="job-card-header">
                 <span class="job-icon">{{ jobStatusIcon(job) }}</span>
                 <div class="job-card-info">
-                  <strong class="text-sm">{{ job.id || job['job-id'] || 'Unknown' }}</strong>
+                  <strong class="text-sm">{{ pbsJobLabel(job) }}</strong>
                   <div class="text-xs text-muted">
                     <span class="job-type-pill">{{ (job['job-type'] || 'sync').toUpperCase() }}</span>
                     Store: {{ job.store || job.datastore || '—' }}
+                    <span class="font-mono" style="opacity:0.5;margin-left:4px;">{{ job.id || job['job-id'] }}</span>
                   </div>
                 </div>
                 <span :class="['job-status-badge', `job-status-badge--${jobStatusClass(job)}`]">
@@ -192,42 +193,153 @@
 
       <!-- ── Datastores Tab ── -->
       <div v-if="activeTab === 'datastores'">
-        <div class="card">
-          <div class="card-header">
-            <h3>Datastores</h3>
-            <button @click="fetchDatastores" class="btn btn-outline btn-sm">Refresh</button>
+        <!-- Browse panel: shown when a datastore is selected -->
+        <template v-if="browseDatastore">
+          <div class="card">
+            <div class="card-header">
+              <div class="flex align-center gap-1">
+                <button @click="closeBrowse" class="btn btn-outline btn-sm">← Back</button>
+                <h3>💾 {{ browseDatastore.store || browseDatastore.name }}</h3>
+              </div>
+              <div class="flex gap-1 align-center">
+                <button @click="fetchBrowseGroups" class="btn btn-outline btn-sm">Refresh</button>
+                <button @click="openPruneGroupModal(null)" class="btn btn-outline btn-sm" title="Prune backup group">✂ Prune Group</button>
+              </div>
+            </div>
+
+            <div v-if="loadingBrowse" class="loading-spinner"></div>
+            <div v-else-if="browseGroups.length === 0" class="text-muted p-2 text-sm">No backup groups found in this datastore.</div>
+            <div v-else>
+              <div v-for="group in browseGroups" :key="group['backup-type'] + '/' + group['backup-id']" class="browse-group">
+                <div class="browse-group-header" @click="toggleBrowseGroup(group)">
+                  <span class="browse-group-expand">{{ browseExpandedKey === groupKey(group) ? '▼' : '▶' }}</span>
+                  <span class="browse-group-type-pill">{{ group['backup-type'] }}</span>
+                  <strong class="browse-group-id">{{ group['backup-id'] }}</strong>
+                  <span class="text-xs text-muted ml-1">({{ group['backup-count'] || 0 }} snapshots)</span>
+                  <span class="text-xs text-muted ml-1" v-if="group['last-backup']">
+                    Last: {{ formatRelativeTime(group['last-backup']) }}
+                  </span>
+                  <div class="browse-group-actions" @click.stop>
+                    <button class="btn btn-outline btn-xs" @click="openPruneGroupModal(group)" title="Prune this group">✂ Prune</button>
+                  </div>
+                </div>
+
+                <!-- Snapshots for this group -->
+                <div v-if="browseExpandedKey === groupKey(group)" class="browse-snapshots">
+                  <div v-if="loadingSnapshots" class="text-xs text-muted p-2">Loading snapshots…</div>
+                  <table v-else-if="browseSnapshots.length > 0" class="table">
+                    <thead>
+                      <tr>
+                        <th>Backup Time</th>
+                        <th>Size</th>
+                        <th>Verify</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="snap in browseSnapshots" :key="snap['backup-time']">
+                        <td class="text-sm">{{ formatDate(snap['backup-time']) }}</td>
+                        <td class="text-sm">{{ snap.size != null ? formatBytes(snap.size) : '—' }}</td>
+                        <td>
+                          <span v-if="snap.verification" :class="['job-status-badge', snap.verification.state === 'ok' ? 'job-status-badge--ok' : 'job-status-badge--failed']">
+                            {{ snap.verification.state }}
+                          </span>
+                          <span v-else class="text-xs text-muted">unverified</span>
+                        </td>
+                        <td @click.stop>
+                          <div class="flex gap-1">
+                            <button class="btn btn-outline btn-xs" @click="verifySnap(group, snap)" :disabled="snapActionRunning" title="Verify integrity">✓ Verify</button>
+                            <button class="btn btn-danger btn-xs" @click="forgetSnap(group, snap)" :disabled="snapActionRunning" title="Delete snapshot">🗑</button>
+                          </div>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                  <div v-else class="text-xs text-muted p-2">No snapshots.</div>
+                </div>
+              </div>
+            </div>
           </div>
-          <div v-if="loadingDatastores" class="loading-spinner"></div>
-          <div v-else-if="datastores.length === 0" class="text-muted p-2 text-sm">No datastores found.</div>
-          <div v-else class="ds-grid">
-            <div v-for="ds in datastores" :key="ds.store || ds.name" class="ds-card">
-              <div class="ds-card-header">
-                <span class="ds-icon">💾</span>
-                <div>
-                  <strong>{{ ds.store || ds.name }}</strong>
-                  <div v-if="ds.path" class="text-xs text-muted">{{ ds.path }}</div>
+        </template>
+
+        <!-- Datastore list: shown when no datastore selected -->
+        <template v-else>
+          <div class="card">
+            <div class="card-header">
+              <h3>Datastores</h3>
+              <button @click="fetchDatastores" class="btn btn-outline btn-sm">Refresh</button>
+            </div>
+            <div v-if="loadingDatastores" class="loading-spinner"></div>
+            <div v-else-if="datastores.length === 0" class="text-muted p-2 text-sm">No datastores found.</div>
+            <div v-else class="ds-grid">
+              <div v-for="ds in datastores" :key="ds.store || ds.name" class="ds-card ds-card--clickable" @click="openBrowse(ds)">
+                <div class="ds-card-header">
+                  <span class="ds-icon">💾</span>
+                  <div>
+                    <strong>{{ ds.store || ds.name }}</strong>
+                    <div v-if="ds.path" class="text-xs text-muted">{{ ds.path }}</div>
+                  </div>
+                  <span class="ds-browse-hint text-xs text-muted">Browse →</span>
+                </div>
+                <!-- Disk usage bar -->
+                <div v-if="ds.used != null && ds.avail != null" class="ds-usage">
+                  <div class="ds-usage-bar-wrap">
+                    <div
+                      class="ds-usage-bar"
+                      :style="{ width: dsUsagePercent(ds) + '%' }"
+                      :class="dsUsageClass(ds)"
+                    ></div>
+                  </div>
+                  <div class="ds-usage-labels">
+                    <span class="text-xs">{{ formatBytes(ds.used) }} used</span>
+                    <span class="text-xs text-muted">{{ formatBytes(ds.avail) }} free</span>
+                  </div>
+                </div>
+                <div class="ds-card-meta">
+                  <div class="text-xs text-muted" v-if="ds.total">Total: {{ formatBytes(ds.total) }}</div>
+                  <div class="text-xs text-muted" v-if="ds['gc-status']">
+                    GC: {{ ds['gc-status']['last-run-endtime'] ? formatRelativeTime(ds['gc-status']['last-run-endtime']) : 'never' }}
+                  </div>
                 </div>
               </div>
-              <!-- Disk usage bar -->
-              <div v-if="ds.used != null && ds.avail != null" class="ds-usage">
-                <div class="ds-usage-bar-wrap">
-                  <div
-                    class="ds-usage-bar"
-                    :style="{ width: dsUsagePercent(ds) + '%' }"
-                    :class="dsUsageClass(ds)"
-                  ></div>
-                </div>
-                <div class="ds-usage-labels">
-                  <span class="text-xs">{{ formatBytes(ds.used) }} used</span>
-                  <span class="text-xs text-muted">{{ formatBytes(ds.avail) }} free</span>
-                </div>
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <!-- Prune Group Modal -->
+      <div v-if="pruneModal.show" class="modal" @click.self="pruneModal.show = false">
+        <div class="modal-content" @click.stop>
+          <div class="modal-header">
+            <h3>Prune Backup Group</h3>
+            <button @click="pruneModal.show = false" class="btn-close">&#215;</button>
+          </div>
+          <div class="modal-body">
+            <p class="text-sm text-muted mb-2">Remove old snapshots from <strong>{{ pruneModal.group ? (pruneModal.group['backup-type'] + '/' + pruneModal.group['backup-id']) : 'all groups' }}</strong> according to retention rules.</p>
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Keep Last</label>
+                <input v-model.number="pruneModal.keepLast" type="number" min="0" class="form-control" placeholder="e.g. 7" />
               </div>
-              <div class="ds-card-meta">
-                <div class="text-xs text-muted" v-if="ds.total">Total: {{ formatBytes(ds.total) }}</div>
-                <div class="text-xs text-muted" v-if="ds['gc-status']">
-                  GC: {{ ds['gc-status']['last-run-endtime'] ? formatRelativeTime(ds['gc-status']['last-run-endtime']) : 'never' }}
-                </div>
+              <div class="form-group">
+                <label class="form-label">Keep Daily</label>
+                <input v-model.number="pruneModal.keepDaily" type="number" min="0" class="form-control" placeholder="e.g. 14" />
               </div>
+              <div class="form-group">
+                <label class="form-label">Keep Weekly</label>
+                <input v-model.number="pruneModal.keepWeekly" type="number" min="0" class="form-control" placeholder="e.g. 4" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">Keep Monthly</label>
+                <input v-model.number="pruneModal.keepMonthly" type="number" min="0" class="form-control" placeholder="e.g. 3" />
+              </div>
+            </div>
+            <div v-if="pruneModal.error" class="error-banner mt-1">{{ pruneModal.error }}</div>
+            <div class="flex gap-1 mt-2">
+              <button class="btn btn-danger" @click="runPrune" :disabled="pruneModal.running">
+                {{ pruneModal.running ? 'Pruning…' : 'Prune Now' }}
+              </button>
+              <button class="btn btn-outline" @click="pruneModal.show = false">Cancel</button>
             </div>
           </div>
         </div>
@@ -435,6 +547,18 @@ export default {
       loadingDatastores: false,
       datastores: [],
 
+      // Datastore browse
+      browseDatastore: null,
+      browseGroups: [],
+      loadingBrowse: false,
+      browseExpandedKey: null,
+      browseSnapshots: [],
+      loadingSnapshots: false,
+      snapActionRunning: false,
+
+      // Prune modal
+      pruneModal: { show: false, group: null, keepLast: null, keepDaily: null, keepWeekly: null, keepMonthly: null, running: false, error: null },
+
       // Jobs tab
       loadingJobs: false,
       jobs: [],
@@ -571,6 +695,136 @@ export default {
       }
     },
 
+    // ── Datastore Browse ─────────────────────────────────────────────────
+    openBrowse(ds) {
+      this.browseDatastore = ds
+      this.browseGroups = []
+      this.browseExpandedKey = null
+      this.browseSnapshots = []
+      this.fetchBrowseGroups()
+    },
+
+    closeBrowse() {
+      this.browseDatastore = null
+      this.browseGroups = []
+      this.browseExpandedKey = null
+    },
+
+    async fetchBrowseGroups() {
+      if (!this.browseDatastore || !this.selectedServerId) return
+      const dsName = this.browseDatastore.store || this.browseDatastore.name
+      this.loadingBrowse = true
+      try {
+        const res = await api.get(`/pbs-mgmt/${this.selectedServerId}/datastores/${dsName}/groups`)
+        this.browseGroups = res.data || []
+      } catch {
+        this.browseGroups = []
+      } finally {
+        this.loadingBrowse = false
+      }
+    },
+
+    groupKey(group) {
+      return `${group['backup-type']}/${group['backup-id']}`
+    },
+
+    async toggleBrowseGroup(group) {
+      const key = this.groupKey(group)
+      if (this.browseExpandedKey === key) {
+        this.browseExpandedKey = null
+        return
+      }
+      this.browseExpandedKey = key
+      this.browseSnapshots = []
+      this.loadingSnapshots = true
+      const dsName = this.browseDatastore.store || this.browseDatastore.name
+      try {
+        const res = await api.get(`/pbs-mgmt/${this.selectedServerId}/datastores/${dsName}/snapshots`, {
+          params: { 'backup-type': group['backup-type'], 'backup-id': group['backup-id'] }
+        })
+        this.browseSnapshots = (res.data || []).sort((a, b) => b['backup-time'] - a['backup-time'])
+      } catch {
+        this.browseSnapshots = []
+      } finally {
+        this.loadingSnapshots = false
+      }
+    },
+
+    async verifySnap(group, snap) {
+      if (!confirm(`Verify snapshot from ${this.formatDate(snap['backup-time'])}?`)) return
+      this.snapActionRunning = true
+      const dsName = this.browseDatastore.store || this.browseDatastore.name
+      try {
+        await api.post(`/pbs-mgmt/${this.selectedServerId}/datastores/${dsName}/verify`, {
+          'backup-type': group['backup-type'],
+          'backup-id': group['backup-id'],
+          'backup-time': snap['backup-time'],
+        })
+        this.jobRunResult = 'Verify task started.'
+        setTimeout(() => { if (this.jobRunResult) this.jobRunResult = null }, 5000)
+      } catch (e) {
+        this.jobRunResult = `Verify failed: ${e?.response?.data?.detail || e.message}`
+      } finally {
+        this.snapActionRunning = false
+      }
+    },
+
+    async forgetSnap(group, snap) {
+      if (!confirm(`Permanently delete snapshot from ${this.formatDate(snap['backup-time'])}? This cannot be undone.`)) return
+      this.snapActionRunning = true
+      const dsName = this.browseDatastore.store || this.browseDatastore.name
+      try {
+        await api.delete(`/pbs-mgmt/${this.selectedServerId}/datastores/${dsName}/snapshots`, {
+          params: {
+            'backup-type': group['backup-type'],
+            'backup-id': group['backup-id'],
+            'backup-time': snap['backup-time'],
+          }
+        })
+        this.browseSnapshots = this.browseSnapshots.filter(s => s['backup-time'] !== snap['backup-time'])
+        const g = this.browseGroups.find(g => this.groupKey(g) === this.groupKey(group))
+        if (g && g['backup-count']) g['backup-count']--
+        this.jobRunResult = 'Snapshot deleted.'
+        setTimeout(() => { if (this.jobRunResult) this.jobRunResult = null }, 4000)
+      } catch (e) {
+        this.jobRunResult = `Delete failed: ${e?.response?.data?.detail || e.message}`
+      } finally {
+        this.snapActionRunning = false
+      }
+    },
+
+    openPruneGroupModal(group) {
+      this.pruneModal = { show: true, group, keepLast: 7, keepDaily: null, keepWeekly: null, keepMonthly: null, running: false, error: null }
+    },
+
+    async runPrune() {
+      if (!this.browseDatastore || !this.selectedServerId) return
+      const dsName = this.browseDatastore.store || this.browseDatastore.name
+      const group = this.pruneModal.group
+      const payload = {
+        'backup-type': group ? group['backup-type'] : 'vm',
+        'backup-id': group ? group['backup-id'] : '*',
+      }
+      if (this.pruneModal.keepLast) payload['keep-last'] = this.pruneModal.keepLast
+      if (this.pruneModal.keepDaily) payload['keep-daily'] = this.pruneModal.keepDaily
+      if (this.pruneModal.keepWeekly) payload['keep-weekly'] = this.pruneModal.keepWeekly
+      if (this.pruneModal.keepMonthly) payload['keep-monthly'] = this.pruneModal.keepMonthly
+      this.pruneModal.running = true
+      this.pruneModal.error = null
+      try {
+        await api.post(`/pbs-mgmt/${this.selectedServerId}/datastores/${dsName}/prune`, payload)
+        this.pruneModal.show = false
+        this.jobRunResult = 'Prune task started.'
+        setTimeout(() => { if (this.jobRunResult) this.jobRunResult = null }, 5000)
+        // Refresh groups
+        await this.fetchBrowseGroups()
+      } catch (e) {
+        this.pruneModal.error = e?.response?.data?.detail || 'Prune failed.'
+      } finally {
+        this.pruneModal.running = false
+      }
+    },
+
     dsUsagePercent(ds) {
       const total = ds.total || (ds.used + ds.avail)
       if (!total) return 0
@@ -611,6 +865,24 @@ export default {
       } finally {
         this.triggeringJob = null
       }
+    },
+
+    pbsJobLabel(job) {
+      if (job.comment) return job.comment
+      const type = (job['job-type'] || 'job')
+      const store = job.store || job.datastore || ''
+      const schedule = job.schedule || ''
+      // verify: "Daily Verify — backup"
+      // prune:  "Hourly Prune — backup"
+      // sync:   "backup → remote-store"
+      const typeLabels = { verify: 'Verify', prune: 'Prune', sync: 'Sync', pull: 'Pull' }
+      const typeLabel = typeLabels[type] || type
+      if (type === 'sync' || type === 'pull') {
+        const target = job['remote-store'] || job['target-store'] || job['store'] || ''
+        return target ? `Sync → ${target}` : `${typeLabel} job`
+      }
+      const schedLabel = schedule === 'daily' ? 'Daily' : schedule === 'hourly' ? 'Hourly' : schedule ? `${schedule}` : ''
+      return [schedLabel, typeLabel, store ? `(${store})` : ''].filter(Boolean).join(' ')
     },
 
     jobStatusClass(job) {
@@ -1120,6 +1392,65 @@ export default {
 }
 
 .ds-card-meta > div { margin-bottom: 0.15rem; }
+
+.ds-card--clickable {
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.ds-card--clickable:hover {
+  border-color: rgba(59,130,246,0.5);
+  background: #141e2e;
+}
+.ds-browse-hint {
+  margin-left: auto;
+  flex-shrink: 0;
+  opacity: 0.5;
+}
+
+/* ── Browse Groups ── */
+.browse-group {
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+.browse-group:last-child { border-bottom: none; }
+
+.browse-group-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.65rem 1rem;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.1s;
+}
+.browse-group-header:hover { background: rgba(255,255,255,0.03); }
+
+.browse-group-expand { color: #7a8fa8; font-size: 0.65rem; flex-shrink: 0; }
+
+.browse-group-type-pill {
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 0.1rem 0.4rem;
+  border-radius: 3px;
+  background: rgba(99,102,241,0.15);
+  color: #a5b4fc;
+  flex-shrink: 0;
+}
+
+.browse-group-id { font-size: 0.9rem; color: #e2e8f0; }
+
+.browse-group-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 0.35rem;
+}
+
+.browse-snapshots {
+  background: rgba(0,0,0,0.2);
+  border-top: 1px solid rgba(255,255,255,0.04);
+  padding: 0.5rem 1rem 1rem 2.5rem;
+}
+
+.ml-1 { margin-left: 0.35rem; }
 
 /* ── Table ── */
 .table-container { overflow-x: auto; }

@@ -77,7 +77,20 @@
                 {{ severityIcon(rec.severity) }} {{ rec.severity }}
               </span>
               <span class="rec-rule-type">{{ formatRuleType(rec.rule_type) }}</span>
-              <button class="rec-dismiss-btn" @click="dismiss(rec.id)" title="Dismiss">✕</button>
+              <div class="rec-action-wrap" @click.stop>
+                <button class="rec-snooze-btn" @click="toggleSnoozeMenu(rec.id)" title="Mute / Snooze">
+                  🔕
+                </button>
+                <div v-if="snoozeMenuOpen === rec.id" class="snooze-menu">
+                  <div class="snooze-menu-header">Silence alert</div>
+                  <button @click="snooze(rec.id, 1)">1 hour</button>
+                  <button @click="snooze(rec.id, 12)">12 hours</button>
+                  <button @click="snooze(rec.id, 24)">24 hours</button>
+                  <button @click="snooze(rec.id, null)">Permanently</button>
+                  <div class="snooze-menu-divider"></div>
+                  <button @click="dismiss(rec.id); snoozeMenuOpen = null" class="snooze-dismiss-btn">Dismiss (remove)</button>
+                </div>
+              </div>
             </div>
 
             <h3 class="rec-title">{{ rec.title }}</h3>
@@ -167,6 +180,7 @@ export default {
     const recs = ref([])
     const filterCategory = ref(null)
     const showDismissed = ref(false)
+    const snoozeMenuOpen = ref(null)
 
     const activeRecs = computed(() => recs.value.filter(r => !r.dismissed))
     const dismissedRecs = computed(() => recs.value.filter(r => r.dismissed))
@@ -273,6 +287,25 @@ export default {
       }
     }
 
+    function toggleSnoozeMenu(id) {
+      snoozeMenuOpen.value = snoozeMenuOpen.value === id ? null : id
+    }
+
+    async function snooze(id, hours) {
+      snoozeMenuOpen.value = null
+      try {
+        const params = hours != null ? { hours } : {}
+        await api.analysis.snooze(id, params)
+        const rec = recs.value.find(r => r.id === id)
+        if (rec) rec.snoozed = true
+        // Remove from active list
+        recs.value = recs.value.filter(r => r.id !== id)
+        toast.success(hours ? `Alert muted for ${hours}h` : 'Alert permanently muted')
+      } catch (e) {
+        toast.error('Failed to mute alert')
+      }
+    }
+
     async function dismissAll(cat = null) {
       try {
         await api.analysis.dismissAll(cat)
@@ -291,12 +324,12 @@ export default {
     onMounted(load)
 
     return {
-      loading, running, recs, filterCategory, showDismissed,
+      loading, running, recs, filterCategory, showDismissed, snoozeMenuOpen,
       activeRecs, dismissedRecs, filteredRecs, groupedRecs, visibleCategories,
       categories,
       catCount, catSeverity, severityClass, severityIcon, categoryLabel,
       toggleCategory, formatRuleType, formatDate,
-      load, runAnalysis, dismiss, dismissAll,
+      load, runAnalysis, dismiss, dismissAll, toggleSnoozeMenu, snooze,
     }
   }
 }
@@ -491,6 +524,57 @@ export default {
   line-height: 1;
 }
 .rec-dismiss-btn:hover { background: var(--bg-tertiary); color: var(--text-primary); }
+
+.rec-action-wrap { position: relative; }
+
+.rec-snooze-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.9rem;
+  padding: 0.1rem 0.3rem;
+  border-radius: 0.25rem;
+  line-height: 1;
+  opacity: 0.6;
+  transition: opacity 0.15s;
+}
+.rec-snooze-btn:hover { opacity: 1; background: rgba(255,255,255,0.07); }
+
+.snooze-menu {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  margin-top: 4px;
+  background: #1e2d42;
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 0.4rem;
+  min-width: 170px;
+  z-index: 200;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+  overflow: hidden;
+}
+.snooze-menu-header {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #7a8fa8;
+  padding: 0.5rem 0.75rem 0.3rem;
+}
+.snooze-menu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.4rem 0.75rem;
+  background: none;
+  border: none;
+  color: #c0cfe4;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.snooze-menu button:hover { background: rgba(255,255,255,0.07); }
+.snooze-menu-divider { height: 1px; background: rgba(255,255,255,0.08); margin: 0.2rem 0; }
+.snooze-dismiss-btn { color: #f87171 !important; }
 
 .rec-title {
   font-size: 0.95rem;

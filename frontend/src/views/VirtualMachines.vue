@@ -47,10 +47,14 @@
             <option value="stopped">Stopped</option>
             <option value="paused">Paused</option>
           </select>
+          <select v-model="managedNodeFilter" class="form-control" style="width: 140px;" :disabled="loading">
+            <option value="">All nodes</option>
+            <option v-for="n in managedNodes" :key="n" :value="n">{{ n }}</option>
+          </select>
           <span class="filter-count">Showing {{ filteredVMs.length }} of {{ vms.length }} VM{{ vms.length !== 1 ? 's' : '' }}</span>
         </div>
         <div class="filter-actions">
-          <button v-if="managedSearch || managedStatusFilter || statusFilter" @click="clearFilter" class="btn btn-sm btn-secondary">Clear</button>
+          <button v-if="managedSearch || managedStatusFilter || managedNodeFilter || statusFilter" @click="clearFilter" class="btn btn-sm btn-secondary">Clear</button>
         </div>
       </div>
 
@@ -1001,6 +1005,7 @@ export default {
     const statusFilter = ref(route.query.status || null)
     const managedSearch = ref('')
     const managedStatusFilter = ref('')
+    const managedNodeFilter = ref('')
     const showDeleteConfirmModal = ref(false)
     const vmToDelete = ref(null)
     const deleteConfirmInput = ref('')
@@ -1117,6 +1122,8 @@ export default {
       }
     }
 
+    const managedNodes = computed(() => [...new Set(vms.value.map(v => v.node).filter(Boolean))].sort())
+
     const filteredVMs = computed(() => {
       let list = vms.value
       if (statusFilter.value) {
@@ -1124,6 +1131,9 @@ export default {
       }
       if (managedStatusFilter.value) {
         list = list.filter(vm => vm.status.toLowerCase() === managedStatusFilter.value.toLowerCase())
+      }
+      if (managedNodeFilter.value) {
+        list = list.filter(vm => vm.node === managedNodeFilter.value)
       }
       if (managedSearch.value.trim()) {
         const q = managedSearch.value.trim().toLowerCase()
@@ -1140,6 +1150,7 @@ export default {
       statusFilter.value = null
       managedSearch.value = ''
       managedStatusFilter.value = ''
+      managedNodeFilter.value = ''
       router.push('/vms')
     }
 
@@ -2017,7 +2028,7 @@ export default {
 
     return {
       activeTab, switchTab,
-      vms, loading, managedError, sortField, sortDirection, statusFilter, managedSearch, managedStatusFilter,
+      vms, loading, managedError, sortField, sortDirection, statusFilter, managedSearch, managedStatusFilter, managedNodeFilter, managedNodes,
       filteredVMs, showDeleteConfirmModal, vmToDelete, deleteConfirmInput,
       sortBy, startVM, stopVM, powerOffVM, restartVM,
       showDeleteModal, closeDeleteModal, deleteVM, clearFilter,

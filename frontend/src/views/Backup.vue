@@ -188,7 +188,10 @@
               </thead>
               <tbody>
                 <tr v-for="sched in schedules" :key="sched.id">
-                  <td><strong>{{ sched.id }}</strong></td>
+                  <td>
+                    <strong class="sched-label">{{ scheduleLabel(sched) }}</strong>
+                    <div class="text-xs text-muted font-mono" style="opacity:0.55;">{{ sched.id }}</div>
+                  </td>
                   <td>
                     <button
                       @click="toggleScheduleEnabled(sched)"
@@ -1412,6 +1415,14 @@ export default {
       return parts.slice(0, 3).join(', ') + ` +${parts.length - 3} more`
     }
 
+    const scheduleLabel = (sched) => {
+      if (sched.comment) return sched.comment
+      const node = sched.node || 'all nodes'
+      const time = sched.schedule || (sched.dow ? `${sched.dow} ${sched.starttime}` : null) || '?'
+      const storage = sched.storage || ''
+      return storage ? `${node} @ ${time} → ${storage}` : `${node} @ ${time}`
+    }
+
     // Watch for History tab activation
     const onTabChange = (tab) => {
       if (tab === 'History' && selectedHostId.value && historyTasks.value.length === 0) {
@@ -1500,6 +1511,7 @@ export default {
       formatBytes,
       describeCron,
       vmidPreview,
+      scheduleLabel,
     }
   },
   watch: {

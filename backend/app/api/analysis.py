@@ -1,7 +1,7 @@
 """Analysis & recommendations API"""
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Body
 from sqlalchemy.orm import Session
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 from app.core.database import get_db
 from app.api.auth import get_current_user
@@ -10,6 +10,8 @@ router = APIRouter()
 
 
 def _rec_to_dict(rec) -> dict:
+    now = datetime.utcnow()
+    snoozed = rec.snoozed_until is not None and rec.snoozed_until > now if hasattr(rec, 'snoozed_until') else False
     return {
         "id": rec.id,
         "host_id": rec.host_id,
@@ -28,6 +30,8 @@ def _rec_to_dict(rec) -> dict:
         "threshold": rec.threshold,
         "dismissed": rec.dismissed,
         "dismissed_at": rec.dismissed_at.isoformat() if rec.dismissed_at else None,
+        "snoozed": snoozed,
+        "snoozed_until": rec.snoozed_until.isoformat() if (hasattr(rec, 'snoozed_until') and rec.snoozed_until) else None,
         "created_at": rec.created_at.isoformat() if rec.created_at else None,
     }
 
@@ -42,9 +46,14 @@ def get_recommendations(
 ):
     """Return all active (non-dismissed) recommendations, optionally filtered."""
     from app.models.analysis_models import Recommendation
+    from sqlalchemy import or_
     q = db.query(Recommendation)
     if not include_dismissed:
         q = q.filter(Recommendation.dismissed == False)
+    # Exclude currently snoozed recommendations (unless including dismissed which shows all history)
+    if not include_dismissed:
+        now = datetime.utcnow()
+        q = q.filter(or_(Recommendation.snoozed_until == None, Recommendation.snoozed_until <= now))
     if category:
         q = q.filter(Recommendation.category == category)
     if severity:
@@ -78,6 +87,46 @@ def get_summary(
         total += cnt
 
     return {"total": total, "by_category": summary}
+
+
+@router.post("/recommendations/{rec_id}/snooze")
+def snooze_recommendation(
+    rec_id: int,
+    hours: Optional[float] = None,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """
+    Snooze a recommendation for a set number of hours.
+    If hours is None or 0, snooze permanently (until manually un-snoozed).
+    """
+    from app.models.analysis_models import Recommendation
+    rec = db.query(Recommendation).filter(Recommendation.id == rec_id).first()
+    if not rec:
+        raise HTTPException(status_code=404, detail="Recommendation not found")
+    if hours:
+        rec.snoozed_until = datetime.utcnow() + timedelta(hours=hours)
+    else:
+        # Permanent snooze: far future date
+        rec.snoozed_until = datetime(2099, 1, 1)
+    db.commit()
+    return {"ok": True, "snoozed_until": rec.snoozed_until.isoformat()}
+
+
+@router.post("/recommendations/{rec_id}/unsnooze")
+def unsnooze_recommendation(
+    rec_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Clear the snooze on a recommendation so it shows up again."""
+    from app.models.analysis_models import Recommendation
+    rec = db.query(Recommendation).filter(Recommendation.id == rec_id).first()
+    if not rec:
+        raise HTTPException(status_code=404, detail="Recommendation not found")
+    rec.snoozed_until = None
+    db.commit()
+    return {"ok": True}
 
 
 @router.post("/recommendations/{rec_id}/dismiss")

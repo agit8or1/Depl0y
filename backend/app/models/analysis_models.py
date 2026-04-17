@@ -34,5 +34,6 @@ class Recommendation(Base):
     # Lifecycle
     dismissed = Column(Boolean, default=False, nullable=False)
     dismissed_at = Column(DateTime, nullable=True)
+    snoozed_until = Column(DateTime, nullable=True)  # muted until this datetime (None = not snoozed)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

@@ -1025,6 +1025,8 @@ export default {
     getSummary: () => api.get('/analysis/summary'),
     dismiss: (id) => api.post(`/analysis/recommendations/${id}/dismiss`),
     dismissAll: (category) => api.post('/analysis/recommendations/dismiss-all', null, { params: category ? { category } : {} }),
+    snooze: (id, params) => api.post(`/analysis/recommendations/${id}/snooze`, null, { params }),
+    unsnooze: (id) => api.post(`/analysis/recommendations/${id}/unsnooze`),
     run: () => api.post('/analysis/run'),
   },
 

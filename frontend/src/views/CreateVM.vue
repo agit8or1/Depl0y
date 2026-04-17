@@ -1250,9 +1250,10 @@ export default {
     })
 
     // ---------- Computed sorted lists ----------
+    // Show ALL storage pools returned for the node — no content filtering.
+    // Content type is shown as a badge; Proxmox validates compatibility at creation time.
     const sortedStorageList = computed(() =>
       [...storageList.value]
-        .filter(s => !s.content || s.content.includes('images'))
         .sort((a, b) => a.storage.localeCompare(b.storage, undefined, { numeric: true, sensitivity: 'base' }))
     )
     const sortedISOStorageList = computed(() =>
@@ -1441,7 +1442,9 @@ export default {
       try {
         const r = await api.proxmox.getNodeStorage(nodeId)
         storageList.value = r.data.storage || []
-        const first = storageList.value.find(s => s.enabled && s.active && (!s.content || s.content.includes('images'))) || storageList.value[0]
+        const first = storageList.value.find(s => s.enabled && s.active && s.content?.includes('images'))
+          || storageList.value.find(s => s.enabled && s.active)
+          || storageList.value[0]
         if (first) {
           selectedStorage.value = first.storage
           formData.value.storage = first.storage

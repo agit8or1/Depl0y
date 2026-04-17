@@ -1804,23 +1804,29 @@ export default {
           const vms = vmsRes.status === 'fulfilled' ? vmsRes.value.data : []
           const lxcs = lxcRes.status === 'fulfilled' ? lxcRes.value.data : []
 
-          nodeStats.value = {
-            ...nodeStats.value,
-            [key]: {
-              cpu: status?.cpu ?? null,
-              memory: status?.memory ?? null,
-              rootfs: status?.rootfs ?? null,
-              uptime: status?.uptime ?? null,
-              vmCount: Array.isArray(vms) ? vms.filter(v => v.type === 'qemu' || !v.type).length : 0,
-              lxcCount: Array.isArray(lxcs) ? lxcs.length : 0,
-            }
-          }
+          return [key, {
+            cpu: status?.cpu ?? null,
+            memory: status?.memory ?? null,
+            rootfs: status?.rootfs ?? null,
+            uptime: status?.uptime ?? null,
+            vmCount: Array.isArray(vms) ? vms.filter(v => v.type === 'qemu' || !v.type).length : 0,
+            lxcCount: Array.isArray(lxcs) ? lxcs.length : 0,
+          }]
         }).catch(err => {
           console.error(`Failed to load live stats for ${nodeName}:`, err)
         })
       })
 
-      await Promise.allSettled(tasks)
+      // Collect all results then do ONE atomic update to avoid rapid re-renders
+      const results = await Promise.allSettled(tasks)
+      const updates = {}
+      for (const r of results) {
+        if (r.status === 'fulfilled' && r.value) {
+          const [key, stats] = r.value
+          updates[key] = stats
+        }
+      }
+      nodeStats.value = { ...nodeStats.value, ...updates }
       computeHostResourceSummary()
     }
 

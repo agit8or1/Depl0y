@@ -900,9 +900,100 @@ def poll_proxmox_resources(db: Session, host_id: int) -> bool:
         host.last_poll = datetime.utcnow()
         db.commit()
         logger.info(f"Successfully polled Proxmox host {host.name}")
+
+        # ── Auto-detect cluster membership and remove redundant standalone entry ──
+        # If this host has joined a cluster that is already registered as another
+        # host in depl0y, delete this host entry (it's now reachable via the cluster).
+        try:
+            _auto_delete_if_joined_cluster(db, host, service)
+        except Exception as ae:
+            logger.warning(f"Auto-delete cluster check failed for host {host.name}: {ae}")
+
         return True
 
     except Exception as e:
         logger.error(f"Error polling Proxmox resources: {e}")
         db.rollback()
         return False
+
+
+def _auto_delete_if_joined_cluster(db: Session, host: ProxmoxHost, service: "ProxmoxService") -> None:
+    """
+    Two-direction check for redundant standalone host entries:
+
+    1. Cluster-side scan: after polling a cluster host, look for any other registered
+       hosts whose hostname appears as a node in this cluster. Delete those.
+    2. Self-check: if this host is itself in a multi-node cluster already tracked by
+       another depl0y host entry, delete this one.
+
+    This handles the case where a standalone node joins a cluster and can no longer
+    authenticate (TFA, etc.) — the cluster host can still detect and clean it up.
+    """
+    try:
+        raw = service.proxmox.cluster.status.get()
+    except Exception:
+        return  # Can't reach cluster API — skip
+
+    cluster_info = None
+    cluster_node_names = []
+    cluster_node_count = 0
+    for item in raw:
+        if item.get("type") == "cluster":
+            cluster_info = item
+            cluster_node_count = int(item.get("nodes", 0))
+        elif item.get("type") == "node":
+            name = item.get("name", "")
+            if name:
+                cluster_node_names.append(name.lower())
+
+    this_cluster_name = cluster_info.get("name", "") if cluster_info else ""
+
+    # ── Direction 1: cluster-side scan ────────────────────────────────────────
+    # If this is a multi-node cluster, find any OTHER registered hosts whose
+    # name or hostname resolves to a node already in this cluster.
+    if cluster_node_count >= 2 and this_cluster_name:
+        other_hosts = db.query(ProxmoxHost).filter(
+            ProxmoxHost.id != host.id,
+            ProxmoxHost.is_active == True,
+        ).all()
+        for other in other_hosts:
+            # Match by short hostname (strip domain)
+            other_short = other.hostname.split(".")[0].lower()
+            other_name_short = other.name.split(".")[0].lower()
+            if other_short in cluster_node_names or other_name_short in cluster_node_names:
+                logger.info(
+                    f"Cluster '{this_cluster_name}' (tracked by host '{host.name}' id={host.id}) "
+                    f"now contains node matching standalone host '{other.name}' (id={other.id}). "
+                    f"Auto-deleting redundant standalone entry."
+                )
+                db.delete(other)
+                db.commit()
+                return
+
+    # ── Direction 2: self-check ────────────────────────────────────────────────
+    # If this host is now in a cluster with 2+ nodes, look for another registered
+    # host that is in the same named cluster.
+    if not cluster_info or cluster_node_count < 2 or not this_cluster_name:
+        return
+
+    other_hosts = db.query(ProxmoxHost).filter(
+        ProxmoxHost.id != host.id,
+        ProxmoxHost.is_active == True,
+    ).all()
+
+    for other in other_hosts:
+        try:
+            other_service = ProxmoxService(other)
+            other_raw = other_service.proxmox.cluster.status.get()
+            for item in other_raw:
+                if item.get("type") == "cluster" and item.get("name") == this_cluster_name:
+                    logger.info(
+                        f"Host '{host.name}' (id={host.id}) has joined cluster '{this_cluster_name}' "
+                        f"already tracked by host '{other.name}' (id={other.id}). "
+                        f"Auto-deleting redundant standalone entry."
+                    )
+                    db.delete(host)
+                    db.commit()
+                    return
+        except Exception:
+            continue

@@ -5,6 +5,14 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.9] - 2026-04-17 🔄 Dependency Updates
+
+### Changed
+- **Frontend:** Updated npm lockfile — bumped `@babel/parser` and other transitive dependencies to latest patch versions
+- **Backend:** Updated Python dependencies — proxmoxer 2.0.1→2.3.0, fastapi 0.104→0.115, uvicorn 0.24→0.34, pydantic 2.5→2.11, SQLAlchemy 2.0.23→2.0.40, paramiko 3.4→3.5, alembic 1.13→1.15, pydantic-settings 2.1→2.8, python-dotenv 1.0→1.1, qrcode 7.4→8.2, aiofiles 23→24, email-validator 2.1→2.2, pyyaml 6.0.1→6.0.2, pytest 7→8, httpx 0.25→0.28, and other minor version bumps
+
+---
+
 ## [2.1.8] - 2026-04-17 🚀 VM Migrate — Fix Local Disk Migration
 
 ### Fixed

@@ -1,23 +1,23 @@
 # FastAPI and web framework
-fastapi==0.104.1
-uvicorn[standard]==0.24.0
+fastapi==0.115.12
+uvicorn[standard]==0.34.3
 python-multipart==0.0.26
 
 # Database
-sqlalchemy==2.0.23
+sqlalchemy==2.0.40
 pymysql>=1.1.1
 cryptography>=43.0.0
-alembic==1.13.0
+alembic==1.15.2
 
 # Authentication and security
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
 pyotp==2.9.0
-qrcode==7.4.2
+qrcode==8.2
 pillow>=10.3.0
 
 # Proxmox
-proxmoxer==2.0.1
+proxmoxer==2.3.0
 requests>=2.32.4
 websockets>=12.0
 
@@ -25,33 +25,33 @@ websockets>=12.0
 pyvmomi
 
 # SSH and remote management
-paramiko==3.4.0
+paramiko==3.5.1
 
 # Configuration and environment
-pydantic==2.5.0
-pydantic-settings==2.1.0
-python-dotenv==1.0.0
+pydantic==2.11.3
+pydantic-settings==2.8.1
+python-dotenv==1.1.0
 
 # YAML processing for cloud-init
-pyyaml==6.0.1
+pyyaml==6.0.2
 
 # Logging
 python-json-logger==2.0.7
 
 # File handling
-aiofiles==23.2.1
+aiofiles==24.1.0
 
 # Validation
-email-validator==2.1.0
+email-validator==2.2.0
 
 # Rate limiting
 slowapi==0.1.9
 
 # Testing (optional)
-pytest==7.4.3
-pytest-asyncio==0.21.1
-httpx==0.25.2
+pytest==8.3.5
+pytest-asyncio==0.26.0
+httpx==0.28.1
 weasyprint==66.0
 markdown==3.10
 apscheduler>=3.10.4
-geoip2==4.8.0
+geoip2==4.8.1

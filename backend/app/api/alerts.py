@@ -137,10 +137,12 @@ async def snooze_alert(
         if not event:
             raise HTTPException(status_code=404, detail="Alert not found")
         if req.hours is None:
-            # Silence permanently — just dismiss/acknowledge it
+            # Silence permanently — acknowledge AND set snooze_until to far future so
+            # the alert engine's dedup check prevents this rule from re-firing forever.
             event.acknowledged = True
             event.acknowledged_at = datetime.utcnow()
             event.acknowledged_by = current_user.id
+            event.snooze_until = datetime(2099, 1, 1)
         else:
             event.snooze_until = datetime.utcnow() + timedelta(hours=req.hours)
         db.commit()

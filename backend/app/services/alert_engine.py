@@ -81,6 +81,21 @@ class AlertEngine:
         try:
             from app.models.alert_models import AlertEvent
             from app.models.database import User, UserRole
+            from sqlalchemy import or_
+
+            # Dedup: skip if an active (unacknowledged) or snoozed event already exists
+            # for this rule_key. This prevents duplicates after restarts and respects
+            # permanent silence (which sets snooze_until to a far-future date).
+            now = datetime.utcnow()
+            existing = db.query(AlertEvent).filter(
+                AlertEvent.rule_key == rule_key,
+                or_(
+                    AlertEvent.acknowledged == False,
+                    AlertEvent.snooze_until > now,
+                )
+            ).first()
+            if existing:
+                return
 
             event = AlertEvent(
                 rule_id=None,

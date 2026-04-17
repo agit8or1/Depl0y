@@ -45,19 +45,25 @@ def get_running_tasks(db: Session = Depends(get_db), current_user=Depends(get_cu
         for host in hosts:
             try:
                 pve = _pve(host)
-                nodes = db.query(ProxmoxNode).filter(ProxmoxNode.host_id == host.id).all()
-                for node in nodes:
+                db_nodes = db.query(ProxmoxNode).filter(ProxmoxNode.host_id == host.id).all()
+                # Fall back to live Proxmox node query if DB has no records yet
+                if db_nodes:
+                    node_names = [n.node_name for n in db_nodes]
+                else:
+                    live = pve.nodes.get()
+                    node_names = [n.get("node") for n in live if n.get("node")]
+                for node_name in node_names:
                     try:
-                        node_tasks = pve.nodes(node.node_name).tasks.get(limit=100)
+                        node_tasks = pve.nodes(node_name).tasks.get(limit=100)
                         for t in node_tasks:
                             # Running tasks in Proxmox have status absent or empty string
                             if not t.get("status") and t.get("upid") not in tracked_upids:
                                 pve_running.append({
                                     "upid": t.get("upid"),
                                     "host_id": host.id,
-                                    "node": node.node_name,
+                                    "node": node_name,
                                     "task_type": t.get("type", "unknown"),
-                                    "description": f"{t.get('type', 'Task')} on {node.node_name}"
+                                    "description": f"{t.get('type', 'Task')} on {node_name}"
                                                    + (f" (VM {t['id']})" if t.get("id") else ""),
                                     "status": "running",
                                     "vmid": t.get("id"),

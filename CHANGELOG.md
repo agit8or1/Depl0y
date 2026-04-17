@@ -5,6 +5,16 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.6] - 2026-04-17 🔄 Fix Alert Duplicates + Always-Visible Running Tasks
+
+### Fixed
+- **Alert duplication after silence** — `_fire_builtin` now checks the DB for any existing unacknowledged or snoozed event with the same `rule_key` before creating a new one. Prevents duplicate alerts after backend restarts or cooldown expiry when the condition is still true
+- **Permanent silence didn't stick** — "Silence permanently" now sets `snooze_until = 2099-01-01` in addition to acknowledging the event. The DB dedup check finds this far-future snooze and blocks re-fire forever, surviving backend restarts
+- **Running Tasks section now always visible** — moved above the tab bar so all running Proxmox tasks (backups, migrations, etc.) are visible regardless of whether you're on the Depl0y or All Proxmox Tasks tab. The section polls `GET /tasks/running` every 5s continuously
+- **Backend node fallback** — `GET /tasks/running` now falls back to querying Proxmox directly for node names if the DB node cache is empty, preventing missed tasks on freshly-added hosts
+
+---
+
 ## [2.2.5] - 2026-04-17 🏷️ Hide Cloud-Init Templates from VM List + Fix Running Task Detection
 
 ### Added

@@ -23,6 +23,68 @@
       </div>
     </div>
 
+    <!-- ───────────── RUNNING TASKS (always visible) ───────────── -->
+    <div class="mb-2">
+      <div class="section-header mb-1">
+        <h3 class="section-title">
+          Running Tasks
+          <span v-if="deplRunning.length" class="badge badge-warning ml-1">{{ deplRunning.length }}</span>
+        </h3>
+        <span class="refresh-countdown text-xs text-muted">
+          Refresh in {{ refreshCountdown }}s
+        </span>
+      </div>
+
+      <div v-if="deplRunning.length === 0" class="card">
+        <div class="empty-state empty-state--compact">
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2">
+            <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+          </svg>
+          <p class="text-muted text-sm">No tasks running</p>
+        </div>
+      </div>
+
+      <div v-else class="running-cards">
+        <div
+          v-for="task in deplRunning"
+          :key="task.upid"
+          class="task-card"
+          @click="openDeplDetail(task)"
+        >
+          <div class="task-card-header">
+            <div class="task-card-icon" :class="taskTypeColorClass(task.task_type || task.type)">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" v-html="taskTypeIcon(task.task_type || task.type)"></svg>
+            </div>
+            <div class="task-card-info">
+              <div class="task-card-desc">{{ task.description || task.task_type || task.type || 'Task' }}</div>
+              <div class="task-card-meta">
+                <span class="task-meta-badge">{{ task.node }}</span>
+                <span v-if="task.vmid || task.id" class="task-meta-badge">VM {{ task.vmid || task.id }}</span>
+                <span v-if="task.started_at || task.starttime" class="task-meta-elapsed">{{ deplElapsed(task) }}</span>
+              </div>
+            </div>
+            <div class="task-card-actions" @click.stop>
+              <button
+                class="btn btn-danger btn-xs"
+                :disabled="stoppingDeplTask[task.upid]"
+                @click.stop="stopDeplTask(task)"
+              >
+                {{ stoppingDeplTask[task.upid] ? '...' : 'Stop' }}
+              </button>
+            </div>
+          </div>
+
+          <!-- Progress bar -->
+          <div class="task-card-progress">
+            <div class="prog-track">
+              <div class="prog-fill prog-fill--indeterminate"></div>
+            </div>
+            <span class="prog-label text-xs text-muted">running</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Tab bar -->
     <div class="tab-bar mb-2">
       <button
@@ -31,7 +93,6 @@
         @click="activeTab = 'depl0y'"
       >
         Depl0y Tasks
-        <span v-if="deplRunning.length" class="tab-badge badge-warning">{{ deplRunning.length }}</span>
       </button>
       <button
         class="tab-btn"
@@ -44,71 +105,6 @@
 
     <!-- ───────────── DEPL0Y TASKS TAB ───────────── -->
     <template v-if="activeTab === 'depl0y'">
-
-      <!-- Running Tasks — cards -->
-      <div class="mb-2">
-        <div class="section-header mb-1">
-          <h3 class="section-title">
-            Running
-            <span v-if="deplRunning.length" class="badge badge-warning ml-1">{{ deplRunning.length }}</span>
-          </h3>
-          <div class="section-meta">
-            <span v-if="deplRunning.length" class="refresh-countdown text-xs text-muted">
-              Refresh in {{ refreshCountdown }}s
-            </span>
-          </div>
-        </div>
-
-        <div v-if="deplRunning.length === 0" class="card">
-          <div class="empty-state empty-state--compact">
-            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2">
-              <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-            </svg>
-            <p class="text-muted text-sm">No tasks running</p>
-          </div>
-        </div>
-
-        <div v-else class="running-cards">
-          <div
-            v-for="task in deplRunning"
-            :key="task.upid"
-            class="task-card"
-            @click="openDeplDetail(task)"
-          >
-            <div class="task-card-header">
-              <div class="task-card-icon" :class="taskTypeColorClass(task.task_type)">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" v-html="taskTypeIcon(task.task_type)"></svg>
-              </div>
-              <div class="task-card-info">
-                <div class="task-card-desc">{{ task.description || task.task_type || 'Task' }}</div>
-                <div class="task-card-meta">
-                  <span class="task-meta-badge">{{ task.node }}</span>
-                  <span v-if="task.vmid" class="task-meta-badge">VM {{ task.vmid }}</span>
-                  <span class="task-meta-time">Started {{ formatAge(task.started_at) }}</span>
-                  <span class="task-meta-elapsed">{{ deplElapsed(task) }}</span>
-                </div>
-              </div>
-              <div class="task-card-actions" @click.stop>
-                <button
-                  class="btn btn-danger btn-xs"
-                  :disabled="stoppingDeplTask[task.upid]"
-                  @click.stop="stopDeplTask(task)"
-                >
-                  {{ stoppingDeplTask[task.upid] ? '...' : 'Stop' }}
-                </button>
-              </div>
-            </div>
-
-            <!-- Progress bar -->
-            <div class="task-card-progress">
-              <div class="prog-track">
-                <div class="prog-fill prog-fill--indeterminate"></div>
-              </div>
-              <span class="prog-label text-xs text-muted">running</span>
-            </div>
-          </div>
-        </div>
-      </div>
 
       <!-- Depl0y Task History -->
       <div class="card">
@@ -265,62 +261,6 @@
             <div class="form-group form-group--btn">
               <button @click="loadTasks(true)" class="btn btn-outline btn-sm">Refresh</button>
               <button @click="clearFilters" class="btn btn-outline btn-sm">Clear</button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Running Tasks — cards -->
-      <div class="mb-2">
-        <div class="section-header mb-1">
-          <h3 class="section-title">
-            Running Tasks
-            <span v-if="runningTasks.length" class="badge badge-warning ml-1">{{ runningTasks.length }}</span>
-          </h3>
-          <span v-if="runningTasks.length" class="text-xs text-muted">Auto-refresh every 5s</span>
-        </div>
-
-        <div v-if="runningTasks.length === 0" class="card">
-          <div class="empty-state empty-state--compact">
-            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2">
-              <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-            </svg>
-            <p class="text-muted text-sm">No tasks running</p>
-          </div>
-        </div>
-
-        <div v-else class="running-cards">
-          <div
-            v-for="task in runningTasks"
-            :key="task._key"
-            class="task-card"
-            @click="openTaskDetail(task)"
-          >
-            <div class="task-card-header">
-              <div class="task-card-icon" :class="taskTypeColorClass(task.type)">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" v-html="taskTypeIcon(task.type)"></svg>
-              </div>
-              <div class="task-card-info">
-                <div class="task-card-desc">{{ task.type }}</div>
-                <div class="task-card-meta">
-                  <span class="task-meta-badge">{{ task.node || task._node }}</span>
-                  <span v-if="task.id" class="task-meta-badge">VM {{ task.id }}</span>
-                  <span v-if="task.starttime" class="task-meta-elapsed">{{ pveElapsed(task) }}</span>
-                </div>
-              </div>
-              <div class="task-card-badge">
-                <span class="badge badge-warning anim-pulse">running</span>
-              </div>
-              <div class="task-card-actions" @click.stop>
-                <button
-                  class="btn btn-danger btn-xs"
-                  :disabled="stoppingTask[task._key]"
-                  @click.stop="stopTask(task)"
-                  title="Stop this task"
-                >
-                  {{ stoppingTask[task._key] ? '...' : 'Stop' }}
-                </button>
-              </div>
             </div>
           </div>
         </div>
@@ -1212,11 +1152,9 @@ export default {
       if (tab === 'depl0y') {
         stopRunningPoll()
         stopLiveRunningPoll()
-        await loadDeplRunning()
         await loadDeplHistory()
-        startDeplPoll()
+        // deplRunning poll keeps running regardless of tab (started in onMounted)
       } else {
-        stopDeplPoll()
         await loadTasks(true)
         startRunningPoll()
         startLiveRunningPoll()

@@ -168,6 +168,12 @@ const props = defineProps({
   formatValue: {
     type: Function,
     default: null
+  },
+  // Minimum value for the Y-axis maximum — prevents tiny values from
+  // auto-scaling to fill the full chart height (e.g. set 1 for MB/s charts)
+  minMax: {
+    type: Number,
+    default: 0
   }
 })
 
@@ -212,8 +218,8 @@ const globalMax = computed(() => {
       }
     })
   })
-  if (max === -Infinity || max === 0) return 1
-  return max
+  if (max === -Infinity || max === 0) return Math.max(1, props.minMax)
+  return Math.max(max, props.minMax)
 })
 
 // Shared time domain

@@ -5,6 +5,13 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.8] - 2026-04-17 📊 Fix Disk I/O and Network Chart Auto-Scaling
+
+### Fixed
+- **Disk I/O and Network charts show "max" at idle** — `MultiLineChart` was auto-scaling the Y-axis to the actual data maximum. When disk or network activity was near zero (e.g. 0.01 MB/s), the tiny value filled the full chart height making it appear saturated. Added `minMax` prop (minimum value for the Y-axis ceiling) and set it to `1 MB/s` for both Disk I/O and Network charts in NodeMonitor. Idle lines now appear near the bottom as expected
+
+---
+
 ## [2.2.7] - 2026-04-17 🖧 iDRAC/iLO Per-Node Support + NodeDetail 422 Fix
 
 ### Added

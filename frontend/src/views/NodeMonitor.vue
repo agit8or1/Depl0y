@@ -218,6 +218,7 @@
             :showGrid="true"
             :fillArea="false"
             :formatValue="formatMBsVal"
+            :minMax="1"
           />
         </div>
         <div class="chart-stats" v-if="netInData.length || netOutData.length">
@@ -249,6 +250,7 @@
             :showGrid="true"
             :fillArea="false"
             :formatValue="formatMBsVal"
+            :minMax="1"
           />
         </div>
         <div class="chart-stats" v-if="diskReadData.length || diskWriteData.length">

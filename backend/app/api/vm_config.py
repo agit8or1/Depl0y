@@ -473,7 +473,19 @@ def migrate_vm(host_id: int, node: str, vmid: int, req: MigrateRequest,
                          extra={"target_node": req.target, "online": req.online})
         return {"upid": upid}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        import traceback
+        logger.error("migrate_vm error: %s\n%s", e, traceback.format_exc())
+        # Extract meaningful message from proxmoxer ResourceException
+        detail = str(e)
+        try:
+            if hasattr(e, 'content'):
+                import json as _json
+                body = e.content if isinstance(e.content, str) else e.content.decode('utf-8', errors='replace')
+                parsed = _json.loads(body)
+                detail = parsed.get('message') or parsed.get('errors') or detail
+        except Exception:
+            pass
+        raise HTTPException(status_code=500, detail=detail)
 
 
 # ── Convert to template ───────────────────────────────────────────────────────

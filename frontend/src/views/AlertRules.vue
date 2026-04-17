@@ -124,8 +124,13 @@
                 🔕
               </button>
               <div v-if="alert._snoozeOpen" :style="snoozeDropdownStyle(alert)" @click.stop>
-                <div style="padding:6px 12px;font-size:11px;color:#7a8fa8;border-bottom:1px solid #2d4060;">Silence alert</div>
-                <button @click="dismissAlert(alert)" style="display:block;width:100%;text-align:left;padding:6px 12px;background:none;border:none;color:#e2e8f0;cursor:pointer;font-size:13px;" @mouseover="$event.target.style.background='#2d4060'" @mouseleave="$event.target.style.background='none'">Dismiss</button>
+                <div style="padding:6px 12px;font-size:11px;color:#7a8fa8;border-bottom:1px solid #2d4060;">Silence alert for…</div>
+                <button @click="snoozeAlert(alert, 1)"   class="snooze-opt">1 hour</button>
+                <button @click="snoozeAlert(alert, 4)"   class="snooze-opt">4 hours</button>
+                <button @click="snoozeAlert(alert, 24)"  class="snooze-opt">24 hours</button>
+                <button @click="snoozeAlert(alert, 168)" class="snooze-opt">7 days</button>
+                <div style="border-top:1px solid #2d4060;margin:4px 0;"></div>
+                <button @click="snoozeAlert(alert, null)" class="snooze-opt snooze-opt--danger">Silence permanently</button>
               </div>
             </div>
           </div>
@@ -865,6 +870,16 @@ export default {
         zIndex: 9999,
         padding: '4px 0',
         boxShadow: '0 4px 20px rgba(0,0,0,0.4)',
+      }
+    },
+
+    async snoozeAlert(alert, hours) {
+      alert._snoozeOpen = false
+      try {
+        await api.alerts.snooze(alert.id, hours)  // hours=null = silence permanently
+        this.activeAlerts = this.activeAlerts.filter(a => a.id !== alert.id)
+      } catch (e) {
+        console.warn('Failed to snooze alert:', e)
       }
     },
 
@@ -1840,4 +1855,19 @@ select option {
 }
 .dot-green { background: #22c55e; }
 .dot-gray  { background: #6b7280; }
+
+.snooze-opt {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 6px 12px;
+  background: none;
+  border: none;
+  color: #e2e8f0;
+  cursor: pointer;
+  font-size: 13px;
+}
+.snooze-opt:hover { background: #2d4060; }
+.snooze-opt--danger { color: #f87171; }
+.snooze-opt--danger:hover { background: rgba(239,68,68,0.15); }
 </style>

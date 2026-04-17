@@ -102,9 +102,9 @@
             <!-- Progress bar -->
             <div class="task-card-progress">
               <div class="prog-track">
-                <div class="prog-fill prog-fill--animated" :style="{ width: `${task.progress || 0}%` }"></div>
+                <div class="prog-fill prog-fill--indeterminate"></div>
               </div>
-              <span class="prog-label text-xs text-muted">{{ task.progress || 0 }}%</span>
+              <span class="prog-label text-xs text-muted">running</span>
             </div>
           </div>
         </div>
@@ -1431,6 +1431,17 @@ export default {
 @keyframes progress-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.65; }
+}
+
+.prog-fill--indeterminate {
+  width: 35%;
+  animation: prog-slide 1.6s ease-in-out infinite;
+}
+
+@keyframes prog-slide {
+  0%   { margin-left: 0%; width: 30%; }
+  50%  { margin-left: 55%; width: 35%; }
+  100% { margin-left: 0%; width: 30%; }
 }
 
 .prog-label { flex-shrink: 0; min-width: 30px; text-align: right; }

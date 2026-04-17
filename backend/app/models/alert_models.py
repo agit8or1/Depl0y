@@ -43,3 +43,4 @@ class AlertEvent(Base):
     acknowledged = Column(Boolean, default=False, nullable=False)
     acknowledged_at = Column(DateTime, nullable=True)
     acknowledged_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    snooze_until = Column(DateTime, nullable=True)  # NULL = not snoozed; datetime = snoozed until then

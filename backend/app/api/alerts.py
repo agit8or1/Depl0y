@@ -62,9 +62,14 @@ class AlertEventOut(BaseModel):
     fired_at: datetime
     acknowledged: bool
     acknowledged_at: Optional[datetime]
+    snooze_until: Optional[datetime] = None
 
     class Config:
         from_attributes = True
+
+
+class SnoozeRequest(BaseModel):
+    hours: Optional[float] = None   # None = snooze forever (same as dismiss)
 
 
 # ── Active alerts ─────────────────────────────────────────────────────────────
@@ -74,12 +79,15 @@ async def get_active_alerts(
     current_user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    """Return all currently firing, unacknowledged alert events."""
+    """Return all currently firing, unacknowledged, non-snoozed alert events."""
     try:
         from app.models.alert_models import AlertEvent
+        from sqlalchemy import or_
+        now = datetime.utcnow()
         events = (
             db.query(AlertEvent)
             .filter(AlertEvent.acknowledged == False)
+            .filter(or_(AlertEvent.snooze_until == None, AlertEvent.snooze_until <= now))
             .order_by(AlertEvent.fired_at.desc())
             .limit(200)
             .all()
@@ -112,6 +120,36 @@ async def dismiss_alert(
     except Exception as exc:
         db.rollback()
         logger.error(f"dismiss_alert error: {exc}")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.post("/{alert_id}/snooze")
+async def snooze_alert(
+    alert_id: int,
+    req: SnoozeRequest,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Snooze an alert for a given number of hours, or silence it permanently (hours=None)."""
+    try:
+        from app.models.alert_models import AlertEvent
+        event = db.query(AlertEvent).filter(AlertEvent.id == alert_id).first()
+        if not event:
+            raise HTTPException(status_code=404, detail="Alert not found")
+        if req.hours is None:
+            # Silence permanently — just dismiss/acknowledge it
+            event.acknowledged = True
+            event.acknowledged_at = datetime.utcnow()
+            event.acknowledged_by = current_user.id
+        else:
+            event.snooze_until = datetime.utcnow() + timedelta(hours=req.hours)
+        db.commit()
+        return {"status": "snoozed", "snooze_until": event.snooze_until}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        db.rollback()
+        logger.error(f"snooze_alert error: {exc}")
         raise HTTPException(status_code=500, detail=str(exc))
 
 

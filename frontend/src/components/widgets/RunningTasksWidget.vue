@@ -26,9 +26,9 @@
         </div>
         <div class="rt-progress-wrap">
           <div class="rt-progress-bar">
-            <div class="rt-progress-fill" :style="{ width: (task.progress || 0) + '%' }"></div>
+            <div class="rt-progress-fill rt-progress-indeterminate"></div>
           </div>
-          <span class="rt-pct">{{ task.progress != null ? task.progress + '%' : '…' }}</span>
+          <span class="rt-pct">running</span>
         </div>
       </div>
     </div>
@@ -201,8 +201,17 @@ export default {
   height: 100%;
   background: #3b82f6;
   border-radius: 2px;
-  transition: width 0.5s ease;
-  min-width: 4px;
+}
+
+.rt-progress-indeterminate {
+  width: 40%;
+  animation: rt-slide 1.6s ease-in-out infinite;
+}
+
+@keyframes rt-slide {
+  0%   { margin-left: 0%; width: 30%; }
+  50%  { margin-left: 50%; width: 40%; }
+  100% { margin-left: 0%; width: 30%; }
 }
 
 .rt-pct {

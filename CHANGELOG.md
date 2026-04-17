@@ -5,6 +5,16 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] - 2026-04-17 🔕 Alert Snooze Durations + Task Progress Fix
+
+### Added
+- **Alert silence with duration** — the 🔕 snooze button now shows a dropdown with: 1 hour, 4 hours, 24 hours, 7 days, or Silence permanently. Previously only "Dismiss" was offered. Backend `POST /alerts/{id}/snooze` endpoint added with `hours` param (null = permanent). `snooze_until` column added to `alert_events` table. Active alert list filters out snoozed alerts until their snooze window expires
+
+### Fixed
+- **Task progress indicator** — replaced misleading time-based % estimates with an honest indeterminate animation bar in both the Running Tasks widget and the Tasks page. Proxmox tasks do not report real progress percentages via API, so the old estimates (e.g. "45%") were inaccurate and confusing
+
+---
+
 ## [2.1.9] - 2026-04-17 🔄 Dependency Updates
 
 ### Changed

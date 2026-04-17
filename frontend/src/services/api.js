@@ -1004,6 +1004,7 @@ export default {
   alerts: {
     getActive: () => api.get('/alerts/active'),
     dismiss: (id) => api.post(`/alerts/${id}/dismiss`),
+    snooze: (id, hours) => api.post(`/alerts/${id}/snooze`, { hours: hours ?? null }),
     dismissAll: () => api.post('/alerts/dismiss-all'),
     acknowledgeEvent: (eventId) => api.post(`/alerts/events/${eventId}/acknowledge`),
     getHistory: (params) => api.get('/alerts/history', { params }),

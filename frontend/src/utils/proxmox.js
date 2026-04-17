@@ -155,6 +155,34 @@ export function formatUptime(seconds) {
 }
 
 /**
+ * Format a Proxmox task type into a human-readable label.
+ * Proxmox sometimes returns the full binary path as the type
+ * (e.g. "/usr/bin/termproxy 5900 --path /vms/130 --perm VM.Console -- /").
+ */
+export function formatTaskType(task) {
+  const type = (task && (task.type || task.task_type)) || ''
+  if (type.startsWith('/')) {
+    const binary = type.split(' ')[0].split('/').pop()
+    if (binary === 'termproxy') {
+      const vmidMatch = type.match(/--path\s+\/(?:vms|ct)\/(\d+)/)
+      return vmidMatch ? `Console (VM ${vmidMatch[1]})` : 'Console Proxy'
+    }
+    return binary || type
+  }
+  const labels = {
+    vncproxy: 'VNC Proxy', qmstart: 'Start VM', qmstop: 'Stop VM',
+    qmreboot: 'Reboot VM', qmsuspend: 'Suspend VM', qmresume: 'Resume VM',
+    qmmigrate: 'Migrate VM', qmclone: 'Clone VM', qmcreate: 'Create VM',
+    qmdestroy: 'Delete VM', qmconfig: 'Config VM', vzdump: 'Backup',
+    vzrestore: 'Restore', vzsnapshot: 'Snapshot', vzrollback: 'Rollback',
+    vzstart: 'Start CT', vzstop: 'Stop CT', vzreboot: 'Reboot CT',
+    vzmigrate: 'Migrate CT', vzcreate: 'Create CT', vzdestroy: 'Delete CT',
+    download: 'Download', aptupdate: 'Apt Update',
+  }
+  return labels[type] || type || (task && task.upid) || '—'
+}
+
+/**
  * Extract CPU usage percentage from a Proxmox VM status object.
  * The cpu field is a float 0..1 (e.g. 0.023 = 2.3%).
  */

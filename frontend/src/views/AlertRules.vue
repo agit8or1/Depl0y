@@ -119,11 +119,11 @@
             >
               {{ alert._acking ? '...' : 'Acknowledge' }}
             </button>
-            <div style="position:relative;" @click.stop>
-              <button class="btn btn-sm btn-ghost" @click="alert._snoozeOpen = !alert._snoozeOpen" title="Mute / Snooze">
+            <div @click.stop>
+              <button class="btn btn-sm btn-ghost" @click="toggleSnooze(alert, $event)" title="Mute / Snooze">
                 🔕
               </button>
-              <div v-if="alert._snoozeOpen" style="position:absolute;right:0;top:110%;background:#1e2d42;border:1px solid #2d4060;border-radius:6px;min-width:150px;z-index:999;padding:4px 0;">
+              <div v-if="alert._snoozeOpen" :style="snoozeDropdownStyle(alert)" @click.stop>
                 <div style="padding:6px 12px;font-size:11px;color:#7a8fa8;border-bottom:1px solid #2d4060;">Silence alert</div>
                 <button @click="dismissAlert(alert)" style="display:block;width:100%;text-align:left;padding:6px 12px;background:none;border:none;color:#e2e8f0;cursor:pointer;font-size:13px;" @mouseover="$event.target.style.background='#2d4060'" @mouseleave="$event.target.style.background='none'">Dismiss</button>
               </div>
@@ -841,11 +841,38 @@ export default {
 
     // ── Alert acknowledgement / dismissal ──────────────────────────────
 
+    toggleSnooze(alert, event) {
+      const wasOpen = alert._snoozeOpen
+      // Close all dropdowns
+      this.activeAlerts.forEach(a => { a._snoozeOpen = false })
+      if (!wasOpen) {
+        const rect = event.currentTarget.getBoundingClientRect()
+        alert._snoozePos = { top: rect.bottom + 4, right: window.innerWidth - rect.right }
+        alert._snoozeOpen = true
+      }
+    },
+
+    snoozeDropdownStyle(alert) {
+      const pos = alert._snoozePos || { top: 0, right: 0 }
+      return {
+        position: 'fixed',
+        top: pos.top + 'px',
+        right: pos.right + 'px',
+        background: '#1e2d42',
+        border: '1px solid #2d4060',
+        borderRadius: '6px',
+        minWidth: '150px',
+        zIndex: 9999,
+        padding: '4px 0',
+        boxShadow: '0 4px 20px rgba(0,0,0,0.4)',
+      }
+    },
+
     async dismissAlert(alert) {
       alert._snoozeOpen = false
       try {
         await api.alerts.dismiss(alert.id)
-        this.alerts = this.alerts.filter(a => a.id !== alert.id)
+        this.activeAlerts = this.activeAlerts.filter(a => a.id !== alert.id)
       } catch (e) {
         console.warn('Failed to dismiss alert:', e)
       }
@@ -1032,11 +1059,17 @@ export default {
       this.resetCountdown()
     }, 30000)
     this.startCountdown()
+    // Close snooze dropdowns when clicking outside
+    this._snoozeCloseHandler = () => {
+      this.activeAlerts.forEach(a => { a._snoozeOpen = false })
+    }
+    document.addEventListener('click', this._snoozeCloseHandler)
   },
 
   beforeUnmount() {
     if (this.refreshInterval) clearInterval(this.refreshInterval)
     if (this.countdownInterval) clearInterval(this.countdownInterval)
+    document.removeEventListener('click', this._snoozeCloseHandler)
   },
 }
 </script>
@@ -1282,6 +1315,7 @@ export default {
 .alert-severity-bar {
   width: 3px;
   flex-shrink: 0;
+  border-radius: 0.5rem 0 0 0.5rem;
 }
 
 .alert-content {

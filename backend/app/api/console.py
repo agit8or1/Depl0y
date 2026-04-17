@@ -98,10 +98,14 @@ def _get_node_ip(svc, node: str, fallback_host: str) -> str:
         for entry in cluster_status:
             if entry.get("type") == "node" and entry.get("name") == node:
                 ip = entry.get("ip")
+                logger.debug("cluster_status node=%s entry=%s ip=%s", node, entry, ip)
                 if ip:
                     return ip
-    except Exception:
-        pass
+        # Log all node entries to diagnose missing IP
+        node_entries = [e for e in cluster_status if e.get("type") == "node"]
+        logger.warning("_get_node_ip: node=%s not found with ip. nodes in cluster: %s", node, node_entries)
+    except Exception as exc:
+        logger.warning("_get_node_ip failed: %s", exc)
     return fallback_host
 
 
@@ -122,33 +126,55 @@ async def _relay(ws_client: WebSocket, ws_proxmox):
     Bidirectionally relay bytes/text between the browser WebSocket and
     the outbound Proxmox WebSocket until either side closes.
     """
+    frames_to_client = 0
+    frames_to_proxmox = 0
+
     async def client_to_proxmox():
+        nonlocal frames_to_proxmox
         try:
             while True:
-                data = await ws_client.receive_bytes()
-                await ws_proxmox.send(data)
-        except (WebSocketDisconnect, websockets.exceptions.ConnectionClosed):
-            pass
+                # Use receive() to handle both binary and text frames without crashing
+                msg = await ws_client.receive()
+                logger.debug("client→proxmox msg type=%s bytes=%s text=%s",
+                             msg.get("type"), len(msg.get("bytes") or b""), bool(msg.get("text")))
+                if msg["type"] == "websocket.disconnect":
+                    logger.info("client→proxmox: browser disconnected (code=%s)", msg.get("code"))
+                    break
+                if "bytes" in msg and msg["bytes"] is not None:
+                    await ws_proxmox.send(msg["bytes"])
+                    frames_to_proxmox += 1
+                elif "text" in msg and msg["text"] is not None:
+                    await ws_proxmox.send(msg["text"])
+                    frames_to_proxmox += 1
+        except (WebSocketDisconnect, websockets.exceptions.ConnectionClosed) as exc:
+            logger.info("client→proxmox: connection closed: %s", exc)
         except Exception as exc:
-            logger.debug("client→proxmox relay error: %s", exc)
+            logger.info("client→proxmox relay error: %s", exc)
 
     async def proxmox_to_client():
+        nonlocal frames_to_client
         try:
             async for message in ws_proxmox:
+                frames_to_client += 1
+                if frames_to_client == 1:
+                    preview = message[:20] if isinstance(message, bytes) else message[:20].encode()
+                    logger.info("proxmox→client first frame: %d bytes, preview=%r", len(message), preview)
                 if isinstance(message, bytes):
                     await ws_client.send_bytes(message)
                 else:
                     await ws_client.send_text(message)
-        except (WebSocketDisconnect, websockets.exceptions.ConnectionClosed):
-            pass
+        except (WebSocketDisconnect, websockets.exceptions.ConnectionClosed) as exc:
+            logger.info("proxmox→client: connection closed: %s", exc)
         except Exception as exc:
-            logger.debug("proxmox→client relay error: %s", exc)
+            logger.info("proxmox→client relay error: %s", exc)
 
     task1 = asyncio.create_task(client_to_proxmox())
     task2 = asyncio.create_task(proxmox_to_client())
     done, pending = await asyncio.wait(
         [task1, task2], return_when=asyncio.FIRST_COMPLETED
     )
+    logger.info("relay done: frames_to_client=%d frames_to_proxmox=%d done_tasks=%d",
+                frames_to_client, frames_to_proxmox, len(done))
     for task in pending:
         task.cancel()
         try:
@@ -283,13 +309,18 @@ async def vm_vnc_proxy(
     node: str,
     vmid: int,
     token: Optional[str] = Query(default=None),
+    ticket: Optional[str] = Query(default=None),
+    port: Optional[str] = Query(default=None),
 ):
     """
     WebSocket endpoint that proxies VNC for a QEMU VM.
 
-    The browser connects here; this handler authenticates the user, requests a
-    VNC ticket from Proxmox, then opens a WebSocket to Proxmox and relays all
-    traffic bidirectionally.
+    The browser connects here; this handler authenticates the user, then opens
+    a WebSocket to Proxmox and relays all traffic bidirectionally.
+
+    If 'ticket' and 'port' query params are provided (pre-fetched by the frontend),
+    they are used directly to avoid a second vncproxy call which would conflict
+    with the first. Otherwise a fresh vncproxy call is made.
     """
     db = _get_db()
     try:
@@ -303,28 +334,51 @@ async def vm_vnc_proxy(
             await websocket.close(code=4404, reason="Proxmox host not found")
             return
 
-        # Accept the browser WebSocket before doing any async Proxmox work
-        await websocket.accept(subprotocol="binary")
+        svc = ProxmoxService(host)
 
-        # Request a VNC ticket from Proxmox (synchronous proxmoxer call)
-        try:
-            svc = ProxmoxService(host)
-            ticket_data = svc.proxmox.nodes(node).qemu(vmid).vncproxy.post(websocket=1)
-            port = ticket_data["port"]
-            vnc_ticket = ticket_data["ticket"]
-        except Exception as exc:
-            logger.error("Failed to get VNC ticket for VM %s/%s/%s: %s", host_id, node, vmid, exc)
-            await websocket.close(code=4502, reason="Failed to obtain VNC ticket")
-            return
+        if ticket and port:
+            # Reuse the ticket+port the frontend already fetched — avoids double vncproxy
+            vnc_ticket = ticket
+            vnc_port = port
+        else:
+            # Fallback: request a fresh VNC ticket from Proxmox
+            try:
+                ticket_data = svc.proxmox.nodes(node).qemu(vmid).vncproxy.post(websocket=1)
+                vnc_port = ticket_data["port"]
+                vnc_ticket = ticket_data["ticket"]
+            except Exception as exc:
+                logger.error("Failed to get VNC ticket for VM %s/%s/%s: %s", host_id, node, vmid, exc)
+                await websocket.close(code=4502, reason="Failed to obtain VNC ticket")
+                return
 
         encoded_ticket = urllib.parse.quote(vnc_ticket, safe="")
-        node_ip = _get_node_ip(svc, node, host.hostname)
+        # Use cluster VIP (host.hostname) — direct node IPs return empty response
+        # for vncwebsocket connections; the cluster VIP correctly routes to all nodes.
         proxmox_url = (
-            f"wss://{node_ip}:{host.port}/api2/json/nodes/{node}"
-            f"/vncwebsocket?port={port}&vncticket={encoded_ticket}"
+            f"wss://{host.hostname}:{host.port}/api2/json/nodes/{node}"
+            f"/qemu/{vmid}/vncwebsocket?port={vnc_port}&vncticket={encoded_ticket}"
         )
         auth_headers = _build_auth_header(host)
+        logger.info(
+            "VNC connecting: node=%s host=%s port=%s ticket_source=%s ticket_len=%d ticket_prefix=%s auth_keys=%s",
+            node, host.hostname, vnc_port,
+            "frontend" if (ticket and port) else "fresh",
+            len(vnc_ticket),
+            vnc_ticket[:20],
+            list(auth_headers.keys()),
+        )
         ssl_ctx = _make_ssl_context()
+
+        # Log browser WebSocket headers for diagnosing proxy chain issues
+        ws_headers = dict(websocket.scope.get("headers", []))
+        logger.info(
+            "VNC browser headers: key=%s proto=%s origin=%s extensions=%s client=%s",
+            ws_headers.get(b"sec-websocket-key", b"(none)").decode("latin-1", errors="replace"),
+            ws_headers.get(b"sec-websocket-protocol", b"(none)").decode("latin-1", errors="replace"),
+            ws_headers.get(b"origin", b"(none)").decode("latin-1", errors="replace"),
+            ws_headers.get(b"sec-websocket-extensions", b"(none)").decode("latin-1", errors="replace"),
+            websocket.scope.get("client"),
+        )
 
         try:
             async with websockets.connect(
@@ -334,10 +388,34 @@ async def vm_vnc_proxy(
                 subprotocols=["binary"],
             ) as ws_proxmox:
                 logger.info(
-                    "VNC proxy opened: user=%s host=%s node=%s(%s) vmid=%s",
-                    user.username, host.name, node, node_ip, vmid,
+                    "VNC proxy opened: user=%s host=%s node=%s vmid=%s subprotocol=%s",
+                    user.username, host.name, node, vmid,
+                    ws_proxmox.subprotocol,
                 )
+                # Accept the browser WebSocket AFTER the Proxmox connection is ready so
+                # the browser receives RFB data immediately after the WS handshake.
+                # Strip Sec-WebSocket-Extensions from scope headers before accepting so
+                # uvicorn does NOT negotiate permessage-deflate compression. uvicorn 0.24
+                # auto-negotiates this extension; NPM then strips it from the 101 response
+                # before forwarding to Chrome. Chrome receives RSV1=1 compressed frames
+                # without knowing compression was negotiated → protocol error → code 1006.
+                websocket.scope["headers"] = [
+                    (k, v) for k, v in websocket.scope.get("headers", [])
+                    if k.lower() != b"sec-websocket-extensions"
+                ]
+                await websocket.accept(subprotocol="binary")
                 await _relay(websocket, ws_proxmox)
+            logger.info("VNC relay ended cleanly: user=%s vmid=%s", user.username, vmid)
+            try:
+                await websocket.close(code=1000, reason="Session ended")
+            except Exception:
+                pass
+        except websockets.exceptions.InvalidHandshake as exc:
+            logger.error("VNC proxy handshake failed (bad ticket/port?): %s", exc)
+            try:
+                await websocket.close(code=4502, reason="Proxmox VNC handshake failed")
+            except Exception:
+                pass
         except Exception as exc:
             logger.error("VNC proxy connection failed: %s", exc)
             try:
@@ -378,8 +456,6 @@ async def lxc_terminal_proxy(
             await websocket.close(code=4404, reason="Proxmox host not found")
             return
 
-        await websocket.accept(subprotocol="binary")
-
         try:
             svc = ProxmoxService(host)
             ticket_data = svc.proxmox.nodes(node).lxc(vmid).termproxy.post()
@@ -393,9 +469,8 @@ async def lxc_terminal_proxy(
             return
 
         encoded_ticket = urllib.parse.quote(term_ticket, safe="")
-        node_ip = _get_node_ip(svc, node, host.hostname)
         proxmox_url = (
-            f"wss://{node_ip}:{host.port}/api2/json/nodes/{node}"
+            f"wss://{host.hostname}:{host.port}/api2/json/nodes/{node}"
             f"/lxc/{vmid}/vncwebsocket?port={port}&vncticket={encoded_ticket}"
         )
         auth_headers = _build_auth_header(host)
@@ -409,9 +484,14 @@ async def lxc_terminal_proxy(
                 subprotocols=["binary"],
             ) as ws_proxmox:
                 logger.info(
-                    "LXC terminal proxy opened: user=%s host=%s node=%s(%s) vmid=%s",
-                    user.username, host.name, node, node_ip, vmid,
+                    "LXC terminal proxy opened: user=%s host=%s node=%s vmid=%s",
+                    user.username, host.name, node, vmid,
                 )
+                websocket.scope["headers"] = [
+                    (k, v) for k, v in websocket.scope.get("headers", [])
+                    if k.lower() != b"sec-websocket-extensions"
+                ]
+                await websocket.accept(subprotocol="binary")
                 await _relay(websocket, ws_proxmox)
         except Exception as exc:
             logger.error("LXC terminal proxy connection failed: %s", exc)
@@ -452,8 +532,6 @@ async def node_terminal_proxy(
             await websocket.close(code=4404, reason="Proxmox host not found")
             return
 
-        await websocket.accept(subprotocol="binary")
-
         try:
             svc = ProxmoxService(host)
             ticket_data = svc.proxmox.nodes(node).termproxy.post()
@@ -467,9 +545,8 @@ async def node_terminal_proxy(
             return
 
         encoded_ticket = urllib.parse.quote(term_ticket, safe="")
-        node_ip = _get_node_ip(svc, node, host.hostname)
         proxmox_url = (
-            f"wss://{node_ip}:{host.port}/api2/json/nodes/{node}"
+            f"wss://{host.hostname}:{host.port}/api2/json/nodes/{node}"
             f"/vncwebsocket?port={port}&vncticket={encoded_ticket}"
         )
         auth_headers = _build_auth_header(host)
@@ -483,9 +560,14 @@ async def node_terminal_proxy(
                 subprotocols=["binary"],
             ) as ws_proxmox:
                 logger.info(
-                    "Node terminal proxy opened: user=%s host=%s node=%s(%s)",
-                    user.username, host.name, node, node_ip,
+                    "Node terminal proxy opened: user=%s host=%s node=%s",
+                    user.username, host.name, node,
                 )
+                websocket.scope["headers"] = [
+                    (k, v) for k, v in websocket.scope.get("headers", [])
+                    if k.lower() != b"sec-websocket-extensions"
+                ]
+                await websocket.accept(subprotocol="binary")
                 await _relay(websocket, ws_proxmox)
         except Exception as exc:
             logger.error("Node terminal proxy connection failed: %s", exc)

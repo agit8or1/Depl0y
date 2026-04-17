@@ -1,11 +1,12 @@
 {
   "name": "depl0y-frontend",
-  "version": "2.0.1",
+  "version": "2.1.0",
   "description": "Depl0y Frontend - Vue.js deployment panel",
   "private": true,
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "deploy": "vite build && sudo rsync -a --delete dist/ /opt/depl0y/frontend/dist/ && sudo chown -R www-data:www-data /opt/depl0y/frontend/dist/",
     "preview": "vite preview",
     "lint": "eslint . --ext .vue,.js,.jsx,.cjs,.mjs --fix --ignore-path .gitignore"
   },

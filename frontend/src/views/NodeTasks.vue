@@ -69,7 +69,7 @@
                 <td>
                   <code class="upid-text">{{ truncateUpid(task.upid) }}</code>
                 </td>
-                <td>{{ task.type || '—' }}</td>
+                <td>{{ formatTaskType(task) }}</td>
                 <td>
                   <span :class="['badge', statusBadge(task)]">
                     {{ task.status || (isRunning(task) ? 'running' : '—') }}
@@ -148,6 +148,7 @@ import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute } from 'vue-router'
 import { useToast } from 'vue-toastification'
 import api from '@/services/api'
+import { formatTaskType } from '@/utils/proxmox'
 
 const route = useRoute()
 const toast = useToast()

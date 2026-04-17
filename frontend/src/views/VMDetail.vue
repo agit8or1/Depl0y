@@ -5287,12 +5287,7 @@ const onMigrateError = (msg) => {
 
 // ── Console ────────────────────────────────────────────────────────────────────
 
-const openConsole = async () => {
-  try {
-    await api.pveVm.getVncTicket(hostId.value, node.value, vmid.value)
-  } catch (e) {
-    console.warn('VNC ticket request failed', e)
-  }
+const openConsole = () => {
   router.push(`/proxmox/${hostId.value}/nodes/${node.value}/console/${vmid.value}`)
 }
 

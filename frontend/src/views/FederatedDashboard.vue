@@ -403,11 +403,11 @@
             <tbody>
               <tr v-for="task in recentTasks" :key="`${task.host_id}-${task.upid}`">
                 <td class="text-sm">{{ task.host_name }}</td>
-                <td class="text-sm">{{ task.type || task.upid }}</td>
+                <td class="text-sm">{{ formatTaskType(task) }}</td>
                 <td class="text-sm">{{ task.node }}</td>
                 <td>
                   <span :class="['badge', taskStatusClass(task.status)]">
-                    {{ task.status || 'running' }}
+                    {{ formatTaskStatus(task.status) }}
                   </span>
                 </td>
                 <td class="text-sm">{{ formatDate(task.starttime) }}</td>
@@ -820,6 +820,40 @@ export default {
       return `${Math.floor(diff / 60)}m ago`
     }
 
+    const formatTaskType = (task) => {
+      const type = task.type || ''
+      // Proxmox returns the full command string for some internal tasks (e.g. termproxy)
+      if (type.startsWith('/')) {
+        const binary = type.split(' ')[0].split('/').pop()
+        if (binary === 'termproxy') {
+          const vmidMatch = type.match(/--path\s+\/vms\/(\d+)/)
+          return vmidMatch ? `Console (VM ${vmidMatch[1]})` : 'Console Proxy'
+        }
+        return binary || type
+      }
+      // Map known Proxmox task types to friendly names
+      const labels = {
+        vncproxy: 'VNC Proxy', qmstart: 'Start VM', qmstop: 'Stop VM',
+        qmreboot: 'Reboot VM', qmsuspend: 'Suspend VM', qmresume: 'Resume VM',
+        qmmigrate: 'Migrate VM', qmclone: 'Clone VM', qmcreate: 'Create VM',
+        qmdestroy: 'Delete VM', qmconfig: 'Config VM', vzdump: 'Backup',
+        vzrestore: 'Restore', vzsnapshot: 'Snapshot', vzrollback: 'Rollback',
+        vzstart: 'Start CT', vzstop: 'Stop CT', vzreboot: 'Reboot CT',
+        vzmigrate: 'Migrate CT', vzcreate: 'Create CT', vzdestroy: 'Delete CT',
+        download: 'Download', aptupdate: 'Apt Update',
+      }
+      return labels[type] || type || task.upid
+    }
+
+    const formatTaskStatus = (status) => {
+      if (!status || status === 'running') return 'running'
+      if (status === 'OK') return 'OK'
+      if (status.startsWith('WARN')) return status.length > 20 ? 'Warning' : status
+      // Proxmox stores the full failed command string as the status on error
+      if (status.length > 20) return 'Error'
+      return status
+    }
+
     const taskStatusClass = (status) => {
       if (!status || status === 'running') return 'badge-info'
       if (status === 'OK') return 'badge-success'
@@ -938,6 +972,8 @@ export default {
       formatDate,
       formatRelativeTime,
       taskStatusClass,
+      formatTaskStatus,
+      formatTaskType,
     }
   }
 }

@@ -203,7 +203,7 @@
           <div class="info-panel" style="text-align:left;margin-bottom:1.25rem;">
             <div class="info-row">
               <span class="info-key">Endpoint</span>
-              <code class="info-val">/api/v1/pve-console/ws/lxc/{{ hostId }}/{{ node }}/{{ vmid }}</code>
+              <code class="info-val">/api/v1/pve-console/ws/vm-term/{{ hostId }}/{{ node }}/{{ vmid }}</code>
             </div>
             <div class="info-row">
               <span class="info-key">Note</span>
@@ -442,7 +442,12 @@ const proxmoxConsoleUrl = computed(() => {
 function buildWsUrl() {
   const token = localStorage.getItem('access_token') || ''
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
-  return `${proto}//${location.host}/api/v1/pve-console/ws/vm/${hostId.value}/${node.value}/${vmid.value}?token=${encodeURIComponent(token)}`
+  let url = `${proto}//${location.host}/api/v1/pve-console/ws/vm/${hostId.value}/${node.value}/${vmid.value}?token=${encodeURIComponent(token)}`
+  // Pass the VNC ticket and port so the proxy can skip its own vncproxy call
+  if (ticketData.value?.ticket && ticketData.value?.port) {
+    url += `&ticket=${encodeURIComponent(ticketData.value.ticket)}&port=${encodeURIComponent(ticketData.value.port)}`
+  }
+  return url
 }
 
 async function getTicketAndHost() {
@@ -482,7 +487,11 @@ async function connect() {
     }
 
     const wsUrl = buildWsUrl()
-    rfb = new RFB(canvasRef.value, wsUrl)
+    // Proxmox VNC sessions use VNC Auth (type 2); the ticket is the VNC password
+    const rfbOptions = ticketData.value?.ticket
+      ? { credentials: { password: ticketData.value.ticket } }
+      : {}
+    rfb = new RFB(canvasRef.value, wsUrl, rfbOptions)
     rfb.viewOnly = false
     applyScaleMode()
 
@@ -707,8 +716,7 @@ const serialStatusLabel = computed(() => {
 function buildSerialWsUrl() {
   const token = localStorage.getItem('access_token') || ''
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
-  // Use the LXC terminal proxy endpoint — Proxmox uses the same termproxy for QEMU serial terminals
-  return `${proto}//${location.host}/api/v1/pve-console/ws/lxc/${hostId.value}/${node.value}/${vmid.value}?token=${encodeURIComponent(token)}`
+  return `${proto}//${location.host}/api/v1/pve-console/ws/vm-term/${hostId.value}/${node.value}/${vmid.value}?token=${encodeURIComponent(token)}`
 }
 
 function appendToTerminal(text) {

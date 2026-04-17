@@ -1477,8 +1477,7 @@ export default {
     }
 
     const openConsole = (vm) => {
-      const url = `/proxmox/${vm.hostId}/nodes/${vm.node}/console/${vm.vmid}`
-      window.open(url, '_blank')
+      router.push(`/proxmox/${vm.hostId}/nodes/${vm.node}/console/${vm.vmid}`)
     }
 
     const allStartVM = async (vm) => {

@@ -5,6 +5,25 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-04-17 🖥️ VM Console Fix + QEMU Serial Terminal + Dashboard Polish
+
+### Fixed
+- **VM VNC console (Chrome/1006)** — root cause: NPM strips `Sec-WebSocket-Protocol` from WebSocket requests before forwarding to the backend. The backend was unconditionally responding with `Sec-WebSocket-Protocol: binary` in the 101 — an RFC 6455 violation when the client header was stripped (server may only select an offered subprotocol). Fixed by:
+  1. Adding `proxy_set_header Sec-WebSocket-Protocol $http_sec_websocket_protocol;` to the nginx WebSocket location so NPM's stripped header is explicitly forwarded
+  2. Backend helper `_offered_subprotocol()` now only selects `"binary"` if it was present in the client's `Sec-WebSocket-Protocol` header — falls back to `None` if stripped, preventing the protocol violation
+- **VNC proxy used direct node IP** — reverted an incorrect change that used `_get_node_ip()` for VNC WebSocket URLs. VNC tickets are issued by the cluster VIP and are node-bound; they cannot be used with direct node IPs. All three proxy endpoints (VM VNC, LXC terminal, node terminal) now consistently use `host.hostname` (the cluster VIP)
+- **Proxmox task error in dashboard status badge** — when a Proxmox task fails, its `status` field contains the full failed command string (e.g. `command '/usr/bin/termproxy... failed: exit code 1'`). The dashboard tasks widget now shows `"Error"` for any status string longer than 20 characters instead of rendering the raw command
+- **QEMU VM serial terminal used wrong proxy endpoint** — `VMConsole.vue` was routing QEMU serial terminal connections through the LXC termproxy WebSocket endpoint (`/ws/lxc/`), which calls `lxc(vmid).termproxy.post()` on Proxmox. QEMU VMs require a separate `qemu(vmid).termproxy.post()` call. Fixed by adding a dedicated `/ws/vm-term/{host_id}/{node}/{vmid}` WebSocket endpoint and REST ticket endpoint for QEMU serial terminals, and updating `VMConsole.vue` to use it
+
+### Added
+- **`WS /api/v1/pve-console/ws/vm-term/{host_id}/{node}/{vmid}`** — new WebSocket proxy for QEMU VM serial terminal using the correct Proxmox `qemu/{vmid}/termproxy` API (requires `serial0: socket` in VM hardware config)
+
+### Changed
+- **nginx WebSocket config** — added explicit `Sec-WebSocket-Protocol` passthrough and updated comments explaining the proxy chain header stripping behaviour
+- **Version bumping** — all fixes and updates now bump the version in `package.json`, `config.py` fallback, DB `system_settings`, and `README.md` badge
+
+---
+
 ## [1.6.0] - 2026-03-09 📥 VM Import — File Upload & VMware Direct Import
 
 ### Added

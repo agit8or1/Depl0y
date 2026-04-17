@@ -789,7 +789,7 @@
                     <td class="text-sm">
                       {{ task.starttime ? new Date(task.starttime * 1000).toLocaleString() : '—' }}
                     </td>
-                    <td class="text-sm">{{ task.type }}</td>
+                    <td class="text-sm">{{ formatTaskType(task) }}</td>
                     <td class="text-sm text-muted">{{ task.id || '—' }}</td>
                     <td class="text-sm">{{ task.user || '—' }}</td>
                     <td>
@@ -1358,7 +1358,7 @@ import {
 } from 'chart.js'
 import api from '@/services/api'
 import { useToast } from 'vue-toastification'
-import { formatBytes, formatUptime } from '@/utils/proxmox'
+import { formatBytes, formatUptime, formatTaskType } from '@/utils/proxmox'
 import SkeletonLoader from '@/components/SkeletonLoader.vue'
 import { copyToClipboard } from '@/utils/clipboard'
 

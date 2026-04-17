@@ -1234,9 +1234,10 @@ async function loadCloudImages() {
                     const cRes = await api.pveNode.browseStorage(host.id, node, stor.storage, { content: 'images' })
                     const items = cRes.data || []
                     for (const item of items) {
-                      // Cloud images: qcow2, raw, vmdk, img
+                      // Cloud images: qcow2, raw, vmdk, img — but NOT VM disk files (vm-NNN-disk-N.*)
                       const fname = (item.volid || '').split('/').pop()
-                      if (fname.match(/\.(qcow2|img|raw|vmdk)$/i)) {
+                      const isVmDisk = /^(vm|base)-\d+-disk-\d+/i.test(fname)
+                      if (!isVmDisk && fname.match(/\.(qcow2|img|raw|vmdk)$/i)) {
                         results.push({
                           ...item,
                           name: fname,

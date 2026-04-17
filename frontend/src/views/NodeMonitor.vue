@@ -227,7 +227,7 @@
         </div>
       </div>
 
-      <!-- Disk I/O — dual line -->
+      <!-- Disk I/O — dual line (sampled from disk-io-rates, builds over time) -->
       <div class="chart-card card">
         <div class="chart-card__header">
           <span class="chart-card__title">Disk I/O</span>
@@ -238,7 +238,11 @@
           </span>
         </div>
         <div class="chart-body">
+          <div v-if="diskIoHistory.length < 2" class="chart-empty text-muted text-sm">
+            Collecting samples… (~10s)
+          </div>
           <MultiLineChart
+            v-else
             :series="diskSeries"
             unit="MB/s"
             :height="chartHeight"
@@ -471,6 +475,40 @@ const rrdData = ref([])
 const nodeStatus = ref(null)
 const storageList = ref([])
 
+// Disk I/O — rolling history sampled from disk-io-rates endpoint
+const diskIoHistory = ref([])   // [{time, read, write}]
+const MAX_DISK_IO_SAMPLES = 120  // 20 minutes at 10s interval
+let diskIoTimer = null
+
+const loadDiskIoRate = async () => {
+  if (!resolvedHostId.value || !resolvedNode.value) return
+  try {
+    const res = await api.pveNode.diskIoRates(resolvedHostId.value)
+    const rates = res.data || []
+    const node = rates.find(r => r.node === resolvedNode.value)
+    if (node) {
+      diskIoHistory.value.push({
+        time: Math.floor(Date.now() / 1000),
+        read: node.read || 0,
+        write: node.write || 0,
+      })
+      if (diskIoHistory.value.length > MAX_DISK_IO_SAMPLES) {
+        diskIoHistory.value = diskIoHistory.value.slice(-MAX_DISK_IO_SAMPLES)
+      }
+    }
+  } catch { /* silent */ }
+}
+
+const startDiskIoPolling = () => {
+  stopDiskIoPolling()
+  loadDiskIoRate()
+  diskIoTimer = setInterval(loadDiskIoRate, 10000)
+}
+
+const stopDiskIoPolling = () => {
+  if (diskIoTimer) { clearInterval(diskIoTimer); diskIoTimer = null }
+}
+
 const chartHeight = 130
 
 // ── Data loaders ───────────────────────────────────────────────────────────
@@ -543,8 +581,13 @@ const memData = computed(() =>
 )
 const netInData = makeDataSeries('netin', d => d.netin / 1e6)
 const netOutData = makeDataSeries('netout', d => d.netout / 1e6)
-const diskReadData = makeDataSeries('diskread', d => d.diskread / 1e6)
-const diskWriteData = makeDataSeries('diskwrite', d => d.diskwrite / 1e6)
+// Disk I/O from rolling rate history (not RRD — node RRD doesn't include diskread/write)
+const diskReadData = computed(() =>
+  diskIoHistory.value.map(d => ({ time: d.time, value: d.read / 1e6 }))
+)
+const diskWriteData = computed(() =>
+  diskIoHistory.value.map(d => ({ time: d.time, value: d.write / 1e6 }))
+)
 const loadAvgData = makeDataSeries('loadavg')
 const ioWaitData = makeDataSeries('iowait', d => d.iowait * 100)
 
@@ -686,10 +729,12 @@ onMounted(async () => {
   await refreshAll()
   loadAllNodes() // non-blocking background load
   scheduleRefresh()
+  startDiskIoPolling()
 })
 
 onUnmounted(() => {
   clearRefresh()
+  stopDiskIoPolling()
 })
 
 // Re-load when route params change (navigating between nodes)
@@ -699,9 +744,11 @@ watch([resolvedHostId, resolvedNode], async ([hid, node]) => {
     rrdData.value = []
     nodeStatus.value = null
     storageList.value = []
+    diskIoHistory.value = []
     await refreshAll()
     clearRefresh()
     scheduleRefresh()
+    startDiskIoPolling()
   }
 })
 </script>

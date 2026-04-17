@@ -5,6 +5,13 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.1] - 2026-04-17 🔔 Alert Timestamps
+
+### Fixed
+- **Alert relative timestamps** — times like `-14192s ago` are replaced with human-readable labels (`just now`, `5 minutes ago`, `3 hours ago`, `2 days ago`). Root cause was two issues: timestamps stored without timezone suffix were parsed as local time instead of UTC (now normalized by appending `Z`), and negative/sub-minute values showed raw seconds instead of a friendly fallback
+
+---
+
 ## [2.1.0] - 2026-04-17 🖥️ VM Console Fix + QEMU Serial Terminal + Dashboard Polish
 
 ### Fixed

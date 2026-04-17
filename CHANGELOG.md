@@ -5,6 +5,13 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.4] - 2026-04-17 🔄 Running Tasks: Show All Proxmox Tasks (Not Just Depl0y-Initiated)
+
+### Added
+- **`GET /tasks/running` now polls Proxmox live** — in addition to Depl0y-tracked tasks (from in-memory tracker), the endpoint now queries all active Proxmox hosts/nodes directly for currently-running tasks. Backup jobs, migrations, and any other tasks started from the Proxmox GUI will now appear in: the dashboard Running Tasks widget, the Tasks page Depl0y tab, and everywhere that calls `/tasks/running`
+
+---
+
 ## [2.2.3] - 2026-04-17 🔕 Fix False "Node offline" Alerts
 
 ### Fixed

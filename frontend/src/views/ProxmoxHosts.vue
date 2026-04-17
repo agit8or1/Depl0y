@@ -3095,4 +3095,45 @@ export default {
 .text-muted { color: var(--text-secondary); }
 .text-center { text-align: center; }
 .ml-auto { margin-left: auto; }
+
+/* ── Join / Unjoin Cluster Modals ──────────────────────────────────────────── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+.modal-container {
+  background: var(--card-bg, #1e2130);
+  border: 1px solid var(--border-color, #374151);
+  border-radius: 0.5rem;
+  width: 90%;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem 0.75rem;
+  border-bottom: 1px solid var(--border-color, #374151);
+}
+.modal-header h3 { margin: 0; font-size: 1rem; }
+.modal-body { padding: 1.25rem; }
+.btn-close {
+  background: none;
+  border: none;
+  font-size: 1.2rem;
+  cursor: pointer;
+  color: var(--text-secondary);
+  line-height: 1;
+  padding: 0.25rem;
+}
+.btn-close:hover { color: var(--text-primary); }
+.alert { padding: 0.6rem 0.8rem; border-radius: 0.375rem; font-size: 0.85rem; }
+.alert-danger { background: rgba(239,68,68,0.12); border: 1px solid rgba(239,68,68,0.3); color: #f87171; }
+.alert-success { background: rgba(34,197,94,0.12); border: 1px solid rgba(34,197,94,0.3); color: #4ade80; }
 </style>

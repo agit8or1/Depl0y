@@ -448,10 +448,12 @@ def migrate_vm(host_id: int, node: str, vmid: int, req: MigrateRequest,
                db: Session = Depends(get_db), current_user=Depends(require_operator)):
     host = _get_host(host_id, db)
     try:
-        # Note: with_local_disks was removed in Proxmox VE 8+/9 API schema
         kwargs: dict = {"target": req.target, "online": int(req.online)}
         if req.targetstorage:
             kwargs["targetstorage"] = req.targetstorage
+            # Hyphenated key is required internally by Proxmox for local-disk migration;
+            # must use dict syntax because Python kwarg names can't contain hyphens
+            kwargs["with-local-disks"] = 1
         if req.bwlimit is not None and req.bwlimit >= 0:
             kwargs["bwlimit"] = req.bwlimit
         if req.migration_type and req.migration_type != "secure":

@@ -5,6 +5,13 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.8] - 2026-04-17 🚀 VM Migrate — Fix Local Disk Migration
+
+### Fixed
+- **Migrate fails "can't live migrate attached local disks without with-local-disks option"** — Proxmox internally requires the `with-local-disks` parameter (hyphenated form) when migrating VMs with locally-attached disks. Backend now passes `with-local-disks: 1` using Python dict key syntax (bypasses Python kwarg naming restriction) whenever `targetstorage` is specified
+
+---
+
 ## [2.1.7] - 2026-04-17 🚀 VM Migrate — Remove Invalid Proxmox 9 Parameters
 
 ### Fixed

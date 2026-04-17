@@ -6,6 +6,7 @@ from app.core.database import get_db
 from sqlalchemy.orm import Session
 import logging
 import re
+import shlex
 import subprocess
 
 logger = logging.getLogger(__name__)
@@ -283,7 +284,6 @@ def create_ha_group(
             raise HTTPException(status_code=400, detail="Invalid Proxmox hostname")
         ssh_host = f"root@{host.hostname}"
 
-        import shlex
         cmd_parts = ['pvesh', 'create', '/cluster/ha/groups',
                      '-group', request.group, '-nodes', request.nodes]
         if request.restricted:
@@ -338,21 +338,28 @@ def update_ha_group(
         if not host:
             raise HTTPException(status_code=400, detail="No Proxmox hosts configured")
 
+        if not re.match(r'^[a-zA-Z0-9.\-_]+$', host.hostname):
+            raise HTTPException(status_code=400, detail="Invalid Proxmox hostname")
+        if not re.match(r'^[a-zA-Z0-9.\-_]+$', group_id):
+            raise HTTPException(status_code=400, detail="Invalid group ID")
         ssh_host = f"root@{host.hostname}"
 
-        # Build pvesh command to update HA group
-        cmd = f"pvesh set /cluster/ha/groups/{group_id}"
+        # Build pvesh command to update HA group using shlex.quote on all values
+        cmd_parts = ['pvesh', 'set', f'/cluster/ha/groups/{group_id}']
         if request.nodes:
-            cmd += f" -nodes {request.nodes}"
+            cmd_parts += ['-nodes', request.nodes]
         if request.restricted is not None:
-            cmd += f" -restricted {request.restricted}"
+            cmd_parts += ['-restricted', str(request.restricted)]
         if request.nofailback is not None:
-            cmd += f" -nofailback {request.nofailback}"
+            cmd_parts += ['-nofailback', str(request.nofailback)]
         if request.comment is not None:
-            cmd += f" -comment '{request.comment}'"
+            cmd_parts += ['-comment', request.comment]
 
-        update_cmd = f"ssh -o StrictHostKeyChecking=no -o BatchMode=yes {ssh_host} '{cmd}'"
-        result = subprocess.run(update_cmd, shell=True, capture_output=True, timeout=10)
+        result = subprocess.run(
+            ['ssh', '-o', 'StrictHostKeyChecking=no', '-o', 'BatchMode=yes',
+             ssh_host, ' '.join(shlex.quote(p) for p in cmd_parts)],
+            capture_output=True, timeout=10
+        )
 
         if result.returncode != 0:
             error_msg = result.stderr.decode() if result.stderr else "Unknown error"
@@ -385,10 +392,17 @@ def delete_ha_group(
         if not host:
             raise HTTPException(status_code=400, detail="No Proxmox hosts configured")
 
+        if not re.match(r'^[a-zA-Z0-9.\-_]+$', host.hostname):
+            raise HTTPException(status_code=400, detail="Invalid Proxmox hostname")
+        if not re.match(r'^[a-zA-Z0-9.\-_]+$', group_id):
+            raise HTTPException(status_code=400, detail="Invalid group ID")
         ssh_host = f"root@{host.hostname}"
 
-        delete_cmd = f"ssh -o StrictHostKeyChecking=no -o BatchMode=yes {ssh_host} 'pvesh delete /cluster/ha/groups/{group_id}'"
-        result = subprocess.run(delete_cmd, shell=True, capture_output=True, timeout=10)
+        result = subprocess.run(
+            ['ssh', '-o', 'StrictHostKeyChecking=no', '-o', 'BatchMode=yes',
+             ssh_host, f'pvesh delete /cluster/ha/groups/{shlex.quote(group_id)}'],
+            capture_output=True, timeout=10
+        )
 
         if result.returncode != 0:
             error_msg = result.stderr.decode() if result.stderr else "Unknown error"
@@ -420,10 +434,15 @@ def list_ha_resources(
         if not host:
             raise HTTPException(status_code=400, detail="No Proxmox hosts configured")
 
+        if not re.match(r'^[a-zA-Z0-9.\-_]+$', host.hostname):
+            raise HTTPException(status_code=400, detail="Invalid Proxmox hostname")
         ssh_host = f"root@{host.hostname}"
 
-        get_resources = f"ssh -o StrictHostKeyChecking=no -o BatchMode=yes {ssh_host} 'pvesh get /cluster/ha/resources --output-format json 2>/dev/null'"
-        result = subprocess.run(get_resources, shell=True, capture_output=True, timeout=10)
+        result = subprocess.run(
+            ['ssh', '-o', 'StrictHostKeyChecking=no', '-o', 'BatchMode=yes',
+             ssh_host, 'pvesh get /cluster/ha/resources --output-format json 2>/dev/null'],
+            capture_output=True, timeout=10
+        )
 
         if result.returncode == 0:
             import json
@@ -463,20 +482,26 @@ def add_ha_resource(
         if not host:
             raise HTTPException(status_code=400, detail="No Proxmox hosts configured")
 
+        if not re.match(r'^[a-zA-Z0-9.\-_]+$', host.hostname):
+            raise HTTPException(status_code=400, detail="Invalid Proxmox hostname")
         ssh_host = f"root@{host.hostname}"
 
-        # Build pvesh command to add HA resource
-        cmd = f"pvesh create /cluster/ha/resources -sid {request.sid}"
+        # Build pvesh command to add HA resource using shlex.quote on all values
+        cmd_parts = ['pvesh', 'create', '/cluster/ha/resources',
+                     '-sid', request.sid,
+                     '-max_relocate', str(request.max_relocate),
+                     '-max_restart', str(request.max_restart),
+                     '-state', request.state]
         if request.group:
-            cmd += f" -group {request.group}"
-        cmd += f" -max_relocate {request.max_relocate}"
-        cmd += f" -max_restart {request.max_restart}"
-        cmd += f" -state {request.state}"
+            cmd_parts += ['-group', request.group]
         if request.comment:
-            cmd += f" -comment '{request.comment}'"
+            cmd_parts += ['-comment', request.comment]
 
-        add_cmd = f"ssh -o StrictHostKeyChecking=no -o BatchMode=yes {ssh_host} '{cmd}'"
-        result = subprocess.run(add_cmd, shell=True, capture_output=True, timeout=10)
+        result = subprocess.run(
+            ['ssh', '-o', 'StrictHostKeyChecking=no', '-o', 'BatchMode=yes',
+             ssh_host, ' '.join(shlex.quote(p) for p in cmd_parts)],
+            capture_output=True, timeout=10
+        )
 
         if result.returncode != 0:
             error_msg = result.stderr.decode() if result.stderr else "Unknown error"
@@ -509,14 +534,22 @@ def remove_ha_resource(
         if not host:
             raise HTTPException(status_code=400, detail="No Proxmox hosts configured")
 
+        if not re.match(r'^[a-zA-Z0-9.\-_]+$', host.hostname):
+            raise HTTPException(status_code=400, detail="Invalid Proxmox hostname")
+        # Validate sid format: must be "vm:NNN" or "ct:NNN"
+        if not re.match(r'^(vm|ct):\d+$', sid):
+            raise HTTPException(status_code=400, detail="Invalid resource ID format")
         ssh_host = f"root@{host.hostname}"
 
         # URL encode the sid (e.g., vm:100 becomes vm%3A100)
         import urllib.parse
         encoded_sid = urllib.parse.quote(sid, safe='')
 
-        delete_cmd = f"ssh -o StrictHostKeyChecking=no -o BatchMode=yes {ssh_host} 'pvesh delete /cluster/ha/resources/{encoded_sid}'"
-        result = subprocess.run(delete_cmd, shell=True, capture_output=True, timeout=10)
+        result = subprocess.run(
+            ['ssh', '-o', 'StrictHostKeyChecking=no', '-o', 'BatchMode=yes',
+             ssh_host, f'pvesh delete /cluster/ha/resources/{encoded_sid}'],
+            capture_output=True, timeout=10
+        )
 
         if result.returncode != 0:
             error_msg = result.stderr.decode() if result.stderr else "Unknown error"

@@ -319,8 +319,10 @@ async def upload_iso(
     # Create storage directory if it doesn't exist
     os.makedirs(settings.ISO_STORAGE_PATH, exist_ok=True)
 
-    # Generate unique filename
-    filename = file.filename
+    # Generate unique filename — use basename to prevent path traversal
+    filename = os.path.basename(file.filename)
+    if not filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
     storage_path = os.path.join(settings.ISO_STORAGE_PATH, filename)
 
     # Check if file already exists

@@ -2110,7 +2110,7 @@ export default {
 
 /* ── Existing styles ──────────────────────────────────────────────────────── */
 /* ── More-actions dropdown ─────────────────────────────────────────────────── */
-.more-menu-wrap { position: relative; }
+.more-menu-wrap { position: relative; z-index: 300; }
 .more-menu {
   position: absolute;
   right: 0;
@@ -2119,7 +2119,7 @@ export default {
   border: 1px solid var(--border, #e2e8f0);
   border-radius: 6px;
   box-shadow: 0 4px 16px rgba(0,0,0,0.12);
-  z-index: 200;
+  z-index: 1000;
   min-width: 150px;
   padding: 4px 0;
 }
@@ -2159,7 +2159,7 @@ export default {
 .preset-wrap { display: flex; align-items: center; gap: 0.35rem; }
 
 /* ── Column visibility dropdown ───────────────────────────────────────────── */
-.col-toggle-wrap { position: relative; }
+.col-toggle-wrap { position: relative; z-index: 300; }
 .col-menu {
   position: absolute;
   top: calc(100% + 4px);
@@ -2168,7 +2168,7 @@ export default {
   border: 1px solid var(--border, #e2e8f0);
   border-radius: 0.375rem;
   box-shadow: 0 4px 16px rgba(0,0,0,0.12);
-  z-index: 200;
+  z-index: 1000;
   min-width: 170px;
   padding: 0.25rem 0;
 }

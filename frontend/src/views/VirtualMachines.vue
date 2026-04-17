@@ -476,46 +476,26 @@
                 </div>
               </td>
               <td @click.stop>
-                <div class="flex gap-1" style="align-items: center;">
-                  <button
-                    v-if="vm.status === 'running'"
-                    @click="allShutdownVM(vm)"
-                    class="btn btn-warning btn-sm"
-                    :disabled="vm._busy"
-                  >
-                    Shutdown
-                  </button>
-                  <button
-                    v-if="vm.status === 'running'"
-                    @click="allStopVM(vm)"
-                    class="btn btn-danger btn-sm"
-                    :disabled="vm._busy"
-                  >
-                    Stop
-                  </button>
-                  <button
-                    v-if="vm.status !== 'running'"
-                    @click="allStartVM(vm)"
-                    class="btn btn-primary btn-sm"
-                    :disabled="vm._busy"
-                  >
-                    Start
-                  </button>
-                  <button
-                    class="btn btn-outline btn-sm"
-                    title="Edit Tags"
-                    @click="openTagEditor(vm)"
-                  >
-                    Tags
-                  </button>
-                  <button
-                    class="btn btn-outline btn-sm btn-console"
-                    title="Open Console"
-                    @click="openConsole(vm)"
-                  >
+                <div class="flex gap-1 vm-actions" style="align-items: center;">
+                  <button v-if="vm.status === 'running'" @click="allShutdownVM(vm)" class="btn btn-warning btn-sm" :disabled="vm._busy">Shutdown</button>
+                  <button v-if="vm.status === 'running'" @click="allStopVM(vm)" class="btn btn-danger btn-sm" :disabled="vm._busy">Stop</button>
+                  <button v-if="vm.status !== 'running' && vm.status !== 'suspended'" @click="allStartVM(vm)" class="btn btn-primary btn-sm" :disabled="vm._busy">Start</button>
+                  <button v-if="vm.status === 'suspended'" @click="resumeVm(vm)" class="btn btn-primary btn-sm" :disabled="vm._busy">Resume</button>
+                  <button class="btn btn-outline btn-sm btn-console" title="Open Console" @click="openConsole(vm)">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:2px;"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
                     Console
                   </button>
+                  <div class="more-menu-wrap">
+                    <button class="btn btn-outline btn-sm" @click.stop="toggleMoreMenu(vmKey(vm))" title="More actions">⋮</button>
+                    <div v-if="openMoreMenuKey === vmKey(vm)" class="more-menu">
+                      <button @click="openTagEditor(vm); openMoreMenuKey = null">🏷 Tags</button>
+                      <button @click="openSnapshotModal(vm); openMoreMenuKey = null">📷 Snapshot</button>
+                      <button @click="openCloneModal(vm); openMoreMenuKey = null">📋 Clone</button>
+                      <button @click="openMigrateModal(vm); openMoreMenuKey = null">🚀 Migrate</button>
+                      <button v-if="vm.status === 'running'" @click="suspendVm(vm); openMoreMenuKey = null">⏸ Suspend</button>
+                      <button @click="openVmDeleteModal(vm); openMoreMenuKey = null" class="more-menu-danger">🗑 Delete</button>
+                    </div>
+                  </div>
                 </div>
               </td>
             </tr>
@@ -592,15 +572,26 @@
                   </div>
                 </td>
                 <td @click.stop>
-                  <div class="flex gap-1">
+                  <div class="flex gap-1 vm-actions" style="align-items: center;">
                     <button v-if="vm.status === 'running'" @click="allShutdownVM(vm)" class="btn btn-warning btn-sm" :disabled="vm._busy">Shutdown</button>
                     <button v-if="vm.status === 'running'" @click="allStopVM(vm)" class="btn btn-danger btn-sm" :disabled="vm._busy">Stop</button>
-                    <button v-if="vm.status !== 'running'" @click="allStartVM(vm)" class="btn btn-primary btn-sm" :disabled="vm._busy">Start</button>
-                    <button class="btn btn-outline btn-sm" @click="openTagEditor(vm)">Tags</button>
+                    <button v-if="vm.status !== 'running' && vm.status !== 'suspended'" @click="allStartVM(vm)" class="btn btn-primary btn-sm" :disabled="vm._busy">Start</button>
+                    <button v-if="vm.status === 'suspended'" @click="resumeVm(vm)" class="btn btn-primary btn-sm" :disabled="vm._busy">Resume</button>
                     <button class="btn btn-outline btn-sm btn-console" @click="openConsole(vm)">
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:2px;"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
                       Console
                     </button>
+                    <div class="more-menu-wrap">
+                      <button class="btn btn-outline btn-sm" @click.stop="toggleMoreMenu(vmKey(vm))" title="More actions">⋮</button>
+                      <div v-if="openMoreMenuKey === vmKey(vm)" class="more-menu">
+                        <button @click="openTagEditor(vm); openMoreMenuKey = null">🏷 Tags</button>
+                        <button @click="openSnapshotModal(vm); openMoreMenuKey = null">📷 Snapshot</button>
+                        <button @click="openCloneModal(vm); openMoreMenuKey = null">📋 Clone</button>
+                        <button @click="openMigrateModal(vm); openMoreMenuKey = null">🚀 Migrate</button>
+                        <button v-if="vm.status === 'running'" @click="suspendVm(vm); openMoreMenuKey = null">⏸ Suspend</button>
+                        <button @click="openVmDeleteModal(vm); openMoreMenuKey = null" class="more-menu-danger">🗑 Delete</button>
+                      </div>
+                    </div>
                   </div>
                 </td>
               </tr>
@@ -621,6 +612,9 @@
         </div>
       </div>
     </div>
+
+    <!-- More-menu click-outside handler -->
+    <div v-if="openMoreMenuKey" class="col-menu-overlay" @click="openMoreMenuKey = null"></div>
 
     <!-- Column visibility click-outside handler -->
     <div v-if="showColMenu" class="col-menu-overlay" @click="showColMenu = false"></div>
@@ -799,6 +793,128 @@
           <button @click="saveTagEditor" class="btn btn-primary" :disabled="tagEditorSaving">
             {{ tagEditorSaving ? 'Saving…' : 'Save Tags' }}
           </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Snapshot Modal (single VM) -->
+    <div v-if="showSnapshotModal" class="modal-overlay" @click.self="showSnapshotModal = false">
+      <div class="modal-content" @click.stop style="max-width:460px;">
+        <div class="modal-header">
+          <h3>Create Snapshot — VM {{ snapshotVm?.vmid }} ({{ snapshotVm?.name }})</h3>
+          <button @click="showSnapshotModal = false" class="btn-close" :disabled="snapshotRunning">×</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label>Snapshot Name <span class="text-danger">*</span></label>
+            <input v-model="snapshotName" type="text" class="form-control" placeholder="e.g. pre-update-20260417" :disabled="snapshotRunning" />
+          </div>
+          <div class="form-group">
+            <label>Description (optional)</label>
+            <input v-model="snapshotDesc" type="text" class="form-control" placeholder="Optional description" :disabled="snapshotRunning" />
+          </div>
+          <div class="form-group" style="display:flex;align-items:center;gap:0.5rem;">
+            <input id="snap-vmstate" type="checkbox" v-model="snapshotVmState" :disabled="snapshotRunning || snapshotVm?.status !== 'running'" />
+            <label for="snap-vmstate" style="margin:0;">Include VM RAM state (only for running VMs)</label>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button @click="showSnapshotModal = false" class="btn btn-secondary" :disabled="snapshotRunning">Cancel</button>
+          <button @click="runSnapshot" class="btn btn-primary" :disabled="snapshotRunning || !snapshotName.trim()">
+            {{ snapshotRunning ? 'Creating…' : 'Create Snapshot' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Migrate Modal -->
+    <div v-if="showMigrateModal" class="modal-overlay" @click.self="!migrateRunning && (showMigrateModal = false)">
+      <div class="modal-content" @click.stop style="max-width:480px;">
+        <div class="modal-header">
+          <h3>Migrate VM {{ migrateVm?.vmid }} ({{ migrateVm?.name }})</h3>
+          <button @click="showMigrateModal = false" class="btn-close" :disabled="migrateRunning">×</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label>Target Node <span class="text-danger">*</span></label>
+            <select v-model="migrateTarget" class="form-control" :disabled="migrateRunning || migrateNodes.length === 0">
+              <option value="">{{ migrateNodes.length === 0 ? 'Loading nodes…' : 'Select target node' }}</option>
+              <option v-for="n in migrateNodes" :key="n.node" :value="n.node">{{ n.node }}</option>
+            </select>
+          </div>
+          <div class="form-group" style="display:flex;align-items:center;gap:0.5rem;">
+            <input id="migrate-online" type="checkbox" v-model="migrateOnline" :disabled="migrateRunning || migrateVm?.status !== 'running'" />
+            <label for="migrate-online" style="margin:0;">Live migration (online, VM stays running)</label>
+          </div>
+          <div class="form-group" style="display:flex;align-items:center;gap:0.5rem;">
+            <input id="migrate-localdisks" type="checkbox" v-model="migrateWithLocalDisks" :disabled="migrateRunning" />
+            <label for="migrate-localdisks" style="margin:0;">Migrate local disks to target storage</label>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button @click="showMigrateModal = false" class="btn btn-secondary" :disabled="migrateRunning">Cancel</button>
+          <button @click="runMigrate" class="btn btn-primary" :disabled="migrateRunning || !migrateTarget">
+            {{ migrateRunning ? 'Migrating…' : 'Migrate' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Clone Modal -->
+    <div v-if="showCloneModal" class="modal-overlay" @click.self="!cloneRunning && (showCloneModal = false)">
+      <div class="modal-content" @click.stop style="max-width:480px;">
+        <div class="modal-header">
+          <h3>Clone VM {{ cloneVm?.vmid }} ({{ cloneVm?.name }})</h3>
+          <button @click="showCloneModal = false" class="btn-close" :disabled="cloneRunning">×</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label>New VM ID <span class="text-danger">*</span></label>
+            <input v-model.number="cloneNewId" type="number" class="form-control" placeholder="e.g. 200" min="100" :disabled="cloneRunning" />
+          </div>
+          <div class="form-group">
+            <label>New VM Name</label>
+            <input v-model="cloneName" type="text" class="form-control" :placeholder="`${cloneVm?.name || 'vm'}-clone`" :disabled="cloneRunning" />
+          </div>
+          <div class="form-group">
+            <label>Target Node (optional)</label>
+            <select v-model="cloneTarget" class="form-control" :disabled="cloneRunning">
+              <option value="">Same node ({{ cloneVm?.node }})</option>
+              <option v-for="n in cloneNodes" :key="n.node" :value="n.node">{{ n.node }}</option>
+            </select>
+          </div>
+          <div class="form-group" style="display:flex;align-items:center;gap:0.5rem;">
+            <input id="clone-full" type="checkbox" v-model="cloneFull" :disabled="cloneRunning" />
+            <label for="clone-full" style="margin:0;">Full clone (independent copy, not linked clone)</label>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button @click="showCloneModal = false" class="btn btn-secondary" :disabled="cloneRunning">Cancel</button>
+          <button @click="runClone" class="btn btn-primary" :disabled="cloneRunning || !cloneNewId">
+            {{ cloneRunning ? 'Cloning…' : 'Clone VM' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Single VM Delete Modal (All Proxmox tab) -->
+    <div v-if="showVmDeleteModal" class="modal-overlay" @click.self="showVmDeleteModal = false">
+      <div class="modal-content" @click.stop style="max-width:420px;">
+        <div class="modal-header">
+          <h3>Delete VM</h3>
+          <button @click="showVmDeleteModal = false" class="btn-close">×</button>
+        </div>
+        <div class="modal-body">
+          <p class="text-danger mb-1"><strong>Warning:</strong> This permanently deletes VM {{ vmDeleteTarget?.vmid }} ({{ vmDeleteTarget?.name }}) from Proxmox.</p>
+          <p class="text-muted mb-2">This cannot be undone.</p>
+          <div class="form-group">
+            <label>Type <strong>{{ vmDeleteTarget?.vmid }}</strong> to confirm:</label>
+            <input v-model="vmDeleteConfirm" type="text" class="form-control" :placeholder="`Type ${vmDeleteTarget?.vmid}`" @keyup.enter="confirmVmDelete" />
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button @click="showVmDeleteModal = false" class="btn btn-secondary">Cancel</button>
+          <button @click="confirmVmDelete" class="btn btn-danger" :disabled="vmDeleteConfirm !== String(vmDeleteTarget?.vmid)">Delete VM</button>
         </div>
       </div>
     </div>
@@ -1587,6 +1703,179 @@ export default {
       setTimeout(() => fetchAllProxmoxVMs(), 2000)
     }
 
+    // ── More-actions dropdown ────────────────────────────────────────────────
+    const openMoreMenuKey = ref(null)
+    const toggleMoreMenu = (key) => { openMoreMenuKey.value = openMoreMenuKey.value === key ? null : key }
+
+    // ── Suspend / Resume ─────────────────────────────────────────────────────
+    const suspendVm = async (vm) => {
+      vm._busy = true
+      try {
+        await api.pveVm.suspend(vm.hostId, vm.node, vm.vmid)
+        toast.success(`VM ${vm.vmid} suspended`)
+        setTimeout(fetchAllProxmoxVMs, 2000)
+      } catch (err) {
+        toast.error(`Failed to suspend VM ${vm.vmid}: ${err.response?.data?.detail || err.message}`)
+      } finally { vm._busy = false }
+    }
+
+    const resumeVm = async (vm) => {
+      vm._busy = true
+      try {
+        await api.pveVm.resume(vm.hostId, vm.node, vm.vmid)
+        toast.success(`VM ${vm.vmid} resumed`)
+        setTimeout(fetchAllProxmoxVMs, 2000)
+      } catch (err) {
+        toast.error(`Failed to resume VM ${vm.vmid}: ${err.response?.data?.detail || err.message}`)
+      } finally { vm._busy = false }
+    }
+
+    // ── Single-VM Snapshot ───────────────────────────────────────────────────
+    const showSnapshotModal = ref(false)
+    const snapshotVm = ref(null)
+    const snapshotName = ref('')
+    const snapshotDesc = ref('')
+    const snapshotVmState = ref(false)
+    const snapshotRunning = ref(false)
+
+    const openSnapshotModal = (vm) => {
+      snapshotVm.value = vm
+      const now = new Date()
+      const pad = n => String(n).padStart(2, '0')
+      snapshotName.value = `snap-${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`
+      snapshotDesc.value = ''
+      snapshotVmState.value = false
+      showSnapshotModal.value = true
+    }
+
+    const runSnapshot = async () => {
+      if (!snapshotName.value.trim()) return
+      snapshotRunning.value = true
+      const vm = snapshotVm.value
+      try {
+        await api.pveVm.createSnapshot(vm.hostId, vm.node, vm.vmid, {
+          snapname: snapshotName.value.trim(),
+          description: snapshotDesc.value.trim(),
+          vmstate: snapshotVmState.value ? 1 : 0,
+        })
+        toast.success(`Snapshot created for VM ${vm.vmid}`)
+        showSnapshotModal.value = false
+      } catch (err) {
+        toast.error(`Snapshot failed: ${err.response?.data?.detail || err.message}`)
+      } finally { snapshotRunning.value = false }
+    }
+
+    // ── Migrate ──────────────────────────────────────────────────────────────
+    const showMigrateModal = ref(false)
+    const migrateVm = ref(null)
+    const migrateTarget = ref('')
+    const migrateOnline = ref(true)
+    const migrateWithLocalDisks = ref(false)
+    const migrateRunning = ref(false)
+    const migrateNodes = ref([])
+
+    const openMigrateModal = async (vm) => {
+      migrateVm.value = vm
+      migrateTarget.value = ''
+      migrateOnline.value = vm.status === 'running'
+      migrateWithLocalDisks.value = false
+      migrateNodes.value = []
+      showMigrateModal.value = true
+      try {
+        const res = await api.proxmox.listNodes(vm.hostId)
+        migrateNodes.value = (res.data || []).filter(n => n.node_name !== vm.node)
+          .map(n => ({ node: n.node_name, status: n.status }))
+      } catch { migrateNodes.value = [] }
+    }
+
+    const runMigrate = async () => {
+      if (!migrateTarget.value) return
+      migrateRunning.value = true
+      const vm = migrateVm.value
+      try {
+        await api.pveVm.migrate(vm.hostId, vm.node, vm.vmid, {
+          target: migrateTarget.value,
+          online: migrateOnline.value ? 1 : 0,
+          with_local_disks: migrateWithLocalDisks.value ? 1 : 0,
+        })
+        toast.success(`VM ${vm.vmid} migration to ${migrateTarget.value} initiated`)
+        showMigrateModal.value = false
+        setTimeout(fetchAllProxmoxVMs, 3000)
+      } catch (err) {
+        toast.error(`Migration failed: ${err.response?.data?.detail || err.message}`)
+      } finally { migrateRunning.value = false }
+    }
+
+    // ── Clone ────────────────────────────────────────────────────────────────
+    const showCloneModal = ref(false)
+    const cloneVm = ref(null)
+    const cloneNewId = ref(null)
+    const cloneName = ref('')
+    const cloneTarget = ref('')
+    const cloneFull = ref(true)
+    const cloneRunning = ref(false)
+    const cloneNodes = ref([])
+
+    const openCloneModal = async (vm) => {
+      cloneVm.value = vm
+      cloneNewId.value = null
+      cloneName.value = `${vm.name || 'vm'}-clone`
+      cloneTarget.value = ''
+      cloneFull.value = true
+      cloneNodes.value = []
+      showCloneModal.value = true
+      try {
+        const res = await api.proxmox.listNodes(vm.hostId)
+        cloneNodes.value = (res.data || []).filter(n => n.node_name !== vm.node)
+          .map(n => ({ node: n.node_name }))
+      } catch { cloneNodes.value = [] }
+    }
+
+    const runClone = async () => {
+      if (!cloneNewId.value) return
+      cloneRunning.value = true
+      const vm = cloneVm.value
+      const params = { newid: cloneNewId.value, full: cloneFull.value ? 1 : 0 }
+      if (cloneName.value.trim()) params.name = cloneName.value.trim()
+      if (cloneTarget.value) params.target = cloneTarget.value
+      try {
+        await api.pveVm.clone(vm.hostId, vm.node, vm.vmid, params)
+        toast.success(`Clone of VM ${vm.vmid} → VM ${cloneNewId.value} initiated`)
+        showCloneModal.value = false
+        setTimeout(fetchAllProxmoxVMs, 4000)
+      } catch (err) {
+        toast.error(`Clone failed: ${err.response?.data?.detail || err.message}`)
+      } finally { cloneRunning.value = false }
+    }
+
+    // ── Single VM Delete (All Proxmox tab) ───────────────────────────────────
+    const showVmDeleteModal = ref(false)
+    const vmDeleteTarget = ref(null)
+    const vmDeleteConfirm = ref('')
+
+    const openVmDeleteModal = (vm) => {
+      vmDeleteTarget.value = vm
+      vmDeleteConfirm.value = ''
+      showVmDeleteModal.value = true
+    }
+
+    const confirmVmDelete = async () => {
+      if (vmDeleteConfirm.value !== String(vmDeleteTarget.value.vmid)) return
+      const vm = vmDeleteTarget.value
+      showVmDeleteModal.value = false
+      try {
+        if (vm.status === 'running') {
+          await api.pveVm.stop(vm.hostId, vm.node, vm.vmid)
+          await new Promise(r => setTimeout(r, 3000))
+        }
+        await api.pveVm.deleteVm(vm.hostId, vm.node, vm.vmid)
+        toast.success(`VM ${vm.vmid} deleted`)
+        fetchAllProxmoxVMs()
+      } catch (err) {
+        toast.error(`Delete failed: ${err.response?.data?.detail || err.message}`)
+      }
+    }
+
     // ── Tags helpers ────────────────────────────────────────────────────────
     const parseTags = (tagsStr) => {
       if (!tagsStr) return []
@@ -1763,6 +2052,16 @@ export default {
       openBulkSnapshotModal, openBulkTagModal, openBulkDeleteModal, closeBulkModal,
       runBulkSnapshot, runBulkTag, runBulkDelete,
       toggleGroupSelect,
+      openMoreMenuKey, toggleMoreMenu,
+      suspendVm, resumeVm,
+      showSnapshotModal, snapshotVm, snapshotName, snapshotDesc, snapshotVmState, snapshotRunning,
+      openSnapshotModal, runSnapshot,
+      showMigrateModal, migrateVm, migrateTarget, migrateOnline, migrateWithLocalDisks, migrateRunning, migrateNodes,
+      openMigrateModal, runMigrate,
+      showCloneModal, cloneVm, cloneNewId, cloneName, cloneTarget, cloneFull, cloneRunning, cloneNodes,
+      openCloneModal, runClone,
+      showVmDeleteModal, vmDeleteTarget, vmDeleteConfirm,
+      openVmDeleteModal, confirmVmDelete,
     }
   }
 }
@@ -1809,6 +2108,35 @@ export default {
 .row-clickable:hover td { background-color: rgba(59, 130, 246, 0.04); }
 
 /* ── Existing styles ──────────────────────────────────────────────────────── */
+/* ── More-actions dropdown ─────────────────────────────────────────────────── */
+.more-menu-wrap { position: relative; }
+.more-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+  z-index: 200;
+  min-width: 150px;
+  padding: 4px 0;
+}
+.more-menu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 0.45rem 0.85rem;
+  font-size: 0.875rem;
+  cursor: pointer;
+  color: var(--text-primary, #1e293b);
+  white-space: nowrap;
+}
+.more-menu button:hover { background: var(--background, #f8fafc); }
+.more-menu-danger { color: var(--danger-color, #ef4444) !important; }
+
 .btn-sm { padding: 0.25rem 0.5rem; font-size: 0.875rem; }
 .sortable { cursor: pointer; user-select: none; }
 .sortable:hover { background-color: var(--background); }

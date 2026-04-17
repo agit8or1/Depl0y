@@ -1717,12 +1717,17 @@ const loadGuests = async () => {
   guestsError.value = null
   try {
     const [vmRes, ctRes] = await retryOnce(() => Promise.all([
-      api.pveNode.nodeVms(hostId.value, node.value).catch(() => ({ data: [] })),
+      api.pveNode.nodeVms(hostId.value, node.value).catch(() => ({ data: { vms: [], containers: [] } })),
       api.pveNode.listContainers(hostId.value, node.value).catch(() => ({ data: [] })),
     ]))
+    // nodeVms returns {vms, containers} shape; listContainers returns a bare array
+    const vmData = vmRes.data
+    const vmsArray = Array.isArray(vmData) ? vmData : (vmData?.vms ?? [])
+    const ctData = ctRes.data
+    const ctsArray = Array.isArray(ctData) ? ctData : (ctData?.containers ?? [])
     guests.value = [
-      ...(vmRes.data || []).map(v => ({ ...v, type: 'qemu' })),
-      ...(ctRes.data || []).map(c => ({ ...c, type: 'lxc' })),
+      ...vmsArray.map(v => ({ ...v, type: 'qemu' })),
+      ...ctsArray.map(c => ({ ...c, type: 'lxc' })),
     ].sort((a, b) => a.vmid - b.vmid)
   } catch (e) {
     console.warn('Guests load failed', e)

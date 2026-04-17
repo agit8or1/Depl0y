@@ -234,17 +234,18 @@ export default {
   align-items: center;
   justify-content: center;
   min-height: 100vh;
-  background: linear-gradient(135deg, #1e3a8a 0%, #1e40af 50%, #1d4ed8 100%);
+  background: #0c1220;
   padding: 2rem;
 }
 
 .login-card {
-  background: white;
+  background: #111827;
+  border: 1px solid rgba(255,255,255,0.1);
   border-radius: 1rem;
-  box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1);
+  box-shadow: 0 25px 50px rgba(0,0,0,0.6);
   width: 100%;
   max-width: 400px;
-  padding: 2rem;
+  padding: 2.5rem;
 }
 
 .login-header {
@@ -254,9 +255,10 @@ export default {
 
 .login-logo {
   font-size: 3rem;
-  font-weight: 700;
+  font-weight: 800;
   margin: 0;
-  color: var(--text-primary);
+  color: #e2e8f0;
+  letter-spacing: -0.02em;
 }
 
 .logo-zero {
@@ -264,29 +266,73 @@ export default {
 }
 
 .login-subtitle {
-  color: var(--text-secondary);
+  color: #7a8fa8;
   margin-top: 0.5rem;
+  font-size: 0.95rem;
 }
 
 .login-form {
   margin-bottom: 1.5rem;
 }
 
+/* Override any global form-label / form-control if they're light */
+.login-card :deep(.form-label),
+.form-label {
+  color: #94a3b8;
+  font-size: 0.85rem;
+  font-weight: 500;
+  display: block;
+  margin-bottom: 0.35rem;
+}
+
+.login-card :deep(.form-control),
+.form-control {
+  background: #1e2d42;
+  border: 1px solid rgba(255,255,255,0.12);
+  color: #e2e8f0;
+  border-radius: 0.4rem;
+  padding: 0.55rem 0.8rem;
+  font-size: 0.95rem;
+  width: 100%;
+  box-sizing: border-box;
+  transition: border-color 0.15s;
+}
+
+.login-card :deep(.form-control):focus,
+.form-control:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59,130,246,0.2);
+}
+
 .btn-block {
   width: 100%;
   margin-top: 1rem;
+  padding: 0.65rem;
+  font-size: 1rem;
+  font-weight: 600;
+  border-radius: 0.5rem;
+  background: #2563eb;
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s;
 }
+.btn-block:hover:not(:disabled) { background: #1d4ed8; }
+.btn-block:disabled { opacity: 0.55; cursor: not-allowed; }
 
 .login-footer {
   margin-top: 2rem;
   padding-top: 1rem;
-  border-top: 1px solid var(--border-color);
+  border-top: 1px solid rgba(255,255,255,0.07);
 }
 
+.login-footer p { color: #4b5563; }
+
 .login-error {
-  background: #fef2f2;
-  color: #991b1b;
-  border: 1px solid #fecaca;
+  background: rgba(239,68,68,0.1);
+  color: #f87171;
+  border: 1px solid rgba(239,68,68,0.3);
   border-radius: 0.4rem;
   padding: 0.6rem 0.9rem;
   font-size: 0.875rem;
@@ -308,12 +354,12 @@ export default {
   font-size: 1.25rem;
   font-weight: 700;
   margin: 0 0 0.4rem;
-  color: var(--text-primary);
+  color: #e2e8f0;
 }
 
 .twofa-subtitle {
   font-size: 0.875rem;
-  color: var(--text-secondary);
+  color: #7a8fa8;
   margin: 0;
 }
 
@@ -335,7 +381,7 @@ export default {
 .btn-link {
   background: none;
   border: none;
-  color: #3b82f6;
+  color: #60a5fa;
   cursor: pointer;
   font-size: 0.875rem;
   text-decoration: underline;
@@ -343,14 +389,18 @@ export default {
 }
 
 .btn-link:hover {
-  color: #1d4ed8;
+  color: #93c5fd;
 }
 
 .btn-link-secondary {
-  color: var(--text-secondary, #6b7280);
+  color: #4b5563;
 }
 
 .btn-link-secondary:hover {
-  color: var(--text-primary, #111827);
+  color: #7a8fa8;
 }
+
+.text-muted { color: #4b5563; }
+.text-sm { font-size: 0.875rem; }
+.text-center { text-align: center; }
 </style>

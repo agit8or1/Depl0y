@@ -320,21 +320,44 @@ class PBSService:
 
     def get_sync_jobs(self) -> List[Dict[str, Any]]:
         """
-        Return all sync/backup jobs configured on this PBS instance.
-
-        PBS exposes sync jobs at /config/sync and pull jobs at /config/pull.
-        We merge both lists and tag each entry with its job type.
+        Return all jobs configured on this PBS instance:
+        sync, pull, verify, and prune jobs.
         """
         jobs: List[Dict[str, Any]] = []
-        for job_type, path in (("sync", "/config/sync"), ("pull", "/config/pull")):
+        for job_type, path in (
+            ("sync", "/config/sync"),
+            ("pull", "/config/pull"),
+            ("verify", "/config/verify"),
+            ("prune", "/config/prune"),
+        ):
             try:
                 data = self._get(path)
                 if data:
                     for item in data:
                         item.setdefault("job-type", job_type)
+                        # Normalise id field
+                        if "id" not in item and "job-id" in item:
+                            item["id"] = item["job-id"]
+                        # Merge admin (runtime) status for verify/sync jobs
                         jobs.append(item)
             except Exception as exc:
                 logger.warning("Could not fetch %s jobs from PBS '%s': %s", job_type, self.server.name, exc)
+
+        # Enrich verify/sync jobs with last-run info from admin endpoints
+        admin_map: Dict[str, Dict] = {}
+        for admin_path in ("/admin/sync", "/admin/verify"):
+            try:
+                for item in (self._get(admin_path) or []):
+                    admin_map[item.get("id", "")] = item
+            except Exception:
+                pass
+        for job in jobs:
+            admin = admin_map.get(job.get("id", ""))
+            if admin:
+                for key in ("last-run-endtime", "last-run-state", "last-run-upid", "next-run"):
+                    if key in admin and key not in job:
+                        job[key] = admin[key]
+
         return jobs
 
     def run_sync_job(self, job_id: str) -> Any:

@@ -155,7 +155,10 @@
                 <span class="job-icon">{{ jobStatusIcon(job) }}</span>
                 <div class="job-card-info">
                   <strong class="text-sm">{{ job.id || job['job-id'] || 'Unknown' }}</strong>
-                  <div class="text-xs text-muted">Store: {{ job.store || job.datastore || '—' }}</div>
+                  <div class="text-xs text-muted">
+                    <span class="job-type-pill">{{ (job['job-type'] || 'sync').toUpperCase() }}</span>
+                    Store: {{ job.store || job.datastore || '—' }}
+                  </div>
                 </div>
                 <span :class="['job-status-badge', `job-status-badge--${jobStatusClass(job)}`]">
                   {{ jobStatusLabel(job) }}
@@ -600,7 +603,7 @@ export default {
       if (!jobId || !this.selectedServerId) return
       this.triggeringJob = jobId
       try {
-        await api.post(`/pbs-mgmt/${this.selectedServerId}/jobs/${jobId}/run`)
+        await api.post(`/pbs-mgmt/${this.selectedServerId}/jobs/${jobId}/run`, null, { params: { job_type: job['job-type'] || 'sync' } })
         this.jobRunResult = `Job "${jobId}" started successfully.`
         setTimeout(() => { if (this.jobRunResult) this.jobRunResult = null }, 6000)
       } catch (e) {
@@ -1060,6 +1063,7 @@ export default {
   flex-shrink: 0;
 }
 
+.job-type-pill { display: inline-block; font-size: 0.65rem; font-weight: 700; padding: 0 4px; border-radius: 3px; background: rgba(99,102,241,0.15); color: #a5b4fc; margin-right: 4px; letter-spacing: 0.03em; }
 .job-status-badge--ok      { background: rgba(34,197,94,0.15);  color: #4ade80; }
 .job-status-badge--warning { background: rgba(245,158,11,0.15); color: #fbbf24; }
 .job-status-badge--failed  { background: rgba(239,68,68,0.15);  color: #f87171; }

@@ -116,43 +116,27 @@
                   {{ vm.status }}
                 </span>
               </td>
-              <td>
-                <div class="flex gap-1">
-                  <button
-                    v-if="vm.status === 'running'"
-                    @click="stopVM(vm.vmid, vm.node)"
-                    class="btn btn-warning btn-sm"
-                  >
-                    Stop
+              <td @click.stop>
+                <div class="flex gap-1 vm-actions" style="align-items:center;">
+                  <button v-if="vm.status === 'running'" @click="stopVM(vm.vmid, vm.node)" class="btn btn-warning btn-sm">Stop</button>
+                  <button v-if="vm.status === 'running'" @click="restartVM(vm.vmid, vm.node)" class="btn btn-info btn-sm">Restart</button>
+                  <button v-if="vm.status === 'stopped'" @click="startVM(vm.vmid, vm.node)" class="btn btn-primary btn-sm">Start</button>
+                  <button v-if="vm.status === 'suspended'" @click="resumeVm(adaptManagedVm(vm))" class="btn btn-primary btn-sm">Resume</button>
+                  <button class="btn btn-outline btn-sm btn-console" @click="openConsole(adaptManagedVm(vm))" title="Open Console">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:2px;"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                    Console
                   </button>
-                  <button
-                    v-if="vm.status === 'running'"
-                    @click="restartVM(vm.vmid, vm.node)"
-                    class="btn btn-info btn-sm"
-                  >
-                    Restart
-                  </button>
-                  <button
-                    v-if="vm.status === 'running'"
-                    @click="powerOffVM(vm.vmid, vm.node)"
-                    class="btn btn-danger btn-sm"
-                  >
-                    Power Off
-                  </button>
-                  <button
-                    v-if="vm.status === 'stopped'"
-                    @click="startVM(vm.vmid, vm.node)"
-                    class="btn btn-primary btn-sm"
-                  >
-                    Start
-                  </button>
-                  <button
-                    @click="showDeleteModal(vm)"
-                    class="btn btn-danger btn-sm"
-                    title="Delete VM"
-                  >
-                    Delete
-                  </button>
+                  <div class="more-menu-wrap">
+                    <button class="btn btn-outline btn-sm" @click.stop="toggleMoreMenu('m-'+vm.vmid)" title="More actions">⋮</button>
+                    <div v-if="openMoreMenuKey === 'm-'+vm.vmid" class="more-menu">
+                      <button @click="openSnapshotModal(adaptManagedVm(vm)); openMoreMenuKey = null">📷 Snapshot</button>
+                      <button @click="openCloneModal(adaptManagedVm(vm)); openMoreMenuKey = null">📋 Clone</button>
+                      <button @click="openMigrateModal(adaptManagedVm(vm)); openMoreMenuKey = null">🚀 Migrate</button>
+                      <button v-if="vm.status === 'running'" @click="suspendVm(adaptManagedVm(vm)); openMoreMenuKey = null">⏸ Suspend</button>
+                      <button v-if="vm.status === 'running'" @click="powerOffVM(vm.vmid, vm.node); openMoreMenuKey = null">⚡ Power Off</button>
+                      <button @click="showDeleteModal(vm); openMoreMenuKey = null" class="more-menu-danger">🗑 Delete</button>
+                    </div>
+                  </div>
                 </div>
               </td>
             </tr>
@@ -1703,6 +1687,12 @@ export default {
       setTimeout(() => fetchAllProxmoxVMs(), 2000)
     }
 
+    // ── Adapt managed-tab VM to modal format (uses host_id, not hostId) ──────
+    const adaptManagedVm = (vm) => ({
+      ...vm,
+      hostId: vm.host_id || vm.hostId || 1,
+    })
+
     // ── More-actions dropdown ────────────────────────────────────────────────
     const openMoreMenuKey = ref(null)
     const toggleMoreMenu = (key) => { openMoreMenuKey.value = openMoreMenuKey.value === key ? null : key }
@@ -2052,6 +2042,7 @@ export default {
       openBulkSnapshotModal, openBulkTagModal, openBulkDeleteModal, closeBulkModal,
       runBulkSnapshot, runBulkTag, runBulkDelete,
       toggleGroupSelect,
+      adaptManagedVm,
       openMoreMenuKey, toggleMoreMenu,
       suspendVm, resumeVm,
       showSnapshotModal, snapshotVm, snapshotName, snapshotDesc, snapshotVmState, snapshotRunning,

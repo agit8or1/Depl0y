@@ -389,15 +389,23 @@ def list_jobs(
 def run_job(
     server_id: int,
     job_id: str,
+    job_type: str = "sync",
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> Any:
-    """Trigger a PBS sync job to run immediately. Returns the task UPID."""
+    """Trigger a PBS job to run immediately. Supports sync, verify, and prune jobs."""
     server = _get_pbs_server(db, server_id)
     try:
         svc = _make_service(server)
-        upid = svc.run_sync_job(job_id)
-        return {"upid": upid, "job_id": job_id}
+        run_paths = {
+            "sync": f"/config/sync/{job_id}/run",
+            "pull": f"/config/pull/{job_id}/run",
+            "verify": f"/config/verify/{job_id}/run",
+            "prune": f"/config/prune/{job_id}/run",
+        }
+        path = run_paths.get(job_type, f"/config/sync/{job_id}/run")
+        upid = svc._post(path)
+        return {"upid": upid, "job_id": job_id, "job_type": job_type}
     except HTTPException:
         raise
     except Exception as exc:

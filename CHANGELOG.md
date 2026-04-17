@@ -5,6 +5,15 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.4] - 2026-04-17 🚀 VM Migrate — Full Proxmox Options
+
+### Added
+- **VM Migrate modal — full Proxmox options**: target storage (with per-node storage list fetched dynamically), migration type (secure/insecure), bandwidth limit (KiB/s), migration network (CIDR), force flag
+- Backend `MigrateRequest` extended with `targetstorage`, `bwlimit`, `migration_type`, `migration_network`, `force`; all passed to Proxmox `qemu/{vmid}/migrate` API
+- Target storage dropdown auto-populates with `images`-capable storages from the selected target node
+
+---
+
 ## [2.1.3] - 2026-04-17 🖱️ VM Actions Submenu Fix (Complete)
 
 ### Fixed

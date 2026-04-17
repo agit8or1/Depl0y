@@ -811,7 +811,7 @@
 
     <!-- Migrate Modal -->
     <div v-if="showMigrateModal" class="modal-overlay" @click.self="!migrateRunning && (showMigrateModal = false)">
-      <div class="modal-content" @click.stop style="max-width:480px;">
+      <div class="modal-content" @click.stop style="max-width:520px;">
         <div class="modal-header">
           <h3>Migrate VM {{ migrateVm?.vmid }} ({{ migrateVm?.name }})</h3>
           <button @click="showMigrateModal = false" class="btn-close" :disabled="migrateRunning">×</button>
@@ -824,13 +824,42 @@
               <option v-for="n in migrateNodes" :key="n.node" :value="n.node">{{ n.node }}</option>
             </select>
           </div>
+          <div class="form-group">
+            <label>Target Storage</label>
+            <select v-model="migrateTargetStorage" class="form-control" :disabled="migrateRunning || !migrateTarget">
+              <option value="">{{ migrateStorageLoading ? 'Loading…' : migrateTarget ? 'Same as source (default)' : 'Select target node first' }}</option>
+              <option v-if="migrateTarget" value="1">Same as source</option>
+              <option v-for="s in migrateTargetStorages" :key="s.storage" :value="s.storage">{{ s.storage }} ({{ s.type }})</option>
+            </select>
+            <small class="text-muted">Where to place disk images on the target node</small>
+          </div>
+          <div class="form-group">
+            <label>Migration Type</label>
+            <select v-model="migrateMigrationType" class="form-control" :disabled="migrateRunning">
+              <option value="secure">Secure (SSH tunnel, default)</option>
+              <option value="insecure">Insecure (plain TCP, faster on trusted networks)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Bandwidth Limit (KiB/s)</label>
+            <input v-model="migrateBwlimit" type="number" min="0" class="form-control" placeholder="0 = unlimited" :disabled="migrateRunning" />
+          </div>
+          <div class="form-group">
+            <label>Migration Network (CIDR, optional)</label>
+            <input v-model="migrateMigrationNetwork" type="text" class="form-control" placeholder="e.g. 10.0.1.0/24" :disabled="migrateRunning" />
+            <small class="text-muted">Use a dedicated network interface for migration traffic</small>
+          </div>
           <div class="form-group" style="display:flex;align-items:center;gap:0.5rem;">
             <input id="migrate-online" type="checkbox" v-model="migrateOnline" :disabled="migrateRunning || migrateVm?.status !== 'running'" />
             <label for="migrate-online" style="margin:0;">Live migration (online, VM stays running)</label>
           </div>
           <div class="form-group" style="display:flex;align-items:center;gap:0.5rem;">
             <input id="migrate-localdisks" type="checkbox" v-model="migrateWithLocalDisks" :disabled="migrateRunning" />
-            <label for="migrate-localdisks" style="margin:0;">Migrate local disks to target storage</label>
+            <label for="migrate-localdisks" style="margin:0;">Allow migration with local disks</label>
+          </div>
+          <div class="form-group" style="display:flex;align-items:center;gap:0.5rem;">
+            <input id="migrate-force" type="checkbox" v-model="migrateForce" :disabled="migrateRunning" />
+            <label for="migrate-force" style="margin:0;">Force migration (ignore non-migratable resources)</label>
           </div>
         </div>
         <div class="modal-footer">
@@ -1770,15 +1799,28 @@ export default {
     const migrateTarget = ref('')
     const migrateOnline = ref(true)
     const migrateWithLocalDisks = ref(false)
+    const migrateTargetStorage = ref('')
+    const migrateBwlimit = ref('')
+    const migrateMigrationType = ref('secure')
+    const migrateMigrationNetwork = ref('')
+    const migrateForce = ref(false)
     const migrateRunning = ref(false)
     const migrateNodes = ref([])
+    const migrateTargetStorages = ref([])
+    const migrateStorageLoading = ref(false)
 
     const openMigrateModal = async (vm) => {
       migrateVm.value = vm
       migrateTarget.value = ''
       migrateOnline.value = vm.status === 'running'
       migrateWithLocalDisks.value = false
+      migrateTargetStorage.value = ''
+      migrateBwlimit.value = ''
+      migrateMigrationType.value = 'secure'
+      migrateMigrationNetwork.value = ''
+      migrateForce.value = false
       migrateNodes.value = []
+      migrateTargetStorages.value = []
       showMigrateModal.value = true
       try {
         const res = await api.proxmox.listNodes(vm.hostId)
@@ -1787,16 +1829,34 @@ export default {
       } catch { migrateNodes.value = [] }
     }
 
+    watch(migrateTarget, async (node) => {
+      migrateTargetStorages.value = []
+      migrateTargetStorage.value = ''
+      if (!node || !migrateVm.value) return
+      migrateStorageLoading.value = true
+      try {
+        const res = await api.pveNode.listStorage(migrateVm.value.hostId, node)
+        migrateTargetStorages.value = (res.data || []).filter(s => s.content && s.content.includes('images'))
+      } catch { migrateTargetStorages.value = [] }
+      finally { migrateStorageLoading.value = false }
+    })
+
     const runMigrate = async () => {
       if (!migrateTarget.value) return
       migrateRunning.value = true
       const vm = migrateVm.value
       try {
-        await api.pveVm.migrate(vm.hostId, vm.node, vm.vmid, {
+        const payload = {
           target: migrateTarget.value,
-          online: migrateOnline.value ? 1 : 0,
-          with_local_disks: migrateWithLocalDisks.value ? 1 : 0,
-        })
+          online: migrateOnline.value,
+          with_local_disks: migrateWithLocalDisks.value,
+          force: migrateForce.value,
+          migration_type: migrateMigrationType.value || undefined,
+        }
+        if (migrateTargetStorage.value) payload.targetstorage = migrateTargetStorage.value
+        if (migrateBwlimit.value !== '') payload.bwlimit = parseInt(migrateBwlimit.value) || 0
+        if (migrateMigrationNetwork.value) payload.migration_network = migrateMigrationNetwork.value
+        await api.pveVm.migrate(vm.hostId, vm.node, vm.vmid, payload)
         toast.success(`VM ${vm.vmid} migration to ${migrateTarget.value} initiated`)
         showMigrateModal.value = false
         setTimeout(fetchAllProxmoxVMs, 3000)
@@ -2058,7 +2118,9 @@ export default {
       suspendVm, resumeVm,
       showSnapshotModal, snapshotVm, snapshotName, snapshotDesc, snapshotVmState, snapshotRunning,
       openSnapshotModal, runSnapshot,
-      showMigrateModal, migrateVm, migrateTarget, migrateOnline, migrateWithLocalDisks, migrateRunning, migrateNodes,
+      showMigrateModal, migrateVm, migrateTarget, migrateOnline, migrateWithLocalDisks,
+      migrateTargetStorage, migrateBwlimit, migrateMigrationType, migrateMigrationNetwork, migrateForce,
+      migrateRunning, migrateNodes, migrateTargetStorages, migrateStorageLoading,
       openMigrateModal, runMigrate,
       showCloneModal, cloneVm, cloneNewId, cloneName, cloneTarget, cloneFull, cloneRunning, cloneNodes,
       openCloneModal, runClone,

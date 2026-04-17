@@ -64,6 +64,11 @@ class MigrateRequest(BaseModel):
     target: str  # target node name
     online: bool = True
     with_local_disks: bool = False
+    targetstorage: Optional[str] = None   # '1' = same, or storage name, or 'src:dst,...'
+    bwlimit: Optional[int] = None         # KiB/s, 0 = unlimited
+    migration_type: Optional[str] = None  # 'secure' or 'insecure'
+    migration_network: Optional[str] = None  # CIDR for migration traffic
+    force: bool = False
 
 class CloudInitConfig(BaseModel):
     ciuser: Optional[str] = None
@@ -445,11 +450,21 @@ def migrate_vm(host_id: int, node: str, vmid: int, req: MigrateRequest,
                db: Session = Depends(get_db), current_user=Depends(require_operator)):
     host = _get_host(host_id, db)
     try:
-        upid = _pve(_svc(host)).nodes(node).qemu(vmid).migrate.post(
+        kwargs = dict(
             target=req.target,
             online=int(req.online),
             with_local_disks=int(req.with_local_disks),
+            force=int(req.force),
         )
+        if req.targetstorage:
+            kwargs["targetstorage"] = req.targetstorage
+        if req.bwlimit is not None:
+            kwargs["bwlimit"] = req.bwlimit
+        if req.migration_type:
+            kwargs["migration_type"] = req.migration_type
+        if req.migration_network:
+            kwargs["migration_network"] = req.migration_network
+        upid = _pve(_svc(host)).nodes(node).qemu(vmid).migrate.post(**kwargs)
         pve_cache.clear_prefix(f"pve:{host_id}:")
         task_tracker.register(
             upid, host_id, node,

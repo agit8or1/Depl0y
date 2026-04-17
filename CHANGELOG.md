@@ -5,6 +5,13 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.2] - 2026-04-17 🔧 Fix Live Task Poll 500 Error
+
+### Fixed
+- **Tasks live poll 500 errors** — `running=1` is not a valid Proxmox API parameter for `GET /nodes/{node}/tasks`. Changed the live running-task poll to fetch the most recent 100 tasks (no filter) and filter client-side for tasks with no status (which is how Proxmox indicates a task is still running). Removed invalid `running` param from both backend and frontend
+
+---
+
 ## [2.2.1] - 2026-04-17 🔄 Tasks: Live Proxmox Running-Task Poll
 
 ### Fixed

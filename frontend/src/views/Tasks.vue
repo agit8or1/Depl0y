@@ -837,14 +837,17 @@ export default {
           for (const n of nodeList) {
             const nodeName = n.node_name || n.node
             try {
-              const res = await api.pveNode.tasks(h.id, nodeName, { limit: 50, running: 1 })
+              const res = await api.pveNode.tasks(h.id, nodeName, { limit: 100 })
               for (const t of (res.data || [])) {
-                collected.push({
-                  ...t,
-                  _key: `${h.id}-${nodeName}-${t.upid}`,
-                  _hostId: h.id,
-                  _node: nodeName,
-                })
+                // Only include tasks that are currently running (empty status = running in Proxmox)
+                if (!t.status || t.status === 'running') {
+                  collected.push({
+                    ...t,
+                    _key: `${h.id}-${nodeName}-${t.upid}`,
+                    _hostId: h.id,
+                    _node: nodeName,
+                  })
+                }
               }
             } catch { /* ignore per-node error */ }
           }

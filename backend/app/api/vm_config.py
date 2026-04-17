@@ -68,7 +68,6 @@ class MigrateRequest(BaseModel):
     bwlimit: Optional[int] = None         # KiB/s, 0 = unlimited
     migration_type: Optional[str] = None  # 'secure' or 'insecure'
     migration_network: Optional[str] = None  # CIDR for migration traffic
-    force: bool = False
 
 class CloudInitConfig(BaseModel):
     ciuser: Optional[str] = None
@@ -450,17 +449,14 @@ def migrate_vm(host_id: int, node: str, vmid: int, req: MigrateRequest,
                db: Session = Depends(get_db), current_user=Depends(require_operator)):
     host = _get_host(host_id, db)
     try:
-        kwargs = dict(
-            target=req.target,
-            online=int(req.online),
-            with_local_disks=int(req.with_local_disks),
-            force=int(req.force),
-        )
+        kwargs: dict = {"target": req.target, "online": int(req.online)}
+        if req.with_local_disks:
+            kwargs["with_local_disks"] = 1
         if req.targetstorage:
             kwargs["targetstorage"] = req.targetstorage
-        if req.bwlimit is not None:
+        if req.bwlimit is not None and req.bwlimit >= 0:
             kwargs["bwlimit"] = req.bwlimit
-        if req.migration_type:
+        if req.migration_type and req.migration_type != "secure":
             kwargs["migration_type"] = req.migration_type
         if req.migration_network:
             kwargs["migration_network"] = req.migration_network

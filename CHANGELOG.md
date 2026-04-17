@@ -5,6 +5,17 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.5] - 2026-04-17 ⚙️ Running Tasks Widget + Migrate 500 Fix
+
+### Fixed
+- **VM migrate 500 error** — `force` is not a valid Proxmox qemu/migrate API parameter; removed it. Also made `with_local_disks`, `migration_type` conditional (only sent when non-default) to avoid unnecessary Proxmox validation errors
+
+### Added
+- **Running Tasks widget** — new dashboard tile polling `GET /tasks/running` every 5 s with progress bars, elapsed time, task type badge, and node/VMID labels. Shows ✓ idle state when nothing is running
+- **"Running Tasks" header button** — always-visible button in the dashboard toolbar that shows a live count badge and pulsing dot when tasks are active; links to `/tasks`
+
+---
+
 ## [2.1.4] - 2026-04-17 🚀 VM Migrate — Full Proxmox Options
 
 ### Added

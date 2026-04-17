@@ -26,7 +26,7 @@ def get_app_version():
         # Fallback to hardcoded version if database query fails
         pass
 
-    return "2.1.4"
+    return "2.1.5"
 
 
 class Settings(BaseSettings):

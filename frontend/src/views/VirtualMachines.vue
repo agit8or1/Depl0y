@@ -857,10 +857,6 @@
             <input id="migrate-localdisks" type="checkbox" v-model="migrateWithLocalDisks" :disabled="migrateRunning" />
             <label for="migrate-localdisks" style="margin:0;">Allow migration with local disks</label>
           </div>
-          <div class="form-group" style="display:flex;align-items:center;gap:0.5rem;">
-            <input id="migrate-force" type="checkbox" v-model="migrateForce" :disabled="migrateRunning" />
-            <label for="migrate-force" style="margin:0;">Force migration (ignore non-migratable resources)</label>
-          </div>
         </div>
         <div class="modal-footer">
           <button @click="showMigrateModal = false" class="btn btn-secondary" :disabled="migrateRunning">Cancel</button>

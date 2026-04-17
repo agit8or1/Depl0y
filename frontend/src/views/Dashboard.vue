@@ -207,6 +207,11 @@
         <span class="last-updated" :title="lastUpdatedAt ? 'Last updated: ' + lastUpdatedAt : ''">
           {{ lastUpdatedSeconds }}s ago
         </span>
+        <router-link to="/tasks" class="running-tasks-btn" :class="{ 'has-tasks': runningTaskCount > 0 }" title="View running tasks">
+          <span v-if="runningTaskCount > 0" class="running-tasks-pulse"></span>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          <span>{{ runningTaskCount > 0 ? runningTaskCount + ' running' : 'Tasks' }}</span>
+        </router-link>
         <button class="btn-icon" title="Refresh dashboard" aria-label="Refresh dashboard" @click="refreshAll" :class="{ 'btn-icon--spinning': globalRefreshing }">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
             <polyline points="23 4 23 10 17 10"/>
@@ -648,6 +653,7 @@ import DiskIOWidget          from '@/components/widgets/DiskIOWidget.vue'
 import DiskThroughputWidget  from '@/components/widgets/DiskThroughputWidget.vue'
 import NodeStatusGrid        from '@/components/widgets/NodeStatusGrid.vue'
 import QuickStatsBar         from '@/components/widgets/QuickStatsBar.vue'
+import RunningTasksWidget    from '@/components/widgets/RunningTasksWidget.vue'
 
 const STORAGE_KEY        = 'dashboard_layout'
 const VISIBILITY_KEY     = 'dashboard_widget_visibility'
@@ -668,6 +674,7 @@ const WIDGET_META = {
   disk_io:          { type: 'disk_io',          label: 'Disk Usage',        icon: '💿', multi: false, link: '/storage-management' },
   node_status_grid:  { type: 'node_status_grid',  label: 'Node Status Grid',   icon: '🔲', multi: false, link: '/cluster' },
   disk_throughput:   { type: 'disk_throughput',   label: 'Disk I/O',           icon: '📀', multi: false, link: '/node-monitor' },
+  running_tasks:     { type: 'running_tasks',     label: 'Running Tasks',      icon: '⚙️', multi: false, link: '/tasks' },
 }
 
 const WIDGET_COMPONENTS = {
@@ -685,6 +692,7 @@ const WIDGET_COMPONENTS = {
   disk_io:          markRaw(DiskIOWidget),
   node_status_grid:  markRaw(NodeStatusGrid),
   disk_throughput:   markRaw(DiskThroughputWidget),
+  running_tasks:     markRaw(RunningTasksWidget),
 }
 
 const DEFAULT_LAYOUT = [
@@ -697,6 +705,7 @@ const DEFAULT_LAYOUT = [
   { id: 'w4',  type: 'disk_io',          colSpan: 1, collapsed: false, config: {} },
   { id: 'w7',  type: 'alerts',           colSpan: 1, collapsed: false, config: {} },
   { id: 'w9',  type: 'recent_tasks',     colSpan: 2, collapsed: false, config: {} },
+  { id: 'w11', type: 'running_tasks',    colSpan: 1, collapsed: false, config: {} },
   { id: 'w8',  type: 'activity_feed',    colSpan: 1, collapsed: false, config: {} },
 ]
 
@@ -719,6 +728,7 @@ export default {
     DiskIOWidget,
     NodeStatusGrid,
     DiskThroughputWidget,
+    RunningTasksWidget,
     QuickStatsBar,
     AddHostWizard,
     SkeletonLoader,
@@ -740,6 +750,8 @@ export default {
     const globalRefreshing = ref(false)
     let tickInterval = null
     let resourceInterval = null
+    let runningTasksInterval = null
+    const runningTaskCount = ref(0)
 
     // ── Per-widget state (loading, error, last-updated timestamps) ────────────
     const widgetLoading    = ref(new Set())
@@ -1492,11 +1504,21 @@ export default {
 
       document.addEventListener('keydown', onDocKeydown)
       document.addEventListener('mousedown', onDocClick)
+
+      const pollRunningTasks = async () => {
+        try {
+          const res = await api.tasks.getRunning()
+          runningTaskCount.value = (res.data || []).length
+        } catch { /* ignore */ }
+      }
+      pollRunningTasks()
+      runningTasksInterval = setInterval(pollRunningTasks, 5000)
     })
 
     onUnmounted(() => {
       clearInterval(tickInterval)
       clearInterval(resourceInterval)
+      clearInterval(runningTasksInterval)
       document.removeEventListener('keydown', onDocKeydown)
       document.removeEventListener('mousedown', onDocClick)
     })
@@ -1596,6 +1618,7 @@ export default {
       searchNavDown,
       searchNavUp,
       searchNavSelect,
+      runningTaskCount,
     }
   }
 }
@@ -2213,6 +2236,42 @@ export default {
 .last-updated {
   font-size: 0.7rem;
   color: var(--text-secondary);
+}
+
+.running-tasks-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0 0.65rem;
+  height: 2rem;
+  background: var(--surface);
+  border: 1px solid var(--border-color);
+  border-radius: 0.375rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 0.15s;
+  position: relative;
+  white-space: nowrap;
+}
+.running-tasks-btn:hover { background: var(--primary-color); color: #fff; border-color: var(--primary-color); }
+.running-tasks-btn.has-tasks { color: #3b82f6; border-color: #3b82f6; background: rgba(59,130,246,0.08); }
+.running-tasks-btn.has-tasks:hover { background: #3b82f6; color: #fff; }
+.running-tasks-pulse {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #3b82f6;
+  animation: pulse 1.5s infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.75); }
 }
 
 .btn-icon {

@@ -265,6 +265,9 @@ class AlertEngine:
                             status = vm.get("status", "")
                             vmid = str(vm.get("vmid", ""))
                             name = vm.get("name", vmid)
+                            # Skip templates and cloud-init base images — they are intentionally stopped
+                            if vm.get("template") == 1 or vm.get("template") is True:
+                                continue
                             if status == "stopped" and vmid not in recent_stop_vmids and vmid not in muted_vmids:
                                 key = f"vm_unexpected_stop:{host.id}:{node_name}:{vmid}"
                                 # Only fire once per cooldown — don't spam for long-stopped VMs

@@ -87,6 +87,24 @@ def _get_host_or_none(db: Session, host_id: int) -> Optional[ProxmoxHost]:
     return db.query(ProxmoxHost).filter(ProxmoxHost.id == host_id).first()
 
 
+def _get_node_ip(svc, node: str, fallback_host: str) -> str:
+    """
+    Return the direct IP address for a Proxmox node so that VNC WebSocket
+    connections go straight to the node rather than through the cluster VIP.
+    The cluster VIP cannot proxy WebSocket streams cross-node (returns HTTP 500).
+    """
+    try:
+        cluster_status = svc.proxmox.cluster.status.get()
+        for entry in cluster_status:
+            if entry.get("type") == "node" and entry.get("name") == node:
+                ip = entry.get("ip")
+                if ip:
+                    return ip
+    except Exception:
+        pass
+    return fallback_host
+
+
 def _build_auth_header(host: ProxmoxHost) -> dict:
     """Build the Authorization header for the outbound Proxmox WebSocket."""
     if host.api_token_id and host.api_token_secret:
@@ -300,8 +318,9 @@ async def vm_vnc_proxy(
             return
 
         encoded_ticket = urllib.parse.quote(vnc_ticket, safe="")
+        node_ip = _get_node_ip(svc, node, host.hostname)
         proxmox_url = (
-            f"wss://{host.hostname}:{host.port}/api2/json/nodes/{node}"
+            f"wss://{node_ip}:{host.port}/api2/json/nodes/{node}"
             f"/vncwebsocket?port={port}&vncticket={encoded_ticket}"
         )
         auth_headers = _build_auth_header(host)
@@ -315,8 +334,8 @@ async def vm_vnc_proxy(
                 subprotocols=["binary"],
             ) as ws_proxmox:
                 logger.info(
-                    "VNC proxy opened: user=%s host=%s node=%s vmid=%s",
-                    user.username, host.name, node, vmid,
+                    "VNC proxy opened: user=%s host=%s node=%s(%s) vmid=%s",
+                    user.username, host.name, node, node_ip, vmid,
                 )
                 await _relay(websocket, ws_proxmox)
         except Exception as exc:
@@ -374,8 +393,9 @@ async def lxc_terminal_proxy(
             return
 
         encoded_ticket = urllib.parse.quote(term_ticket, safe="")
+        node_ip = _get_node_ip(svc, node, host.hostname)
         proxmox_url = (
-            f"wss://{host.hostname}:{host.port}/api2/json/nodes/{node}"
+            f"wss://{node_ip}:{host.port}/api2/json/nodes/{node}"
             f"/lxc/{vmid}/vncwebsocket?port={port}&vncticket={encoded_ticket}"
         )
         auth_headers = _build_auth_header(host)
@@ -389,8 +409,8 @@ async def lxc_terminal_proxy(
                 subprotocols=["binary"],
             ) as ws_proxmox:
                 logger.info(
-                    "LXC terminal proxy opened: user=%s host=%s node=%s vmid=%s",
-                    user.username, host.name, node, vmid,
+                    "LXC terminal proxy opened: user=%s host=%s node=%s(%s) vmid=%s",
+                    user.username, host.name, node, node_ip, vmid,
                 )
                 await _relay(websocket, ws_proxmox)
         except Exception as exc:
@@ -447,8 +467,9 @@ async def node_terminal_proxy(
             return
 
         encoded_ticket = urllib.parse.quote(term_ticket, safe="")
+        node_ip = _get_node_ip(svc, node, host.hostname)
         proxmox_url = (
-            f"wss://{host.hostname}:{host.port}/api2/json/nodes/{node}"
+            f"wss://{node_ip}:{host.port}/api2/json/nodes/{node}"
             f"/vncwebsocket?port={port}&vncticket={encoded_ticket}"
         )
         auth_headers = _build_auth_header(host)
@@ -462,8 +483,8 @@ async def node_terminal_proxy(
                 subprotocols=["binary"],
             ) as ws_proxmox:
                 logger.info(
-                    "Node terminal proxy opened: user=%s host=%s node=%s",
-                    user.username, host.name, node,
+                    "Node terminal proxy opened: user=%s host=%s node=%s(%s)",
+                    user.username, host.name, node, node_ip,
                 )
                 await _relay(websocket, ws_proxmox)
         except Exception as exc:

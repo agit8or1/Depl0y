@@ -820,6 +820,7 @@ export default {
     const allProxmox = ref([])
     const allPBS = ref([])
     const allStandalone = ref([])
+    const allNodes = ref([])
     let _pollInterval = null
 
     // ── Server wrapping ──
@@ -854,6 +855,7 @@ export default {
       ...allProxmox.value,
       ...allPBS.value,
       ...allStandalone.value,
+      ...allNodes.value,
     ])
 
     const typeLabel = (stype) => ({ pve: 'PVE', pbs: 'PBS', standalone: 'BMC', pve_node: 'Node' })[stype] || stype.toUpperCase()
@@ -1061,15 +1063,17 @@ export default {
     const loadAll = async () => {
       loading.value = true
       try {
-        const [pveRes, pbsRes, saRes, statusRes] = await Promise.all([
+        const [pveRes, pbsRes, saRes, nodesRes, statusRes] = await Promise.all([
           api.proxmox.listHosts(),
           api.pbs.list(),
           api.idrac.listStandalone(),
+          api.idrac.listNodes().catch(() => ({ data: [] })),
           api.idrac.getStatus().catch(() => ({ data: {} })),
         ])
         allProxmox.value = pveRes.data.map(h => wrapServer(h, 'pve'))
         allPBS.value = pbsRes.data.map(s => wrapServer(s, 'pbs'))
         allStandalone.value = saRes.data.map(b => wrapServer(b, 'standalone'))
+        allNodes.value = nodesRes.data.map(n => wrapServer(n, 'pve_node'))
 
         applyStatusCache(statusRes.data)
       } catch (e) {
@@ -1400,6 +1404,28 @@ export default {
 
     // ── API call dispatch by server type ──
     const _apiFns = (srv) => {
+      if (srv._stype === 'pve_node') return {
+        getInfo: () => api.idrac.getNodeInfo(srv.id),
+        getThermal: () => api.idrac.getNodeThermal(srv.id),
+        getPowerUsage: () => api.idrac.getNodePowerUsage(srv.id),
+        getLogs: () => api.idrac.getNodeLogs(srv.id),
+        getSensors: () => api.idrac.getNodeSensors(srv.id),
+        test: () => api.idrac.testNode(srv.id),
+        testSsh: () => api.idrac.testNodeSsh(srv.id),
+        powerAction: (action) => api.idrac.nodepower(srv.id, action),
+        getManager: () => api.idrac.getNodeManager(srv.id),
+        getNetwork: () => api.idrac.getNodeNetwork(srv.id),
+        patchNetwork: (ifaceId, config) => api.idrac.patchNodeNetwork(srv.id, ifaceId, config),
+        getProcessors: () => api.idrac.getNodeProcessors(srv.id),
+        getMemory: () => api.idrac.getNodeMemory(srv.id),
+        getStorage: () => api.idrac.getNodeStorage(srv.id),
+        getFirmware: () => api.idrac.getNodeFirmware(srv.id),
+        getSshHardware: () => api.idrac.getNodeSshHardware(srv.id),
+        getSshNetwork: () => api.idrac.getNodeSshNetwork(srv.id),
+        getSshFirmware: () => api.idrac.getNodeSshFirmware(srv.id),
+        getSshLogs: () => api.idrac.getNodeSshLogs(srv.id),
+        runSshUpdate: () => api.idrac.runNodeSshUpdate(srv.id),
+      }
       if (srv._stype === 'pbs') return {
         getInfo: () => api.pbs.getIdracInfo(srv.id),
         getThermal: () => api.pbs.getIdracThermal(srv.id),
@@ -1582,6 +1608,9 @@ export default {
         if (_bmcTarget._stype === 'pbs') {
           const res = await api.pbs.update(_bmcTarget.id, payload)
           Object.assign(_bmcTarget, res.data)
+        } else if (_bmcTarget._stype === 'pve_node') {
+          await api.proxmox.updateNodeIdrac(_bmcTarget.id, payload)
+          Object.assign(_bmcTarget, payload)
         } else {
           const res = await api.proxmox.updateHost(_bmcTarget.id, payload)
           Object.assign(_bmcTarget, res.data)
@@ -1617,6 +1646,11 @@ export default {
         if (_bmcTarget._stype === 'pbs') {
           const res = await api.pbs.update(_bmcTarget.id, payload)
           Object.assign(_bmcTarget, res.data)
+        } else if (_bmcTarget._stype === 'pve_node') {
+          await api.proxmox.updateNodeIdrac(_bmcTarget.id, payload)
+          Object.assign(_bmcTarget, payload)
+          // Remove from allNodes since it no longer has idrac_hostname
+          allNodes.value = allNodes.value.filter(n => n.id !== _bmcTarget.id)
         } else {
           const res = await api.proxmox.updateHost(_bmcTarget.id, payload)
           Object.assign(_bmcTarget, res.data)

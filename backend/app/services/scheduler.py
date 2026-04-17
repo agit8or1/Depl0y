@@ -152,7 +152,7 @@ def run_proxmox_node_poll():
 def run_bmc_poll():
     """Poll all configured BMC servers every 2 minutes and update status cache."""
     from app.core.database import SessionLocal
-    from app.models.database import ProxmoxHost, PBSServer, StandaloneBMC
+    from app.models.database import ProxmoxHost, PBSServer, StandaloneBMC, ProxmoxNode
     from app.core.security import decrypt_data
     from app.services.idrac import RedfishClient
     from app.api.idrac import bmc_status_cache
@@ -166,6 +166,8 @@ def run_bmc_poll():
             servers.append(("pbs", s.id, s))
         for b in db.query(StandaloneBMC).filter(StandaloneBMC.is_active == True).all():
             servers.append(("standalone", b.id, b))
+        for n in db.query(ProxmoxNode).filter(ProxmoxNode.idrac_hostname.isnot(None)).all():
+            servers.append(("pve_node", n.id, n))
 
         for stype, sid, obj in servers:
             key = f"{stype}:{sid}"

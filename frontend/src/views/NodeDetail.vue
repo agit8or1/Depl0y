@@ -1784,6 +1784,11 @@ const loadTasks = async () => {
 }
 
 const loadAll = async () => {
+  if (!hostId.value || hostId.value === 'undefined' || !node.value || node.value === 'undefined') {
+    nodeLoadError.value = 'Invalid navigation — missing host or node parameters'
+    loadingInit.value = false
+    return
+  }
   loadingInit.value = true
   nodeLoadError.value = null
   let lastErr = null

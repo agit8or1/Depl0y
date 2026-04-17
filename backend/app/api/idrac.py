@@ -8,7 +8,7 @@ from datetime import datetime
 from app.core.database import get_db
 from app.core.security import encrypt_data, decrypt_data
 from app.api.auth import get_current_user, require_admin, require_operator
-from app.models.database import ProxmoxHost, StandaloneBMC, User
+from app.models.database import ProxmoxHost, StandaloneBMC, User, ProxmoxNode
 from app.services.idrac import RedfishClient
 import logging
 
@@ -442,6 +442,212 @@ def get_ssh_logs(host_id: int, limit: int = 100, current_user: User = Depends(ge
         return get_log_entries(ssh_host, username, password, limit=limit)
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"SSH error: {str(e)}")
+
+
+# ─────────────────────────────────────────────────────────────
+# Proxmox Node iDRAC endpoints  (per-physical-server BMC)
+# ─────────────────────────────────────────────────────────────
+
+def _get_node_or_404(db: Session, node_id: int) -> ProxmoxNode:
+    node = db.query(ProxmoxNode).filter(ProxmoxNode.id == node_id).first()
+    if not node:
+        raise HTTPException(status_code=404, detail="Proxmox node not found")
+    return node
+
+
+@router.get("/node/list")
+def list_nodes_with_idrac(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Return all ProxmoxNodes that have iDRAC/iLO credentials configured."""
+    nodes = db.query(ProxmoxNode).filter(
+        ProxmoxNode.idrac_hostname.isnot(None)
+    ).order_by(ProxmoxNode.node_name).all()
+    return [
+        {
+            "id": n.id,
+            "name": n.node_name,
+            "node_name": n.node_name,
+            "host_id": n.host_id,
+            "idrac_hostname": n.idrac_hostname,
+            "idrac_port": n.idrac_port or 443,
+            "idrac_username": n.idrac_username,
+            "idrac_type": n.idrac_type or "idrac",
+            "idrac_use_ssh": bool(n.idrac_use_ssh),
+            "status": n.status,
+        }
+        for n in nodes
+    ]
+
+
+@router.get("/node/{node_id}/test")
+def test_node_idrac(node_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    node = _get_node_or_404(db, node_id)
+    client = _build_client_from_obj(node)
+    try:
+        success = client.test_connection()
+        msg = f"Connected to {node.idrac_type or 'BMC'} successfully" if success else "Connection established but Redfish response invalid"
+        return {"status": "success" if success else "error", "message": msg}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@router.get("/node/{node_id}/info")
+def get_node_idrac_info(node_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    node = _get_node_or_404(db, node_id)
+    client = _build_client_from_obj(node)
+    try:
+        return client.get_system_info()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Redfish error: {str(e)}")
+
+
+@router.get("/node/{node_id}/power")
+def get_node_power_state(node_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    node = _get_node_or_404(db, node_id)
+    client = _build_client_from_obj(node)
+    try:
+        return {"node_id": node_id, "power_state": client.get_power_state()}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Redfish error: {str(e)}")
+
+
+@router.post("/node/{node_id}/power/{action}")
+def node_power_action(node_id: int, action: str = Path(...), current_user: User = Depends(require_operator), db: Session = Depends(get_db)):
+    valid_actions = ("on", "off", "graceful_off", "reset", "graceful_reset", "power_cycle", "pxe")
+    if action not in valid_actions:
+        raise HTTPException(status_code=400, detail=f"Invalid action '{action}'")
+    node = _get_node_or_404(db, node_id)
+    client = _build_client_from_obj(node)
+    try:
+        result = client.power_action(action)
+        logger.info(f"Power action '{action}' on node {node_id} by {current_user.username}")
+        return {"status": "success", "action": action, "result": result}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Redfish error: {str(e)}")
+
+
+@router.get("/node/{node_id}/logs")
+def get_node_event_log(node_id: int, limit: int = 50, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    node = _get_node_or_404(db, node_id)
+    client = _build_client_from_obj(node)
+    try:
+        return {"node_id": node_id, "entries": client.get_event_log(limit=limit)}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Redfish error: {str(e)}")
+
+
+@router.get("/node/{node_id}/thermal")
+def get_node_thermal(node_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    node = _get_node_or_404(db, node_id)
+    return _build_client_from_obj(node).get_thermal()
+
+
+@router.get("/node/{node_id}/power-usage")
+def get_node_power_usage(node_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    node = _get_node_or_404(db, node_id)
+    return _build_client_from_obj(node).get_power_usage()
+
+
+@router.get("/node/{node_id}/manager")
+def get_node_manager(node_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    node = _get_node_or_404(db, node_id)
+    return _build_client_from_obj(node).get_manager_info()
+
+
+@router.get("/node/{node_id}/network")
+def get_node_network(node_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    node = _get_node_or_404(db, node_id)
+    return _build_client_from_obj(node).get_network_interfaces()
+
+
+@router.patch("/node/{node_id}/network/{iface_id}")
+def patch_node_network(node_id: int, iface_id: str, config: dict, current_user: User = Depends(require_admin), db: Session = Depends(get_db)):
+    node = _get_node_or_404(db, node_id)
+    return _build_client_from_obj(node).patch_network_interface(iface_id, config)
+
+
+@router.get("/node/{node_id}/processors")
+def get_node_processors(node_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    node = _get_node_or_404(db, node_id)
+    return _build_client_from_obj(node).get_processors()
+
+
+@router.get("/node/{node_id}/memory")
+def get_node_memory(node_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    node = _get_node_or_404(db, node_id)
+    return _build_client_from_obj(node).get_memory_modules()
+
+
+@router.get("/node/{node_id}/storage")
+def get_node_storage(node_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    node = _get_node_or_404(db, node_id)
+    return _build_client_from_obj(node).get_storage()
+
+
+@router.get("/node/{node_id}/firmware")
+def get_node_firmware(node_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    node = _get_node_or_404(db, node_id)
+    return _build_client_from_obj(node).get_firmware_inventory()
+
+
+@router.get("/node/{node_id}/sensors")
+def get_node_sensors(node_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    node = _get_node_or_404(db, node_id)
+    return _build_client_from_obj(node).get_sensors()
+
+
+@router.get("/node/{node_id}/ssh/test")
+def test_node_ssh(node_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    node = _get_node_or_404(db, node_id)
+    ssh_host, username, password = _get_ssh_creds(node, "idrac_hostname")
+    try:
+        from app.services.ssh_hw import test_ssh
+        test_ssh(ssh_host, username, password)
+        return {"status": "success", "message": f"SSH connection to {ssh_host} successful"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@router.get("/node/{node_id}/ssh/hardware")
+def get_node_ssh_hardware(node_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    node = _get_node_or_404(db, node_id)
+    ssh_host, username, password = _get_ssh_creds(node, "idrac_hostname")
+    from app.services.ssh_hw import get_hardware_info
+    return get_hardware_info(ssh_host, username, password)
+
+
+@router.get("/node/{node_id}/ssh/network")
+def get_node_ssh_network(node_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    node = _get_node_or_404(db, node_id)
+    ssh_host, username, password = _get_ssh_creds(node, "idrac_hostname")
+    from app.services.ssh_hw import get_network_info
+    return get_network_info(ssh_host, username, password)
+
+
+@router.get("/node/{node_id}/ssh/firmware")
+def get_node_ssh_firmware(node_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    node = _get_node_or_404(db, node_id)
+    ssh_host, username, password = _get_ssh_creds(node, "idrac_hostname")
+    from app.services.ssh_hw import get_firmware_info
+    return get_firmware_info(ssh_host, username, password)
+
+
+@router.get("/node/{node_id}/ssh/logs")
+def get_node_ssh_logs(node_id: int, limit: int = 100, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    node = _get_node_or_404(db, node_id)
+    ssh_host, username, password = _get_ssh_creds(node, "idrac_hostname")
+    from app.services.ssh_hw import get_log_entries
+    return get_log_entries(ssh_host, username, password, limit=limit)
+
+
+@router.post("/node/{node_id}/ssh/update")
+def run_node_ssh_update(node_id: int, current_user: User = Depends(require_operator), db: Session = Depends(get_db)):
+    node = _get_node_or_404(db, node_id)
+    ssh_host, username, password = _get_ssh_creds(node, "idrac_hostname")
+    from app.services.ssh_hw import run_system_update
+    return run_system_update(ssh_host, username, password)
 
 
 # ─────────────────────────────────────────────────────────────

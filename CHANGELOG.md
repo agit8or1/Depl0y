@@ -5,6 +5,20 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.7] - 2026-04-17 🖧 iDRAC/iLO Per-Node Support + NodeDetail 422 Fix
+
+### Added
+- **iDRAC/iLO per Proxmox node** — hardware monitoring and power control now works per physical server (ProxmoxNode) instead of only per datacenter (ProxmoxHost). Nodes with iDRAC credentials configured appear in the iDRAC/iLO Management dashboard alongside PVE hosts, PBS servers, and standalone BMCs
+- **Backend node endpoints** — `/idrac/node/list`, `/idrac/node/{id}/info`, `/idrac/node/{id}/thermal`, `/idrac/node/{id}/power`, `/idrac/node/{id}/power/{action}`, `/idrac/node/{id}/logs`, `/idrac/node/{id}/sensors`, `/idrac/node/{id}/manager`, `/idrac/node/{id}/network`, `/idrac/node/{id}/processors`, `/idrac/node/{id}/memory`, `/idrac/node/{id}/storage`, `/idrac/node/{id}/firmware` and SSH variants
+- **BMC poll includes nodes** — scheduler's `run_bmc_poll()` now polls all ProxmoxNodes with `idrac_hostname` set, populating the status cache with key `pve_node:{id}`
+- **Frontend node loading** — IDracManagement.vue loads ProxmoxNodes with iDRAC configured and displays them in the unified server list with full expand/detail support
+- **api.js node methods** — `api.idrac.listNodes()`, `getNodeInfo()`, `getNodeThermal()`, `getNodePowerUsage()`, `getNodeLogs()`, `getNodeSensors()`, `nodepower()`, `getNodeManager()`, `getNodeNetwork()`, `patchNodeNetwork()`, `getNodeProcessors()`, `getNodeMemory()`, `getNodeStorage()`, `getNodeFirmware()` and SSH variants
+
+### Fixed
+- **NodeDetail 422 error** — navigating from Dashboard to NodeDetail with missing route params (`hostId`/`node` = `undefined`) no longer fires API calls. Added guard that shows a friendly error state instead
+
+---
+
 ## [2.2.6] - 2026-04-17 🔄 Fix Alert Duplicates + Always-Visible Running Tasks
 
 ### Fixed

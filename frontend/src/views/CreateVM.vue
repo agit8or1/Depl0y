@@ -489,6 +489,9 @@
                   Primary disk size: <strong>{{ disks[0]?.size || 0 }} GB</strong>.
                   Greyed-out pools have insufficient free space.
                 </p>
+                <div v-if="sortedStorageList.length === 0" class="info-banner">
+                  No image-capable storage pools found on this node. Ensure at least one storage has the <strong>Images</strong> content type enabled in Proxmox.
+                </div>
                 <div class="storage-cards">
                   <div
                     v-for="storage in sortedStorageList"
@@ -1152,11 +1155,11 @@ export default {
     // ---------- Storage type icons ----------
     const storageTypeIcon = (type) => {
       const icons = {
-        dir: '&#128193;', lvm: '&#9925;', lvmthin: '&#9925;', zfspool: '&#129668;',
-        nfs: '&#127760;', cifs: '&#127760;', rbd: '&#128274;', sheepdog: '&#128274;',
-        btrfs: '&#128193;', zfs: '&#129668;',
+        dir: '📁', lvm: '💽', lvmthin: '💽', zfspool: '🗄️',
+        nfs: '🌐', cifs: '🌐', rbd: '☁️', sheepdog: '☁️',
+        btrfs: '📁', zfs: '🗄️',
       }
-      return icons[type] || '&#128190;'
+      return icons[type] || '💾'
     }
 
     // ---------- State ----------
@@ -1249,7 +1252,7 @@ export default {
     // ---------- Computed sorted lists ----------
     const sortedStorageList = computed(() =>
       [...storageList.value]
-        .filter(s => s.content && s.content.includes('images'))
+        .filter(s => !s.content || s.content.includes('images'))
         .sort((a, b) => a.storage.localeCompare(b.storage, undefined, { numeric: true, sensitivity: 'base' }))
     )
     const sortedISOStorageList = computed(() =>
@@ -1438,7 +1441,7 @@ export default {
       try {
         const r = await api.proxmox.getNodeStorage(nodeId)
         storageList.value = r.data.storage || []
-        const first = storageList.value.find(s => s.enabled && s.active && s.content?.includes('images')) || storageList.value[0]
+        const first = storageList.value.find(s => s.enabled && s.active && (!s.content || s.content.includes('images'))) || storageList.value[0]
         if (first) {
           selectedStorage.value = first.storage
           formData.value.storage = first.storage

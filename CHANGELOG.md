@@ -5,6 +5,13 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.13] - 2026-04-18 🐛 Fix SSH iDRAC details still blank after Vue reactivity miss
+
+### Fixed
+- **PBS and SSH-mode iDRAC Details now show full hardware info** — status cache pre-populate in `expandServer` set `srv._info` to a minimal object before `loadServerDetail` ran. When SSH data arrived and replaced `srv._info` with the full object, Vue's reactivity system missed the object identity change and did not re-render. Fixed by: (1) skipping the status pre-populate for SSH-mode servers so `_info` stays null until SSH data arrives, and (2) resetting `srv._info = null` at the start of `loadServerDetail` for SSH mode to guarantee a clean null→object transition that Vue always detects
+
+---
+
 ## [2.2.12] - 2026-04-18 🐛 Fix iDRAC SSH Fallback Skipped When Status Cache Pre-Populates Info
 
 ### Fixed

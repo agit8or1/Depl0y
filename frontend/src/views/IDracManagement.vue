@@ -1128,9 +1128,11 @@ export default {
           return
         }
       }
-      // Open immediately with cached data so the panel appears at once
       srv._expanded = true
-      if (srv._status && !srv._info) {
+      // For Redfish servers: pre-populate from status cache so tabs appear immediately
+      // For SSH servers: skip pre-populate — SSH fetches full data from scratch,
+      // and pre-populating causes Vue reactivity to miss the _info replacement
+      if (srv._status && !srv._info && !srv._useSSH) {
         srv._info = {
           power_state: srv._status.power_state,
           health: srv._status.health,
@@ -1188,6 +1190,9 @@ export default {
     const loadServerDetail = async (srv) => {
       srv._loading = true
       srv._error = null
+      // For SSH mode, clear any stale _info so Vue detects the null→object
+      // transition when SSH data arrives (avoids reactivity miss on object replacement)
+      if (srv._useSSH) srv._info = null
 
       const calls = _apiFns(srv)
 

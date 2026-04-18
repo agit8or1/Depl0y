@@ -165,9 +165,12 @@
                 <button @click="openEditStandalone(srv)" class="btn btn-outline btn-sm">Edit</button>
                 <button @click="deleteStandalone(srv)" class="btn btn-danger btn-sm">Delete</button>
               </template>
-              <template v-else>
+              <template v-else-if="srv._stype === 'pbs'">
                 <button @click="openConfigBMC(srv)" class="btn btn-outline btn-sm">{{ srv.idrac_hostname ? 'Edit BMC' : 'Configure BMC' }}</button>
                 <button @click="deletePBS(srv)" class="btn btn-danger btn-sm">Delete</button>
+              </template>
+              <template v-else>
+                <button @click="openConfigBMC(srv)" class="btn btn-outline btn-sm">{{ srv.idrac_hostname ? 'Edit BMC' : 'Configure BMC' }}</button>
               </template>
               <a v-if="srv.idrac_hostname" :href="`https://${srv.idrac_hostname}:${srv.idrac_port || 443}`" target="_blank" rel="noopener" class="btn btn-outline btn-sm">Launch ↗</a>
               <button @click="testConnection(srv)" class="btn btn-outline btn-sm">Test</button>

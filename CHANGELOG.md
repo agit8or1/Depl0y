@@ -5,6 +5,13 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.9] - 2026-04-18 🐛 Fix iDRAC Management Delete Button for PVE Hosts/Nodes
+
+### Fixed
+- **iDRAC Management: Delete button called wrong API for PVE hosts/nodes** — the "Delete" button in the server list was wired to `deletePBS()` for ALL non-standalone server types. Clicking Delete on a PVE host (ID=1) triggered `DELETE /api/v1/pbs/1` → 404 because no PBS server exists with that ID. PVE hosts and PVE nodes cannot be deleted from the iDRAC Management page (use their respective management pages instead). The Delete button is now only shown for PBS servers and standalone BMCs
+
+---
+
 ## [2.2.8] - 2026-04-17 📊 Fix Disk I/O and Network Chart Auto-Scaling
 
 ### Fixed

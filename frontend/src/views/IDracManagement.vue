@@ -1206,16 +1206,20 @@ export default {
       if (thermalR.status === 'fulfilled') srv._thermal = thermalR.value.data
       if (powerR.status === 'fulfilled') srv._powerUsage = powerR.value.data
 
-      // If Redfish info failed, try SSH as fallback
-      if (!srv._info) {
+      // If Redfish info failed, try SSH as fallback.
+      // Use !_redfishOK (not !_info) because expandServer may pre-populate _info from status cache,
+      // which would skip SSH even though Redfish never actually ran successfully.
+      if (!srv._redfishOK) {
         if (srv._useSSH) {
           try {
             const res = await calls.getSshHardware()
             _populateInfoFromSSH(srv, res.data)
           } catch (e) {
-            srv._error = e.response?.data?.detail || e.message || 'Redfish and SSH both failed'
+            if (!srv._info) {
+              srv._error = e.response?.data?.detail || e.message || 'Redfish and SSH both failed'
+            }
           }
-        } else {
+        } else if (!srv._info) {
           const err = infoR.reason
           srv._error = err?.response?.data?.detail || err?.message || 'Failed to connect to BMC'
         }

@@ -5,6 +5,13 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.12] - 2026-04-18 🐛 Fix iDRAC SSH Fallback Skipped When Status Cache Pre-Populates Info
+
+### Fixed
+- **PBS and SSH-mode iDRAC details now fully populated** — when a server's status cache had data (Power/Health/Model from the background poll), clicking "Details" would pre-populate `_info` from that cache. This caused the SSH hardware fallback check `if (!srv._info)` to skip the SSH call, leaving manufacturer, serial, BIOS, memory, and CPU blank. Fixed by checking `!srv._redfishOK` instead — SSH hardware is always fetched when Redfish fails, regardless of whether minimal status data is already cached
+
+---
+
 ## [2.2.11] - 2026-04-18 🖧 iDRAC Management: Show All Nodes for BMC Configuration
 
 ### Fixed

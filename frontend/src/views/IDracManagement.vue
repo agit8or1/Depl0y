@@ -855,10 +855,9 @@ export default {
     })
 
     const allServers = computed(() => [
-      ...allProxmox.value,
+      ...allNodes.value,
       ...allPBS.value,
       ...allStandalone.value,
-      ...allNodes.value,
     ])
 
     const typeLabel = (stype) => ({ pve: 'PVE', pbs: 'PBS', standalone: 'BMC', pve_node: 'Node' })[stype] || stype.toUpperCase()
@@ -1066,14 +1065,12 @@ export default {
     const loadAll = async () => {
       loading.value = true
       try {
-        const [pveRes, pbsRes, saRes, nodesRes, statusRes] = await Promise.all([
-          api.proxmox.listHosts(),
+        const [pbsRes, saRes, nodesRes, statusRes] = await Promise.all([
           api.pbs.list(),
           api.idrac.listStandalone(),
           api.idrac.listNodes().catch(() => ({ data: [] })),
           api.idrac.getStatus().catch(() => ({ data: {} })),
         ])
-        allProxmox.value = pveRes.data.map(h => wrapServer(h, 'pve'))
         allPBS.value = pbsRes.data.map(s => wrapServer(s, 'pbs'))
         allStandalone.value = saRes.data.map(b => wrapServer(b, 'standalone'))
         allNodes.value = nodesRes.data.map(n => wrapServer(n, 'pve_node'))

@@ -460,10 +460,8 @@ def list_nodes_with_idrac(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Return all ProxmoxNodes that have iDRAC/iLO credentials configured."""
-    nodes = db.query(ProxmoxNode).filter(
-        ProxmoxNode.idrac_hostname.isnot(None)
-    ).order_by(ProxmoxNode.node_name).all()
+    """Return all ProxmoxNodes so users can configure iDRAC/iLO for each."""
+    nodes = db.query(ProxmoxNode).order_by(ProxmoxNode.node_name).all()
     return [
         {
             "id": n.id,

@@ -1610,7 +1610,9 @@ export default {
           Object.assign(_bmcTarget, res.data)
         } else if (_bmcTarget._stype === 'pve_node') {
           await api.proxmox.updateNodeIdrac(_bmcTarget.id, payload)
-          Object.assign(_bmcTarget, payload)
+          // Only update idrac fields — don't overwrite name/node_name
+          const { name: _n, ...idracFields } = payload
+          Object.assign(_bmcTarget, idracFields)
         } else {
           const res = await api.proxmox.updateHost(_bmcTarget.id, payload)
           Object.assign(_bmcTarget, res.data)
@@ -1648,9 +1650,8 @@ export default {
           Object.assign(_bmcTarget, res.data)
         } else if (_bmcTarget._stype === 'pve_node') {
           await api.proxmox.updateNodeIdrac(_bmcTarget.id, payload)
+          // Only clear idrac fields — node stays in the list
           Object.assign(_bmcTarget, payload)
-          // Remove from allNodes since it no longer has idrac_hostname
-          allNodes.value = allNodes.value.filter(n => n.id !== _bmcTarget.id)
         } else {
           const res = await api.proxmox.updateHost(_bmcTarget.id, payload)
           Object.assign(_bmcTarget, res.data)

@@ -5,6 +5,15 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.11] - 2026-04-18 🖧 iDRAC Management: Show All Nodes for BMC Configuration
+
+### Fixed
+- **All ProxmoxNodes now appear in iDRAC/iLO Management** — previously only nodes with `idrac_hostname` already set were listed. This meant the page appeared empty until iDRAC was configured elsewhere. Now all physical nodes appear, each with a "Configure BMC" button so credentials can be set directly from this page
+- **Node name preserved after saving BMC config** — `Object.assign` with the save payload was overwriting `_bmcTarget.name` with `undefined`, causing the node name to disappear. Fixed to only update iDRAC-specific fields
+- **Clearing node iDRAC no longer removes it from the list** — nodes always appear regardless of whether iDRAC is configured
+
+---
+
 ## [2.2.10] - 2026-04-18 🖧 iDRAC Management: Remove Proxmox Datacenter Entries
 
 ### Fixed

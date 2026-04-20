@@ -558,31 +558,50 @@
           <div class="form-group">
             <label class="form-label">Username</label>
             <input v-model="addServerForm.username" class="form-control" placeholder="root@pam" />
-            <div class="text-xs text-muted mt-1">Used for display only (auth uses API token).</div>
+            <div class="text-xs text-muted mt-1">Required. Use with password auth, or leave when using API token only.</div>
           </div>
 
           <div class="form-group">
-            <label class="form-label">API Token ID <span class="required">*</span></label>
-            <input
-              v-model="addServerForm.api_token_id"
-              class="form-control"
-              placeholder="root@pam!mytoken"
-              required
-            />
-            <div class="text-xs text-muted mt-1">Format: user@realm!tokenname</div>
+            <label class="form-label">Authentication method</label>
+            <div class="flex gap-2" style="align-items:center">
+              <label class="radio-label"><input type="radio" value="password" v-model="addServerForm._auth_method" /> Password</label>
+              <label class="radio-label"><input type="radio" value="token" v-model="addServerForm._auth_method" /> API token</label>
+            </div>
+            <div class="text-xs text-muted mt-1">Either is accepted. API tokens are preferred on PBS with 2FA.</div>
           </div>
 
-          <div class="form-group">
-            <label class="form-label">API Token Secret <span class="required">*</span></label>
+          <div v-if="addServerForm._auth_method === 'password'" class="form-group">
+            <label class="form-label">Password</label>
             <input
-              v-model="addServerForm.api_token_secret"
+              v-model="addServerForm.password"
               type="password"
               class="form-control"
-              placeholder="Token secret value"
+              placeholder="PBS user password"
               autocomplete="new-password"
-              required
             />
           </div>
+
+          <template v-else>
+            <div class="form-group">
+              <label class="form-label">API Token ID</label>
+              <input
+                v-model="addServerForm.api_token_id"
+                class="form-control"
+                placeholder="root@pam!mytoken"
+              />
+              <div class="text-xs text-muted mt-1">Format: user@realm!tokenname</div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">API Token Secret</label>
+              <input
+                v-model="addServerForm.api_token_secret"
+                type="password"
+                class="form-control"
+                placeholder="Token secret value"
+                autocomplete="new-password"
+              />
+            </div>
+          </template>
 
           <div class="form-group">
             <label class="checkbox-label">
@@ -678,9 +697,11 @@ export default {
         hostname: '',
         port: 8007,
         username: 'root@pam',
+        password: '',
         api_token_id: '',
         api_token_secret: '',
         verify_ssl: false,
+        _auth_method: 'password',
       },
 
       lastRefreshed: null,
@@ -1123,7 +1144,28 @@ export default {
       this.addServerModal.saving = true
       this.addServerModal.error = null
       try {
-        await api.post('/pbs/', this.addServerForm)
+        const f = this.addServerForm
+        const payload = {
+          name: f.name, hostname: f.hostname, port: f.port,
+          username: f.username, verify_ssl: f.verify_ssl,
+        }
+        if (f._auth_method === 'password') {
+          if (!f.password) {
+            this.addServerModal.error = 'Password is required when using password auth.'
+            this.addServerModal.saving = false
+            return
+          }
+          payload.password = f.password
+        } else {
+          if (!f.api_token_id || !f.api_token_secret) {
+            this.addServerModal.error = 'API Token ID and Secret are required when using token auth.'
+            this.addServerModal.saving = false
+            return
+          }
+          payload.api_token_id = f.api_token_id
+          payload.api_token_secret = f.api_token_secret
+        }
+        await api.post('/pbs/', payload)
         this.closeAddServerModal()
         await this.fetchServers()
       } catch (e) {

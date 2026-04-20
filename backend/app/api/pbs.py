@@ -282,6 +282,10 @@ def pbs_power_action(
         raise HTTPException(status_code=502, detail=f"Redfish error: {str(e)}")
 
 
+_sel_cache: dict[tuple, tuple[float, list]] = {}
+_SEL_TTL = 15.0  # seconds — iDRAC 7 Sel fetch is ~6s; repeat tab switches return instantly
+
+
 @router.get("/{server_id}/idrac/logs")
 def get_pbs_event_log(
     server_id: int,
@@ -289,13 +293,26 @@ def get_pbs_event_log(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    import time
+    cache_key = ("pbs", server_id, limit)
+    now = time.time()
+    cached = _sel_cache.get(cache_key)
+    if cached and (now - cached[0]) < _SEL_TTL:
+        return {"server_id": server_id, "entries": cached[1], "cached": True}
     server = _get_or_404(db, server_id)
     client = _build_client(server)
     try:
         entries = client.get_event_log(limit=limit)
+        _sel_cache[cache_key] = (now, entries)
         return {"server_id": server_id, "entries": entries}
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Redfish error: {str(e)}")
+
+
+def _bust_pbs_sel_cache(server_id: int):
+    for k in list(_sel_cache.keys()):
+        if k[0] == "pbs" and k[1] == server_id:
+            _sel_cache.pop(k, None)
 
 
 @router.get("/{server_id}/idrac/thermal")
@@ -381,6 +398,7 @@ def clear_pbs_sel(server_id: int, current_user: User = Depends(require_operator)
     client = _build_client(server)
     try:
         result = client.clear_sel()
+        _bust_pbs_sel_cache(server_id)
         logger.info(f"SEL cleared on PBS {server_id} by {current_user.username}")
         return {"status": "success", "result": result}
     except Exception as e:

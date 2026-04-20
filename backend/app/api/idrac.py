@@ -527,6 +527,7 @@ def node_clear_sel(node_id: int, current_user: User = Depends(require_operator),
     node = _get_node_or_404(db, node_id)
     try:
         result = _build_client_from_obj(node).clear_sel()
+        _bust_node_sel_cache(node_id)
         logger.info(f"SEL cleared on node {node_id} by {current_user.username}")
         return {"status": "success", "result": result}
     except Exception as e:
@@ -572,14 +573,32 @@ def node_power_action(node_id: int, action: str = Path(...), current_user: User 
         raise HTTPException(status_code=502, detail=f"Redfish error: {str(e)}")
 
 
+_node_sel_cache: dict[tuple, tuple[float, list]] = {}
+_NODE_SEL_TTL = 15.0
+
+
 @router.get("/node/{node_id}/logs")
 def get_node_event_log(node_id: int, limit: int = 50, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    import time
+    key = (node_id, limit)
+    now = time.time()
+    cached = _node_sel_cache.get(key)
+    if cached and (now - cached[0]) < _NODE_SEL_TTL:
+        return {"node_id": node_id, "entries": cached[1], "cached": True}
     node = _get_node_or_404(db, node_id)
     client = _build_client_from_obj(node)
     try:
-        return {"node_id": node_id, "entries": client.get_event_log(limit=limit)}
+        entries = client.get_event_log(limit=limit)
+        _node_sel_cache[key] = (now, entries)
+        return {"node_id": node_id, "entries": entries}
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Redfish error: {str(e)}")
+
+
+def _bust_node_sel_cache(node_id: int):
+    for k in list(_node_sel_cache.keys()):
+        if k[0] == node_id:
+            _node_sel_cache.pop(k, None)
 
 
 @router.get("/node/{node_id}/thermal")

@@ -280,27 +280,36 @@ class RedfishClient:
         """Clear the iDRAC/iLO System Event Log. Stale SEL entries keep the
         rollup Status.Health at Warning even after the condition clears, so
         operators routinely clear this after resolving hardware events."""
-        # Try modern Redfish action path first
+        import time as _t
         action_path = f"{self.paths['manager']}/LogServices/Sel/Actions/LogService.ClearLog"
-        try:
-            url = self.base_url + action_path
-            resp = self.session.post(url, json={}, timeout=self.timeout)
-            if resp.status_code in (200, 202, 204):
-                return {"status": "ok", "method": "redfish", "http_status": resp.status_code}
-            # iDRAC 7 often rejects the Redfish action — fall through to racadm
-            logger.info(f"Redfish SEL clear rejected ({resp.status_code}); trying OEM endpoint")
-        except Exception as e:
-            logger.warning(f"Redfish SEL clear errored: {e}")
-        # Dell OEM fallback
-        try:
-            oem = "/redfish/v1/Managers/iDRAC.Embedded.1/LogServices/Sel/Actions/Oem/DellLogService.ClearLog"
-            resp = self.session.post(self.base_url + oem, json={}, timeout=self.timeout)
-            if resp.status_code in (200, 202, 204):
-                return {"status": "ok", "method": "redfish-oem", "http_status": resp.status_code}
-            resp.raise_for_status()
-        except Exception as e:
-            logger.warning(f"OEM SEL clear failed: {e}")
-            raise
+        oem = "/redfish/v1/Managers/iDRAC.Embedded.1/LogServices/Sel/Actions/Oem/DellLogService.ClearLog"
+
+        def _try(url: str, label: str) -> Dict[str, Any] | None:
+            # iDRAC 7 occasionally hangs up the TLS handshake under load; retry once.
+            last_exc = None
+            for attempt in range(2):
+                try:
+                    resp = self.session.post(url, json={}, timeout=self.timeout)
+                    if resp.status_code in (200, 202, 204):
+                        return {"status": "ok", "method": label, "http_status": resp.status_code}
+                    if resp.status_code == 404:
+                        return None  # endpoint not supported — next fallback
+                    logger.info(f"SEL clear via {label} HTTP {resp.status_code}: {resp.text[:200]}")
+                    return None
+                except Exception as e:
+                    last_exc = e
+                    _t.sleep(0.5)
+            if last_exc:
+                logger.warning(f"SEL clear via {label} errored after retry: {last_exc}")
+            return None
+
+        r = _try(self.base_url + action_path, "redfish")
+        if r:
+            return r
+        r = _try(self.base_url + oem, "redfish-oem")
+        if r:
+            return r
+        raise RuntimeError("SEL clear: no Redfish or OEM endpoint accepted the request")
 
     def compute_current_health(self) -> Dict[str, Any]:
         """Compute overall health from *current* component state only, bypassing

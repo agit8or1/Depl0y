@@ -5,6 +5,16 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.28] - 2026-04-20 🩹 PBS add form + SEL cache + clear retry
+
+### Fixed
+- **Add PBS server required an API Token ID** even when password auth would do. Form now has an explicit "Authentication method" toggle (Password / API token). Only the fields for the chosen method are validated/submitted. Backend already accepted either — this is a UI-only fix.
+- **iDRAC event log slow to load (pbs1 iDRAC 7 takes ~5s per fetch).** Added a 15-second TTL cache for `/pbs/{id}/idrac/logs` and `/idrac/node/{id}/logs`. First fetch unchanged (~5s cold); subsequent tab switches serve from cache in ~7ms. Cache is busted automatically when you hit Clear Event Log.
+- **`clear_sel()` could fail on iDRAC 7's TLS handshake hiccups** (BadStatusLine). Now retries each endpoint once with a 500ms delay, and skips on HTTP 404 to the next fallback cleanly. The dual-path (Redfish generic → Dell OEM) is preserved.
+
+### Clarified (not a code change)
+- pbs1's lingering "Warning" is a **real hardware fault**, not a stale log. `bmc_status_cache` now reports `"health_reasons": ["Memory DIMMSLOTA4: Warning"]`. Reseat or replace the DIMM in slot A4 — the log-clear button can't fix a live component fault.
+
 ## [2.2.27] - 2026-04-20 📦 PBS dashboard, PVE+PBS updates, VM feature parity
 
 ### Added — PBS Management dashboard

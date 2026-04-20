@@ -422,3 +422,72 @@ class PBSService:
                     lines.append(str(item))
             return lines
         return [str(data)]
+
+    # ------------------------------------------------------------------
+    # Task status / recent tasks
+    # ------------------------------------------------------------------
+
+    def get_task_status(self, upid: str) -> Dict[str, Any]:
+        """Return the PBS task status dict for a given UPID."""
+        import urllib.parse
+        encoded = urllib.parse.quote(upid, safe="")
+        data = self._get(f"/nodes/localhost/tasks/{encoded}/status")
+        return data or {}
+
+    def list_recent_tasks(
+        self,
+        since_epoch: int,
+        types: Optional[List[str]] = None,
+        limit: int = 500,
+    ) -> List[Dict[str, Any]]:
+        """
+        Return recent PBS tasks whose endtime is >= since_epoch.
+
+        PBS /nodes/localhost/tasks accepts 'since', 'running' and 'typefilter'
+        parameters. We request both running and finished tasks.
+        """
+        tasks: List[Dict[str, Any]] = []
+        params: Dict[str, Any] = {
+            "since": since_epoch,
+            "limit": limit,
+        }
+        try:
+            data = self._get("/nodes/localhost/tasks", params=params) or []
+            tasks.extend(data)
+        except Exception as exc:
+            logger.warning("PBS list_recent_tasks failed for '%s': %s", self.server.name, exc)
+
+        if types:
+            def _match(task):
+                worker = (task.get("worker_type") or task.get("type") or "").lower()
+                return any(t.lower() in worker for t in types)
+            tasks = [t for t in tasks if _match(t)]
+        return tasks
+
+    # ------------------------------------------------------------------
+    # APT / package update helpers
+    # ------------------------------------------------------------------
+
+    def apt_list_updates(self) -> List[Dict[str, Any]]:
+        """Return pending package updates from PBS (GET /nodes/localhost/apt/update)."""
+        data = self._get("/nodes/localhost/apt/update")
+        if not data:
+            return []
+        return data
+
+    def apt_refresh_updates(self) -> str:
+        """Trigger apt-get update on the PBS node. Returns UPID of the task."""
+        upid = self._post("/nodes/localhost/apt/update")
+        return upid
+
+    def apt_upgrade(self, packages: Optional[List[str]] = None) -> str:
+        """Trigger apt-get dist-upgrade on PBS. Returns UPID of the task.
+
+        If 'packages' is provided, PBS's apt.upgrade endpoint will upgrade
+        only those packages.
+        """
+        payload: Dict[str, Any] = {}
+        if packages:
+            payload["packages"] = " ".join(packages)
+        upid = self._post("/nodes/localhost/apt/upgrade", payload or None)
+        return upid

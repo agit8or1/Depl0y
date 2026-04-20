@@ -1439,6 +1439,432 @@
       </div>
 
 
+      <!-- ─── Options Tab ─── -->
+      <div v-if="activeTab === 'options'">
+        <div class="card mb-2">
+          <div class="card-header">
+            <h3>VM Options</h3>
+            <span class="text-sm text-muted">Mirrors Proxmox VE's <em>Options</em> tab.</span>
+          </div>
+          <div class="card-body">
+            <div class="config-grid">
+
+              <!-- OS Type -->
+              <div class="form-group inline-field">
+                <label class="form-label">OS Type</label>
+                <div class="inline-edit-row">
+                  <select v-model="optEdit.ostype" class="form-control">
+                    <option value="">(auto)</option>
+                    <option value="l26">Linux 2.6 - 6.x (l26)</option>
+                    <option value="l24">Linux 2.4 (l24)</option>
+                    <option value="win11">Windows 11 (win11)</option>
+                    <option value="win10">Windows 10 (win10)</option>
+                    <option value="win8">Windows 8.x / 2012 (win8)</option>
+                    <option value="win7">Windows 7 / 2008R2 (win7)</option>
+                    <option value="wxp">Windows XP (wxp)</option>
+                    <option value="w2k">Windows 2000 (w2k)</option>
+                    <option value="solaris">Solaris Kernel</option>
+                    <option value="other">Other</option>
+                  </select>
+                  <button @click="saveOpt('ostype', optEdit.ostype)"
+                    class="btn btn-primary btn-sm" :disabled="savingOpt.ostype">
+                    {{ savingOpt.ostype ? '...' : 'Save' }}
+                  </button>
+                </div>
+                <div class="inline-current">Current: <code>{{ config.ostype || 'auto' }}</code></div>
+              </div>
+
+              <!-- Start/Shutdown order & delay -->
+              <div class="form-group inline-field config-grid-span2">
+                <label class="form-label">Start/Shutdown Order &amp; Delay</label>
+                <div class="inline-edit-row">
+                  <input v-model.number="optEdit.startup_order" type="number" min="0" max="999"
+                    placeholder="order" class="form-control" style="max-width:100px;"
+                    @keyup.enter="saveStartupOrder" title="Lower runs first" />
+                  <input v-model.number="optEdit.startup_up" type="number" min="0" max="3600"
+                    placeholder="up delay (s)" class="form-control" style="max-width:120px;"
+                    @keyup.enter="saveStartupOrder" />
+                  <input v-model.number="optEdit.startup_down" type="number" min="0" max="3600"
+                    placeholder="down delay (s)" class="form-control" style="max-width:120px;"
+                    @keyup.enter="saveStartupOrder" />
+                  <button @click="saveStartupOrder"
+                    class="btn btn-primary btn-sm" :disabled="savingOpt.startup">
+                    {{ savingOpt.startup ? '...' : 'Save' }}
+                  </button>
+                </div>
+                <div class="inline-current">Current: <code>{{ config.startup || 'default' }}</code></div>
+              </div>
+
+              <!-- Hotplug -->
+              <div class="form-group inline-field config-grid-span2">
+                <label class="form-label">Hotplug</label>
+                <div class="hotplug-row">
+                  <label v-for="h in hotplugOptions" :key="h.key" class="hotplug-chip">
+                    <input type="checkbox" :value="h.key" v-model="optEdit.hotplug_set" />
+                    <span>{{ h.label }}</span>
+                  </label>
+                  <button @click="saveHotplug"
+                    class="btn btn-primary btn-sm" :disabled="savingOpt.hotplug">
+                    {{ savingOpt.hotplug ? '...' : 'Save Hotplug' }}
+                  </button>
+                </div>
+                <div class="inline-current">Current: <code>{{ config.hotplug || 'disk,network,usb' }}</code></div>
+              </div>
+
+              <!-- VirtIO RNG -->
+              <div class="form-group inline-field">
+                <label class="form-label">VirtIO RNG source</label>
+                <div class="inline-edit-row">
+                  <select v-model="optEdit.rng_source" class="form-control">
+                    <option value="">(disabled)</option>
+                    <option value="/dev/urandom">/dev/urandom (recommended)</option>
+                    <option value="/dev/random">/dev/random (blocking)</option>
+                    <option value="/dev/hwrng">/dev/hwrng (host hardware RNG)</option>
+                  </select>
+                  <button @click="saveRng"
+                    class="btn btn-primary btn-sm" :disabled="savingOpt.rng0">
+                    {{ savingOpt.rng0 ? '...' : 'Save' }}
+                  </button>
+                </div>
+                <div class="inline-current">Current: <code>{{ config.rng0 || '(off)' }}</code></div>
+              </div>
+
+              <!-- SPICE enhancements -->
+              <div class="form-group inline-field">
+                <label class="form-label">SPICE Enhancements</label>
+                <div class="inline-edit-row">
+                  <label class="flex align-center gap-1 text-sm">
+                    <input type="checkbox" v-model="optEdit.spice_folder" />
+                    Folder sharing
+                  </label>
+                  <label class="flex align-center gap-1 text-sm">
+                    <input type="checkbox" v-model="optEdit.spice_video" />
+                    Video streaming
+                  </label>
+                  <button @click="saveSpice"
+                    class="btn btn-primary btn-sm" :disabled="savingOpt.spice_enhancements">
+                    {{ savingOpt.spice_enhancements ? '...' : 'Save' }}
+                  </button>
+                </div>
+                <div class="inline-current">Current: <code>{{ config['spice-enhancements'] || config.spice_enhancements || '(off)' }}</code></div>
+              </div>
+
+              <!-- SMBIOS serial -->
+              <div class="form-group inline-field config-grid-span2">
+                <label class="form-label">SMBIOS 1 (settings string)</label>
+                <div class="inline-edit-row">
+                  <input v-model="optEdit.smbios1" class="form-control"
+                    placeholder="uuid=...,manufacturer=...,product=..."
+                    @keyup.enter="saveOpt('smbios1', optEdit.smbios1)" />
+                  <button @click="saveOpt('smbios1', optEdit.smbios1)"
+                    class="btn btn-primary btn-sm" :disabled="savingOpt.smbios1">
+                    {{ savingOpt.smbios1 ? '...' : 'Save' }}
+                  </button>
+                </div>
+                <div class="inline-current text-xs">Current: <code>{{ config.smbios1 || '(auto)' }}</code></div>
+              </div>
+
+              <!-- Boolean toggles -->
+              <div class="form-group config-grid-span2">
+                <label class="form-label" style="margin-bottom:0.5rem;">Toggles</label>
+                <div class="toggle-row">
+                  <label class="toggle-item" title="Start VM automatically when host boots">
+                    <input type="checkbox" class="toggle-check"
+                      :checked="!!optEdit.onboot"
+                      @change="saveOpt('onboot', $event.target.checked ? 1 : 0, 'onboot')" />
+                    <span class="toggle-label">Start at boot</span>
+                    <span class="toggle-status" :class="optEdit.onboot ? 'badge badge-success' : 'badge badge-info'">
+                      {{ optEdit.onboot ? 'Yes' : 'No' }}
+                    </span>
+                  </label>
+                  <label class="toggle-item" title="Enable ACPI support in guest">
+                    <input type="checkbox" class="toggle-check"
+                      :checked="optEdit.acpi !== 0"
+                      @change="saveOpt('acpi', $event.target.checked ? 1 : 0, 'acpi')" />
+                    <span class="toggle-label">ACPI</span>
+                    <span class="toggle-status" :class="optEdit.acpi !== 0 ? 'badge badge-success' : 'badge badge-warning'">
+                      {{ optEdit.acpi !== 0 ? 'On' : 'Off' }}
+                    </span>
+                  </label>
+                  <label class="toggle-item" title="KVM hardware virtualisation">
+                    <input type="checkbox" class="toggle-check"
+                      :checked="optEdit.kvm !== 0"
+                      @change="saveOpt('kvm', $event.target.checked ? 1 : 0, 'kvm')" />
+                    <span class="toggle-label">KVM hw-virt</span>
+                    <span class="toggle-status" :class="optEdit.kvm !== 0 ? 'badge badge-success' : 'badge badge-warning'">
+                      {{ optEdit.kvm !== 0 ? 'On' : 'Off' }}
+                    </span>
+                  </label>
+                  <label class="toggle-item" title="Use tablet device for absolute mouse pointer (recommended for GUIs)">
+                    <input type="checkbox" class="toggle-check"
+                      :checked="optEdit.tablet !== 0"
+                      @change="saveOpt('tablet', $event.target.checked ? 1 : 0, 'tablet')" />
+                    <span class="toggle-label">Tablet pointer</span>
+                    <span class="toggle-status" :class="optEdit.tablet !== 0 ? 'badge badge-success' : 'badge badge-info'">
+                      {{ optEdit.tablet !== 0 ? 'On' : 'Off' }}
+                    </span>
+                  </label>
+                  <label class="toggle-item" title="Start the VM paused (useful for debugging)">
+                    <input type="checkbox" class="toggle-check"
+                      :checked="!!optEdit.freeze"
+                      @change="saveOpt('freeze', $event.target.checked ? 1 : 0, 'freeze')" />
+                    <span class="toggle-label">Freeze CPU at startup</span>
+                    <span class="toggle-status" :class="optEdit.freeze ? 'badge badge-warning' : 'badge badge-info'">
+                      {{ optEdit.freeze ? 'Yes' : 'No' }}
+                    </span>
+                  </label>
+                  <label class="toggle-item" title="Allow reboot from within the guest (disable to force a full stop+start)">
+                    <input type="checkbox" class="toggle-check"
+                      :checked="optEdit.reboot !== 0"
+                      @change="saveOpt('reboot', $event.target.checked ? 1 : 0, 'reboot')" />
+                    <span class="toggle-label">Allow guest reboot</span>
+                    <span class="toggle-status" :class="optEdit.reboot !== 0 ? 'badge badge-success' : 'badge badge-warning'">
+                      {{ optEdit.reboot !== 0 ? 'Yes' : 'No' }}
+                    </span>
+                  </label>
+                  <label class="toggle-item" title="Protect VM from deletion / disk removal">
+                    <input type="checkbox" class="toggle-check"
+                      :checked="!!optEdit.protection"
+                      @change="saveOpt('protection', $event.target.checked ? 1 : 0, 'protection')" />
+                    <span class="toggle-label">Protection</span>
+                    <span class="toggle-status" :class="optEdit.protection ? 'badge badge-warning' : 'badge badge-info'">
+                      {{ optEdit.protection ? 'On' : 'Off' }}
+                    </span>
+                  </label>
+                  <label class="toggle-item" title="NUMA node awareness">
+                    <input type="checkbox" class="toggle-check"
+                      :checked="!!optEdit.numa"
+                      @change="saveOpt('numa', $event.target.checked ? 1 : 0, 'numa')" />
+                    <span class="toggle-label">NUMA</span>
+                    <span class="toggle-status" :class="optEdit.numa ? 'badge badge-success' : 'badge badge-info'">
+                      {{ optEdit.numa ? 'On' : 'Off' }}
+                    </span>
+                  </label>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ─── Backup Tab ─── -->
+      <div v-if="activeTab === 'backup'">
+        <div class="card mb-2">
+          <div class="card-header">
+            <h3>Backup VM {{ vmid }}</h3>
+            <span class="text-sm text-muted">One-click vzdump to a configured backup storage.</span>
+          </div>
+          <div class="card-body">
+            <div class="config-grid">
+              <div class="form-group inline-field">
+                <label class="form-label">Target Storage</label>
+                <select v-model="backupForm.storage" class="form-control" :disabled="loadingBackupStorages">
+                  <option value="" disabled>
+                    {{ loadingBackupStorages ? 'Loading...' : 'Select backup storage' }}
+                  </option>
+                  <option v-for="s in backupStorages" :key="s.storage" :value="s.storage">
+                    {{ s.storage }} ({{ s.type }})
+                  </option>
+                </select>
+                <div v-if="!loadingBackupStorages && backupStorages.length === 0"
+                     class="text-sm text-muted mt-1">
+                  No storage on this node has <code>backup</code> content type.
+                </div>
+              </div>
+              <div class="form-group inline-field">
+                <label class="form-label">Mode</label>
+                <select v-model="backupForm.mode" class="form-control">
+                  <option value="snapshot">snapshot (no downtime, recommended)</option>
+                  <option value="suspend">suspend (brief pause)</option>
+                  <option value="stop">stop (guaranteed consistent)</option>
+                </select>
+              </div>
+              <div class="form-group inline-field">
+                <label class="form-label">Compression</label>
+                <select v-model="backupForm.compress" class="form-control">
+                  <option value="zstd">zstd (fast, recommended)</option>
+                  <option value="lzo">lzo (fastest)</option>
+                  <option value="gzip">gzip (smaller)</option>
+                  <option value="0">none</option>
+                </select>
+              </div>
+              <div class="form-group inline-field">
+                <label class="form-label">Notes</label>
+                <input v-model="backupForm.notes_template" class="form-control"
+                       placeholder="e.g. pre-update {{node}} {{vmid}}" />
+              </div>
+              <div class="form-group config-grid-span2 flex gap-1">
+                <label class="flex align-center gap-1">
+                  <input type="checkbox" v-model="backupForm.protected" />
+                  Mark archive as protected (prevents prune)
+                </label>
+                <span style="flex:1;"></span>
+                <button @click="runBackupNow" class="btn btn-primary"
+                        :disabled="!backupForm.storage || backupSubmitting">
+                  {{ backupSubmitting ? 'Submitting...' : 'Backup Now' }}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h3>Backup Archives</h3>
+            <button @click="loadBackupHistory" class="btn btn-outline btn-sm" :disabled="loadingBackupHistory"
+                    title="Refresh">
+              <span :class="loadingBackupHistory ? 'spin' : ''">&#8635;</span>
+            </button>
+          </div>
+          <div v-if="loadingBackupHistory" class="loading-spinner"></div>
+          <div v-else-if="backupArchives.length === 0" class="text-center text-muted" style="padding:1.5rem;">
+            No backup archives found for this VM.
+          </div>
+          <div v-else class="table-container">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>When</th>
+                  <th>Storage</th>
+                  <th>Size</th>
+                  <th>Format</th>
+                  <th>Notes</th>
+                  <th>Volume ID</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="a in backupArchives" :key="a.volid">
+                  <td>{{ formatTimestamp(a.ctime) }}</td>
+                  <td><code>{{ a.storage }}</code></td>
+                  <td>{{ formatBytes(a.size) }}</td>
+                  <td><span class="badge badge-info">{{ a.format || '—' }}</span></td>
+                  <td class="text-sm text-muted">{{ a.notes || '—' }}</td>
+                  <td class="text-xs"><code>{{ a.volid }}</code></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ─── Replication Tab ─── -->
+      <div v-if="activeTab === 'replication'">
+        <div class="card mb-2">
+          <div class="card-header">
+            <h3>Storage Replication</h3>
+            <div class="flex gap-1">
+              <button @click="showAddReplicationModal = true" class="btn btn-primary btn-sm"
+                      :disabled="!availableNodes.length">+ Add Job</button>
+              <button @click="loadReplication" class="btn btn-outline btn-sm" :disabled="loadingReplication"
+                      title="Refresh">
+                <span :class="loadingReplication ? 'spin' : ''">&#8635;</span>
+              </button>
+            </div>
+          </div>
+          <div v-if="loadingReplication" class="loading-spinner"></div>
+          <div v-else-if="replicationJobs.length === 0" class="text-center text-muted" style="padding:1.5rem;">
+            No replication jobs for this VM. Replication requires ZFS-backed storage on both nodes.
+          </div>
+          <div v-else class="table-container">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Target</th>
+                  <th>Schedule</th>
+                  <th>Rate</th>
+                  <th>Status</th>
+                  <th>Comment</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="j in replicationJobs" :key="j.id">
+                  <td><code>{{ j.id }}</code></td>
+                  <td><code>{{ j.target }}</code></td>
+                  <td><code>{{ j.schedule }}</code></td>
+                  <td>{{ j.rate ? j.rate + ' MB/s' : '—' }}</td>
+                  <td>
+                    <span v-if="j.disable" class="badge badge-warning">disabled</span>
+                    <span v-else-if="j.fail_count > 0" class="badge badge-danger">
+                      {{ j.fail_count }} failures
+                    </span>
+                    <span v-else class="badge badge-success">OK</span>
+                  </td>
+                  <td class="text-sm text-muted">{{ j.comment || '—' }}</td>
+                  <td class="flex gap-1">
+                    <button @click="runReplicationJob(j.id)" class="btn btn-outline btn-sm"
+                            :disabled="runningReplication === j.id" title="Run now">
+                      {{ runningReplication === j.id ? '...' : 'Run' }}
+                    </button>
+                    <button @click="openEditReplication(j)" class="btn btn-outline btn-sm">Edit</button>
+                    <button @click="removeReplicationJob(j)" class="btn btn-danger btn-sm"
+                            :disabled="deletingReplication === j.id">
+                      {{ deletingReplication === j.id ? '...' : 'Delete' }}
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Add / Edit Replication modal -->
+        <div v-if="showAddReplicationModal" class="modal" @click.self="showAddReplicationModal = false">
+          <div class="modal-content" @click.stop style="max-width:520px;">
+            <div class="modal-header">
+              <h3>{{ replicationForm.id ? 'Edit' : 'Add' }} Replication Job</h3>
+              <button @click="showAddReplicationModal = false" class="btn-close">×</button>
+            </div>
+            <div class="modal-body">
+              <div class="form-group">
+                <label class="form-label">Target Node</label>
+                <select v-model="replicationForm.target" class="form-control"
+                        :disabled="!!replicationForm.id">
+                  <option value="" disabled>Select a target</option>
+                  <option v-for="n in availableNodes" :key="n" :value="n">{{ n }}</option>
+                </select>
+                <p v-if="!replicationForm.id" class="text-xs text-muted mt-1">
+                  Target node must have a matching ZFS pool/dataset name.
+                </p>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Schedule (systemd calendar)</label>
+                <input v-model="replicationForm.schedule" class="form-control"
+                       placeholder="*/15 or hourly or daily" />
+                <p class="text-xs text-muted mt-1">
+                  Examples: <code>*/15</code> (every 15 minutes), <code>hourly</code>, <code>*-*-* 02:00</code>
+                </p>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Rate Limit (MB/s)</label>
+                <input v-model.number="replicationForm.rate" type="number" min="0" step="0.5"
+                       class="form-control" placeholder="0 = unlimited" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">Comment</label>
+                <input v-model="replicationForm.comment" class="form-control"
+                       placeholder="Optional description" />
+              </div>
+              <div class="form-group">
+                <label class="flex align-center gap-1">
+                  <input type="checkbox" v-model="replicationForm.disable" />
+                  Disable job
+                </label>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button @click="showAddReplicationModal = false" class="btn btn-outline">Cancel</button>
+              <button @click="submitReplication" class="btn btn-primary"
+                      :disabled="replicationSubmitting || !replicationForm.target || !replicationForm.schedule">
+                {{ replicationSubmitting ? 'Saving...' : (replicationForm.id ? 'Update' : 'Create') }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- ─── Hardware Tab ─── -->
       <div v-if="activeTab === 'hardware'">
 
@@ -1574,6 +2000,175 @@
                 <span class="hw-flag-name">{{ flag.name }}</span>
                 <span class="hw-flag-desc">{{ flag.desc }}</span>
               </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Display / Controller / Audio -->
+        <div class="card mb-2">
+          <div class="card-header">
+            <h4>Display, Controllers &amp; Audio</h4>
+            <span class="text-sm text-muted">Requires reboot for most changes</span>
+          </div>
+          <div class="card-body hw-machine-grid">
+
+            <!-- VGA / Display -->
+            <div class="form-group inline-field">
+              <label class="form-label">Display (VGA)</label>
+              <div class="inline-edit-row">
+                <select v-model="hwEdit.vga" class="form-control">
+                  <option value="">default</option>
+                  <option value="std">Standard VGA (std)</option>
+                  <option value="cirrus">Cirrus (legacy)</option>
+                  <option value="vmware">VMware compatible</option>
+                  <option value="qxl">QXL (SPICE)</option>
+                  <option value="qxl2">QXL2 (2 heads)</option>
+                  <option value="qxl3">QXL3 (3 heads)</option>
+                  <option value="qxl4">QXL4 (4 heads)</option>
+                  <option value="virtio">VirtIO-GPU</option>
+                  <option value="virtio-gl">VirtIO-GL (VirGL)</option>
+                  <option value="none">none (headless / serial only)</option>
+                  <option value="serial0">Serial Console (serial0)</option>
+                </select>
+                <button @click="saveHwField('vga', hwEdit.vga)"
+                  class="btn btn-primary btn-sm" :disabled="savingHw.vga">
+                  {{ savingHw.vga ? '...' : 'Save' }}
+                </button>
+              </div>
+              <div class="inline-current">Current: <code>{{ config.vga || 'default' }}</code></div>
+            </div>
+
+            <!-- SCSI controller -->
+            <div class="form-group inline-field">
+              <label class="form-label">SCSI Controller</label>
+              <div class="inline-edit-row">
+                <select v-model="hwEdit.scsihw" class="form-control">
+                  <option value="">default (LSI)</option>
+                  <option value="lsi">LSI 53C895A (lsi)</option>
+                  <option value="lsi53c810">LSI 53C810</option>
+                  <option value="virtio-scsi-pci">VirtIO SCSI (virtio-scsi-pci)</option>
+                  <option value="virtio-scsi-single">VirtIO SCSI single (recommended)</option>
+                  <option value="megasas">MegaRAID SAS 8708EM2</option>
+                  <option value="pvscsi">VMware PVSCSI</option>
+                </select>
+                <button @click="saveHwField('scsihw', hwEdit.scsihw)"
+                  class="btn btn-primary btn-sm" :disabled="savingHw.scsihw">
+                  {{ savingHw.scsihw ? '...' : 'Save' }}
+                </button>
+              </div>
+              <div class="inline-current">Current: <code>{{ config.scsihw || 'default' }}</code></div>
+            </div>
+
+            <!-- Audio Device -->
+            <div class="form-group inline-field">
+              <label class="form-label">Audio Device</label>
+              <div class="inline-edit-row">
+                <select v-model="hwEdit.audioDevice" class="form-control">
+                  <option value="">(none)</option>
+                  <option value="ich9-intel-hda">ich9-intel-hda</option>
+                  <option value="intel-hda">intel-hda</option>
+                  <option value="AC97">AC97</option>
+                </select>
+                <select v-if="hwEdit.audioDevice" v-model="hwEdit.audioDriver" class="form-control">
+                  <option value="spice">driver: spice</option>
+                  <option value="none">driver: none</option>
+                </select>
+                <button @click="saveAudio"
+                  class="btn btn-primary btn-sm" :disabled="savingHw.audio0">
+                  {{ savingHw.audio0 ? '...' : 'Save' }}
+                </button>
+                <button v-if="config.audio0" @click="removeAudio"
+                  class="btn btn-outline btn-sm" :disabled="savingHw.audio0">Remove</button>
+              </div>
+              <div class="inline-current">Current: <code>{{ config.audio0 || '(none)' }}</code></div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- TPM + EFI firmware disks -->
+        <div class="card mb-2">
+          <div class="card-header">
+            <h4>Firmware &amp; Security State Disks</h4>
+            <span class="text-sm text-muted">Required for UEFI &amp; TPM-backed Secure Boot / BitLocker</span>
+          </div>
+          <div class="card-body">
+            <div class="fw-disk-grid">
+
+              <!-- EFI Disk -->
+              <div class="fw-disk-block">
+                <div class="fw-disk-title">
+                  <span>EFI Disk <code class="text-sm">efidisk0</code></span>
+                  <span v-if="config.efidisk0" class="badge badge-success">present</span>
+                  <span v-else class="badge badge-secondary">not configured</span>
+                </div>
+                <div v-if="config.efidisk0" class="fw-disk-value">
+                  <code>{{ config.efidisk0 }}</code>
+                  <button @click="removeEfiDisk" class="btn btn-danger btn-sm ml-1"
+                    :disabled="savingHw.efidisk0">
+                    {{ savingHw.efidisk0 ? '...' : 'Remove' }}
+                  </button>
+                </div>
+                <div v-else class="inline-edit-row">
+                  <select v-model="efiForm.storage" class="form-control">
+                    <option value="" disabled>Select storage</option>
+                    <option v-for="s in disk_storages" :key="s.storage" :value="s.storage">
+                      {{ s.storage }} ({{ s.type }})
+                    </option>
+                  </select>
+                  <select v-model="efiForm.efitype" class="form-control">
+                    <option value="4m">4m (standard, Secure Boot)</option>
+                    <option value="2m">2m (legacy)</option>
+                  </select>
+                  <label class="flex align-center gap-1 text-sm">
+                    <input type="checkbox" v-model="efiForm.pre_enrolled_keys" />
+                    Pre-enrolled keys
+                  </label>
+                  <button @click="addEfiDisk" class="btn btn-primary btn-sm"
+                    :disabled="!efiForm.storage || savingHw.efidisk0">
+                    {{ savingHw.efidisk0 ? '...' : '+ Add EFI Disk' }}
+                  </button>
+                </div>
+                <p class="text-xs text-muted mt-1">
+                  An EFI disk is required when BIOS is set to <code>OVMF</code>.
+                </p>
+              </div>
+
+              <!-- TPM -->
+              <div class="fw-disk-block">
+                <div class="fw-disk-title">
+                  <span>TPM State <code class="text-sm">tpmstate0</code></span>
+                  <span v-if="config.tpmstate0" class="badge badge-success">present</span>
+                  <span v-else class="badge badge-secondary">not configured</span>
+                </div>
+                <div v-if="config.tpmstate0" class="fw-disk-value">
+                  <code>{{ config.tpmstate0 }}</code>
+                  <button @click="removeTpm" class="btn btn-danger btn-sm ml-1"
+                    :disabled="savingHw.tpmstate0">
+                    {{ savingHw.tpmstate0 ? '...' : 'Remove' }}
+                  </button>
+                </div>
+                <div v-else class="inline-edit-row">
+                  <select v-model="tpmForm.storage" class="form-control">
+                    <option value="" disabled>Select storage</option>
+                    <option v-for="s in disk_storages" :key="s.storage" :value="s.storage">
+                      {{ s.storage }} ({{ s.type }})
+                    </option>
+                  </select>
+                  <select v-model="tpmForm.version" class="form-control">
+                    <option value="v2.0">TPM v2.0 (recommended)</option>
+                    <option value="v1.2">TPM v1.2 (legacy)</option>
+                  </select>
+                  <button @click="addTpm" class="btn btn-primary btn-sm"
+                    :disabled="!tpmForm.storage || savingHw.tpmstate0">
+                    {{ savingHw.tpmstate0 ? '...' : '+ Add TPM' }}
+                  </button>
+                </div>
+                <p class="text-xs text-muted mt-1">
+                  Required for Windows 11 / BitLocker guests.
+                </p>
+              </div>
+
             </div>
           </div>
         </div>
@@ -3136,6 +3731,455 @@ const clusterNodes = ref([])
 const rrdData = ref(null)
 const rrdTimeframe = ref('hour')
 
+// ── Storages filtered by content type (for selectors in Hardware / Backup) ────
+const disk_storages = computed(() =>
+  (storageList.value || []).filter(s => {
+    const c = s.content || ''
+    return c.includes('images') || c.includes('rootdir')
+  })
+)
+
+const backupStorages = ref([])
+const loadingBackupStorages = ref(false)
+const loadBackupStorages = async () => {
+  loadingBackupStorages.value = true
+  try {
+    // If storageList hasn't loaded yet, load it first
+    if (!storageList.value.length) await loadStorage()
+    backupStorages.value = (storageList.value || []).filter(s => (s.content || '').includes('backup'))
+    if (!backupForm.value.storage && backupStorages.value.length) {
+      backupForm.value.storage = backupStorages.value[0].storage
+    }
+  } finally {
+    loadingBackupStorages.value = false
+  }
+}
+
+// ── Options tab state ─────────────────────────────────────────────────────────
+const hotplugOptions = [
+  { key: 'disk',      label: 'Disk' },
+  { key: 'network',   label: 'NIC' },
+  { key: 'usb',       label: 'USB' },
+  { key: 'cpu',       label: 'CPU' },
+  { key: 'memory',    label: 'Memory' },
+]
+
+const optEdit = ref({
+  ostype: '',
+  hotplug_set: [],
+  startup_order: null,
+  startup_up: null,
+  startup_down: null,
+  rng_source: '',
+  spice_folder: false,
+  spice_video: false,
+  smbios1: '',
+  onboot: 0,
+  acpi: 1,
+  kvm: 1,
+  tablet: 1,
+  freeze: 0,
+  reboot: 1,
+  protection: 0,
+  numa: 0,
+})
+const savingOpt = ref({})
+
+// Sync options from config on every (re)load
+watch(() => config.value, (cfg) => {
+  if (!cfg) return
+  optEdit.value.ostype = cfg.ostype || ''
+  const hp = (cfg.hotplug ?? 'disk,network,usb')
+  optEdit.value.hotplug_set = (hp === '0' || hp === 0) ? [] : String(hp).split(',').filter(Boolean)
+  // Parse startup="order=1,up=30,down=60"
+  const startup = cfg.startup || ''
+  const sm = Object.fromEntries(startup.split(',').filter(Boolean).map(p => {
+    const [k, v] = p.split('=')
+    return [k, v == null ? true : v]
+  }))
+  optEdit.value.startup_order = sm.order != null ? Number(sm.order) : null
+  optEdit.value.startup_up    = sm.up    != null ? Number(sm.up)    : null
+  optEdit.value.startup_down  = sm.down  != null ? Number(sm.down)  : null
+  // RNG
+  const rng = cfg.rng0 || ''
+  const srcMatch = rng.match(/source=([^,]+)/)
+  optEdit.value.rng_source = srcMatch ? srcMatch[1] : (rng.split(',')[0] || '')
+  // SPICE enhancements
+  const spice = cfg['spice-enhancements'] || cfg.spice_enhancements || ''
+  optEdit.value.spice_folder = /foldersharing=1/.test(spice)
+  optEdit.value.spice_video  = /videostreaming=(all|filter)/.test(spice)
+  // SMBIOS
+  optEdit.value.smbios1 = cfg.smbios1 || ''
+  // Numeric toggles — Proxmox defaults: acpi=1, kvm=1, tablet=1, reboot=1
+  optEdit.value.onboot     = cfg.onboot ? 1 : 0
+  optEdit.value.acpi       = cfg.acpi  === undefined ? 1 : Number(cfg.acpi)
+  optEdit.value.kvm        = cfg.kvm   === undefined ? 1 : Number(cfg.kvm)
+  optEdit.value.tablet     = cfg.tablet === undefined ? 1 : Number(cfg.tablet)
+  optEdit.value.freeze     = cfg.freeze ? 1 : 0
+  optEdit.value.reboot     = cfg.reboot === undefined ? 1 : Number(cfg.reboot)
+  optEdit.value.protection = cfg.protection ? 1 : 0
+  optEdit.value.numa       = cfg.numa ? 1 : 0
+}, { immediate: true, deep: false })
+
+const saveOpt = async (field, value, stateKey = null) => {
+  const busyKey = stateKey || field
+  savingOpt.value = { ...savingOpt.value, [busyKey]: true }
+  const previous = config.value ? config.value[field] : null
+  try {
+    await api.pveVm.updateConfig(hostId.value, node.value, vmid.value, { [field]: value })
+    toast.success(`${field} saved`)
+    await loadConfig()
+  } catch (e) {
+    // Rollback local state on failure
+    if (stateKey && config.value) {
+      optEdit.value[stateKey] = Number(previous) || 0
+    }
+    toast.error(`Failed to save ${field}: ` + (e.response?.data?.detail || e.message))
+  } finally {
+    savingOpt.value = { ...savingOpt.value, [busyKey]: false }
+  }
+}
+
+const saveStartupOrder = async () => {
+  savingOpt.value = { ...savingOpt.value, startup: true }
+  const parts = []
+  if (optEdit.value.startup_order != null && optEdit.value.startup_order !== '') parts.push(`order=${optEdit.value.startup_order}`)
+  if (optEdit.value.startup_up != null && optEdit.value.startup_up !== '') parts.push(`up=${optEdit.value.startup_up}`)
+  if (optEdit.value.startup_down != null && optEdit.value.startup_down !== '') parts.push(`down=${optEdit.value.startup_down}`)
+  const val = parts.join(',')
+  try {
+    await api.pveVm.updateConfig(hostId.value, node.value, vmid.value, { startup: val || null })
+    toast.success('Startup order saved')
+    await loadConfig()
+  } catch (e) {
+    toast.error('Failed to save startup: ' + (e.response?.data?.detail || e.message))
+  } finally {
+    savingOpt.value = { ...savingOpt.value, startup: false }
+  }
+}
+
+const saveHotplug = async () => {
+  savingOpt.value = { ...savingOpt.value, hotplug: true }
+  const val = optEdit.value.hotplug_set.length === 0 ? '0' : optEdit.value.hotplug_set.join(',')
+  try {
+    await api.pveVm.updateConfig(hostId.value, node.value, vmid.value, { hotplug: val })
+    toast.success('Hotplug saved')
+    await loadConfig()
+  } catch (e) {
+    toast.error('Failed to save hotplug: ' + (e.response?.data?.detail || e.message))
+  } finally {
+    savingOpt.value = { ...savingOpt.value, hotplug: false }
+  }
+}
+
+const saveRng = async () => {
+  savingOpt.value = { ...savingOpt.value, rng0: true }
+  const val = optEdit.value.rng_source ? `source=${optEdit.value.rng_source}` : null
+  try {
+    await api.pveVm.updateConfig(hostId.value, node.value, vmid.value, { rng0: val })
+    toast.success('VirtIO RNG saved')
+    await loadConfig()
+  } catch (e) {
+    toast.error('Failed to save RNG: ' + (e.response?.data?.detail || e.message))
+  } finally {
+    savingOpt.value = { ...savingOpt.value, rng0: false }
+  }
+}
+
+const saveSpice = async () => {
+  savingOpt.value = { ...savingOpt.value, spice_enhancements: true }
+  const parts = []
+  if (optEdit.value.spice_folder) parts.push('foldersharing=1')
+  if (optEdit.value.spice_video) parts.push('videostreaming=all')
+  const val = parts.length ? parts.join(',') : null
+  try {
+    await api.pveVm.updateConfig(hostId.value, node.value, vmid.value, { spice_enhancements: val })
+    toast.success('SPICE enhancements saved')
+    await loadConfig()
+  } catch (e) {
+    toast.error('Failed to save SPICE: ' + (e.response?.data?.detail || e.message))
+  } finally {
+    savingOpt.value = { ...savingOpt.value, spice_enhancements: false }
+  }
+}
+
+// ── Hardware tab — VGA / SCSI hw / Audio / TPM / EFI ──────────────────────────
+const efiForm = ref({ storage: '', efitype: '4m', pre_enrolled_keys: true })
+const tpmForm = ref({ storage: '', version: 'v2.0' })
+
+// Extend hwEdit with new fields + audio parser
+watch(() => config.value, (cfg) => {
+  if (!cfg) return
+  hwEdit.value.vga = cfg.vga || ''
+  hwEdit.value.scsihw = cfg.scsihw || ''
+  // audio0="<device>,driver=<driver>" — split it
+  const au = cfg.audio0 || ''
+  if (au) {
+    const pieces = au.split(',')
+    hwEdit.value.audioDevice = pieces[0] || ''
+    const drv = pieces.find(p => p.startsWith('driver='))
+    hwEdit.value.audioDriver = drv ? drv.replace('driver=', '') : 'spice'
+  } else {
+    hwEdit.value.audioDevice = ''
+    hwEdit.value.audioDriver = 'spice'
+  }
+  // Pre-seed storage selections from first disk storage
+  if (!efiForm.value.storage && disk_storages.value.length) {
+    efiForm.value.storage = disk_storages.value[0].storage
+  }
+  if (!tpmForm.value.storage && disk_storages.value.length) {
+    tpmForm.value.storage = disk_storages.value[0].storage
+  }
+}, { immediate: true })
+
+// Also seed storage selections whenever the storage list first loads
+watch(() => disk_storages.value, (lst) => {
+  if (!lst || !lst.length) return
+  if (!efiForm.value.storage) efiForm.value.storage = lst[0].storage
+  if (!tpmForm.value.storage) tpmForm.value.storage = lst[0].storage
+})
+
+const saveAudio = async () => {
+  savingHw.value = { ...savingHw.value, audio0: true }
+  const val = hwEdit.value.audioDevice
+    ? `${hwEdit.value.audioDevice},driver=${hwEdit.value.audioDriver || 'spice'}`
+    : null
+  try {
+    await api.pveVm.updateConfig(hostId.value, node.value, vmid.value, { audio0: val })
+    toast.success('Audio device saved')
+    await loadConfig()
+  } catch (e) {
+    toast.error('Failed to save audio: ' + (e.response?.data?.detail || e.message))
+  } finally {
+    savingHw.value = { ...savingHw.value, audio0: false }
+  }
+}
+
+const removeAudio = async () => {
+  if (!confirm('Remove audio device from VM?')) return
+  savingHw.value = { ...savingHw.value, audio0: true }
+  try {
+    await api.pveVm.updateConfig(hostId.value, node.value, vmid.value, { audio0: null })
+    toast.success('Audio device removed')
+    await loadConfig()
+  } catch (e) {
+    toast.error('Failed to remove audio: ' + (e.response?.data?.detail || e.message))
+  } finally {
+    savingHw.value = { ...savingHw.value, audio0: false }
+  }
+}
+
+const addEfiDisk = async () => {
+  if (!efiForm.value.storage) return
+  savingHw.value = { ...savingHw.value, efidisk0: true }
+  try {
+    await api.pveVm.addEfiDisk(hostId.value, node.value, vmid.value, {
+      storage: efiForm.value.storage,
+      efitype: efiForm.value.efitype,
+      pre_enrolled_keys: efiForm.value.pre_enrolled_keys,
+    })
+    toast.success('EFI disk added')
+    await loadConfig()
+  } catch (e) {
+    toast.error('Failed to add EFI disk: ' + (e.response?.data?.detail || e.message))
+  } finally {
+    savingHw.value = { ...savingHw.value, efidisk0: false }
+  }
+}
+
+const removeEfiDisk = async () => {
+  if (!confirm('Remove EFI disk? VM may fail to boot if BIOS is OVMF.')) return
+  savingHw.value = { ...savingHw.value, efidisk0: true }
+  try {
+    await api.pveVm.removeEfiDisk(hostId.value, node.value, vmid.value)
+    toast.success('EFI disk removed')
+    await loadConfig()
+  } catch (e) {
+    toast.error('Failed to remove EFI disk: ' + (e.response?.data?.detail || e.message))
+  } finally {
+    savingHw.value = { ...savingHw.value, efidisk0: false }
+  }
+}
+
+const addTpm = async () => {
+  if (!tpmForm.value.storage) return
+  savingHw.value = { ...savingHw.value, tpmstate0: true }
+  try {
+    await api.pveVm.addTpm(hostId.value, node.value, vmid.value, {
+      storage: tpmForm.value.storage,
+      version: tpmForm.value.version,
+    })
+    toast.success('TPM added')
+    await loadConfig()
+  } catch (e) {
+    toast.error('Failed to add TPM: ' + (e.response?.data?.detail || e.message))
+  } finally {
+    savingHw.value = { ...savingHw.value, tpmstate0: false }
+  }
+}
+
+const removeTpm = async () => {
+  if (!confirm('Remove TPM state disk?')) return
+  savingHw.value = { ...savingHw.value, tpmstate0: true }
+  try {
+    await api.pveVm.removeTpm(hostId.value, node.value, vmid.value)
+    toast.success('TPM removed')
+    await loadConfig()
+  } catch (e) {
+    toast.error('Failed to remove TPM: ' + (e.response?.data?.detail || e.message))
+  } finally {
+    savingHw.value = { ...savingHw.value, tpmstate0: false }
+  }
+}
+
+// ── Backup tab state ──────────────────────────────────────────────────────────
+const backupForm = ref({
+  storage: '',
+  mode: 'snapshot',
+  compress: 'zstd',
+  protected: false,
+  notes_template: '',
+})
+const backupSubmitting = ref(false)
+const backupArchives = ref([])
+const loadingBackupHistory = ref(false)
+
+const loadBackupHistory = async () => {
+  loadingBackupHistory.value = true
+  try {
+    const res = await api.pveVm.listBackups(hostId.value, node.value, vmid.value)
+    backupArchives.value = res.data || []
+  } catch (e) {
+    console.warn('Backup history load failed', e)
+    backupArchives.value = []
+  } finally {
+    loadingBackupHistory.value = false
+  }
+}
+
+const runBackupNow = async () => {
+  if (!backupForm.value.storage) return
+  backupSubmitting.value = true
+  try {
+    const res = await api.pveVm.backupNow(hostId.value, node.value, vmid.value, {
+      storage: backupForm.value.storage,
+      mode: backupForm.value.mode,
+      compress: backupForm.value.compress,
+      protected: backupForm.value.protected,
+      notes_template: backupForm.value.notes_template || null,
+    })
+    toast.success(`Backup started — UPID ${res.data?.upid || ''}`)
+    // Refresh history after a short delay so the task index updates
+    setTimeout(loadBackupHistory, 4000)
+  } catch (e) {
+    toast.error('Backup failed to start: ' + (e.response?.data?.detail || e.message))
+  } finally {
+    backupSubmitting.value = false
+  }
+}
+
+// ── Replication tab state ─────────────────────────────────────────────────────
+const replicationJobs = ref([])
+const loadingReplication = ref(false)
+const showAddReplicationModal = ref(false)
+const replicationForm = ref({ id: '', target: '', schedule: '*/15', rate: 0, comment: '', disable: false })
+const replicationSubmitting = ref(false)
+const runningReplication = ref(null)
+const deletingReplication = ref(null)
+
+const loadReplication = async () => {
+  loadingReplication.value = true
+  try {
+    const res = await api.pveVm.listVmReplication(hostId.value, node.value, vmid.value)
+    replicationJobs.value = res.data || []
+  } catch (e) {
+    console.warn('Replication load failed', e)
+    replicationJobs.value = []
+  } finally {
+    loadingReplication.value = false
+  }
+}
+
+const openEditReplication = (job) => {
+  replicationForm.value = {
+    id: job.id,
+    target: job.target,
+    schedule: job.schedule || '*/15',
+    rate: job.rate || 0,
+    comment: job.comment || '',
+    disable: !!job.disable,
+  }
+  showAddReplicationModal.value = true
+}
+
+const submitReplication = async () => {
+  if (!replicationForm.value.target || !replicationForm.value.schedule) return
+  replicationSubmitting.value = true
+  try {
+    if (replicationForm.value.id) {
+      // Update
+      await api.pveVm.updateVmReplication(hostId.value, node.value, vmid.value, replicationForm.value.id, {
+        schedule: replicationForm.value.schedule,
+        rate: replicationForm.value.rate > 0 ? replicationForm.value.rate : null,
+        comment: replicationForm.value.comment || null,
+        disable: replicationForm.value.disable,
+      })
+      toast.success('Replication job updated')
+    } else {
+      await api.pveVm.createVmReplication(hostId.value, node.value, vmid.value, {
+        target: replicationForm.value.target,
+        schedule: replicationForm.value.schedule,
+        rate: replicationForm.value.rate > 0 ? replicationForm.value.rate : null,
+        comment: replicationForm.value.comment || null,
+        disable: replicationForm.value.disable,
+      })
+      toast.success('Replication job created')
+    }
+    showAddReplicationModal.value = false
+    replicationForm.value = { id: '', target: '', schedule: '*/15', rate: 0, comment: '', disable: false }
+    await loadReplication()
+  } catch (e) {
+    toast.error('Replication save failed: ' + (e.response?.data?.detail || e.message))
+  } finally {
+    replicationSubmitting.value = false
+  }
+}
+
+const runReplicationJob = async (jobId) => {
+  runningReplication.value = jobId
+  try {
+    await api.pveVm.runVmReplication(hostId.value, node.value, vmid.value, jobId)
+    toast.success(`Replication ${jobId} started`)
+    setTimeout(loadReplication, 2000)
+  } catch (e) {
+    toast.error('Run failed: ' + (e.response?.data?.detail || e.message))
+  } finally {
+    runningReplication.value = null
+  }
+}
+
+const removeReplicationJob = async (job) => {
+  if (!confirm(`Delete replication job ${job.id}?`)) return
+  deletingReplication.value = job.id
+  try {
+    await api.pveVm.deleteVmReplication(hostId.value, node.value, vmid.value, job.id)
+    toast.success('Replication job deleted')
+    await loadReplication()
+  } catch (e) {
+    toast.error('Delete failed: ' + (e.response?.data?.detail || e.message))
+  } finally {
+    deletingReplication.value = null
+  }
+}
+
+// Simple human-readable timestamp helper (used by backup archives list)
+const formatTimestamp = (epoch) => {
+  if (!epoch) return '—'
+  const d = new Date(Number(epoch) * 1000)
+  if (isNaN(d.getTime())) return '—'
+  return d.toLocaleString()
+}
+
 // ── Performance tab state ──────────────────────────────────────────────────────
 const perfRrdData = ref([])
 const perfTimeframe = ref('hour')
@@ -3447,7 +4491,10 @@ const attachedSerialPorts = computed(() => {
 
 // ── Hardware tab — Machine/BIOS/CPU state ────────────────────────────────────
 
-const hwEdit = ref({ machine: '', bios: 'seabios', cpuType: 'host', sockets: 1, cores: 1 })
+const hwEdit = ref({
+  machine: '', bios: 'seabios', cpuType: 'host', sockets: 1, cores: 1,
+  vga: '', scsihw: '', audioDevice: '', audioDriver: 'spice',
+})
 const savingHw = ref({})
 const usbDevicesLoading = ref(false)
 const showAddSerialDevModal = ref(false)
@@ -3611,15 +4658,18 @@ const availableNodes = computed(() => {
 const tabs = [
   { id: 'overview', label: 'Overview' },
   { id: 'config', label: 'Config' },
+  { id: 'hardware', label: 'Hardware' },
+  { id: 'options', label: 'Options' },
   { id: 'disks', label: 'Disks' },
   { id: 'network', label: 'Network' },
   { id: 'snapshots', label: 'Snapshots' },
+  { id: 'backup', label: 'Backup' },
+  { id: 'replication', label: 'Replication' },
   { id: 'firewall', label: 'Firewall' },
   { id: 'schedule', label: 'Power Schedule' },
   { id: 'performance', label: 'Performance' },
   { id: 'console', label: 'Console' },
   { id: 'access', label: 'Access' },
-  { id: 'hardware', label: 'Hardware' },
 ]
 
 let pollInterval = null
@@ -4010,6 +5060,9 @@ const switchTab = (tab) => {
   if (tab === 'network') { if (!nodeBridgesLoaded.value) loadNodeBridges() }
   if (tab === 'access') { loadVmAcl(); loadVmRoles() }
   if (tab === 'hardware') { loadUsbDevices() }
+  if (tab === 'options') { /* pure read from config, no load */ }
+  if (tab === 'backup') { loadBackupStorages(); loadBackupHistory() }
+  if (tab === 'replication') { loadReplication(); loadClusterNodes() }
 }
 
 
@@ -7191,4 +8244,70 @@ const copySshCommand = () => {
   margin: 0.75rem 0;
 }
 /* ── End Overview Tab ─────────────────────────────────────────────── */
+
+/* ── Firmware disk blocks (EFI / TPM) ─────────────────────────────── */
+.fw-disk-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem 1.5rem;
+  padding: 1rem 1.5rem;
+}
+@media (max-width: 768px) {
+  .fw-disk-grid { grid-template-columns: 1fr; }
+}
+.fw-disk-block {
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 0.75rem 0.9rem;
+  background: var(--surface, var(--bg-secondary, transparent));
+}
+.fw-disk-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 0.5rem;
+  flex-wrap: wrap;
+}
+.fw-disk-value {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.25rem;
+  color: var(--text-primary);
+  font-size: 0.88rem;
+}
+.fw-disk-value code {
+  background: var(--bg-card, transparent);
+  border: 1px solid var(--border-color);
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+}
+
+/* ── Options tab — hotplug chip row ───────────────────────────────── */
+.hotplug-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.hotplug-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.6rem;
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  background: var(--surface, transparent);
+  color: var(--text-primary);
+  user-select: none;
+}
+.hotplug-chip input[type="checkbox"] {
+  accent-color: var(--color-primary, #3b82f6);
+}
 </style>

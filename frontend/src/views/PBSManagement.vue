@@ -29,6 +29,98 @@
       <button @click="openAddServerModal" class="btn btn-primary mt-2">Add PBS Server</button>
     </div>
 
+    <!-- ── PBS Summary dashboard cards ── -->
+    <div v-if="servers.length > 0" class="pbs-summary-grid mb-3">
+      <div
+        v-for="srv in servers"
+        :key="`summary-${srv.id}`"
+        class="pbs-summary-card"
+      >
+        <div class="pbs-summary-header">
+          <div class="flex align-center gap-1">
+            <span class="server-icon">🗄️</span>
+            <strong>{{ srv.name }}</strong>
+            <span class="text-xs text-muted">{{ srv.hostname }}</span>
+          </div>
+          <span v-if="serverSummaries[srv.id]?.error" class="badge badge-warning" :title="serverSummaries[srv.id].error">partial</span>
+        </div>
+
+        <div v-if="loadingSummaries[srv.id] && !serverSummaries[srv.id]" class="text-xs text-muted p-1">Loading…</div>
+
+        <template v-else-if="serverSummaries[srv.id]">
+          <!-- Capacity -->
+          <div class="pbs-summary-section">
+            <div class="pbs-summary-label">Capacity</div>
+            <div class="pbs-summary-bar-wrap">
+              <div
+                class="pbs-summary-bar"
+                :class="usageBarClass(serverSummaries[srv.id].datastore_totals.usage_pct)"
+                :style="{ width: Math.min(100, serverSummaries[srv.id].datastore_totals.usage_pct) + '%' }"
+              ></div>
+            </div>
+            <div class="pbs-summary-usage-labels">
+              <span class="text-xs">
+                {{ formatBytes(serverSummaries[srv.id].datastore_totals.used_bytes) }} /
+                {{ formatBytes(serverSummaries[srv.id].datastore_totals.total_bytes) }}
+              </span>
+              <span class="text-xs"
+                :class="usagePctTextClass(serverSummaries[srv.id].datastore_totals.usage_pct)">
+                {{ serverSummaries[srv.id].datastore_totals.usage_pct.toFixed(1) }}% used
+              </span>
+            </div>
+            <div class="text-xs text-muted mt-1">
+              {{ formatBytes(serverSummaries[srv.id].datastore_totals.available_bytes) }} available
+              · {{ serverSummaries[srv.id].datastore_totals.datastores.length }} datastore(s)
+            </div>
+          </div>
+
+          <!-- Sync / Replication jobs -->
+          <div class="pbs-summary-section">
+            <div class="pbs-summary-label">Sync Jobs</div>
+            <div
+              v-if="(serverSummaries[srv.id].sync_jobs || []).length === 0"
+              class="text-xs text-muted"
+            >No sync jobs configured.</div>
+            <div v-else class="pbs-summary-jobs">
+              <div
+                v-for="j in serverSummaries[srv.id].sync_jobs"
+                :key="`${srv.id}-${j.id}`"
+                class="pbs-summary-job"
+              >
+                <span
+                  class="job-status-badge"
+                  :class="'job-status-badge--' + syncJobBadgeClass(j)"
+                >{{ syncJobBadgeLabel(j) }}</span>
+                <span class="text-xs font-mono pbs-summary-job-id" :title="j.id">{{ j.id }}</span>
+                <span v-if="j.store" class="text-xs text-muted">→ {{ j.store }}</span>
+                <span v-if="j.last_run_endtime" class="text-xs text-muted pbs-summary-job-when">
+                  {{ formatRelativeTime(j.last_run_endtime) }}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Recent backups (24h) -->
+          <div class="pbs-summary-section">
+            <div class="pbs-summary-label">Backups (last 24h)</div>
+            <div class="pbs-summary-counts">
+              <span class="pbs-summary-count-pill pbs-summary-count-pill--ok">
+                OK: {{ serverSummaries[srv.id].recent_backups_24h.ok }}
+              </span>
+              <span class="pbs-summary-count-pill pbs-summary-count-pill--failed">
+                Failed: {{ serverSummaries[srv.id].recent_backups_24h.failed }}
+              </span>
+              <span class="pbs-summary-count-pill">
+                Total: {{ serverSummaries[srv.id].recent_backups_24h.total }}
+              </span>
+            </div>
+          </div>
+        </template>
+
+        <div v-else class="text-xs text-muted p-1">No data.</div>
+      </div>
+    </div>
+
     <!-- Server cards (overview) -->
     <div v-if="servers.length > 0" class="server-grid mb-3">
       <div
@@ -537,6 +629,11 @@ export default {
       serverStats: {},
       loadingServerStats: {},
 
+      // Aggregated dashboard summary per PBS server (from /pbs-mgmt/{id}/summary)
+      serverSummaries: {},
+      loadingSummaries: {},
+      _summaryTimer: null,
+
       activeTab: 'overview',
 
       // Overview tab
@@ -617,6 +714,8 @@ export default {
         this.lastRefreshed = Date.now()
         // Load stats for all servers
         this.servers.forEach(srv => this.fetchServerStats(srv.id))
+        // Load dashboard summary cards (aggregated capacity / jobs / recent backups)
+        this.servers.forEach(srv => this.fetchServerSummary(srv.id))
       } catch (e) {
         this.globalError = e?.response?.data?.detail || 'Failed to load PBS servers.'
       } finally {
@@ -641,6 +740,50 @@ export default {
       } finally {
         this.loadingServerStats = { ...this.loadingServerStats, [serverId]: false }
       }
+    },
+
+    async fetchServerSummary(serverId) {
+      this.loadingSummaries = { ...this.loadingSummaries, [serverId]: true }
+      try {
+        const res = await api.get(`/pbs-mgmt/${serverId}/summary`)
+        this.serverSummaries = { ...this.serverSummaries, [serverId]: res.data }
+      } catch (e) {
+        // Leave previous data in place if the refresh fails
+      } finally {
+        this.loadingSummaries = { ...this.loadingSummaries, [serverId]: false }
+      }
+    },
+
+    refreshAllSummaries() {
+      this.servers.forEach(srv => this.fetchServerSummary(srv.id))
+    },
+
+    usageBarClass(pct) {
+      if (pct >= 90) return 'pbs-summary-bar--danger'
+      if (pct >= 75) return 'pbs-summary-bar--warning'
+      return 'pbs-summary-bar--ok'
+    },
+
+    usagePctTextClass(pct) {
+      if (pct >= 90) return 'text-danger'
+      if (pct >= 75) return 'text-warning'
+      return 'text-success'
+    },
+
+    syncJobBadgeClass(job) {
+      const s = (job.last_run_state || '').toLowerCase()
+      if (!s) return 'unknown'
+      if (s.startsWith('ok')) return 'ok'
+      if (s === 'running') return 'running'
+      return 'failed'
+    },
+
+    syncJobBadgeLabel(job) {
+      const s = (job.last_run_state || '').toLowerCase()
+      if (!s) return 'IDLE'
+      if (s.startsWith('ok')) return 'OK'
+      if (s === 'running') return 'RUN'
+      return 'ERR'
     },
 
     selectServer(srv) {
@@ -1064,10 +1207,13 @@ export default {
         }
       }
     }, REFRESH_INTERVAL_MS)
+    // Dashboard summary card has its own 60s refresh cadence
+    this._summaryTimer = setInterval(() => this.refreshAllSummaries(), 60000)
   },
 
   beforeUnmount() {
     clearInterval(this._refreshTimer)
+    clearInterval(this._summaryTimer)
   },
 }
 </script>
@@ -1689,5 +1835,122 @@ export default {
   .server-grid { grid-template-columns: 1fr; }
   .job-cards-grid { grid-template-columns: 1fr; }
   .ds-grid { grid-template-columns: 1fr; }
+  .pbs-summary-grid { grid-template-columns: 1fr; }
 }
+
+/* ── PBS Summary dashboard cards ── */
+.pbs-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  gap: 0.9rem;
+}
+
+.pbs-summary-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+  padding: 0.9rem 1rem 1rem;
+  color: var(--text-primary);
+}
+
+.pbs-summary-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.65rem;
+}
+
+.pbs-summary-section {
+  margin-top: 0.65rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid var(--border-color);
+}
+
+.pbs-summary-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+  margin-bottom: 0.35rem;
+}
+
+.pbs-summary-bar-wrap {
+  height: 8px;
+  background: color-mix(in srgb, var(--text-secondary) 20%, transparent);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 0.35rem;
+}
+
+.pbs-summary-bar {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.3s;
+}
+
+.pbs-summary-bar--ok      { background: #22c55e; }
+.pbs-summary-bar--warning { background: #f59e0b; }
+.pbs-summary-bar--danger  { background: #ef4444; }
+
+.pbs-summary-usage-labels {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.pbs-summary-jobs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.pbs-summary-job {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  font-size: 0.75rem;
+}
+
+.pbs-summary-job-id {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+}
+
+.pbs-summary-job-when {
+  margin-left: auto;
+}
+
+.pbs-summary-counts {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.pbs-summary-count-pill {
+  background: color-mix(in srgb, var(--text-secondary) 15%, transparent);
+  color: var(--text-primary);
+  border-radius: 0.25rem;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.pbs-summary-count-pill--ok {
+  background: rgba(34,197,94,0.15);
+  color: #4ade80;
+}
+
+.pbs-summary-count-pill--failed {
+  background: rgba(239,68,68,0.15);
+  color: #f87171;
+}
+
+.text-warning { color: #d97706; }
+[data-theme="dark"] .text-warning { color: #fbbf24; }
 </style>

@@ -8,12 +8,14 @@ Router prefix is expected to be mounted at something like /api/v1/pbs-mgmt
 in the main application.
 """
 import logging
+import time
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Body
 from sqlalchemy.orm import Session
 
-from app.api.auth import get_current_user
+from app.api.auth import get_current_user, require_admin, require_operator
 from app.core.database import get_db
 from app.models import PBSServer, User
 from app.services.pbs import PBSService
@@ -435,3 +437,328 @@ def get_task_log(
             server_id, upid, exc,
         )
         raise HTTPException(status_code=502, detail=f"PBS API error: {exc}")
+
+
+# ---------------------------------------------------------------------------
+# Summary endpoint — dashboard card for a PBS server
+# ---------------------------------------------------------------------------
+
+@router.get("/{server_id}/summary")
+def get_server_summary(
+    server_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Return aggregated summary info for a PBS server.
+
+    Combines datastore totals, sync-job status, and recent backup counts
+    into a single response for the PBSManagement dashboard card.
+
+    Each sub-request is executed in parallel and failures downgrade to
+    partial data + an 'error' field rather than an HTTP error.
+    """
+    server = _get_pbs_server(db, server_id)
+    try:
+        svc = _make_service(server)
+    except HTTPException as exc:
+        # Missing token / inactive — return partial
+        return {
+            "server_id": server_id,
+            "datastore_totals": {"total_bytes": 0, "used_bytes": 0, "available_bytes": 0,
+                                 "usage_pct": 0, "datastores": []},
+            "sync_jobs": [],
+            "recent_backups_24h": {"ok": 0, "failed": 0, "total": 0},
+            "error": exc.detail,
+        }
+
+    errors: List[str] = []
+
+    def _safe(fn):
+        try:
+            return fn()
+        except Exception as exc:
+            errors.append(str(exc))
+            return None
+
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        f_ds = pool.submit(_safe, svc.get_datastores)
+        f_jobs = pool.submit(_safe, svc.get_sync_jobs)
+        since_epoch = int(time.time()) - 86400
+        f_tasks = pool.submit(
+            _safe,
+            lambda: svc.list_recent_tasks(
+                since_epoch=since_epoch,
+                types=["backup", "verificationjob", "sync", "prune", "garbage_collection"],
+                limit=500,
+            ),
+        )
+        datastores = f_ds.result() or []
+        jobs = f_jobs.result() or []
+        recent_tasks = f_tasks.result() or []
+
+    # PBS /admin/datastore returns a bare list without usage figures —
+    # fan out to per-store /status endpoints in parallel to collect totals.
+    store_names = [
+        d.get("store") or d.get("name") for d in datastores
+        if d.get("store") or d.get("name")
+    ]
+    usage_by_store: Dict[str, Dict[str, Any]] = {}
+    if store_names:
+        def _store_status(name: str):
+            try:
+                return name, svc.get_datastore_usage(name)
+            except Exception as exc:
+                errors.append(f"{name}: {exc}")
+                return name, {}
+        with ThreadPoolExecutor(max_workers=min(6, len(store_names))) as pool:
+            for name, status in pool.map(_store_status, store_names):
+                usage_by_store[name] = status or {}
+
+    # Datastore totals
+    ds_list: List[Dict[str, Any]] = []
+    total = 0
+    used = 0
+    for d in datastores:
+        name = d.get("store") or d.get("name") or ""
+        status = usage_by_store.get(name, {})
+        t = int(status.get("total") or d.get("total") or 0)
+        u = int(status.get("used") or d.get("used") or 0)
+        a = int(status.get("avail") or d.get("avail") or max(t - u, 0))
+        total += t
+        used += u
+        ds_list.append({
+            "store": name,
+            "total": t, "used": u, "avail": a,
+            "error": d.get("error"),
+        })
+    avail = max(total - used, 0)
+    usage_pct = (used / total * 100.0) if total > 0 else 0.0
+
+    # Sync jobs — filter to sync/pull only for the replication card, include status
+    sync_jobs: List[Dict[str, Any]] = []
+    for j in jobs:
+        jt = (j.get("job-type") or "").lower()
+        if jt not in ("sync", "pull"):
+            continue
+        sync_jobs.append({
+            "id": j.get("id") or j.get("job-id"),
+            "store": j.get("store") or j.get("datastore"),
+            "remote": j.get("remote") or j.get("remote-store") or j.get("source"),
+            "schedule": j.get("schedule"),
+            "last_run_state": j.get("last-run-state"),
+            "last_run_endtime": j.get("last-run-endtime"),
+            "next_run": j.get("next-run"),
+        })
+
+    # Recent backups in last 24h — ok/failed counts
+    ok = 0
+    failed = 0
+    for t in recent_tasks:
+        worker = (t.get("worker_type") or t.get("type") or "").lower()
+        if "backup" not in worker:
+            continue
+        status = (t.get("status") or "").upper()
+        if status.startswith("OK"):
+            ok += 1
+        elif status and status != "RUNNING":
+            failed += 1
+    total_recent = ok + failed
+
+    result: Dict[str, Any] = {
+        "server_id": server_id,
+        "datastore_totals": {
+            "total_bytes": total,
+            "used_bytes": used,
+            "available_bytes": avail,
+            "usage_pct": round(usage_pct, 2),
+            "datastores": ds_list,
+        },
+        "sync_jobs": sync_jobs,
+        "recent_backups_24h": {"ok": ok, "failed": failed, "total": total_recent},
+    }
+    if errors:
+        result["error"] = "; ".join(errors[:3])
+    return result
+
+
+# ---------------------------------------------------------------------------
+# APT / package update endpoints — per PBS server
+# ---------------------------------------------------------------------------
+
+@router.get("/{server_id}/updates")
+def pbs_list_updates(
+    server_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """List available package updates for a PBS server's host OS."""
+    server = _get_pbs_server(db, server_id)
+    try:
+        svc = _make_service(server)
+        updates = svc.apt_list_updates()
+        return {
+            "server_id": server_id,
+            "count": len(updates),
+            "updates": updates,
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Failed to list PBS updates for server %s: %s", server_id, exc)
+        return {
+            "server_id": server_id,
+            "count": 0,
+            "updates": [],
+            "error": str(exc),
+        }
+
+
+@router.post("/{server_id}/updates/refresh")
+def pbs_refresh_updates(
+    server_id: int,
+    current_user: User = Depends(require_operator),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Refresh the package index on a PBS server (apt-get update)."""
+    server = _get_pbs_server(db, server_id)
+    try:
+        svc = _make_service(server)
+        upid = svc.apt_refresh_updates()
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Failed to refresh PBS updates for server %s: %s", server_id, exc)
+        raise HTTPException(status_code=502, detail=f"PBS API error: {exc}")
+
+    # Register the UPID in the task tracker so it shows in the running-tasks bar
+    try:
+        from app.services.task_tracker import task_tracker
+        task_tracker.register(
+            upid,
+            host_id=-server_id,  # negative sentinel to avoid collision with PVE host IDs
+            node=f"pbs:{server.name}",
+            description=f"PBS apt update on {server.name}",
+            user_id=getattr(current_user, "id", None),
+            task_type="aptupdate",
+        )
+    except Exception as exc:
+        logger.debug("task_tracker.register for PBS UPID failed (non-fatal): %s", exc)
+
+    return {"upid": upid, "server_id": server_id}
+
+
+@router.post("/{server_id}/updates/apply")
+def pbs_apply_updates(
+    server_id: int,
+    payload: Optional[Dict[str, Any]] = Body(default=None),
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Apply pending package updates on a PBS server (apt-get dist-upgrade).
+
+    Body: {"packages": ["pkg1", "pkg2"]} or null for all packages.
+    Admin-only, rate-limited, and audited.
+    """
+    server = _get_pbs_server(db, server_id)
+
+    # Rate-limit: 1 apply per 5 min per server
+    if not _rate_limit_ok(f"pbs-apply:{server_id}", seconds=300):
+        raise HTTPException(
+            status_code=429,
+            detail="An apply for this PBS server ran recently — wait a few minutes before retrying.",
+        )
+
+    packages: Optional[List[str]] = None
+    if payload and isinstance(payload, dict):
+        raw = payload.get("packages")
+        if isinstance(raw, list) and raw:
+            packages = [str(p) for p in raw]
+
+    try:
+        svc = _make_service(server)
+        upid = svc.apt_upgrade(packages=packages)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Failed to apply PBS updates for server %s: %s", server_id, exc)
+        raise HTTPException(status_code=502, detail=f"PBS API error: {exc}")
+
+    # Audit the action (separate from the global audit middleware so we can
+    # include the exact package count even if middleware skips it).
+    try:
+        from app.models.database import AuditLog
+        entry = AuditLog(
+            user_id=getattr(current_user, "id", None),
+            action="apt_upgrade",
+            resource_type="pbs",
+            resource_id=server_id,
+            details={
+                "server_name": server.name,
+                "packages": packages or "all",
+                "upid": upid,
+            },
+            http_method="POST",
+            request_path=f"/api/v1/pbs-mgmt/{server_id}/updates/apply",
+            response_status=200,
+            success=True,
+        )
+        db.add(entry)
+        db.commit()
+    except Exception as exc:
+        logger.debug("Audit log for PBS apply failed (non-fatal): %s", exc)
+        db.rollback()
+
+    # Register in task tracker — don't let tracker errors swallow the success.
+    try:
+        from app.services.task_tracker import task_tracker
+        desc = (
+            f"PBS apt upgrade {len(packages)} package(s) on {server.name}"
+            if packages else f"PBS apt upgrade all packages on {server.name}"
+        )
+        task_tracker.register(
+            upid,
+            host_id=-server_id,
+            node=f"pbs:{server.name}",
+            description=desc,
+            user_id=getattr(current_user, "id", None),
+            task_type="aptupgrade",
+        )
+    except Exception as exc:
+        logger.debug("task_tracker.register for PBS apply UPID failed (non-fatal): %s", exc)
+
+    return {"upid": upid, "server_id": server_id, "packages": packages}
+
+
+@router.get("/{server_id}/updates/task/{upid}")
+def pbs_update_task_status(
+    server_id: int,
+    upid: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Poll a PBS apt task status (used by the Updates page to wait for refresh)."""
+    server = _get_pbs_server(db, server_id)
+    try:
+        svc = _make_service(server)
+        return svc.get_task_status(upid)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"PBS API error: {exc}")
+
+
+# ---------------------------------------------------------------------------
+# Simple in-process rate limiter for destructive apply actions
+# ---------------------------------------------------------------------------
+
+_rate_limit_state: Dict[str, float] = {}
+
+
+def _rate_limit_ok(key: str, seconds: int) -> bool:
+    """Return True if enough time has passed since the last call; otherwise False."""
+    now = time.time()
+    last = _rate_limit_state.get(key, 0.0)
+    if now - last < seconds:
+        return False
+    _rate_limit_state[key] = now
+    return True

@@ -453,6 +453,12 @@ const router = createRouter({
       meta: { requiresAuth: true, requiresAdmin: true }
     },
     {
+      path: '/updates',
+      name: 'Updates',
+      component: () => import('@/views/Updates.vue'),
+      meta: { requiresAuth: true, requiresAdmin: true }
+    },
+    {
       path: '/snapshots',
       name: 'SnapshotManager',
       component: () => import('@/views/SnapshotManager.vue'),

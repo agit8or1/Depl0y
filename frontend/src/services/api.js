@@ -550,6 +550,8 @@ export default {
     create: (data) => api.post('/pbs/', data),
     update: (id, data) => api.put(`/pbs/${id}`, data),
     delete: (id) => api.delete(`/pbs/${id}`),
+    // Dashboard summary (aggregated datastore/job/backup stats)
+    getSummary: (id) => api.get(`/pbs-mgmt/${id}/summary`),
     // iDRAC/iLO sub-endpoints
     testIdrac: (id) => api.get(`/pbs/${id}/idrac/test`),
     getIdracInfo: (id, cfg) => api.get(`/pbs/${id}/idrac/info`, cfg),
@@ -642,6 +644,20 @@ export default {
     // Serial ports
     addSerialPort: (h, node, vmid, data) => api.post(`/pve-vm/${h}/${node}/${vmid}/serial`, data),
     removeSerialPort: (h, node, vmid, index) => api.delete(`/pve-vm/${h}/${node}/${vmid}/serial/${index}`),
+    // TPM / EFI disk
+    addTpm: (h, node, vmid, data) => api.post(`/pve-vm/${h}/${node}/${vmid}/tpm`, data),
+    removeTpm: (h, node, vmid) => api.delete(`/pve-vm/${h}/${node}/${vmid}/tpm`),
+    addEfiDisk: (h, node, vmid, data) => api.post(`/pve-vm/${h}/${node}/${vmid}/efidisk`, data),
+    removeEfiDisk: (h, node, vmid) => api.delete(`/pve-vm/${h}/${node}/${vmid}/efidisk`),
+    // One-click VM backup
+    backupNow: (h, node, vmid, data) => api.post(`/pve-vm/${h}/${node}/${vmid}/backup`, data),
+    listBackups: (h, node, vmid) => api.get(`/pve-vm/${h}/${node}/${vmid}/backups`),
+    // VM-scoped replication (wraps /cluster/replication)
+    listVmReplication: (h, node, vmid) => api.get(`/pve-vm/${h}/${node}/${vmid}/replication`),
+    createVmReplication: (h, node, vmid, data) => api.post(`/pve-vm/${h}/${node}/${vmid}/replication`, data),
+    updateVmReplication: (h, node, vmid, jobId, data) => api.put(`/pve-vm/${h}/${node}/${vmid}/replication/${encodeURIComponent(jobId)}`, data),
+    deleteVmReplication: (h, node, vmid, jobId) => api.delete(`/pve-vm/${h}/${node}/${vmid}/replication/${encodeURIComponent(jobId)}`),
+    runVmReplication: (h, node, vmid, jobId) => api.post(`/pve-vm/${h}/${node}/${vmid}/replication/${encodeURIComponent(jobId)}/run`),
   },
 
   // PVE Node/Cluster Control (/pve-node/{host_id}/...)
@@ -813,6 +829,7 @@ export default {
   pbsMgmt: {
     test: (id) => api.get(`/pbs-mgmt/${id}/test`),
     listDatastores: (id) => api.get(`/pbs-mgmt/${id}/datastores`),
+    getSummary: (id) => api.get(`/pbs-mgmt/${id}/summary`),
     listGroups: (id, ds) => api.get(`/pbs-mgmt/${id}/datastores/${ds}/groups`),
     listSnapshots: (id, ds, params) => api.get(`/pbs-mgmt/${id}/datastores/${ds}/snapshots`, { params }),
     verifySnapshot: (id, ds, data) => api.post(`/pbs-mgmt/${id}/datastores/${ds}/verify`, data),
@@ -820,6 +837,27 @@ export default {
     pruneGroup: (id, ds, data) => api.post(`/pbs-mgmt/${id}/datastores/${ds}/prune`, data),
     listTasks: (id, params) => api.get(`/pbs-mgmt/${id}/tasks`, { params }),
     getTaskLog: (id, upid) => api.get(`/pbs-mgmt/${id}/tasks/${encodeURIComponent(upid)}/log`),
+  },
+
+  // PBS summary/pbs reach the same helpers via api.pbs namespace for convenience
+  // (some views look up api.pbs.getSummary — keep both call-sites working).
+
+  // System Updates (combined PVE+PBS)
+  updates: {
+    overview: () => api.get('/updates-mgmt/overview'),
+    // PVE per-node
+    listPveUpdates: (hostId, node) => api.get(`/updates-mgmt/pve/${hostId}/${encodeURIComponent(node)}`),
+    refreshPveUpdates: (hostId, node) => api.post(`/updates-mgmt/pve/${hostId}/${encodeURIComponent(node)}/refresh`),
+    applyPveUpdates: (hostId, node, packages = null) =>
+      api.post(`/updates-mgmt/pve/${hostId}/${encodeURIComponent(node)}/apply`, packages ? { packages } : {}),
+    pveTaskStatus: (hostId, node, upid) =>
+      api.get(`/updates-mgmt/pve/${hostId}/${encodeURIComponent(node)}/task/${encodeURIComponent(upid)}`),
+    // PBS per-server
+    listPbsUpdates: (serverId) => api.get(`/updates-mgmt/pbs/${serverId}`),
+    refreshPbsUpdates: (serverId) => api.post(`/updates-mgmt/pbs/${serverId}/refresh`),
+    applyPbsUpdates: (serverId, packages = null) =>
+      api.post(`/updates-mgmt/pbs/${serverId}/apply`, packages ? { packages } : {}),
+    pbsTaskStatus: (serverId, upid) => api.get(`/updates-mgmt/pbs/${serverId}/task/${encodeURIComponent(upid)}`),
   },
 
   // PVE Firewall — IPSets, Aliases, Security Groups, cluster/node firewall

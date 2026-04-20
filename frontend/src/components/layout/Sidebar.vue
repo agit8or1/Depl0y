@@ -134,6 +134,7 @@
           <NavItem :to="'/notifications'" :icon="'🔔'" :label="t('nav.notifications')" @click="handleNavClick" />
           <NavItem :to="'/system-health'" :icon="'💚'" :label="t('nav.system_health')" @click="handleNavClick" />
           <NavItem :to="'/system-logs'" :icon="'📜'" :label="t('nav.system_logs')" @click="handleNavClick" />
+          <NavItem :to="'/updates'" :icon="'⬆️'" :label="'Updates'" @click="handleNavClick" />
           <NavItem :to="'/users'" :icon="'👥'" :label="t('nav.users')" @click="handleNavClick" />
           <NavItem :to="'/pve-users'" :icon="'👤'" :label="t('nav.pve_users')" @click="handleNavClick" />
           <NavItem :to="'/integrations'" :icon="'🔗'" :label="t('nav.integrations')" @click="handleNavClick" />
@@ -192,7 +193,7 @@ const SECTION_ROUTES = {
   compute: ['/containers', '/create-lxc', '/create-pve-vm', '/deploy', '/import-vm', '/llm-deploy', '/templates', '/vms', '/vm-management', '/vm-groups', '/bulk-ops', '/vm-search'],
   infrastructure: ['/ha-management', '/replication', '/idrac', '/network', '/sdn', '/firewall-manager', '/node-monitor', '/proxmox'],
   storage: ['/backup', '/snapshots', '/pbs-management', '/storage-management', '/images', '/ceph', '/pools'],
-  admin: ['/audit-log', '/linux-vms', '/security', '/alerts', '/analysis', '/ai-reports', '/notifications', '/system-health', '/system-logs', '/users', '/pve-users', '/integrations', '/api-explorer'],
+  admin: ['/audit-log', '/linux-vms', '/security', '/alerts', '/analysis', '/ai-reports', '/notifications', '/system-health', '/system-logs', '/updates', '/users', '/pve-users', '/integrations', '/api-explorer'],
   account: ['/about', '/documentation', '/profile', '/settings', '/support'],
 }
 

@@ -35,18 +35,52 @@ def _pve(svc: ProxmoxService):
 # ── Pydantic models ───────────────────────────────────────────────────────────
 
 class ConfigUpdate(BaseModel):
+    # Core identity / description
     name: Optional[str] = None
     description: Optional[str] = None
     tags: Optional[str] = None
+    # CPU / memory
     cores: Optional[int] = None
     sockets: Optional[int] = None
+    vcpus: Optional[int] = None
     memory: Optional[int] = None
     balloon: Optional[int] = None
-    onboot: Optional[bool] = None
-    protection: Optional[bool] = None
-    boot: Optional[str] = None
+    numa: Optional[int] = None
     cpu: Optional[str] = None
+    cpulimit: Optional[float] = None
+    cpuunits: Optional[int] = None
+    # Boot / firmware / machine
+    boot: Optional[str] = None
+    bios: Optional[str] = None
+    machine: Optional[str] = None
+    ostype: Optional[str] = None
+    # Graphics / display / audio
+    vga: Optional[str] = None
+    audio0: Optional[str] = None
+    # Controllers
+    scsihw: Optional[str] = None
+    # Firmware / security state disks (string form like "storage:1,format=raw")
+    efidisk0: Optional[str] = None
+    tpmstate0: Optional[str] = None
+    # Options / toggles
+    onboot: Optional[int] = None
+    protection: Optional[int] = None
+    acpi: Optional[int] = None
+    kvm: Optional[int] = None
+    tablet: Optional[int] = None
+    freeze: Optional[int] = None
+    reboot: Optional[int] = None
     agent: Optional[str] = None
+    hotplug: Optional[str] = None
+    startup: Optional[str] = None
+    # SMBIOS / VirtIO RNG / SPICE
+    smbios1: Optional[str] = None
+    rng0: Optional[str] = None
+    spice_enhancements: Optional[str] = None
+
+    # Allow ad-hoc key passthrough (e.g. startup="order=1,up=30,down=60") without
+    # breaking if Proxmox adds new fields later.
+    model_config = {"extra": "allow"}
 
 class SnapshotCreate(BaseModel):
     snapname: str
@@ -166,9 +200,14 @@ def get_vm_config(host_id: int, node: str, vmid: int, db: Session = Depends(get_
 def update_vm_config(host_id: int, node: str, vmid: int, update: ConfigUpdate,
                      db: Session = Depends(get_db), current_user=Depends(require_operator)):
     host = _get_host(host_id, db)
-    payload = {k: v for k, v in update.model_dump().items() if v is not None}
-    if not payload:
+    raw = {k: v for k, v in update.model_dump().items() if v is not None}
+    if not raw:
         raise HTTPException(status_code=400, detail="Nothing to update")
+    # Translate underscore aliases to the hyphenated keys Proxmox expects
+    _HYPHEN_KEYS = {"spice_enhancements": "spice-enhancements"}
+    payload: Dict[str, Any] = {}
+    for k, v in raw.items():
+        payload[_HYPHEN_KEYS.get(k, k)] = v
     try:
         _pve(_svc(host)).nodes(node).qemu(vmid).config.put(**payload)
         pve_cache.clear_prefix(f"pve:{host_id}:")
@@ -1364,5 +1403,296 @@ def remove_serial_port(host_id: int, node: str, vmid: int, index: int,
         return {"success": True}
     except HTTPException:
         raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── TPM / EFI disk add & remove (Proxmox special disks) ──────────────────────
+
+class TpmAdd(BaseModel):
+    storage: str
+    version: str = "v2.0"  # "v1.2" or "v2.0"
+
+
+@router.post("/{host_id}/{node}/{vmid}/tpm")
+def add_tpm(host_id: int, node: str, vmid: int, req: TpmAdd,
+            db: Session = Depends(get_db), current_user=Depends(require_operator)):
+    """Add a TPM state disk (tpmstate0=storage:1,version=...)."""
+    host = _get_host(host_id, db)
+    pve = _pve(_svc(host))
+    try:
+        cfg = pve.nodes(node).qemu(vmid).config.get()
+        if "tpmstate0" in cfg:
+            raise HTTPException(status_code=400, detail="tpmstate0 already present")
+        val = f"{req.storage}:1,version={req.version}"
+        pve.nodes(node).qemu(vmid).config.put(tpmstate0=val)
+        pve_cache.clear_prefix(f"pve:{host_id}:")
+        return {"success": True, "tpmstate0": val}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/{host_id}/{node}/{vmid}/tpm")
+def remove_tpm(host_id: int, node: str, vmid: int,
+               db: Session = Depends(get_db), current_user=Depends(require_operator)):
+    """Remove TPM state disk from VM config."""
+    host = _get_host(host_id, db)
+    pve = _pve(_svc(host))
+    try:
+        cfg = pve.nodes(node).qemu(vmid).config.get()
+        if "tpmstate0" not in cfg:
+            raise HTTPException(status_code=404, detail="tpmstate0 not present")
+        # Use the `delete` query param to also destroy the backing volume
+        pve.nodes(node).qemu(vmid).config.put(delete="tpmstate0")
+        pve_cache.clear_prefix(f"pve:{host_id}:")
+        return {"success": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class EfiDiskAdd(BaseModel):
+    storage: str
+    pre_enrolled_keys: bool = True   # efitype=4m,pre-enrolled-keys=1 (default for Secure Boot)
+    efitype: str = "4m"              # "4m" or "2m"
+
+
+@router.post("/{host_id}/{node}/{vmid}/efidisk")
+def add_efidisk(host_id: int, node: str, vmid: int, req: EfiDiskAdd,
+                db: Session = Depends(get_db), current_user=Depends(require_operator)):
+    """Add an EFI disk (efidisk0=storage:1,efitype=4m,pre-enrolled-keys=1)."""
+    host = _get_host(host_id, db)
+    pve = _pve(_svc(host))
+    try:
+        cfg = pve.nodes(node).qemu(vmid).config.get()
+        if "efidisk0" in cfg:
+            raise HTTPException(status_code=400, detail="efidisk0 already present")
+        val = f"{req.storage}:1,efitype={req.efitype},pre-enrolled-keys={1 if req.pre_enrolled_keys else 0}"
+        pve.nodes(node).qemu(vmid).config.put(efidisk0=val)
+        pve_cache.clear_prefix(f"pve:{host_id}:")
+        return {"success": True, "efidisk0": val}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/{host_id}/{node}/{vmid}/efidisk")
+def remove_efidisk(host_id: int, node: str, vmid: int,
+                   db: Session = Depends(get_db), current_user=Depends(require_operator)):
+    """Remove EFI disk from VM config."""
+    host = _get_host(host_id, db)
+    pve = _pve(_svc(host))
+    try:
+        cfg = pve.nodes(node).qemu(vmid).config.get()
+        if "efidisk0" not in cfg:
+            raise HTTPException(status_code=404, detail="efidisk0 not present")
+        pve.nodes(node).qemu(vmid).config.put(delete="efidisk0")
+        pve_cache.clear_prefix(f"pve:{host_id}:")
+        return {"success": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── One-click VM Backup ──────────────────────────────────────────────────────
+
+class VmBackupRequest(BaseModel):
+    storage: str
+    mode: str = "snapshot"          # snapshot | suspend | stop
+    compress: str = "zstd"          # 0 | 1 | gzip | lzo | zstd
+    protected: bool = False
+    notes_template: Optional[str] = None
+    remove: Optional[int] = None    # remove older dumps over this count
+    mailnotification: Optional[str] = None   # always | failure
+
+
+@router.post("/{host_id}/{node}/{vmid}/backup")
+def backup_vm_now(host_id: int, node: str, vmid: int, req: VmBackupRequest,
+                  db: Session = Depends(get_db), current_user=Depends(require_operator)):
+    """One-click vzdump backup of a single VM to the given storage."""
+    host = _get_host(host_id, db)
+    payload: Dict[str, Any] = {
+        "vmid": vmid,
+        "storage": req.storage,
+        "mode": req.mode,
+        "compress": req.compress,
+    }
+    if req.protected:
+        payload["protected"] = 1
+    if req.notes_template:
+        payload["notes-template"] = req.notes_template
+    if req.remove is not None:
+        payload["remove"] = int(req.remove)
+    if req.mailnotification:
+        payload["mailnotification"] = req.mailnotification
+    try:
+        upid = _pve(_svc(host)).nodes(node).vzdump.post(**payload)
+        task_tracker.register(
+            upid, host_id, node,
+            f"Backup VM {vmid}",
+            user_id=getattr(current_user, "id", None),
+            vmid=vmid,
+            task_type="vzdump",
+        )
+        _fire_vm_webhook(db, "vm.backup", host, node, vmid, current_user, host_id,
+                         extra={"storage": req.storage, "mode": req.mode})
+        return {"upid": upid}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{host_id}/{node}/{vmid}/backups")
+def list_vm_backups(host_id: int, node: str, vmid: int,
+                    db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    """List backup archives belonging to this VM across all backup-capable storages on the node."""
+    host = _get_host(host_id, db)
+    pve = _pve(_svc(host))
+    try:
+        storages = pve.nodes(node).storage.get()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"storage list failed: {e}")
+
+    matches: List[Dict[str, Any]] = []
+    for s in storages:
+        contents_types = (s.get("content") or "")
+        if "backup" not in contents_types:
+            continue
+        sid = s.get("storage")
+        try:
+            items = pve.nodes(node).storage(sid).content.get(content="backup", vmid=vmid)
+        except Exception:
+            continue
+        for item in items or []:
+            item["storage"] = sid
+            matches.append(item)
+    # Sort newest first
+    matches.sort(key=lambda i: i.get("ctime", 0), reverse=True)
+    return matches
+
+
+# ── VM Replication jobs (convenience wrappers around /cluster/replication) ──
+
+class ReplicationCreate(BaseModel):
+    target: str             # target node name
+    schedule: str = "*/15"  # systemd calendar event
+    rate: Optional[float] = None     # MB/s bandwidth cap
+    comment: Optional[str] = None
+    disable: bool = False
+
+
+@router.get("/{host_id}/{node}/{vmid}/replication")
+def list_vm_replication(host_id: int, node: str, vmid: int,
+                        db: Session = Depends(get_db),
+                        current_user=Depends(get_current_user)):
+    """List replication jobs for this VM."""
+    host = _get_host(host_id, db)
+    try:
+        all_jobs = _pve(_svc(host)).cluster.replication.get()
+        # PVE job ids look like "<vmid>-<n>"; filter by guest
+        return [j for j in all_jobs if int(j.get("guest", -1)) == int(vmid)]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{host_id}/{node}/{vmid}/replication")
+def create_vm_replication(host_id: int, node: str, vmid: int, req: ReplicationCreate,
+                          db: Session = Depends(get_db),
+                          current_user=Depends(require_operator)):
+    """Create a replication job for this VM."""
+    host = _get_host(host_id, db)
+    pve = _pve(_svc(host))
+    try:
+        # Find the next free job index (PVE ids look like "<vmid>-<n>")
+        existing = [j for j in pve.cluster.replication.get() if int(j.get("guest", -1)) == int(vmid)]
+        used_idx = set()
+        for j in existing:
+            jid = str(j.get("id", ""))
+            if "-" in jid:
+                try:
+                    used_idx.add(int(jid.split("-")[-1]))
+                except Exception:
+                    pass
+        idx = 0
+        while idx in used_idx:
+            idx += 1
+        job_id = f"{vmid}-{idx}"
+
+        params: Dict[str, Any] = {
+            "id": job_id,
+            "type": "local",
+            "target": req.target,
+            "schedule": req.schedule,
+        }
+        if req.rate is not None and req.rate > 0:
+            params["rate"] = req.rate
+        if req.comment:
+            params["comment"] = req.comment
+        if req.disable:
+            params["disable"] = 1
+        pve.cluster.replication.post(**params)
+        return {"success": True, "id": job_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class ReplicationUpdate(BaseModel):
+    schedule: Optional[str] = None
+    rate: Optional[float] = None
+    comment: Optional[str] = None
+    disable: Optional[bool] = None
+
+
+@router.put("/{host_id}/{node}/{vmid}/replication/{job_id}")
+def update_vm_replication(host_id: int, node: str, vmid: int, job_id: str,
+                          req: ReplicationUpdate,
+                          db: Session = Depends(get_db),
+                          current_user=Depends(require_operator)):
+    """Update an existing VM replication job."""
+    host = _get_host(host_id, db)
+    params: Dict[str, Any] = {}
+    if req.schedule is not None:
+        params["schedule"] = req.schedule
+    if req.rate is not None:
+        params["rate"] = req.rate
+    if req.comment is not None:
+        params["comment"] = req.comment
+    if req.disable is not None:
+        params["disable"] = int(bool(req.disable))
+    if not params:
+        raise HTTPException(status_code=400, detail="Nothing to update")
+    try:
+        _pve(_svc(host)).cluster.replication(job_id).put(**params)
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/{host_id}/{node}/{vmid}/replication/{job_id}")
+def delete_vm_replication(host_id: int, node: str, vmid: int, job_id: str,
+                          db: Session = Depends(get_db),
+                          current_user=Depends(require_operator)):
+    """Delete a VM replication job."""
+    host = _get_host(host_id, db)
+    try:
+        _pve(_svc(host)).cluster.replication(job_id).delete()
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{host_id}/{node}/{vmid}/replication/{job_id}/run")
+def run_vm_replication(host_id: int, node: str, vmid: int, job_id: str,
+                       db: Session = Depends(get_db),
+                       current_user=Depends(require_operator)):
+    """Trigger a VM replication job to run immediately."""
+    host = _get_host(host_id, db)
+    try:
+        result = _pve(_svc(host)).cluster.replication(job_id).schedule_now.post()
+        return {"success": True, "result": result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

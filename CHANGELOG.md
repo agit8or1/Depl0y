@@ -5,6 +5,31 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.27] - 2026-04-20 📦 PBS dashboard, PVE+PBS updates, VM feature parity
+
+### Added — PBS Management dashboard
+- Per-PBS summary card showing total capacity, used/available, a colored usage gauge (green/amber/red by threshold), configured sync jobs with last-run state + next-run timestamp, and 24h backup activity (OK vs failed counts). Auto-refreshes every 60s.
+- Endpoint: `GET /api/v1/pbs-mgmt/{id}/summary`.
+- Gracefully degrades with an `error` field when PBS is unreachable or a sub-endpoint (e.g. `/config/pull` on older PBS builds) returns 404.
+
+### Added — PVE + PBS update management
+- New consolidated **Updates** dashboard at `/updates` (admin-only): single table with a row per PVE node and per PBS server, showing pending count, last-checked timestamp, Refresh and Apply actions.
+- Refresh triggers a cached `apt-get update`, returns a UPID that's hooked into the task bar.
+- Apply runs `dist-upgrade` via the Proxmox/PBS apt APIs, registered with `task_tracker` so progress shows at the top of the UI.
+- Endpoints under `/api/v1/updates-mgmt/`:
+  - `GET /overview` — whole-fleet pending counts.
+  - `GET|POST /pve/{host_id}/{node}` (list / refresh / apply / task-status).
+  - `GET|POST /pbs/{server_id}` (same shape).
+- Permissions: list = any authenticated user; refresh = operator+; apply = **admin**, with a 5-min per-target rate limit + audit log entry.
+
+### Added — VM management parity with Proxmox UI (task #9)
+- **Hardware tab**: Display (VGA), SCSI Controller (`scsihw`), Audio Device (`audio0`), EFI Disk add/remove (for OVMF VMs), TPM v1.2/v2.0 add/remove.
+- **Options tab**: OS Type (`ostype`), Hotplug chips (disk/net/usb/cpu/mem), ACPI, KVM hardware virt, Tablet pointer, Freeze CPU at startup, Guest reboot behavior, Start/Shutdown order + up-delay/down-delay, VirtIO RNG (`rng0`), SPICE Enhancements, SMBIOS1.
+- **Backup tab**: one-click vzdump to any backup-capable storage + archive history table.
+- **Replication tab**: list/add/edit/delete/run-now VM-scoped replication jobs.
+- New endpoints: `POST|DELETE /pve-vm/{h}/{n}/{id}/tpm`, `.../efidisk`, `POST .../backup`, `GET .../backups`, `GET|POST|PUT|DELETE .../replication[/{job}]`, `POST .../replication/{job}/run`.
+- Deferred: `qm monitor` console, per-VM IPSet/Alias firewall sub-tabs, per-package selection UI in the update Apply modal, kernel-reboot-required indicator.
+
 ## [2.2.26] - 2026-04-20 ⏱️ Progress parsing for externally-started tasks
 
 ### Fixed

@@ -5,6 +5,21 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.21] - 2026-04-20 🧹 Reports page polish: delete, dark-mode, AI/Logic split
+
+### Added
+- **Delete reports** — new `DELETE /api/v1/ai-reports/reports/{id}` (operator+) and a delete icon per row in the Reports list. Confirms before deleting.
+- **AI vs Logic source filter** on the Reports list with a per-row badge so deterministic reports are distinguishable from LLM-composed ones.
+
+### Fixed
+- **Dark-mode contrast on Reports pages** — `AIReports.vue`, `AIReportDetail.vue`: hardcoded white/gray/indigo colors replaced with theme variables (`--bg-card`, `--surface`, `--text-primary`, `--text-secondary`, `--border-color`). Severity chips and finding backgrounds use low-alpha tints that render correctly on both themes.
+- **View / Regenerate button contrast** — button variants rewritten to transparent with theme-aware foreground instead of `background: white; color: #2563eb`. Adds a new `.btn-danger-outline` for the delete action.
+- The "Raw Evidence" tab's embedded HTML renderer still uses a light background (its inline CSS is tuned for print) — intentional, single exception.
+
+### Changed
+- Menu label `🤖 AI Reports` → `📊 Reports` (URL stays `/ai-reports/*`).
+- Report list rows are now fully clickable to open the detail page.
+
 ## [2.2.20] - 2026-04-20 🤖 AI Reports subsystem + dashboard cleanup
 
 ### Added

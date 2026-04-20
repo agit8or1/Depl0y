@@ -446,6 +446,21 @@ def regenerate_report(
     return ReportSummary.model_validate(new_run)
 
 
+@router.delete("/reports/{report_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_report(
+    report_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_operator),
+):
+    row = db.query(ReportRun).filter(ReportRun.id == report_id).first()
+    if not row:
+        raise HTTPException(404, detail="Report not found")
+    _audit(db, user.id, "ai_report.delete", report_id, {"title": row.title, "type": row.report_type})
+    db.delete(row)
+    db.commit()
+    return None
+
+
 @router.get("/reports/{report_id}/export/markdown", response_class=PlainTextResponse)
 def export_markdown(
     report_id: int,

@@ -1052,6 +1052,7 @@ export default {
     getReport: (id) => api.get(`/ai-reports/reports/${id}`),
     generateReport: (data) => api.post('/ai-reports/reports', data),
     regenerate: (id) => api.post(`/ai-reports/reports/${id}/regenerate`),
+    deleteReport: (id) => api.delete(`/ai-reports/reports/${id}`),
     exportMarkdown: (id) => api.get(`/ai-reports/reports/${id}/export/markdown`, { responseType: 'text' }),
     exportHtml: (id) => api.get(`/ai-reports/reports/${id}/export/html`, { responseType: 'text' }),
     updateNotes: (id, notes) => api.patch(`/ai-reports/reports/${id}/notes`, { manual_notes: notes }),

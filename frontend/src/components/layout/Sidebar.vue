@@ -130,7 +130,7 @@
           <NavItem :to="'/security'" :icon="'🔒'" :label="t('nav.security')" @click="handleNavClick" />
           <NavItem :to="'/alerts'" :icon="'🚨'" :label="t('nav.alert_rules')" @click="handleNavClick" />
           <NavItem :to="'/analysis'" :icon="'🔬'" :label="t('nav.analysis')" @click="handleNavClick" />
-          <NavItem :to="'/ai-reports'" :icon="'🤖'" :label="'AI Reports'" @click="handleNavClick" />
+          <NavItem :to="'/ai-reports'" :icon="'📊'" :label="'Reports'" @click="handleNavClick" />
           <NavItem :to="'/notifications'" :icon="'🔔'" :label="t('nav.notifications')" @click="handleNavClick" />
           <NavItem :to="'/system-health'" :icon="'💚'" :label="t('nav.system_health')" @click="handleNavClick" />
           <NavItem :to="'/system-logs'" :icon="'📜'" :label="t('nav.system_logs')" @click="handleNavClick" />

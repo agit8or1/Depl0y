@@ -74,13 +74,40 @@
             </div>
           </div>
 
+          <!-- Remotes (destination definitions) -->
+          <div v-if="(serverSummaries[srv.id].remotes || []).length > 0" class="pbs-summary-section">
+            <div class="pbs-summary-label">Remotes</div>
+            <div class="pbs-summary-jobs">
+              <div v-for="r in serverSummaries[srv.id].remotes" :key="`${srv.id}-r-${r.name}`" class="pbs-summary-job">
+                <span class="job-status-badge job-status-badge--info">remote</span>
+                <span class="text-xs font-mono pbs-summary-job-id">{{ r.name }}</span>
+                <span class="text-xs text-muted">→ {{ r.host }}</span>
+              </div>
+            </div>
+          </div>
+
           <!-- Sync / Replication jobs -->
           <div class="pbs-summary-section">
-            <div class="pbs-summary-label">Sync Jobs</div>
+            <div class="pbs-summary-label">
+              Sync Jobs
+              <button
+                v-if="(serverSummaries[srv.id].remotes || []).length > 0"
+                class="btn btn-outline btn-xs"
+                style="margin-left:0.5rem"
+                @click="openCreateSyncModal(srv)"
+              >+ Create Sync Job</button>
+            </div>
             <div
               v-if="(serverSummaries[srv.id].sync_jobs || []).length === 0"
               class="text-xs text-muted"
-            >No sync jobs configured.</div>
+            >
+              <template v-if="(serverSummaries[srv.id].remotes || []).length > 0">
+                No sync jobs yet. {{ (serverSummaries[srv.id].remotes || []).length }} remote{{ (serverSummaries[srv.id].remotes || []).length === 1 ? '' : 's' }} configured but no scheduled pull. Use <strong>+ Create Sync Job</strong> to set one up.
+              </template>
+              <template v-else>
+                No sync jobs or remotes configured. Add a remote first, then create a sync job.
+              </template>
+            </div>
             <div v-else class="pbs-summary-jobs">
               <div
                 v-for="j in serverSummaries[srv.id].sync_jobs"
@@ -96,6 +123,13 @@
                 <span v-if="j.last_run_endtime" class="text-xs text-muted pbs-summary-job-when">
                   {{ formatRelativeTime(j.last_run_endtime) }}
                 </span>
+                <button
+                  v-if="j['job-type'] === 'sync' || !j['job-type']"
+                  class="btn btn-outline btn-xs"
+                  style="margin-left:0.3rem"
+                  @click="runSyncJob(srv.id, j.id)"
+                  :disabled="runningSync[srv.id + ':' + j.id]"
+                >{{ runningSync[srv.id + ':' + j.id] ? 'Running…' : 'Run Now' }}</button>
               </div>
             </div>
           </div>
@@ -624,6 +658,62 @@
       </div>
     </div>
 
+    <!-- Create Sync Job Modal -->
+    <div v-if="syncModal.show" class="modal" @click.self="closeSyncModal">
+      <div class="modal-content modal-md">
+        <div class="modal-header">
+          <h3>Create Sync Job — {{ syncModal.serverName }}</h3>
+          <button @click="closeSyncModal" class="btn-close">&#215;</button>
+        </div>
+        <form @submit.prevent="submitCreateSyncJob" class="modal-body">
+          <div class="form-group">
+            <label class="form-label">Job ID</label>
+            <input v-model="syncModal.form.id" class="form-control" placeholder="pull-from-pbs1" required />
+            <div class="text-xs text-muted mt-1">Letters, digits, hyphens, underscores. PBS uses this as the job key.</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Local datastore (destination)</label>
+            <select v-model="syncModal.form.store" class="form-control" required>
+              <option value="" disabled>— pick datastore —</option>
+              <option v-for="d in syncModal.localStores" :key="d" :value="d">{{ d }}</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Remote</label>
+            <select v-model="syncModal.form.remote" @change="onRemoteChange" class="form-control" required>
+              <option value="" disabled>— pick remote —</option>
+              <option v-for="r in syncModal.remotes" :key="r.name" :value="r.name">{{ r.name }} ({{ r.host }})</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Remote datastore (source)</label>
+            <select v-model="syncModal.form['remote-store']" class="form-control" required>
+              <option value="" disabled>{{ syncModal.scanning ? 'Scanning remote…' : '— pick datastore —' }}</option>
+              <option v-for="d in syncModal.remoteStores" :key="d" :value="d">{{ d }}</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Schedule</label>
+            <input v-model="syncModal.form.schedule" class="form-control" placeholder="*:0/30 (every 30 min) — leave blank for manual only" />
+            <div class="text-xs text-muted mt-1">Examples: <code>hourly</code>, <code>daily</code>, <code>*:0/15</code>, <code>03:00</code>.</div>
+          </div>
+          <div class="form-group">
+            <label class="checkbox-label">
+              <input type="checkbox" v-model="syncModal.form['remove-vanished']" />
+              <span>Remove vanished snapshots from destination</span>
+            </label>
+          </div>
+          <div v-if="syncModal.error" class="error-banner mt-1">{{ syncModal.error }}</div>
+          <div class="flex gap-1 mt-2">
+            <button type="submit" class="btn btn-primary" :disabled="syncModal.saving">
+              {{ syncModal.saving ? 'Creating…' : 'Create Sync Job' }}
+            </button>
+            <button type="button" @click="closeSyncModal" class="btn btn-outline">Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
     <!-- Job trigger result toast-like banner -->
     <div v-if="jobRunResult" class="job-run-result">
       <span>{{ jobRunResult }}</span>
@@ -707,6 +797,19 @@ export default {
 
       lastRefreshed: null,
       _refreshTimer: null,
+      runningSync: {},
+      syncModal: {
+        show: false,
+        serverId: null,
+        serverName: '',
+        remotes: [],
+        remoteStores: [],
+        localStores: [],
+        scanning: false,
+        saving: false,
+        error: null,
+        form: { id: '', store: '', remote: '', 'remote-store': '', schedule: '', 'remove-vanished': false },
+      },
     }
   },
 
@@ -1173,6 +1276,76 @@ export default {
         this.addServerModal.error = e?.response?.data?.detail || 'Failed to add PBS server.'
       } finally {
         this.addServerModal.saving = false
+      }
+    },
+
+    async openCreateSyncModal(srv) {
+      const summary = this.serverSummaries[srv.id] || {}
+      const remotes = summary.remotes || []
+      const localStores = (summary.datastore_totals?.datastores || []).map(d => d.store).filter(Boolean)
+      this.syncModal.show = true
+      this.syncModal.serverId = srv.id
+      this.syncModal.serverName = srv.name
+      this.syncModal.remotes = remotes
+      this.syncModal.localStores = localStores
+      this.syncModal.remoteStores = []
+      this.syncModal.error = null
+      this.syncModal.form = {
+        id: `pull-${remotes[0]?.name || 'remote'}`.toLowerCase().replace(/[^a-z0-9-]/g, '-'),
+        store: localStores[0] || '',
+        remote: remotes[0]?.name || '',
+        'remote-store': '',
+        schedule: 'hourly',
+        'remove-vanished': false,
+      }
+      if (this.syncModal.form.remote) {
+        await this.onRemoteChange()
+      }
+    },
+    closeSyncModal() {
+      this.syncModal.show = false
+    },
+    async onRemoteChange() {
+      const r = this.syncModal.form.remote
+      if (!r) { this.syncModal.remoteStores = []; return }
+      this.syncModal.scanning = true
+      try {
+        const res = await api.pbsMgmt.scanRemote(this.syncModal.serverId, r)
+        const stores = (res.data || []).map(d => d.store || d.name).filter(Boolean)
+        this.syncModal.remoteStores = stores
+        if (stores.length === 1) this.syncModal.form['remote-store'] = stores[0]
+      } catch (e) {
+        this.syncModal.error = e?.response?.data?.detail || `Could not scan remote "${r}".`
+      } finally {
+        this.syncModal.scanning = false
+      }
+    },
+    async submitCreateSyncJob() {
+      this.syncModal.saving = true
+      this.syncModal.error = null
+      try {
+        const f = { ...this.syncModal.form }
+        if (!f.schedule) delete f.schedule
+        await api.pbsMgmt.createSyncJob(this.syncModal.serverId, f)
+        this.closeSyncModal()
+        await this.fetchServerStats(this.syncModal.serverId)
+      } catch (e) {
+        this.syncModal.error = e?.response?.data?.detail || 'Failed to create sync job.'
+      } finally {
+        this.syncModal.saving = false
+      }
+    },
+    async runSyncJob(serverId, jobId) {
+      const key = `${serverId}:${jobId}`
+      this.runningSync = { ...this.runningSync, [key]: true }
+      try {
+        await api.pbsMgmt.runJob(serverId, jobId, 'sync')
+        this.jobRunResult = `Sync job "${jobId}" started.`
+        setTimeout(() => this.fetchServerStats(serverId), 3000)
+      } catch (e) {
+        this.jobRunResult = e?.response?.data?.detail || `Failed to run sync job "${jobId}".`
+      } finally {
+        this.runningSync = { ...this.runningSync, [key]: false }
       }
     },
 

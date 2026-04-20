@@ -371,6 +371,77 @@ def list_tasks(
         raise HTTPException(status_code=502, detail=f"PBS API error: {exc}")
 
 
+@router.get("/{server_id}/remotes")
+def list_remotes(
+    server_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> List[Dict[str, Any]]:
+    """Return PBS remotes (destination definitions, not sync jobs)."""
+    server = _get_pbs_server(db, server_id)
+    try:
+        return _make_service(server).get_remotes()
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"PBS API error: {exc}")
+
+
+@router.get("/{server_id}/remotes/{remote}/scan")
+def scan_remote_datastores(
+    server_id: int,
+    remote: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> List[Dict[str, Any]]:
+    """Enumerate datastores on a configured remote PBS."""
+    server = _get_pbs_server(db, server_id)
+    try:
+        return _make_service(server).get_remote_datastores(remote)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"PBS API error: {exc}")
+
+
+@router.post("/{server_id}/sync-jobs")
+def create_sync_job(
+    server_id: int,
+    payload: Dict[str, Any],
+    current_user: User = Depends(require_operator),
+    db: Session = Depends(get_db),
+) -> Any:
+    """Create a new PBS sync job (operator+).
+    Required keys in payload: id, store, remote, remote-store. Optional: schedule, remove-vanished, comment.
+    """
+    missing = [k for k in ("id", "store", "remote", "remote-store") if not payload.get(k)]
+    if missing:
+        raise HTTPException(status_code=400, detail=f"Missing fields: {', '.join(missing)}")
+    server = _get_pbs_server(db, server_id)
+    try:
+        return _make_service(server).create_sync_job(payload)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"PBS API error: {exc}")
+
+
+@router.delete("/{server_id}/sync-jobs/{job_id}")
+def delete_sync_job(
+    server_id: int,
+    job_id: str,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> Any:
+    server = _get_pbs_server(db, server_id)
+    try:
+        return _make_service(server).delete_sync_job(job_id)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"PBS API error: {exc}")
+
+
 @router.get("/{server_id}/jobs")
 def list_jobs(
     server_id: int,
@@ -469,6 +540,7 @@ def get_server_summary(
             "datastore_totals": {"total_bytes": 0, "used_bytes": 0, "available_bytes": 0,
                                  "usage_pct": 0, "datastores": []},
             "sync_jobs": [],
+            "remotes": [],
             "recent_backups_24h": {"ok": 0, "failed": 0, "total": 0},
             "error": exc.detail,
         }
@@ -482,9 +554,10 @@ def get_server_summary(
             errors.append(str(exc))
             return None
 
-    with ThreadPoolExecutor(max_workers=3) as pool:
+    with ThreadPoolExecutor(max_workers=4) as pool:
         f_ds = pool.submit(_safe, svc.get_datastores)
         f_jobs = pool.submit(_safe, svc.get_sync_jobs)
+        f_remotes = pool.submit(_safe, svc.get_remotes)
         since_epoch = int(time.time()) - 86400
         f_tasks = pool.submit(
             _safe,
@@ -496,6 +569,7 @@ def get_server_summary(
         )
         datastores = f_ds.result() or []
         jobs = f_jobs.result() or []
+        remotes = f_remotes.result() or []
         recent_tasks = f_tasks.result() or []
 
     # PBS /admin/datastore returns a bare list without usage figures —
@@ -576,6 +650,7 @@ def get_server_summary(
             "datastores": ds_list,
         },
         "sync_jobs": sync_jobs,
+        "remotes": remotes,
         "recent_backups_24h": {"ok": ok, "failed": failed, "total": total_recent},
     }
     if errors:

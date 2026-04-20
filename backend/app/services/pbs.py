@@ -392,6 +392,40 @@ class PBSService:
 
         return jobs
 
+    def get_remotes(self) -> List[Dict[str, Any]]:
+        """Return PBS remote entries (the per-host destinations, not the
+        sync jobs). A remote on its own does nothing — a Sync Job at
+        /config/sync is what actually pulls."""
+        try:
+            return self._get("/config/remote") or []
+        except Exception as exc:
+            logger.warning("Could not fetch remotes from PBS '%s': %s", self.server.name, exc)
+            return []
+
+    def get_remote_datastores(self, remote: str) -> List[Dict[str, Any]]:
+        """Enumerate datastores on a configured remote PBS.
+        PBS endpoint: /config/remote/{remote}/scan — returns list of stores."""
+        try:
+            return self._get(f"/config/remote/{remote}/scan") or []
+        except Exception as exc:
+            logger.warning("Could not scan remote '%s' on PBS '%s': %s", remote, self.server.name, exc)
+            return []
+
+    def create_sync_job(self, payload: Dict[str, Any]) -> Any:
+        """Create a PBS sync job. Required fields in `payload`:
+          - id (str): job id
+          - store (str): local datastore to pull into
+          - remote (str): remote name (as configured under /config/remote)
+          - remote-store (str): datastore name on the remote
+          - schedule (str, optional): e.g. "*:0/30" or "daily"
+          - remove-vanished (bool, optional)
+          - comment (str, optional)
+        """
+        return self._post("/config/sync", payload)
+
+    def delete_sync_job(self, job_id: str) -> Any:
+        return self._delete(f"/config/sync/{job_id}")
+
     def run_sync_job(self, job_id: str) -> Any:
         """
         Trigger a sync job to run immediately.

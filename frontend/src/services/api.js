@@ -837,6 +837,11 @@ export default {
     pruneGroup: (id, ds, data) => api.post(`/pbs-mgmt/${id}/datastores/${ds}/prune`, data),
     listTasks: (id, params) => api.get(`/pbs-mgmt/${id}/tasks`, { params }),
     getTaskLog: (id, upid) => api.get(`/pbs-mgmt/${id}/tasks/${encodeURIComponent(upid)}/log`),
+    listRemotes: (id) => api.get(`/pbs-mgmt/${id}/remotes`),
+    scanRemote: (id, remote) => api.get(`/pbs-mgmt/${id}/remotes/${encodeURIComponent(remote)}/scan`),
+    createSyncJob: (id, payload) => api.post(`/pbs-mgmt/${id}/sync-jobs`, payload),
+    deleteSyncJob: (id, jobId) => api.delete(`/pbs-mgmt/${id}/sync-jobs/${encodeURIComponent(jobId)}`),
+    runJob: (id, jobId, jobType = 'sync') => api.post(`/pbs-mgmt/${id}/jobs/${encodeURIComponent(jobId)}/run`, null, { params: { job_type: jobType } }),
   },
 
   // PBS summary/pbs reach the same helpers via api.pbs namespace for convenience

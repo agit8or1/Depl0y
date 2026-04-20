@@ -5,6 +5,19 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.30] - 2026-04-20 🔁 PBS sync visibility + Create Sync Job + Run Now
+
+### Added
+- **PBS Remotes** are now surfaced separately on the PBS Management dashboard. The "no sync jobs configured" message used to be misleading when a remote was defined but no scheduled pull job existed (true on pbs1 → PBS2). Card now reads e.g. `"No sync jobs yet. 1 remote configured but no scheduled pull. Use + Create Sync Job…"`.
+- **Create Sync Job** button + modal: pick local datastore, pick remote, the form scans the remote (`/config/remote/{remote}/scan`) to enumerate its datastores, set schedule (defaults to `hourly`), optional `remove-vanished`. One-click create.
+- **Run Now** button on each existing sync job — kicks off the job immediately and refreshes the summary 3s later.
+- New endpoints: `GET /pbs-mgmt/{id}/remotes`, `GET /pbs-mgmt/{id}/remotes/{name}/scan`, `POST /pbs-mgmt/{id}/sync-jobs`, `DELETE /pbs-mgmt/{id}/sync-jobs/{job_id}`. `POST /pbs-mgmt/{id}/jobs/{job_id}/run` already existed; now exposed in the API client as `pbsMgmt.runJob`.
+- PBS service: `get_remotes()`, `get_remote_datastores()`, `create_sync_job()`, `delete_sync_job()`.
+
+### Notes
+- pbs1's "discrepancy in space used vs pbs2" is the natural consequence of having no sync job — backups land on pbs1 and never replicate. After clicking **+ Create Sync Job** with PBS2 selected, scheduled hourly, the gap will close on the next run. Use **Run Now** to do a one-shot pull immediately.
+- Cross-PBS drift alerts + automated remediation deferred to a follow-up — needs a scheduler job + alert_rule wiring.
+
 ## [2.2.29] - 2026-04-20 🎫 PBS password (ticket) auth
 
 ### Fixed

@@ -40,11 +40,13 @@ def _get_pbs_server(db: Session, server_id: int) -> PBSServer:
 
 
 def _make_service(server: PBSServer) -> PBSService:
-    """Instantiate a PBSService, raising 502 on configuration problems."""
-    if not server.api_token_id or not server.api_token_secret:
+    """Instantiate a PBSService — supports either API token or password (ticket) auth."""
+    has_token = bool(server.api_token_id and server.api_token_secret)
+    has_password = bool(server.username and server.password)
+    if not has_token and not has_password:
         raise HTTPException(
             status_code=400,
-            detail="PBS server has no API token configured",
+            detail="PBS server has no credentials configured (set a password or API token)",
         )
     return PBSService(server)
 

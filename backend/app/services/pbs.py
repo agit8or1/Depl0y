@@ -25,12 +25,16 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 class PBSService:
     """Client for the Proxmox Backup Server REST API."""
 
+    # Ticket cache (per hostname): (expires_epoch, ticket, csrf_token)
+    _ticket_cache: Dict[str, tuple] = {}
+
     def __init__(self, server: PBSServer):
         self.server = server
         self.base_url = f"https://{server.hostname}:{server.port}/api2/json"
         self.verify_ssl = server.verify_ssl
         self.session = requests.Session()
         self.session.verify = self.verify_ssl
+        self._uses_ticket = False
         self.session.headers.update(self._build_auth_header())
 
     # ------------------------------------------------------------------
@@ -50,21 +54,49 @@ class PBSService:
             # e.g. "root@pam!mytoken".  PBS auth header = PBSAPIToken=<id>:<secret>
             return {"Authorization": f"PBSAPIToken={server.api_token_id}:{secret}"}
 
-        # Fallback: try password auth via the userid!tokenid convention using
-        # the stored username and password fields (not recommended for PBS but
-        # included for completeness).
-        if server.password:
+        # Ticket-based (password) auth. PBS issues a ticket + CSRFPreventionToken
+        # at /access/ticket that is valid for ~2 hours. We cache it per host and
+        # attach it as a cookie + CSRF header on subsequent requests.
+        if server.password and server.username:
             try:
                 password = decrypt_data(server.password)
             except Exception:
                 password = server.password
-            # PBS does not support HTTP Basic auth — log a warning and return empty
-            logger.warning(
-                "PBS server '%s' has no API token configured; "
-                "password-only auth is not supported by this client.",
-                server.name,
-            )
+            ticket, csrf = self._get_or_refresh_ticket(server.username, password)
+            if ticket and csrf:
+                self._uses_ticket = True
+                self.session.cookies.set("PBSAuthCookie", ticket)
+                return {"CSRFPreventionToken": csrf}
+            logger.warning("PBS %s: ticket auth failed", server.name)
         return {}
+
+    def _get_or_refresh_ticket(self, username: str, password: str) -> tuple:
+        """Return (ticket, csrf_token), fetching a fresh ticket if the cache
+        has expired. PBS tickets last 2 hours; we refresh after 100 minutes."""
+        import time
+        key = f"{self.server.hostname}:{self.server.port}:{username}"
+        now = time.time()
+        cached = PBSService._ticket_cache.get(key)
+        if cached and cached[0] > now + 60:
+            return cached[1], cached[2]
+        url = f"{self.base_url}/access/ticket"
+        try:
+            resp = requests.post(
+                url,
+                data={"username": username, "password": password},
+                verify=self.verify_ssl,
+                timeout=30,
+            )
+            resp.raise_for_status()
+            data = (resp.json() or {}).get("data") or {}
+            ticket = data.get("ticket")
+            csrf = data.get("CSRFPreventionToken")
+            if ticket and csrf:
+                PBSService._ticket_cache[key] = (now + 100 * 60, ticket, csrf)
+                return ticket, csrf
+        except Exception as e:
+            logger.warning("PBS %s: ticket request failed: %s", self.server.name, e)
+        return None, None
 
     def _get(self, path: str, params: Optional[Dict[str, Any]] = None) -> Any:
         """Perform a GET request against the PBS API and return the 'data' field."""

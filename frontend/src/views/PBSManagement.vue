@@ -557,7 +557,7 @@
 
           <div class="form-group">
             <label class="form-label">Username</label>
-            <input v-model="addServerForm.username" class="form-control" placeholder="root@pam" />
+            <input v-model="addServerForm.username" class="form-control" placeholder="root@pam" autocomplete="username" />
             <div class="text-xs text-muted mt-1">Required. Use with password auth, or leave when using API token only.</div>
           </div>
 
@@ -588,6 +588,7 @@
                 v-model="addServerForm.api_token_id"
                 class="form-control"
                 placeholder="root@pam!mytoken"
+                autocomplete="off"
               />
               <div class="text-xs text-muted mt-1">Format: user@realm!tokenname</div>
             </div>

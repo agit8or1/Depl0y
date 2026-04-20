@@ -5,6 +5,17 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.29] - 2026-04-20 🎫 PBS password (ticket) auth
+
+### Fixed
+- **Adding a PBS server with password auth worked (server was saved), but all management endpoints then returned 400** "PBS server has no API token configured". The PBS client literally said password-only auth was "not supported"; callers gated on `api_token_id` being present.
+  - `PBSService` now supports PBS's standard **ticket-based auth**: POSTs `{username, password}` to `/api2/json/access/ticket`, receives a ticket + `CSRFPreventionToken`, attaches them as the `PBSAuthCookie` cookie and CSRF header for subsequent requests. Ticket cached per host for 100 minutes (PBS tickets live 2h).
+  - `_make_service()` now accepts either API token OR username+password; 400 only when neither is configured.
+- **Form accessibility warnings** — added `autocomplete="username"` on the Username field and `autocomplete="off"` on the API Token ID.
+
+### Verified
+- Fresh password-auth PBS server: `/datastores`, `/jobs`, `/summary` all return 200.
+
 ## [2.2.28] - 2026-04-20 🩹 PBS add form + SEL cache + clear retry
 
 ### Fixed

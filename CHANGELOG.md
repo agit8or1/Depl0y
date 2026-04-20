@@ -5,6 +5,20 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.23] - 2026-04-20 🔧 Per-DIMM health reasons + responsive detail load + Clear SEL shortcut
+
+### Added
+- BMC status cache now includes `health_reasons` — a list of the specific components currently reporting non-OK (e.g. `"Memory DIMMSLOTA4: Warning"`). Rendered in the Detected Issues panel on the Overview tab when per-sensor data isn't available, so real faults show up instead of the generic "no specific issues" message.
+- `compute_current_health()` now drills into `/Systems/.../Memory` when the `MemorySummary` is non-OK to identify which DIMM slot is at fault (previously only said "Memory: Warning").
+- "Clear the BMC event log" link inside the Detected Issues panel when the warning appears stale — operator no longer has to open the Logs tab to find the button.
+
+### Fixed
+- **iDRAC Details appeared stuck loading for slow BMCs (pbs1 iDRAC 7 takes 5–20s per Redfish call).** `loadServerDetail` was using `Promise.allSettled` on four parallel iDRAC calls, so the panel stayed blank until the slowest one finished. Now each of Info / Thermal / Power / SSH-Hardware writes its result into reactive state as it arrives; the Overview panel renders within ~5s instead of waiting ~20s.
+- `_clearingSel` is now initialized on every wrapped server so the Clear button's disabled state works on first render.
+
+### Notes
+- pbs1 shows Warning because DIMM slot A4 genuinely reports `Status.Health=Warning` (capacity 15625 MiB / 16 GB — suggesting ECC issue). This is a real current fault — clearing the SEL will not resolve it. Consider reseating or replacing that DIMM.
+
 ## [2.2.22] - 2026-04-20 🩺 Current-state health, Clear SEL, Node Monitor IO Wait fix
 
 ### Added

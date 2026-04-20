@@ -352,11 +352,35 @@ class RedfishClient:
                     pass
         except Exception:
             pass
-        # Memory — only summary, individual DIMM checks are expensive
+        # Memory — check summary first; if non-OK, enumerate DIMMs to name the
+        # specific bad slot. Skipped entirely on a healthy rollup to save time.
         try:
             sys_data = self._get(self.paths["system"])
             mh = (sys_data.get("MemorySummary") or {}).get("Status", {}).get("HealthRollup")
-            _consider(mh or "", "Memory")
+            if mh and mh != "OK":
+                # Drill into /Memory to find the specific slot(s)
+                try:
+                    mem_list = self._get(self.paths["system"] + "/Memory")
+                    for m in (mem_list.get("Members") or []):
+                        try:
+                            odata = m.get("@odata.id", "")
+                            if not odata:
+                                continue
+                            dimm = self._get(odata)
+                            h = (dimm.get("Status") or {}).get("Health") or ""
+                            if h in ("Warning", "Critical"):
+                                slot = dimm.get("Id") or dimm.get("Name") or "DIMM"
+                                # Trim Dell prefix like "iDRAC.Embedded.1#DIMMSLOTA4"
+                                if "#" in slot:
+                                    slot = slot.split("#", 1)[1]
+                                _consider(h, f"Memory {slot}")
+                        except Exception:
+                            continue
+                except Exception:
+                    # Couldn't enumerate — fall back to the summary-level label
+                    _consider(mh, "Memory")
+            elif mh:
+                _consider(mh, "Memory")
         except Exception:
             pass
         return {"health": worst, "reasons": reasons}

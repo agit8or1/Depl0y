@@ -279,9 +279,17 @@
                 <div v-else-if="srv._loading" class="text-muted text-xs" style="padding: 0.25rem 0">
                   Loading component details…
                 </div>
+                <!-- Backend-reported current-state reasons from BMC poll -->
+                <ul v-else-if="srv._status?.health_reasons?.length" class="health-issues-list">
+                  <li v-for="reason in srv._status.health_reasons" :key="reason" class="hi-item--warn">
+                    <strong>{{ reason }}</strong>
+                  </li>
+                </ul>
                 <!-- Data loaded but no specific component issues -->
                 <div v-else class="text-xs" style="padding: 0.25rem 0; color: #fcd34d;">
-                  No specific sensor/component issues detected. The warning may be from a RAID volume, PSU, or NIC. Check the <button class="hi-tab-link" @click="switchTab(srv, 'hardware')">Hardware</button> and <button class="hi-tab-link" @click="switchTab(srv, 'logs')">Logs</button> tabs.
+                  No specific sensor/component issues detected. The warning may be from a RAID volume, PSU, or NIC. Check the <button class="hi-tab-link" @click="switchTab(srv, 'hardware')">Hardware</button> and <button class="hi-tab-link" @click="switchTab(srv, 'logs')">Logs</button> tabs, or
+                  <button v-if="srv._stype !== 'pve_host'" class="hi-tab-link" @click="clearSel(srv)" :disabled="srv._clearingSel">{{ srv._clearingSel ? 'clearing event log…' : 'clear the BMC event log' }}</button>
+                  if the warning is stale.
                 </div>
 
                 <!-- System event log entries -->
@@ -935,6 +943,7 @@ export default {
       _useSSH: true,  // One IP per BMC — always try both Redfish + SSH
       _redfishOK: false,
       _sshHardware: null,
+      _clearingSel: false,
     })
 
     const allServers = computed(() => [
@@ -1357,42 +1366,37 @@ export default {
       const silent = { _silent: true }
 
       if (srv._useSSH) {
-        // pbs: idrac_hostname IS the OS — OS SSH is primary, Redfish as best-effort
-        // pve_node/pve: Redfish primary; OS SSH as fallback if Redfish fails
+        // iDRAC Redfish calls can take 5–20s each; do NOT block on Promise.all.
+        // Fire each request independently and render as it arrives.
         const isOsSshPrimary = srv._stype === 'pbs'
+        const arr = srv._stype === 'pbs' ? allPBS : srv._stype === 'pve_node' ? allNodes : allStandalone
+        const nudge = () => { arr.value = [...arr.value] }
 
-        const [rfInfo, rfThermal, rfPower, sshHw] = await Promise.allSettled([
-          calls.getInfo(silent),
-          calls.getThermal(silent),
-          calls.getPowerUsage(silent),
-          calls.getSshHardware(),
-        ])
+        const rfInfoPromise = calls.getInfo(silent)
+          .then(r => { if (r.status < 300) { srv._info = r.data; srv._redfishOK = true; nudge() } })
+          .catch(err => { srv._rfInfoErr = err })
+        calls.getThermal(silent)
+          .then(r => { if (r.status < 300) { srv._thermal = r.data; nudge() } }).catch(() => {})
+        calls.getPowerUsage(silent)
+          .then(r => { if (r.status < 300) { srv._powerUsage = r.data; nudge() } }).catch(() => {})
 
-        const rfOK = rfInfo.status === 'fulfilled' && rfInfo.value.status < 300
-        if (rfOK) {
-          srv._info = rfInfo.value.data
-          srv._redfishOK = true
-          if (rfThermal.status === 'fulfilled' && rfThermal.value.status < 300) srv._thermal = rfThermal.value.data
-          if (rfPower.status === 'fulfilled' && rfPower.value.status < 300) srv._powerUsage = rfPower.value.data
+        const sshHwPromise = calls.getSshHardware()
+          .then(r => { srv._sshHwRaw = r.data })
+          .catch(err => { srv._sshHwErr = err })
+
+        // Wait for at least info + ssh so we can decide the fallback path
+        await Promise.allSettled([rfInfoPromise, sshHwPromise])
+        if (!srv._redfishOK && srv._sshHwRaw) {
+          _populateInfoFromSSH(srv, srv._sshHwRaw)
+        } else if (srv._redfishOK && srv._sshHwRaw) {
+          srv._sshHardware = srv._sshHwRaw
+        }
+        if (!srv._redfishOK && !srv._sshHwRaw) {
+          srv._error = srv._rfInfoErr?.response?.data?.detail || srv._rfInfoErr?.message || 'BMC unreachable'
         }
 
-        if (sshHw.status === 'fulfilled') {
-          if (!rfOK) {
-            // Redfish unavailable — populate entirely from SSH
-            _populateInfoFromSSH(srv, sshHw.value.data)
-          } else {
-            // Redfish is primary — still store SSH data for extra fields (RAID, RAPL, etc.)
-            srv._sshHardware = sshHw.value.data
-          }
-        } else if (!rfOK) {
-          srv._error = rfInfo.reason?.response?.data?.detail || rfInfo.reason?.message || 'BMC unreachable'
-        }
-
-        if (isOsSshPrimary) {
-          calls.getSshLogs().then(r => { srv._logs = r.data?.entries ?? [] }).catch(() => { srv._logs = [] })
-        } else {
-          calls.getLogs().then(r => { srv._logs = r.data?.entries ?? [] }).catch(() => { srv._logs = [] })
-        }
+        const logCall = isOsSshPrimary ? calls.getSshLogs() : calls.getLogs()
+        logCall.then(r => { srv._logs = r.data?.entries ?? [] }).catch(() => { srv._logs = [] })
       } else {
         // Redfish-only mode: try all three endpoints in parallel
         const [infoR, thermalR, powerR] = await Promise.allSettled([

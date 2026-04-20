@@ -217,9 +217,11 @@ def run_bmc_poll():
                         # Prefer component-level current health over the SEL-aware
                         # rollup so stale event-log entries don't keep us at Warning
                         # after a hardware condition has cleared.
+                        health_reasons = []
                         try:
                             cur = client.compute_current_health()
                             health = cur.get("health") or rf_info.get("health")
+                            health_reasons = cur.get("reasons") or []
                         except Exception:
                             health = rf_info.get("health")
                         model = rf_info.get("model")
@@ -343,6 +345,7 @@ def run_bmc_poll():
                     "max_temp_c": max_temp_c,
                     "consumed_watts": consumed_watts,
                     "firmware_updates": prev.get("firmware_updates"),
+                    "health_reasons": health_reasons,
                 }
             except Exception as e:
                 bmc_status_cache[key] = {

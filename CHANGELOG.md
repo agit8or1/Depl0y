@@ -5,6 +5,17 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.25] - 2026-04-20 ⏱️ Accurate migration progress + VM edit audit
+
+### Fixed
+- **VM migration progress bar was overly optimistic.** `estimate_progress()` returned `elapsed / fixed_duration * 100` capped at 95%. For a qmigrate with `duration=300`, the bar hit 50% at 2.5 min elapsed regardless of actual migration state — so a large VM with 30 GB memory and 8 Gbps link could show 95% while it was still half-transferred.
+  - Background poller now fetches the running task's log on each 5-second poll and extracts the highest `\d+(\.\d+)?%` it finds (matches Proxmox's `migration status: mem X%`, `transferred: N of M (Z%)`, `xfer X MB Y%`, etc.).
+  - Parsed progress is monotonic (never moves backwards).
+  - Time-based fallback capped at 60% instead of 95% — so until the log yields a real number, the bar can't lie past the halfway mark.
+
+### Notes
+- Task #9 — User asked for "rename / reconfigure / same features as Proxmox UI". Most of this already exists: `VMDetail.vue` (7.2k lines) has inline-edit for name, CPU cores, memory, disk, NIC, boot order, description, tags, cloud-init, ISO. Backend `vm_config.py` exposes: full config PUT, start/stop/reboot/suspend/resume, snapshots, clone, migrate, template convert, delete, disks (add/resize/move/detach/reattach/unused), NICs (add/update/remove), firewall rules+options, VNC ticket, cloud-init regenerate, tags (add/remove/bulk), PCI/USB/serial add+remove. If you're missing something specific, let me know which screen/action and I'll wire it.
+
 ## [2.2.24] - 2026-04-20 📜 Fix PBS event log loading after clear
 
 ### Fixed

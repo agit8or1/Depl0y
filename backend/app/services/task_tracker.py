@@ -1,4 +1,5 @@
 """Task tracker — keeps an in-memory registry of all Proxmox UPIDs initiated through Depl0y."""
+import re
 import threading
 import logging
 from collections import deque
@@ -121,9 +122,20 @@ class TaskTracker:
         return None
 
     def estimate_progress(self, task: dict) -> float:
-        """Return an estimated 0–100 progress percentage for a running task."""
+        """Return an estimated 0–100 progress percentage for a running task.
+
+        Prefers real progress parsed from the Proxmox task log (cached by the
+        background poller in `task["log_progress"]`). Falls back to a
+        time-based estimate when the log doesn't yet contain a percentage.
+        The time-based estimate is capped at 60% so it can't lie past the
+        halfway mark — actual progress parsed from the log is what pushes
+        the bar higher.
+        """
         if task.get("status") != "running":
             return 100.0
+        lp = task.get("log_progress")
+        if isinstance(lp, (int, float)) and 0 <= lp <= 100:
+            return round(float(lp), 1)
         task_type = task.get("task_type", "")
         duration = _TASK_DURATIONS.get(task_type, 60)
         try:
@@ -131,7 +143,8 @@ class TaskTracker:
             elapsed = (datetime.now(timezone.utc) - started).total_seconds()
         except Exception:
             return 0.0
-        pct = min(elapsed / duration * 100, 95.0)
+        # Without real log data we can't trust the remaining half.
+        pct = min(elapsed / duration * 100, 60.0)
         return round(pct, 1)
 
     # ── Background poller ─────────────────────────────────────────────────────
@@ -177,10 +190,62 @@ class TaskTracker:
                 exit_status = result.get("exitstatus")
                 if status != "running":
                     self.update_status(task["upid"], status, exit_status)
+                    return
+
+                # Still running — try to parse real progress from the task log.
+                try:
+                    log_tail = pve.nodes(task["node"]).tasks(task["upid"]).log.get(
+                        start=0, limit=200,
+                    )
+                    pct = self._parse_log_progress(log_tail, task.get("task_type", ""))
+                    if pct is not None:
+                        with self._lock:
+                            t = self._tasks.get(task["upid"])
+                            if t is not None:
+                                # Monotonic — never let parsed progress move backwards
+                                prev = t.get("log_progress") or 0.0
+                                t["log_progress"] = max(prev, pct)
+                except Exception as e:
+                    logger.debug("TaskTracker progress parse for %s: %s", task.get("upid"), e)
             finally:
                 db.close()
         except Exception as exc:
             logger.debug("TaskTracker poll error for %s: %s", task.get("upid"), exc)
+
+    @staticmethod
+    def _parse_log_progress(log_entries, task_type: str) -> float | None:
+        """Extract a real progress percentage from a Proxmox task log tail.
+
+        Proxmox emits percentages in several forms depending on the task:
+        - `migration status: mem X% total Y% ...`
+        - `transferred: 1.5 GiB of 8 GiB (18.75%)`
+        - `transferred X bytes of Y bytes (Z%)` in live migration memory passes
+        - `xfer  1500 MB  32%` in vzdump restore / backup
+        - `INFO: transferred: X / Y bytes (Z%)`
+        Returns the highest percentage found in the last 50 log lines, or None.
+        """
+        if not log_entries:
+            return None
+        # Proxmox log API returns a list of {n, t} dicts (line number, text)
+        lines = []
+        if isinstance(log_entries, list):
+            lines = [(e.get("t") if isinstance(e, dict) else str(e)) for e in log_entries[-50:]]
+        elif isinstance(log_entries, dict):
+            lines = [(e.get("t") if isinstance(e, dict) else str(e)) for e in (log_entries.get("data") or [])[-50:]]
+        highest = None
+        pct_re = re.compile(r"(\d{1,3}(?:\.\d+)?)\s*%")
+        for line in lines:
+            if not line:
+                continue
+            for m in pct_re.finditer(line):
+                try:
+                    v = float(m.group(1))
+                except ValueError:
+                    continue
+                if 0 <= v <= 100:
+                    if highest is None or v > highest:
+                        highest = v
+        return highest
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 

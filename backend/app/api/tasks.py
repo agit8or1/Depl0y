@@ -54,23 +54,25 @@ def get_running_tasks(db: Session = Depends(get_db), current_user=Depends(get_cu
                     node_names = [n.get("node") for n in live if n.get("node")]
                 for node_name in node_names:
                     try:
-                        node_tasks = pve.nodes(node_name).tasks.get(limit=100)
+                        # source=active returns currently-running tasks only.
+                        # Without it, Proxmox returns historical (finished) tasks.
+                        node_tasks = pve.nodes(node_name).tasks.get(source="active")
                         for t in node_tasks:
-                            # Running tasks in Proxmox have status absent or empty string
-                            if not t.get("status") and t.get("upid") not in tracked_upids:
-                                pve_running.append({
-                                    "upid": t.get("upid"),
-                                    "host_id": host.id,
-                                    "node": node_name,
-                                    "task_type": t.get("type", "unknown"),
-                                    "description": f"{t.get('type', 'Task')} on {node_name}"
-                                                   + (f" (VM {t['id']})" if t.get("id") else ""),
-                                    "status": "running",
-                                    "vmid": t.get("id"),
-                                    "started_at": t.get("starttime"),
-                                    "source": "proxmox",
-                                })
-                                tracked_upids.add(t.get("upid"))
+                            if t.get("upid") in tracked_upids:
+                                continue
+                            pve_running.append({
+                                "upid": t.get("upid"),
+                                "host_id": host.id,
+                                "node": node_name,
+                                "task_type": t.get("type", "unknown"),
+                                "description": f"{t.get('type', 'Task')} on {node_name}"
+                                               + (f" (VM {t['id']})" if t.get("id") else ""),
+                                "status": "running",
+                                "vmid": t.get("id"),
+                                "started_at": t.get("starttime"),
+                                "source": "proxmox",
+                            })
+                            tracked_upids.add(t.get("upid"))
                     except Exception:
                         pass
             except Exception:

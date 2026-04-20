@@ -6,6 +6,9 @@
         <p class="text-muted text-sm">Out-of-band hardware control via Redfish — polls every 2 min</p>
       </div>
       <div class="flex gap-1">
+        <button @click="toggleTempUnit()" class="btn btn-outline btn-sm" title="Toggle temperature unit">
+          {{ tempUnit === 'F' ? '°F → °C' : '°C → °F' }}
+        </button>
         <button @click="pollNow()" class="btn btn-outline btn-sm" :disabled="polling">
           {{ polling ? 'Polling…' : 'Poll Now' }}
         </button>
@@ -18,40 +21,48 @@
     <div v-else>
       <!-- ── Dashboard summary ── -->
       <div v-if="allServers.length > 0" class="dashboard mb-3">
-        <!-- Stat cards -->
+        <!-- Stat cards (click to filter) -->
         <div class="stat-cards">
-          <div class="stat-card">
+          <div class="stat-card" :class="{ 'stat-card--active': tileFilter === 'all' }" @click="setTileFilter('all')" role="button" tabindex="0" @keyup.enter="setTileFilter('all')">
             <div class="stat-card__value">{{ dash.total }}</div>
             <div class="stat-card__label">Total</div>
           </div>
-          <div class="stat-card stat-card--on">
+          <div class="stat-card stat-card--on" :class="{ 'stat-card--active': tileFilter === 'on' }" @click="setTileFilter('on')" role="button" tabindex="0" @keyup.enter="setTileFilter('on')">
             <div class="stat-card__value">{{ dash.on }}</div>
             <div class="stat-card__label">Online</div>
           </div>
-          <div class="stat-card stat-card--ok">
+          <div class="stat-card stat-card--ok" :class="{ 'stat-card--active': tileFilter === 'healthy' }" @click="setTileFilter('healthy')" role="button" tabindex="0" @keyup.enter="setTileFilter('healthy')">
             <div class="stat-card__value">{{ dash.healthy }}</div>
             <div class="stat-card__label">Healthy</div>
           </div>
-          <div class="stat-card stat-card--warn" v-if="dash.warning > 0">
+          <div class="stat-card stat-card--warn" :class="{ 'stat-card--active': tileFilter === 'warning' }" v-if="dash.warning > 0" @click="setTileFilter('warning')" role="button" tabindex="0" @keyup.enter="setTileFilter('warning')">
             <div class="stat-card__value">{{ dash.warning }}</div>
             <div class="stat-card__label">Warning</div>
           </div>
-          <div class="stat-card stat-card--crit" v-if="dash.critical > 0">
+          <div class="stat-card stat-card--crit" :class="{ 'stat-card--active': tileFilter === 'critical' }" v-if="dash.critical > 0" @click="setTileFilter('critical')" role="button" tabindex="0" @keyup.enter="setTileFilter('critical')">
             <div class="stat-card__value">{{ dash.critical }}</div>
             <div class="stat-card__label">Critical</div>
           </div>
-          <div class="stat-card stat-card--err" v-if="dash.unreachable > 0">
+          <div class="stat-card stat-card--err" :class="{ 'stat-card--active': tileFilter === 'unreachable' }" v-if="dash.unreachable > 0" @click="setTileFilter('unreachable')" role="button" tabindex="0" @keyup.enter="setTileFilter('unreachable')">
             <div class="stat-card__value">{{ dash.unreachable }}</div>
             <div class="stat-card__label">Unreachable</div>
           </div>
-          <div class="stat-card stat-card--ssh" v-if="dash.sshMode > 0">
+          <div class="stat-card stat-card--ssh" :class="{ 'stat-card--active': tileFilter === 'ssh' }" v-if="dash.sshMode > 0" @click="setTileFilter('ssh')" role="button" tabindex="0" @keyup.enter="setTileFilter('ssh')">
             <div class="stat-card__value">{{ dash.sshMode }}</div>
             <div class="stat-card__label">SSH Mode</div>
           </div>
-          <div class="stat-card stat-card--muted" v-if="dash.unconfigured > 0">
+          <div class="stat-card stat-card--muted" :class="{ 'stat-card--active': tileFilter === 'unconfigured' }" v-if="dash.unconfigured > 0" @click="setTileFilter('unconfigured')" role="button" tabindex="0" @keyup.enter="setTileFilter('unconfigured')">
             <div class="stat-card__value">{{ dash.unconfigured }}</div>
             <div class="stat-card__label">Unconfigured</div>
           </div>
+          <div class="stat-card stat-card--watts" v-if="dash.totalWatts != null">
+            <div class="stat-card__value">{{ dash.totalWatts }}W</div>
+            <div class="stat-card__label">Total Draw</div>
+          </div>
+        </div>
+        <div v-if="tileFilter && tileFilter !== 'all'" class="tile-filter-hint text-xs text-muted mt-1">
+          Filtering: <strong>{{ tileFilterLabel }}</strong> ({{ filteredServers.length }} of {{ allServers.length }})
+          <button @click="setTileFilter('all')" class="btn btn-outline btn-sm ml-1" style="padding:0.05rem 0.4rem;font-size:0.65rem">Clear</button>
         </div>
 
         <!-- Charts row -->
@@ -97,12 +108,13 @@
                 <th>Temp</th>
                 <th>Watts</th>
                 <th>Model</th>
+                <th>Updates</th>
                 <th>Last Poll</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="srv in allServers" :key="srv._key"
+              <tr v-for="srv in filteredServers" :key="srv._key"
                   :class="{ 'row-critical': alertLevel(srv) === 'crit', 'row-warning': alertLevel(srv) === 'warn' }">
                 <td class="text-xs font-bold">{{ srv.name }}</td>
                 <td class="text-xs">
@@ -127,6 +139,31 @@
                   {{ srv._status?.consumed_watts != null ? srv._status.consumed_watts + 'W' : '—' }}
                 </td>
                 <td class="text-xs text-muted">{{ srv._status?.model || '—' }}</td>
+                <td class="text-xs">
+                  <div class="fw-update-cell">
+                    <!-- Firmware update indicators (populated by daily catalog check) -->
+                    <span v-if="srv._status?.firmware_updates?.bios" class="fw-update-badge fw-update-badge--warn"
+                          :title="`BIOS update: ${srv._status.firmware_updates.bios.installed} → ${srv._status.firmware_updates.bios.available}`">
+                      BIOS ↑
+                    </span>
+                    <span v-if="srv._status?.firmware_updates?.idrac" class="fw-update-badge fw-update-badge--warn"
+                          :title="`iDRAC update: ${srv._status.firmware_updates.idrac.installed} → ${srv._status.firmware_updates.idrac.available}`">
+                      iDRAC ↑
+                    </span>
+                    <span v-if="srv._status?.firmware_updates && !srv._status.firmware_updates.bios && !srv._status.firmware_updates.idrac" class="fw-update-badge fw-update-badge--ok" title="Firmware is up to date">
+                      ✓
+                    </span>
+                    <!-- Dell support link by service tag -->
+                    <a v-if="srv._status?.serial_number"
+                       :href="`https://www.dell.com/support/home/en-us/product-support/servicetag/${srv._status.serial_number}/drivers`"
+                       target="_blank" rel="noopener noreferrer"
+                       class="update-check-link"
+                       :title="`Check for firmware updates — Service Tag: ${srv._status.serial_number}`">
+                      ↗
+                    </a>
+                    <span v-if="!srv._status?.firmware_updates && !srv._status?.serial_number" class="text-muted">—</span>
+                  </div>
+                </td>
                 <td class="text-xs text-muted">{{ srv._status?.last_polled ? formatRelative(srv._status.last_polled) : '—' }}</td>
                 <td class="text-xs">
                   <button @click="srv._expanded ? collapseServer(srv) : expandServer(srv)" class="btn btn-outline btn-sm" style="padding:0.1rem 0.5rem;font-size:0.7rem">
@@ -141,7 +178,7 @@
 
       <!-- ── Server list ── -->
       <template v-if="allServers.length > 0">
-        <div v-for="srv in allServers" :key="srv._key" :id="`srv-card-${srv._key}`" class="server-card mb-2">
+        <div v-for="srv in filteredServers" :key="srv._key" :id="`srv-card-${srv._key}`" class="server-card mb-2">
           <!-- Status row (always visible) -->
           <div class="status-row">
             <div class="status-left">
@@ -157,6 +194,8 @@
               </span>
               <span v-if="srv._status?.error && !srv._useSSH" class="error-inline" title="BMC unreachable">⚠ Unreachable</span>
               <span v-if="!srv._status && srv.idrac_hostname && !srv._useSSH" class="text-muted text-xs">Pending first poll…</span>
+              <span v-if="alertLevel(srv) === 'crit'" class="alert-badge alert-badge--crit" :title="alertReason(srv)">⚠ Critical</span>
+              <span v-else-if="alertLevel(srv) === 'warn'" class="alert-badge alert-badge--warn" :title="alertReason(srv)">⚠ Warning</span>
             </div>
             <div class="status-right flex gap-1">
               <span v-if="srv._useSSH" class="type-pill type-pill--pbs" title="Data source: SSH">SSH</span>
@@ -171,6 +210,7 @@
               </template>
               <template v-else>
                 <button @click="openConfigBMC(srv)" class="btn btn-outline btn-sm">{{ srv.idrac_hostname ? 'Edit BMC' : 'Configure BMC' }}</button>
+                <button v-if="srv.idrac_hostname" @click="clearBMCDirect(srv)" class="btn btn-danger btn-sm">Clear BMC</button>
               </template>
               <a v-if="srv.idrac_hostname" :href="`https://${srv.idrac_hostname}:${srv.idrac_port || 443}`" target="_blank" rel="noopener" class="btn btn-outline btn-sm">Launch ↗</a>
               <button @click="testConnection(srv)" class="btn btn-outline btn-sm">Test</button>
@@ -418,6 +458,24 @@
                   </div>
                   <div v-else class="text-muted text-xs">No drives detected</div>
                 </div>
+                <!-- RAID arrays (SSH mode) -->
+                <div v-if="srv._info?._ssh_raid_arrays?.length" class="detail-section mb-2">
+                  <h4>RAID Arrays</h4>
+                  <div class="hw-table-wrapper">
+                    <table class="table">
+                      <thead><tr><th>Array</th><th>Level</th><th>State</th><th>Health</th><th>Detail</th></tr></thead>
+                      <tbody>
+                        <tr v-for="r in srv._info._ssh_raid_arrays" :key="r.name">
+                          <td class="text-xs font-mono">{{ r.name }}</td>
+                          <td class="text-xs">{{ r.level }}</td>
+                          <td class="text-xs">{{ r.state }}</td>
+                          <td class="text-xs"><span :class="['health-badge', `health-${r.health.toLowerCase()}`]">{{ r.health }}</span></td>
+                          <td class="text-xs text-muted font-mono" style="white-space:normal;word-break:break-all">{{ r.detail }}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
                 <div v-if="!srv._hardware.processors.length && !srv._hardware.modules.length && !srv._hardware.controllers.length" class="text-muted text-sm">No hardware data available</div>
               </div>
             </div>
@@ -558,9 +616,29 @@
                 <div class="loading-spinner"></div><span class="text-muted text-sm">Loading firmware inventory…</span>
               </div>
               <div v-else-if="srv._firmware">
-                <div class="flex gap-1 mb-1" style="align-items:center">
+                <!-- Firmware update summary from daily catalog check -->
+                <div v-if="srv._status?.firmware_updates" class="fw-summary-bar mb-1">
+                  <span v-if="srv._status.firmware_updates.bios || srv._status.firmware_updates.idrac" class="fw-summary-warn">
+                    Updates available:
+                    <span v-if="srv._status.firmware_updates.bios">
+                      BIOS {{ srv._status.firmware_updates.bios.installed }} → <strong>{{ srv._status.firmware_updates.bios.available }}</strong>
+                    </span>
+                    <span v-if="srv._status.firmware_updates.bios && srv._status.firmware_updates.idrac"> · </span>
+                    <span v-if="srv._status.firmware_updates.idrac">
+                      iDRAC {{ srv._status.firmware_updates.idrac.installed }} → <strong>{{ srv._status.firmware_updates.idrac.available }}</strong>
+                    </span>
+                  </span>
+                  <span v-else class="fw-summary-ok">✓ Firmware up to date (checked {{ formatRelative(srv._status.firmware_updates.checked_at) }})</span>
+                </div>
+                <div class="flex gap-1 mb-1" style="align-items:center;flex-wrap:wrap">
                   <span class="text-muted text-xs">{{ srv._firmware.firmware?.length || 0 }} components</span>
                   <span v-if="srv._firmware.source === 'ssh'" class="type-pill type-pill--pbs text-xs">via SSH</span>
+                  <a v-if="srv._info?.serial_number || srv._status?.serial_number"
+                     :href="`https://www.dell.com/support/home/en-us/product-support/servicetag/${srv._info?.serial_number || srv._status?.serial_number}/drivers`"
+                     target="_blank" rel="noopener noreferrer"
+                     class="btn btn-outline btn-sm" style="font-size:0.72rem">
+                    Dell Support ↗
+                  </a>
                   <div style="margin-left:auto;display:flex;gap:0.4rem">
                     <button v-if="srv._useSSH" @click="runUpdate(srv)" class="btn btn-warning btn-sm" :disabled="updateRunning">
                       {{ updateRunning ? 'Updating…' : 'Apply Updates' }}
@@ -657,13 +735,7 @@
             <label class="form-label">Password</label>
             <input v-model="bmcForm.idrac_password" type="password" class="form-control" placeholder="Leave blank to keep existing" />
           </div>
-          <div class="form-group">
-            <label class="form-label d-flex" style="align-items:center;gap:0.5rem;cursor:pointer">
-              <input type="checkbox" v-model="bmcForm.idrac_use_ssh" />
-              Use SSH instead of HTTPS (Redfish)
-            </label>
-            <p class="text-muted text-xs mt-1" style="margin:0">When enabled, hardware and network data comes from SSH using these credentials.</p>
-          </div>
+          <p class="text-muted text-xs" style="margin:0">Both Redfish (HTTPS) and SSH are attempted on this address using these credentials.</p>
         </div>
         <div class="modal-footer" style="justify-content:space-between">
           <button @click="clearBMC()" class="btn btn-danger" :disabled="bmcSaving" title="Remove all BMC credentials from this server">Clear BMC Config</button>
@@ -792,7 +864,7 @@
 </template>
 
 <script>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { Bar, Doughnut } from 'vue-chartjs'
 import {
   Chart as ChartJS,
@@ -812,12 +884,16 @@ export default {
     const loading = ref(true)
 
     // ── Temperature unit (C/F) ──
-    const tempUnit = ref(localStorage.getItem('depl0y_temp_unit') || 'C')
+    const tempUnit = ref(localStorage.getItem('depl0y_temp_unit') || 'F')
     const toDisplay = (c) => {
       if (c == null) return null
       return tempUnit.value === 'F' ? Math.round(c * 9 / 5 + 32) : c
     }
     const tempLabel = computed(() => tempUnit.value === 'F' ? '°F' : '°C')
+    const toggleTempUnit = () => {
+      tempUnit.value = tempUnit.value === 'F' ? 'C' : 'F'
+      localStorage.setItem('depl0y_temp_unit', tempUnit.value)
+    }
     const polling = ref(false)
 
     const allProxmox = ref([])
@@ -849,7 +925,7 @@ export default {
       _netLoading: false,
       _fwLoading: false,
       _sensorsLoading: false,
-      _useSSH: obj.idrac_use_ssh || false,
+      _useSSH: true,  // One IP per BMC — always try both Redfish + SSH
       _redfishOK: false,
       _sshHardware: null,
     })
@@ -866,6 +942,8 @@ export default {
     // ── Dashboard computed ──
     const dash = computed(() => {
       const servers = allServers.value
+      const wattsValues = servers.map(s => s._status?.consumed_watts).filter(w => w != null && w > 0)
+      const totalWatts = wattsValues.length ? wattsValues.reduce((a, b) => a + b, 0) : null
       return {
         total: servers.length,
         on: servers.filter(s => s._status?.power_state === 'On').length,
@@ -875,8 +953,41 @@ export default {
         unreachable: servers.filter(s => s._status?.error && !s._useSSH).length,
         sshMode: servers.filter(s => s._useSSH).length,
         unconfigured: servers.filter(s => !s.idrac_hostname && s._stype !== 'standalone' && !s._useSSH).length,
+        totalWatts,
       }
     })
+
+    // ── Tile filter (click a dashboard tile to narrow the server list) ──
+    const tileFilter = ref('all')
+    const setTileFilter = (k) => {
+      tileFilter.value = (tileFilter.value === k && k !== 'all') ? 'all' : k
+      // Problem tiles: auto-expand the first matching server so the issue is
+      // immediately visible (Overview tab highlights the specific warning).
+      if (['warning', 'critical', 'unreachable'].includes(tileFilter.value)) {
+        nextTick(() => {
+          const first = filteredServers.value[0]
+          if (first) jumpToServer(first)
+        })
+      }
+    }
+    const _tileMatchers = {
+      all: () => true,
+      on: (s) => s._status?.power_state === 'On',
+      healthy: (s) => s._status?.health === 'OK' && !s._status?.error,
+      warning: (s) => s._status?.health === 'Warning',
+      critical: (s) => s._status?.health === 'Critical',
+      unreachable: (s) => !!s._status?.error && !s._useSSH,
+      ssh: (s) => !!s._useSSH,
+      unconfigured: (s) => !s.idrac_hostname && s._stype !== 'standalone' && !s._useSSH,
+    }
+    const filteredServers = computed(() => {
+      const fn = _tileMatchers[tileFilter.value] || (() => true)
+      return allServers.value.filter(fn)
+    })
+    const tileFilterLabel = computed(() => ({
+      on: 'Online', healthy: 'Healthy', warning: 'Warning', critical: 'Critical',
+      unreachable: 'Unreachable', ssh: 'SSH Mode', unconfigured: 'Unconfigured',
+    }[tileFilter.value] || ''))
 
     const alertedServers = computed(() =>
       allServers.value.filter(s => {
@@ -960,14 +1071,26 @@ export default {
         }
       }
 
+      // SSH RAID arrays (software RAID from /proc/mdstat)
+      for (const r of srv._info?._ssh_raid_arrays || []) {
+        if (r.health !== 'OK') {
+          issues.push({
+            level: r.health === 'Failed' ? 'critical' : 'warn',
+            label: `RAID ${r.name} — ${r.health}`,
+            detail: `${r.level} — ${r.detail}`,
+          })
+        }
+      }
+
       return issues
     }
 
     /** Return recent Warning/Critical SEL entries for the health issues panel. */
     const recentAlertLogs = (srv) => {
       if (!Array.isArray(srv._logs)) return []
+      const noisePatterns = /invalid command|command not found|no such file|ipmitool|sensors:/i
       return srv._logs
-        .filter(e => e.severity === 'Critical' || e.severity === 'Warning')
+        .filter(e => (e.severity === 'Critical' || e.severity === 'Warning') && !noisePatterns.test(e.message))
         .slice(0, 5)
     }
 
@@ -1094,13 +1217,30 @@ export default {
     const pollNow = async () => {
       polling.value = true
       try {
-        // triggerPoll runs run_bmc_poll() server-side and returns the updated cache
-        const res = await api.idrac.triggerPoll()
-        applyStatusCache(res.data)
-        // Re-fetch detail data for expanded servers
+        // Kick off background poll — returns immediately with current cache
+        await api.idrac.triggerPoll()
+        // Wait for the background SSH/Redfish poll to finish (up to 40 s)
+        const start = Date.now()
+        const prevPolled = Object.values(allServers.value.reduce((m, s) => {
+          if (s._status?.last_polled) m[s._key] = s._status.last_polled
+          return m
+        }, {}))
+        let refreshed = false
+        while (Date.now() - start < 40_000) {
+          await new Promise(r => setTimeout(r, 2000))
+          const statusRes = await api.idrac.getStatus()
+          applyStatusCache(statusRes.data)
+          // Check if any server's last_polled timestamp advanced
+          const updated = allServers.value.some(s =>
+            s._status?.last_polled && !prevPolled.includes(s._status.last_polled)
+          )
+          if (updated) { refreshed = true; break }
+        }
+        if (!refreshed) applyStatusCache((await api.idrac.getStatus()).data)
         for (const srv of allServers.value) {
           if (srv._expanded) loadServerDetail(srv)
         }
+        toast.success('Poll complete')
       } catch (e) {
         toast.error('Poll failed')
       } finally {
@@ -1170,13 +1310,15 @@ export default {
       srv._redfishOK = false
       const sys = data.system || {}
       const totalMemGb = Math.round((data.modules || []).reduce((s, m) => s + (m.capacity_mib || 0), 0) / 1024 * 10) / 10
+      const raidArrays = data.raid_arrays || []
+      const raidDegraded = raidArrays.some(a => a.health !== 'OK')
       srv._info = {
         manufacturer: sys.manufacturer || '',
         model: sys.model || '',
         serial_number: sys.serial || '',
         bios_version: [sys.bios_version, sys.bios_date].filter(Boolean).join(' — '),
         power_state: 'On',
-        health: 'OK',
+        health: raidDegraded ? 'Warning' : 'OK',
         processor_count: data.processors?.length || null,
         processor_model: data.processors?.[0]?.model || '',
         memory_total_gb: totalMemGb,
@@ -1184,56 +1326,84 @@ export default {
         _ssh_kernel: sys.kernel || '',
         _ssh_os: sys.os || '',
         _ssh_uptime: sys.uptime || '',
+        _ssh_max_temp_c: data.max_temp_c ?? null,
+        _ssh_consumed_watts: data.consumed_watts ?? null,
+        _ssh_raid_arrays: raidArrays,
       }
+      // Vue skips re-render when srv._info changes if the details panel was collapsed
+      // during initial render (srv._expanded was false → _info never tracked by the
+      // render effect). Splice doesn't help because Vue skips the trigger when the
+      // same object reference is re-stored (Object.is(srv, oldSrv) === true).
+      // Replacing the ref value with a new array forces allServers to recompute
+      // because the ref itself changes (different array reference → trigger fires).
+      const arr = srv._stype === 'pbs' ? allPBS : srv._stype === 'pve_node' ? allNodes : allStandalone
+      arr.value = [...arr.value]
     }
 
     const loadServerDetail = async (srv) => {
       srv._loading = true
       srv._error = null
-      // For SSH mode, clear any stale _info so Vue detects the null→object
-      // transition when SSH data arrives (avoids reactivity miss on object replacement)
       if (srv._useSSH) srv._info = null
 
       const calls = _apiFns(srv)
+      // _silent: true → api.js error interceptor skips toast (expected Redfish failures for SSH-mode servers)
+      const silent = { _silent: true }
 
-      // Always try Redfish first — best source for iDRAC/iLO overview data.
-      // SSH mode acts as fallback when Redfish is unavailable.
-      const [infoR, thermalR, powerR] = await Promise.allSettled([
-        calls.getInfo(),
-        calls.getThermal(),
-        calls.getPowerUsage(),
-      ])
+      if (srv._useSSH) {
+        // pbs: idrac_hostname IS the OS — OS SSH is primary, Redfish as best-effort
+        // pve_node/pve: Redfish primary; OS SSH as fallback if Redfish fails
+        const isOsSshPrimary = srv._stype === 'pbs'
 
-      if (infoR.status === 'fulfilled') {
-        srv._info = infoR.value.data
-        srv._redfishOK = true
-      }
-      if (thermalR.status === 'fulfilled') srv._thermal = thermalR.value.data
-      if (powerR.status === 'fulfilled') srv._powerUsage = powerR.value.data
+        const [rfInfo, rfThermal, rfPower, sshHw] = await Promise.allSettled([
+          calls.getInfo(silent),
+          calls.getThermal(silent),
+          calls.getPowerUsage(silent),
+          calls.getSshHardware(),
+        ])
 
-      // If Redfish info failed, try SSH as fallback.
-      // Use !_redfishOK (not !_info) because expandServer may pre-populate _info from status cache,
-      // which would skip SSH even though Redfish never actually ran successfully.
-      if (!srv._redfishOK) {
-        if (srv._useSSH) {
-          try {
-            const res = await calls.getSshHardware()
-            _populateInfoFromSSH(srv, res.data)
-          } catch (e) {
-            if (!srv._info) {
-              srv._error = e.response?.data?.detail || e.message || 'Redfish and SSH both failed'
-            }
+        const rfOK = rfInfo.status === 'fulfilled' && rfInfo.value.status < 300
+        if (rfOK) {
+          srv._info = rfInfo.value.data
+          srv._redfishOK = true
+          if (rfThermal.status === 'fulfilled' && rfThermal.value.status < 300) srv._thermal = rfThermal.value.data
+          if (rfPower.status === 'fulfilled' && rfPower.value.status < 300) srv._powerUsage = rfPower.value.data
+        }
+
+        if (sshHw.status === 'fulfilled') {
+          if (!rfOK) {
+            // Redfish unavailable — populate entirely from SSH
+            _populateInfoFromSSH(srv, sshHw.value.data)
+          } else {
+            // Redfish is primary — still store SSH data for extra fields (RAID, RAPL, etc.)
+            srv._sshHardware = sshHw.value.data
           }
+        } else if (!rfOK) {
+          srv._error = rfInfo.reason?.response?.data?.detail || rfInfo.reason?.message || 'BMC unreachable'
+        }
+
+        if (isOsSshPrimary) {
+          calls.getSshLogs().then(r => { srv._logs = r.data?.entries ?? [] }).catch(() => { srv._logs = [] })
+        } else {
+          calls.getLogs().then(r => { srv._logs = r.data?.entries ?? [] }).catch(() => { srv._logs = [] })
+        }
+      } else {
+        // Redfish-only mode: try all three endpoints in parallel
+        const [infoR, thermalR, powerR] = await Promise.allSettled([
+          calls.getInfo(),
+          calls.getThermal(),
+          calls.getPowerUsage(),
+        ])
+
+        if (infoR.status === 'fulfilled') {
+          srv._info = infoR.value.data
+          srv._redfishOK = true
         } else if (!srv._info) {
           const err = infoR.reason
           srv._error = err?.response?.data?.detail || err?.message || 'Failed to connect to BMC'
         }
-      }
+        if (thermalR.status === 'fulfilled') srv._thermal = thermalR.value.data
+        if (powerR.status === 'fulfilled') srv._powerUsage = powerR.value.data
 
-      // Pre-fetch logs: SSH journal if SSH mode and Redfish not working, else Redfish SEL
-      if (srv._useSSH && !srv._redfishOK) {
-        calls.getSshLogs().then(r => { srv._logs = r.data?.entries ?? [] }).catch(() => { srv._logs = [] })
-      } else {
         calls.getLogs().then(r => { srv._logs = r.data?.entries ?? [] }).catch(() => { srv._logs = [] })
       }
 
@@ -1414,9 +1584,9 @@ export default {
     // ── API call dispatch by server type ──
     const _apiFns = (srv) => {
       if (srv._stype === 'pve_node') return {
-        getInfo: () => api.idrac.getNodeInfo(srv.id),
-        getThermal: () => api.idrac.getNodeThermal(srv.id),
-        getPowerUsage: () => api.idrac.getNodePowerUsage(srv.id),
+        getInfo: (cfg) => api.idrac.getNodeInfo(srv.id, cfg),
+        getThermal: (cfg) => api.idrac.getNodeThermal(srv.id, cfg),
+        getPowerUsage: (cfg) => api.idrac.getNodePowerUsage(srv.id, cfg),
         getLogs: () => api.idrac.getNodeLogs(srv.id),
         getSensors: () => api.idrac.getNodeSensors(srv.id),
         test: () => api.idrac.testNode(srv.id),
@@ -1436,9 +1606,9 @@ export default {
         runSshUpdate: () => api.idrac.runNodeSshUpdate(srv.id),
       }
       if (srv._stype === 'pbs') return {
-        getInfo: () => api.pbs.getIdracInfo(srv.id),
-        getThermal: () => api.pbs.getIdracThermal(srv.id),
-        getPowerUsage: () => api.pbs.getIdracPowerUsage(srv.id),
+        getInfo: (cfg) => api.pbs.getIdracInfo(srv.id, cfg),
+        getThermal: (cfg) => api.pbs.getIdracThermal(srv.id, cfg),
+        getPowerUsage: (cfg) => api.pbs.getIdracPowerUsage(srv.id, cfg),
         getLogs: () => api.pbs.getIdracLogs(srv.id),
         getSensors: () => api.pbs.getIdracSensors(srv.id),
         test: () => api.pbs.testIdrac(srv.id),
@@ -1458,9 +1628,9 @@ export default {
         runSshUpdate: () => api.pbs.runIdracSshUpdate(srv.id),
       }
       if (srv._stype === 'standalone') return {
-        getInfo: () => api.idrac.getStandaloneInfo(srv.id),
-        getThermal: () => api.idrac.getStandaloneThermal(srv.id),
-        getPowerUsage: () => api.idrac.getStandalonePowerUsage(srv.id),
+        getInfo: (cfg) => api.idrac.getStandaloneInfo(srv.id, cfg),
+        getThermal: (cfg) => api.idrac.getStandaloneThermal(srv.id, cfg),
+        getPowerUsage: (cfg) => api.idrac.getStandalonePowerUsage(srv.id, cfg),
         getLogs: () => api.idrac.getStandaloneLogs(srv.id),
         getSensors: () => api.idrac.getStandaloneSensors(srv.id),
         test: () => api.idrac.testStandalone(srv.id),
@@ -1480,9 +1650,9 @@ export default {
         runSshUpdate: () => api.idrac.runStandaloneSshUpdate(srv.id),
       }
       return {
-        getInfo: () => api.idrac.getInfo(srv.id),
-        getThermal: () => api.idrac.getThermal(srv.id),
-        getPowerUsage: () => api.idrac.getPowerUsage(srv.id),
+        getInfo: (cfg) => api.idrac.getInfo(srv.id, cfg),
+        getThermal: (cfg) => api.idrac.getThermal(srv.id, cfg),
+        getPowerUsage: (cfg) => api.idrac.getPowerUsage(srv.id, cfg),
         getLogs: () => api.idrac.getLogs(srv.id),
         getSensors: () => api.idrac.getSensors(srv.id),
         test: () => api.idrac.testConnection(srv.id),
@@ -1556,7 +1726,10 @@ export default {
 
     const testConnection = async (srv) => {
       try {
-        const res = srv._useSSH ? await _apiFns(srv).testSsh() : await _apiFns(srv).test()
+        // pbs: SSH test (idrac_hostname is OS IP)
+        // pve_node/pve/standalone: Redfish test (idrac_hostname is BMC IP)
+        const useOsSsh = srv._useSSH && srv._stype === 'pbs'
+        const res = useOsSsh ? await _apiFns(srv).testSsh() : await _apiFns(srv).test()
         if (res.data.status === 'success') toast.success(res.data.message)
         else toast.error(res.data.message)
       } catch {
@@ -1585,18 +1758,24 @@ export default {
     const bmcForm = ref({})
     let _bmcTarget = null
 
+    const clearBMCDirect = (srv) => {
+      _bmcTarget = srv
+      clearBMC()
+    }
+
     const openConfigBMC = (srv) => {
       _bmcTarget = srv
       bmcForm.value = {
         _origName: srv.name,
         _stype: srv._stype,
+        _osHostname: srv.hostname || '',
         name: srv.name,
         idrac_type: srv.idrac_type || 'idrac',
         idrac_hostname: srv.idrac_hostname || '',
         idrac_port: srv.idrac_port || 443,
         idrac_username: srv.idrac_username || '',
         idrac_password: '',
-        idrac_use_ssh: srv.idrac_use_ssh || false,
+        idrac_use_ssh: true,  // legacy field; always true (Redfish + SSH both attempted)
       }
       showBMCModal.value = true
     }
@@ -1869,15 +2048,15 @@ export default {
     })
 
     return {
-      tempUnit, toDisplay, tempLabel,
-      loading, polling, allServers, typeLabel, bmcTypeLabel, dash, alertedServers, alertLevel, alertReason, healthIssues, recentAlertLogs,
+      tempUnit, toDisplay, tempLabel, toggleTempUnit,
+      loading, polling, allServers, filteredServers, tileFilter, tileFilterLabel, setTileFilter, typeLabel, bmcTypeLabel, dash, alertedServers, alertLevel, alertReason, healthIssues, recentAlertLogs,
       powerHistory, powerEventClass,
       healthChartData, powerStateChartData, tempBarData, dashChartOptions, tempBarOptions,
       expandServer, collapseServer, jumpToServer, loadServerDetail, loadLogs, testConnection, powerAction,
       switchTab, loadHardware, loadNetwork, loadFirmware, loadSensors,
       showUpdateModal, updateOutput, updateRunning, updateSuccess, runUpdate,
       netEditForm, netSaving, startNetEdit, cancelNetEdit, saveNetwork,
-      showBMCModal, bmcForm, bmcSaving, openConfigBMC, saveBMC, clearBMC,
+      showBMCModal, bmcForm, bmcSaving, openConfigBMC, saveBMC, clearBMC, clearBMCDirect,
       showStandaloneModal, standaloneForm, standaloneSaving, openAddStandalone, openEditStandalone, saveStandalone, deleteStandalone, deletePBS,
       showPBSModal, pbsForm, pbsSaving, openAddPBS, savePBS,
       pollNow,
@@ -2242,7 +2421,13 @@ export default {
   border-radius: 0.4rem;
   background: var(--background);
   border: 1px solid var(--border-color);
+  cursor: pointer;
+  user-select: none;
+  transition: transform 0.08s ease, box-shadow 0.08s ease, border-color 0.08s ease;
 }
+.stat-card:hover { transform: translateY(-1px); box-shadow: 0 2px 6px rgba(0,0,0,0.08); }
+.stat-card:focus-visible { outline: 2px solid var(--color-primary, #2563eb); outline-offset: 1px; }
+.stat-card--active { border-width: 2px; box-shadow: 0 0 0 2px rgba(37,99,235,0.18); }
 .stat-card__value { font-size: 1.5rem; font-weight: 700; line-height: 1.2; }
 .stat-card__label { font-size: 0.65rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-secondary); margin-top: 0.2rem; }
 
@@ -2289,6 +2474,17 @@ export default {
 .alert-chip--crit:hover { background: #fecaca; }
 .alert-chip--warn { background: #fef9c3; color: #a16207; }
 .alert-chip--warn:hover { background: #fef08a; }
+
+.alert-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.1rem 0.4rem;
+  border-radius: 9999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+.alert-badge--crit { background: #fee2e2; color: #dc2626; }
+.alert-badge--warn { background: #fef9c3; color: #a16207; }
 
 /* ── Health issues panel ──────────────────────────────────────────────── */
 .health-issues-panel {
@@ -2480,4 +2676,84 @@ export default {
 .sensor-type--fan { background: #dcfce7; color: #166534; }
 .sensor-type--voltage { background: #fef9c3; color: #78350f; }
 .sensor-type--power_supply { background: #dbeafe; color: #1e3a8a; }
+
+/* Total draw stat card */
+.stat-card--watts { border-color: #7dd3fc; }
+.stat-card--watts .stat-card__value { color: #0ea5e9; }
+
+/* Updates column link */
+.update-check-link {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #0ea5e9;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.update-check-link:hover { text-decoration: underline; }
+
+/* Firmware update badges in overview table */
+.fw-update-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+}
+.fw-update-badge {
+  display: inline-block;
+  font-size: 0.62rem;
+  font-weight: 700;
+  padding: 0.05rem 0.3rem;
+  border-radius: 0.2rem;
+  white-space: nowrap;
+}
+.fw-update-badge--warn { background: #fef3c7; color: #92400e; }
+.fw-update-badge--ok   { background: #dcfce7; color: #14532d; }
+
+/* Firmware summary bar (firmware tab) */
+.fw-summary-bar {
+  padding: 0.4rem 0.6rem;
+  border-radius: 0.3rem;
+  font-size: 0.75rem;
+}
+.fw-summary-warn { color: #92400e; background: #fef3c7; display: block; padding: 0.4rem 0.6rem; border-radius: 0.3rem; }
+.fw-summary-ok   { color: #14532d; background: #dcfce7; display: block; padding: 0.4rem 0.6rem; border-radius: 0.3rem; }
+
+</style>
+
+<!-- Dark mode overrides — non-scoped so they reliably override the scoped light-mode rules -->
+<style>
+[data-theme="dark"] .power-on  { background: rgba(22,163,74,0.2)  !important; color: #4ade80 !important; }
+[data-theme="dark"] .power-off { background: rgba(220,38,38,0.2)  !important; color: #f87171 !important; }
+[data-theme="dark"] .health-ok       { background: rgba(22,163,74,0.2)   !important; color: #4ade80 !important; }
+[data-theme="dark"] .health-warning  { background: rgba(217,119,6,0.25)  !important; color: #fbbf24 !important; }
+[data-theme="dark"] .health-critical { background: rgba(220,38,38,0.2)   !important; color: #f87171 !important; }
+[data-theme="dark"] .row-critical { background: rgba(220,38,38,0.08) !important; }
+[data-theme="dark"] .row-warning  { background: rgba(217,119,6,0.08)  !important; }
+[data-theme="dark"] .error-box { background: rgba(220,38,38,0.15) !important; border-color: rgba(220,38,38,0.4) !important; color: #f87171 !important; }
+[data-theme="dark"] .alert-strip { background: rgba(217,119,6,0.15) !important; border-color: rgba(217,119,6,0.5) !important; }
+[data-theme="dark"] .alert-strip__label { color: #fbbf24 !important; }
+[data-theme="dark"] .alert-chip--crit       { background: rgba(220,38,38,0.2) !important; color: #f87171 !important; }
+[data-theme="dark"] .alert-chip--crit:hover { background: rgba(220,38,38,0.3) !important; }
+[data-theme="dark"] .alert-chip--warn       { background: rgba(217,119,6,0.2) !important; color: #fbbf24 !important; }
+[data-theme="dark"] .alert-chip--warn:hover { background: rgba(217,119,6,0.3) !important; }
+[data-theme="dark"] .alert-badge--crit { background: rgba(220,38,38,0.2) !important; color: #f87171 !important; }
+[data-theme="dark"] .alert-badge--warn { background: rgba(217,119,6,0.2) !important; color: #fbbf24 !important; }
+[data-theme="dark"] .temp-ok   { background: rgba(22,163,74,0.2)  !important; color: #4ade80 !important; }
+[data-theme="dark"] .temp-warm { background: rgba(217,119,6,0.2)  !important; color: #fbbf24 !important; }
+[data-theme="dark"] .temp-hot  { background: rgba(220,38,38,0.2)  !important; color: #f87171 !important; }
+[data-theme="dark"] .power-event--crit { background: rgba(220,38,38,0.15)  !important; color: #f87171 !important; }
+[data-theme="dark"] .power-event--warn { background: rgba(217,119,6,0.15)  !important; color: #fbbf24 !important; }
+[data-theme="dark"] .power-event--info { background: rgba(59,130,246,0.15) !important; color: #93c5fd !important; }
+[data-theme="dark"] .sensor-type--temperature  { background: rgba(220,38,38,0.2)   !important; color: #fca5a5 !important; }
+[data-theme="dark"] .sensor-type--fan          { background: rgba(22,163,74,0.2)   !important; color: #86efac !important; }
+[data-theme="dark"] .sensor-type--voltage      { background: rgba(217,119,6,0.2)   !important; color: #fcd34d !important; }
+[data-theme="dark"] .sensor-type--power_supply { background: rgba(59,130,246,0.2)  !important; color: #93c5fd !important; }
+[data-theme="dark"] .type-pill--bmctype        { background: rgba(14,165,233,0.2)  !important; color: #7dd3fc !important; }
+[data-theme="dark"] .stat-card--watts                    { border-color: #0369a1  !important; }
+[data-theme="dark"] .stat-card--watts .stat-card__value  { color: #38bdf8 !important; }
+[data-theme="dark"] .update-check-link { color: #38bdf8 !important; }
+[data-theme="dark"] .fw-update-badge--warn { background: rgba(217,119,6,0.25) !important; color: #fcd34d !important; }
+[data-theme="dark"] .fw-update-badge--ok   { background: rgba(22,163,74,0.2)  !important; color: #86efac !important; }
+[data-theme="dark"] .fw-summary-warn { background: rgba(217,119,6,0.2) !important; color: #fcd34d !important; }
+[data-theme="dark"] .fw-summary-ok   { background: rgba(22,163,74,0.15) !important; color: #86efac !important; }
 </style>

@@ -35,6 +35,9 @@ api.interceptors.response.use(
     const originalRequest = error.config
     const status = error.response?.status
 
+    // Caller opted out of error toasts — reject silently
+    if (originalRequest?._silent) return Promise.reject(error)
+
     // Handle 401 — try token refresh, then redirect to login
     if (status === 401 && !originalRequest._retry) {
       originalRequest._retry = true
@@ -465,12 +468,12 @@ export default {
     getStatus: () => api.get('/idrac/status'),
     triggerPoll: () => api.post('/idrac/poll'),
     testConnection: (hostId) => api.get(`/idrac/${hostId}/test`),
-    getInfo: (hostId) => api.get(`/idrac/${hostId}/info`),
+    getInfo: (hostId, cfg) => api.get(`/idrac/${hostId}/info`, cfg),
     getPowerState: (hostId) => api.get(`/idrac/${hostId}/power`),
     powerAction: (hostId, action) => api.post(`/idrac/${hostId}/power/${action}`),
     getLogs: (hostId, limit = 50) => api.get(`/idrac/${hostId}/logs`, { params: { limit } }),
-    getThermal: (hostId) => api.get(`/idrac/${hostId}/thermal`),
-    getPowerUsage: (hostId) => api.get(`/idrac/${hostId}/power-usage`),
+    getThermal: (hostId, cfg) => api.get(`/idrac/${hostId}/thermal`, cfg),
+    getPowerUsage: (hostId, cfg) => api.get(`/idrac/${hostId}/power-usage`, cfg),
     getManager: (hostId) => api.get(`/idrac/${hostId}/manager`),
     getNetwork: (hostId) => api.get(`/idrac/${hostId}/network`),
     patchNetwork: (hostId, ifaceId, config) => api.patch(`/idrac/${hostId}/network/${ifaceId}`, config),
@@ -484,11 +487,11 @@ export default {
     updateStandalone: (id, data) => api.put(`/idrac/standalone/${id}`, data),
     deleteStandalone: (id) => api.delete(`/idrac/standalone/${id}`),
     testStandalone: (id) => api.get(`/idrac/standalone/${id}/test`),
-    getStandaloneInfo: (id) => api.get(`/idrac/standalone/${id}/info`),
+    getStandaloneInfo: (id, cfg) => api.get(`/idrac/standalone/${id}/info`, cfg),
     standalonepower: (id, action) => api.post(`/idrac/standalone/${id}/power/${action}`),
     getStandaloneLogs: (id, limit = 50) => api.get(`/idrac/standalone/${id}/logs`, { params: { limit } }),
-    getStandaloneThermal: (id) => api.get(`/idrac/standalone/${id}/thermal`),
-    getStandalonePowerUsage: (id) => api.get(`/idrac/standalone/${id}/power-usage`),
+    getStandaloneThermal: (id, cfg) => api.get(`/idrac/standalone/${id}/thermal`, cfg),
+    getStandalonePowerUsage: (id, cfg) => api.get(`/idrac/standalone/${id}/power-usage`, cfg),
     getStandaloneManager: (id) => api.get(`/idrac/standalone/${id}/manager`),
     getStandaloneNetwork: (id) => api.get(`/idrac/standalone/${id}/network`),
     patchStandaloneNetwork: (id, ifaceId, config) => api.patch(`/idrac/standalone/${id}/network/${ifaceId}`, config),
@@ -515,12 +518,12 @@ export default {
     // Proxmox Node (per-physical-server) iDRAC/iLO
     listNodes: () => api.get('/idrac/node/list'),
     testNode: (id) => api.get(`/idrac/node/${id}/test`),
-    getNodeInfo: (id) => api.get(`/idrac/node/${id}/info`),
+    getNodeInfo: (id, cfg) => api.get(`/idrac/node/${id}/info`, cfg),
     getNodePowerState: (id) => api.get(`/idrac/node/${id}/power`),
     nodepower: (id, action) => api.post(`/idrac/node/${id}/power/${action}`),
     getNodeLogs: (id, limit = 50) => api.get(`/idrac/node/${id}/logs`, { params: { limit } }),
-    getNodeThermal: (id) => api.get(`/idrac/node/${id}/thermal`),
-    getNodePowerUsage: (id) => api.get(`/idrac/node/${id}/power-usage`),
+    getNodeThermal: (id, cfg) => api.get(`/idrac/node/${id}/thermal`, cfg),
+    getNodePowerUsage: (id, cfg) => api.get(`/idrac/node/${id}/power-usage`, cfg),
     getNodeManager: (id) => api.get(`/idrac/node/${id}/manager`),
     getNodeNetwork: (id) => api.get(`/idrac/node/${id}/network`),
     patchNodeNetwork: (id, ifaceId, config) => api.patch(`/idrac/node/${id}/network/${ifaceId}`, config),
@@ -546,12 +549,12 @@ export default {
     delete: (id) => api.delete(`/pbs/${id}`),
     // iDRAC/iLO sub-endpoints
     testIdrac: (id) => api.get(`/pbs/${id}/idrac/test`),
-    getIdracInfo: (id) => api.get(`/pbs/${id}/idrac/info`),
+    getIdracInfo: (id, cfg) => api.get(`/pbs/${id}/idrac/info`, cfg),
     getIdracPower: (id) => api.get(`/pbs/${id}/idrac/power`),
     idracPowerAction: (id, action) => api.post(`/pbs/${id}/idrac/power/${action}`),
     getIdracLogs: (id, limit = 50) => api.get(`/pbs/${id}/idrac/logs`, { params: { limit } }),
-    getIdracThermal: (id) => api.get(`/pbs/${id}/idrac/thermal`),
-    getIdracPowerUsage: (id) => api.get(`/pbs/${id}/idrac/power-usage`),
+    getIdracThermal: (id, cfg) => api.get(`/pbs/${id}/idrac/thermal`, cfg),
+    getIdracPowerUsage: (id, cfg) => api.get(`/pbs/${id}/idrac/power-usage`, cfg),
     getIdracManager: (id) => api.get(`/pbs/${id}/idrac/manager`),
     getIdracNetwork: (id) => api.get(`/pbs/${id}/idrac/network`),
     patchIdracNetwork: (id, ifaceId, config) => api.patch(`/pbs/${id}/idrac/network/${ifaceId}`, config),
@@ -1041,6 +1044,26 @@ export default {
     listVmMutes: () => api.get('/alerts/vm-mutes'),
     addVmMute: (host_id, vmid) => api.post('/alerts/vm-mutes', { host_id, vmid }),
     removeVmMute: (host_id, vmid) => api.delete(`/alerts/vm-mutes/${host_id}/${vmid}`),
+  },
+
+  // AI Reports
+  aiReports: {
+    listReports: (params) => api.get('/ai-reports/reports', { params }),
+    getReport: (id) => api.get(`/ai-reports/reports/${id}`),
+    generateReport: (data) => api.post('/ai-reports/reports', data),
+    regenerate: (id) => api.post(`/ai-reports/reports/${id}/regenerate`),
+    exportMarkdown: (id) => api.get(`/ai-reports/reports/${id}/export/markdown`, { responseType: 'text' }),
+    exportHtml: (id) => api.get(`/ai-reports/reports/${id}/export/html`, { responseType: 'text' }),
+    updateNotes: (id, notes) => api.patch(`/ai-reports/reports/${id}/notes`, { manual_notes: notes }),
+    getSettings: () => api.get('/ai-reports/settings'),
+    updateSettings: (data) => api.put('/ai-reports/settings', data),
+    testSettings: () => api.post('/ai-reports/settings/test'),
+    getPowerSettings: () => api.get('/ai-reports/power-settings'),
+    updatePowerSettings: (data) => api.put('/ai-reports/power-settings', data),
+    listSchedules: () => api.get('/ai-reports/schedules'),
+    createSchedule: (data) => api.post('/ai-reports/schedules', data),
+    updateSchedule: (id, data) => api.patch(`/ai-reports/schedules/${id}`, data),
+    deleteSchedule: (id) => api.delete(`/ai-reports/schedules/${id}`),
   },
 
   // Analysis / Recommendations

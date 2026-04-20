@@ -97,19 +97,19 @@
         <div v-if="loadingResources" class="loading-spinner"></div>
         <div v-else class="card-body">
           <div class="summary-stats">
-            <div class="stat-item">
+            <div class="stat-item stat-item--link" @click="$router.push('/vms')" role="link" tabindex="0" @keydown.enter="$router.push('/vms')" title="Open VMs list">
               <div class="stat-value">{{ summary.vmsTotal }}</div>
               <div class="stat-label">Total VMs</div>
             </div>
-            <div class="stat-item stat-item--green">
+            <div class="stat-item stat-item--green stat-item--link" @click="$router.push('/vms?status=running')" role="link" tabindex="0" @keydown.enter="$router.push('/vms?status=running')" title="Open running VMs">
               <div class="stat-value">{{ summary.vmsRunning }}</div>
               <div class="stat-label">Running VMs</div>
             </div>
-            <div class="stat-item">
+            <div class="stat-item stat-item--link" @click="$router.push('/containers')" role="link" tabindex="0" @keydown.enter="$router.push('/containers')" title="Open containers">
               <div class="stat-value">{{ summary.ctsTotal }}</div>
               <div class="stat-label">Total CTs</div>
             </div>
-            <div class="stat-item stat-item--green">
+            <div class="stat-item stat-item--green stat-item--link" @click="$router.push('/containers?status=running')" role="link" tabindex="0" @keydown.enter="$router.push('/containers?status=running')" title="Open running containers">
               <div class="stat-value">{{ summary.ctsRunning }}</div>
               <div class="stat-label">Running CTs</div>
             </div>
@@ -1567,6 +1567,9 @@ onUnmounted(() => {
   border-radius: 0.375rem;
   border: 1px solid var(--border-color);
 }
+.stat-item--link { cursor: pointer; transition: transform 0.08s, box-shadow 0.08s, border-color 0.08s; }
+.stat-item--link:hover { transform: translateY(-1px); box-shadow: 0 2px 6px rgba(0,0,0,0.08); border-color: var(--color-primary, #2563eb); }
+.stat-item--link:focus-visible { outline: 2px solid var(--color-primary, #2563eb); outline-offset: 1px; }
 
 .stat-item--green .stat-value {
   color: #10b981;

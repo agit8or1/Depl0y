@@ -106,7 +106,9 @@
             <tr v-for="vm in filteredVMs" :key="vm.vmid">
               <td><strong>{{ vm.vmid }}</strong></td>
               <td>
-                {{ vm.name }}
+                <a class="vm-name-link" @click.stop="navigateToVM(adaptManagedVm(vm))" style="cursor: pointer;" :title="`View details for ${vm.name}`">
+                  {{ vm.name }}
+                </a>
                 <span v-if="vm.description" class="notes-chip ml-1" :title="vm.description">📝</span>
               </td>
               <td>

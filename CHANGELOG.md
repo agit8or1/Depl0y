@@ -5,6 +5,45 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.20] - 2026-04-20 🤖 AI Reports subsystem + dashboard cleanup
+
+### Added
+- **AI Reports** — new subsystem under `/ai-reports` (admin-only). Generate deterministic infrastructure reports now; add an OpenAI key under Settings to get AI-composed narrative + prioritized recommendations on top of the rules engine.
+  - Report types: Health, Optimization, Redundancy, Power/Cost, Hardware Refresh, Capacity, Comprehensive.
+  - Scopes: global, cluster, node.
+  - Scheduling: daily / weekly / monthly / cron (daily/weekly/monthly fully automated; cron checked hourly for now).
+  - Exports: Markdown + printable HTML.
+  - Power/cost model: configurable kWh rate, per-node idle/load watt profiles, auto-prefers measured watts from `bmc_status_cache` when available.
+  - Rules engine: CPU/RAM/storage pressure, HA gaps, backup coverage heuristics, uneven distribution, oversized allocations, under-utilized nodes, aging hardware (R420/520/620/720), headroom risk, high-cost/low-util combined, BMC warnings.
+  - Hardware advisor: refresh class recommendations (R750/R760, EPYC-density, NVMe-first) with rationale — heuristics only, no fabricated pricing.
+  - Metric snapshots: `node_metric_snapshots` captured every 5 min, pruned to 30 days.
+  - New tables: `ai_provider_settings`, `power_cost_settings`, `node_power_profiles`, `ai_report_runs`, `ai_report_schedules`, `node_metric_snapshots`. Created via `create_all()` on startup — no Alembic run required.
+  - Secrets: OpenAI key Fernet-encrypted via existing `ENCRYPTION_KEY`; never returned in responses.
+  - Provider abstraction so a second LLM provider can be slotted in later.
+  - 16 new endpoints under `/api/v1/ai-reports/*`.
+
+### Fixed
+- **Main Dashboard had duplicate tiles** — the big "rsb-card" row (VMs/Nodes/Storage/CPU/RAM) was followed by a small "rt-card" trending row that re-showed CPU/RAM/Storage %. Removed the duplicate row and folded trend arrows (↑/↓/→) into the main tiles.
+- **Dashboard did not show total storage** — `/api/v1/dashboard/summary` now returns `storage_total_gb`. The Storage tile displays "X GB / Y GB total" even before the richer `/resources` payload loads.
+
+## [2.2.19] - 2026-04-20 🔧 iDRAC unified IP, parallel poll, clickable dashboards
+
+### Fixed
+- **iDRAC polling never finished / missing data** — `run_bmc_poll` now polls all BMCs concurrently with a `ThreadPoolExecutor`. Full cycle drops from 150–300s serial to ~52s, and a slow or unreachable BMC no longer blocks the rest. SSH is wrapped in its own try/except so paramiko channel-open timeouts don't abort the Redfish + PCI lookup phases.
+- **pve2 showed "Dell PowerEdge (13G)" instead of R730xd** — SSH timeout was aborting the block that runs the Proxmox PCI subsystem lookup. Lookup now always runs when Redfish returns a generic generation label.
+- **pbs1 displayed no/low data after setting a dedicated BMC IP** — scheduler no longer forces PBS SSH to `idrac_hostname`; scheduler now always tries both Redfish and SSH against the single BMC IP.
+- **`/pbs/*/idrac/ssh/hardware` and `/ssh/logs` returning 502** — iDRAC SSH (racadm CLI) can't execute Linux commands. These endpoints now return an empty shape with `_ssh_error` instead of erroring, so Redfish data still renders in the UI.
+- **`/api/v1/tasks/running` missed live migrations** — switched to `tasks.get(source="active")`. The old call returned completed tasks only.
+- **Cloud-init images miscounted as real VMs** — added `is_cloud_template()` heuristic (matches `template=1`, names containing `-cloud-image`/`_cloud_image`/`-cloudinit`, or vmid 9000-9999 + stopped + "cloud" in name). Applied to `get_vms`, dashboard summaries, and cluster overview counts.
+- **`/api/v1/dashboard/summary` 500** — `is_cloud_template` was imported into the wrong function scope; promoted to module-level import.
+
+### Changed
+- **Removed "Use SSH instead of HTTPS (Redfish)" checkbox in Edit BMC** — one IP per BMC, both protocols always attempted using the same credentials. `idrac_use_ssh` retained as legacy DB column but ignored.
+- **Redfish default timeout: 10s → 20s** — iDRAC 7 is slow under concurrent requests.
+
+### Added
+- **Clickable dashboards everywhere** — stat cards, count pills, and server/host/VM names across: iDRAC Management (8 status tiles filter + auto-expand), main Dashboard (5 resource cards + storage total), ClusterOverview (VM/CT counts), FederatedDashboard (5 global cards + per-host rows), Cluster (6 summary cards), Datacenter (4 cluster-total rows + per-host items + node distribution), HAManagement (4 status items), Containers (running pill filter), VirtualMachines (Managed-tab name links).
+
 ## [2.2.13] - 2026-04-18 🐛 Fix SSH iDRAC details still blank after Vue reactivity miss
 
 ### Fixed

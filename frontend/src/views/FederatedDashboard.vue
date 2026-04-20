@@ -61,7 +61,10 @@
         </div>
 
         <div class="health-breakdown">
-          <div class="hb-row" v-for="host in summary.hosts" :key="host.host_id">
+          <div class="hb-row hb-row--link" v-for="host in summary.hosts" :key="host.host_id"
+               @click="$router.push(`/proxmox/${host.host_id}`)" role="link" tabindex="0"
+               @keydown.enter="$router.push(`/proxmox/${host.host_id}`)"
+               :title="`Open ${host.host_name}`">
             <span :class="['hb-dot', host.status === 'online' ? 'dot-online' : 'dot-offline']"></span>
             <span class="hb-name">{{ host.host_name }}</span>
             <span :class="['hb-health-text', healthTextClass(hostHealthPct(host))]">
@@ -74,23 +77,23 @@
 
       <!-- Global Stats Bar -->
       <div class="global-stats-grid mb-2">
-        <div class="stat-card">
+        <div class="stat-card stat-card--link" @click="$router.push('/vms')" role="link" tabindex="0" @keydown.enter="$router.push('/vms')" title="Open VMs list">
           <div class="stat-value">{{ summary.total_vms }}</div>
           <div class="stat-label">Total VMs</div>
         </div>
-        <div class="stat-card">
+        <div class="stat-card stat-card--link" @click="$router.push('/containers')" role="link" tabindex="0" @keydown.enter="$router.push('/containers')" title="Open containers">
           <div class="stat-value">{{ summary.total_lxc }}</div>
           <div class="stat-label">Total LXC</div>
         </div>
-        <div class="stat-card">
+        <div class="stat-card stat-card--link" @click="$router.push('/node-monitor')" role="link" tabindex="0" @keydown.enter="$router.push('/node-monitor')" title="Open node monitor">
           <div class="stat-value">{{ summary.total_nodes }}</div>
           <div class="stat-label">Total Nodes</div>
         </div>
-        <div class="stat-card">
+        <div class="stat-card stat-card--link" @click="$router.push('/proxmox')" role="link" tabindex="0" @keydown.enter="$router.push('/proxmox')" title="Open Proxmox hosts">
           <div class="stat-value">{{ summary.online_hosts }} / {{ summary.hosts.length }}</div>
           <div class="stat-label">Hosts Online</div>
         </div>
-        <div class="stat-card">
+        <div class="stat-card stat-card--link" @click="$router.push('/storage-management')" role="link" tabindex="0" @keydown.enter="$router.push('/storage-management')" title="Open storage management">
           <div class="stat-value">{{ summary.total_storage_used_gb }} GB</div>
           <div class="stat-label">Storage Used</div>
           <div class="stat-sub">of {{ summary.total_storage_total_gb }} GB</div>
@@ -1319,6 +1322,12 @@ export default {
   text-align: center;
   box-shadow: var(--shadow-sm, none);
 }
+.stat-card--link { cursor: pointer; transition: transform 0.08s, box-shadow 0.08s, border-color 0.08s; }
+.stat-card--link:hover { transform: translateY(-1px); box-shadow: 0 4px 10px rgba(0,0,0,0.08); border-color: var(--primary-color, #3b82f6); }
+.stat-card--link:focus-visible { outline: 2px solid var(--primary-color, #3b82f6); outline-offset: 1px; }
+.hb-row--link { cursor: pointer; border-radius: 0.25rem; padding: 0.25rem 0.4rem; transition: background 0.08s; }
+.hb-row--link:hover { background: rgba(59, 130, 246, 0.08); }
+.hb-row--link:focus-visible { outline: 2px solid var(--primary-color, #3b82f6); outline-offset: 1px; }
 
 .stat-value {
   font-size: 2rem;

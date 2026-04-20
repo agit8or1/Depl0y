@@ -28,6 +28,12 @@ from .database import (
     RefreshToken,
     VMGroup,
     UserHostPermission,
+    AIProviderSettings,
+    PowerCostSettings,
+    NodePowerProfile,
+    ReportRun,
+    ReportSchedule,
+    NodeMetricSnapshot,
 )
 from .security import (
     FailedLoginAttempt,
@@ -76,4 +82,10 @@ __all__ = [
     "LoginAttempt",
     "AlertRule",
     "AlertEvent",
+    "AIProviderSettings",
+    "PowerCostSettings",
+    "NodePowerProfile",
+    "ReportRun",
+    "ReportSchedule",
+    "NodeMetricSnapshot",
 ]

@@ -87,7 +87,15 @@
         <div class="filter-summary">
           <span class="count-badge">
             Showing {{ sortedContainers.length }} of {{ containers.length }} container{{ containers.length !== 1 ? 's' : '' }}
-            <span class="count-running">({{ runningCount }} running)</span>
+            <span
+              class="count-running count-running--link"
+              role="link"
+              tabindex="0"
+              :title="statusFilter === 'running' ? 'Clear running filter' : 'Filter to running containers'"
+              @click="statusFilter = statusFilter === 'running' ? 'all' : 'running'"
+              @keydown.enter="statusFilter = statusFilter === 'running' ? 'all' : 'running'"
+              @keydown.space.prevent="statusFilter = statusFilter === 'running' ? 'all' : 'running'"
+            >({{ runningCount }} running)</span>
           </span>
         </div>
       </div>
@@ -1072,6 +1080,20 @@ export default {
   color: var(--text-muted);
   font-weight: 400;
   margin-left: 0.25rem;
+}
+.count-running--link {
+  cursor: pointer;
+  padding: 0 0.25rem;
+  border-radius: 3px;
+  transition: background 0.15s, color 0.15s;
+}
+.count-running--link:hover {
+  background: color-mix(in srgb, var(--accent, #6366f1) 15%, transparent);
+  color: var(--text-primary);
+}
+.count-running--link:focus-visible {
+  outline: 2px solid var(--accent, #6366f1);
+  outline-offset: 2px;
 }
 
 /* ── Bulk bar ────────────────────────────────────────────────────────────── */

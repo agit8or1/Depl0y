@@ -16,6 +16,18 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _get_ssh_creds(server: PBSServer) -> tuple[str, str, str]:
+    """Return (hostname, username, password) for SSH to a PBS server's BMC.
+
+    One IP per BMC: the `idrac_hostname` + `idrac_*` credentials handle
+    both Redfish (HTTPS) and SSH.
+    """
+    if not server.idrac_hostname or not server.idrac_username or not server.idrac_password:
+        raise HTTPException(status_code=400, detail="BMC credentials not configured")
+    pw = decrypt_data(server.idrac_password)
+    return server.idrac_hostname, server.idrac_username, pw
+
+
 # ─────────────────────────────────────────────────────────────
 # Pydantic schemas
 # ─────────────────────────────────────────────────────────────
@@ -374,73 +386,65 @@ def get_pbs_sensors(server_id: int, current_user: User = Depends(get_current_use
 @router.post("/{server_id}/idrac/ssh/update")
 def run_pbs_ssh_update(server_id: int, current_user: User = Depends(require_operator), db: Session = Depends(get_db)):
     server = _get_or_404(db, server_id)
-    if not server.idrac_username or not server.idrac_password:
-        raise HTTPException(status_code=400, detail="SSH credentials not configured")
-    try: password = decrypt_data(server.idrac_password)
-    except Exception: raise HTTPException(status_code=500, detail="Failed to decrypt credentials")
+    host, user, pw = _get_ssh_creds(server)
     try:
         from app.services.ssh_hw import run_system_update
-        return run_system_update(server.hostname, server.idrac_username, password)
+        return run_system_update(host, user, pw)
     except Exception as e: raise HTTPException(status_code=502, detail=f"SSH error: {str(e)}")
 
 @router.get("/{server_id}/idrac/ssh/test")
 def test_pbs_ssh(server_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     server = _get_or_404(db, server_id)
-    if not server.idrac_username or not server.idrac_password:
-        return {"status": "error", "message": "SSH credentials not configured"}
-    try: password = decrypt_data(server.idrac_password)
-    except Exception: return {"status": "error", "message": "Failed to decrypt credentials"}
+    try: host, user, pw = _get_ssh_creds(server)
+    except HTTPException as e: return {"status": "error", "message": e.detail}
     try:
         from app.services.ssh_hw import test_ssh
-        test_ssh(server.hostname, server.idrac_username, password)
-        return {"status": "success", "message": f"SSH connection to {server.hostname} successful"}
+        test_ssh(host, user, pw)
+        return {"status": "success", "message": f"SSH connection to {host} successful"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
 @router.get("/{server_id}/idrac/ssh/hardware")
 def get_pbs_ssh_hardware(server_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     server = _get_or_404(db, server_id)
-    if not server.idrac_username or not server.idrac_password:
-        raise HTTPException(status_code=400, detail="iDRAC credentials not configured (used for SSH)")
-    try: password = decrypt_data(server.idrac_password)
-    except Exception: raise HTTPException(status_code=500, detail="Failed to decrypt credentials")
+    host, user, pw = _get_ssh_creds(server)
     try:
         from app.services.ssh_hw import get_hardware_info
-        return get_hardware_info(server.hostname, server.idrac_username, password)
-    except Exception as e: raise HTTPException(status_code=502, detail=f"SSH error: {str(e)}")
+        return get_hardware_info(host, user, pw)
+    except Exception as e:
+        # SSH may not be usable on some BMCs (iDRAC CLI doesn't run Linux
+        # commands). Return empty shape so the frontend falls back to Redfish
+        # cleanly instead of erroring.
+        logger.info(f"SSH hardware unavailable for pbs:{server_id} ({host}): {e}")
+        return {"processors": [], "modules": [], "controllers": [], "system": {},
+                "max_temp_c": None, "consumed_watts": None, "raid_arrays": [],
+                "_ssh_error": str(e)}
 
 @router.get("/{server_id}/idrac/ssh/network")
 def get_pbs_ssh_network(server_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     server = _get_or_404(db, server_id)
-    if not server.idrac_username or not server.idrac_password:
-        raise HTTPException(status_code=400, detail="iDRAC credentials not configured (used for SSH)")
-    try: password = decrypt_data(server.idrac_password)
-    except Exception: raise HTTPException(status_code=500, detail="Failed to decrypt credentials")
+    host, user, pw = _get_ssh_creds(server)
     try:
         from app.services.ssh_hw import get_network_info
-        return get_network_info(server.hostname, server.idrac_username, password)
+        return get_network_info(host, user, pw)
     except Exception as e: raise HTTPException(status_code=502, detail=f"SSH error: {str(e)}")
 
 @router.get("/{server_id}/idrac/ssh/firmware")
 def get_pbs_ssh_firmware(server_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     server = _get_or_404(db, server_id)
-    if not server.idrac_username or not server.idrac_password:
-        raise HTTPException(status_code=400, detail="iDRAC credentials not configured (used for SSH)")
-    try: password = decrypt_data(server.idrac_password)
-    except Exception: raise HTTPException(status_code=500, detail="Failed to decrypt credentials")
+    host, user, pw = _get_ssh_creds(server)
     try:
         from app.services.ssh_hw import get_firmware_info
-        return get_firmware_info(server.hostname, server.idrac_username, password)
+        return get_firmware_info(host, user, pw)
     except Exception as e: raise HTTPException(status_code=502, detail=f"SSH error: {str(e)}")
 
 @router.get("/{server_id}/idrac/ssh/logs")
 def get_pbs_ssh_logs(server_id: int, limit: int = 100, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     server = _get_or_404(db, server_id)
-    if not server.idrac_username or not server.idrac_password:
-        raise HTTPException(status_code=400, detail="iDRAC credentials not configured (used for SSH)")
-    try: password = decrypt_data(server.idrac_password)
-    except Exception: raise HTTPException(status_code=500, detail="Failed to decrypt credentials")
+    host, user, pw = _get_ssh_creds(server)
     try:
         from app.services.ssh_hw import get_log_entries
-        return get_log_entries(server.hostname, server.idrac_username, password, limit=limit)
-    except Exception as e: raise HTTPException(status_code=502, detail=f"SSH error: {str(e)}")
+        return get_log_entries(host, user, pw, limit=limit)
+    except Exception as e:
+        logger.info(f"SSH logs unavailable for pbs:{server_id} ({host}): {e}")
+        return {"entries": [], "_ssh_error": str(e)}

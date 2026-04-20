@@ -24,27 +24,75 @@
     <template v-else>
       <!-- ── Resource Summary Totals ─────────────────────────────────────── -->
       <div class="summary-totals mb-2">
-        <div class="summary-card">
+        <div
+          class="summary-card summary-card--link"
+          role="link"
+          tabindex="0"
+          title="View node monitor"
+          @click="$router.push('/node-monitor')"
+          @keydown.enter="$router.push('/node-monitor')"
+          @keydown.space.prevent="$router.push('/node-monitor')"
+        >
           <div class="summary-card__value">{{ totalCpuCores }}</div>
           <div class="summary-card__label">Total CPU Cores</div>
         </div>
-        <div class="summary-card">
+        <div
+          class="summary-card summary-card--link"
+          role="link"
+          tabindex="0"
+          title="View node monitor"
+          @click="$router.push('/node-monitor')"
+          @keydown.enter="$router.push('/node-monitor')"
+          @keydown.space.prevent="$router.push('/node-monitor')"
+        >
           <div class="summary-card__value">{{ totalRamGB }} GB</div>
           <div class="summary-card__label">Total RAM</div>
         </div>
-        <div class="summary-card">
+        <div
+          class="summary-card summary-card--link"
+          role="link"
+          tabindex="0"
+          title="View all virtual machines"
+          @click="$router.push('/vms')"
+          @keydown.enter="$router.push('/vms')"
+          @keydown.space.prevent="$router.push('/vms')"
+        >
           <div class="summary-card__value">{{ totalVMs }}</div>
           <div class="summary-card__label">Total VMs</div>
         </div>
-        <div class="summary-card">
+        <div
+          class="summary-card summary-card--link"
+          role="link"
+          tabindex="0"
+          title="View all containers"
+          @click="$router.push('/containers')"
+          @keydown.enter="$router.push('/containers')"
+          @keydown.space.prevent="$router.push('/containers')"
+        >
           <div class="summary-card__value">{{ totalLXC }}</div>
           <div class="summary-card__label">Total LXC</div>
         </div>
-        <div class="summary-card">
+        <div
+          class="summary-card summary-card--link"
+          role="link"
+          tabindex="0"
+          title="View node monitor"
+          @click="$router.push('/node-monitor')"
+          @keydown.enter="$router.push('/node-monitor')"
+          @keydown.space.prevent="$router.push('/node-monitor')"
+        >
           <div class="summary-card__value">{{ clusterNodes.length }}</div>
           <div class="summary-card__label">Nodes</div>
         </div>
-        <div class="summary-card">
+        <div
+          class="summary-card summary-card--link"
+          role="link"
+          tabindex="0"
+          title="View cluster status"
+          @click="$router.push('/cluster')"
+          @keydown.enter="$router.push('/cluster')"
+          @keydown.space.prevent="$router.push('/cluster')"
+        >
           <div class="summary-card__value">
             <span :class="clusterQuorate ? 'badge badge-success' : 'badge badge-danger'">
               {{ clusterQuorate ? 'Quorate' : 'No Quorum' }}
@@ -584,7 +632,7 @@ export default {
               rootfs: status?.rootfs ?? null,
               uptime: status?.uptime ?? null,
               cpuCores: status?.cpuinfo?.cpus ?? null,
-              vmCount: Array.isArray(vms) ? vms.filter(v => v.type === 'qemu' || !v.type).length : 0,
+              vmCount: Array.isArray(vms) ? vms.filter(v => (v.type === 'qemu' || !v.type) && !v.template).length : 0,
               lxcCount: Array.isArray(lxcs) ? lxcs.length : 0,
             }
           }
@@ -773,6 +821,19 @@ export default {
   letter-spacing: 0.04em;
   color: var(--text-secondary);
   margin-top: 0.3rem;
+}
+.summary-card--link {
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+.summary-card--link:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 14px rgba(0,0,0,0.18);
+  border-color: var(--accent, #6366f1);
+}
+.summary-card--link:focus-visible {
+  outline: 2px solid var(--accent, #6366f1);
+  outline-offset: 2px;
 }
 
 /* ── Node cards grid ───────────────────────────────────────────────────── */

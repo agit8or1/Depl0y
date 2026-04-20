@@ -112,9 +112,10 @@ def get_bmc_status(current_user: User = Depends(get_current_user)):
 
 @router.post("/poll")
 def trigger_bmc_poll(current_user: User = Depends(get_current_user)):
-    """Trigger an immediate BMC poll and return the updated cache."""
+    """Trigger an immediate BMC poll in the background and return the current cache."""
+    import threading
     from app.services.scheduler import run_bmc_poll
-    run_bmc_poll()
+    threading.Thread(target=run_bmc_poll, daemon=True).start()
     return bmc_status_cache
 
 
@@ -351,6 +352,22 @@ def get_sensors(
 # SSH-based hardware / network (host OS, not BMC)
 # ─────────────────────────────────────────────────────────────
 
+_EMPTY_HW = {"processors": [], "modules": [], "controllers": [], "system": {},
+             "max_temp_c": None, "consumed_watts": None, "raid_arrays": []}
+_EMPTY_LOGS = {"entries": []}
+
+
+def _ssh_ok(fn, *args, empty, label="ssh", **kwargs):
+    """Run an SSH data-fetch call; return `empty` (with _ssh_error) instead of
+    raising when SSH isn't usable on this BMC (common for iDRAC CLI endpoints)."""
+    try:
+        return fn(*args, **kwargs)
+    except Exception as e:
+        import logging as _log
+        _log.getLogger(__name__).info(f"{label}: SSH unavailable: {e}")
+        return {**empty, "_ssh_error": str(e)}
+
+
 def _get_ssh_creds(obj, hostname_attr: str = "hostname"):
     """Extract SSH hostname + decrypted credentials from a host object."""
     ssh_host = getattr(obj, hostname_attr, None)
@@ -406,11 +423,8 @@ def get_ssh_hardware(
 ):
     host = _get_host_or_404(db, host_id)
     ssh_host, username, password = _get_ssh_creds(host, "hostname")
-    try:
-        from app.services.ssh_hw import get_hardware_info
-        return get_hardware_info(ssh_host, username, password)
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"SSH error: {str(e)}")
+    from app.services.ssh_hw import get_hardware_info
+    return _ssh_ok(get_hardware_info, ssh_host, username, password, empty=_EMPTY_HW, label=f"host:{host_id}")
 
 
 @router.get("/{host_id}/ssh/network")
@@ -437,11 +451,8 @@ def get_ssh_firmware(host_id: int, current_user: User = Depends(get_current_user
 def get_ssh_logs(host_id: int, limit: int = 100, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     host = _get_host_or_404(db, host_id)
     ssh_host, username, password = _get_ssh_creds(host, "hostname")
-    try:
-        from app.services.ssh_hw import get_log_entries
-        return get_log_entries(ssh_host, username, password, limit=limit)
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"SSH error: {str(e)}")
+    from app.services.ssh_hw import get_log_entries
+    return _ssh_ok(get_log_entries, ssh_host, username, password, limit=limit, empty=_EMPTY_LOGS, label=f"host:{host_id}")
 
 
 # ─────────────────────────────────────────────────────────────
@@ -613,7 +624,7 @@ def get_node_ssh_hardware(node_id: int, current_user: User = Depends(get_current
     node = _get_node_or_404(db, node_id)
     ssh_host, username, password = _get_ssh_creds(node, "idrac_hostname")
     from app.services.ssh_hw import get_hardware_info
-    return get_hardware_info(ssh_host, username, password)
+    return _ssh_ok(get_hardware_info, ssh_host, username, password, empty=_EMPTY_HW, label=f"node:{node_id}")
 
 
 @router.get("/node/{node_id}/ssh/network")
@@ -637,7 +648,7 @@ def get_node_ssh_logs(node_id: int, limit: int = 100, current_user: User = Depen
     node = _get_node_or_404(db, node_id)
     ssh_host, username, password = _get_ssh_creds(node, "idrac_hostname")
     from app.services.ssh_hw import get_log_entries
-    return get_log_entries(ssh_host, username, password, limit=limit)
+    return _ssh_ok(get_log_entries, ssh_host, username, password, limit=limit, empty=_EMPTY_LOGS, label=f"node:{node_id}")
 
 
 @router.post("/node/{node_id}/ssh/update")

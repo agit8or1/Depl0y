@@ -2,7 +2,7 @@
 Database models for Depl0y
 """
 from datetime import datetime
-from sqlalchemy import Boolean, Column, Integer, String, DateTime, Float, ForeignKey, Text, Enum, JSON, UniqueConstraint
+from sqlalchemy import Boolean, Column, Integer, String, DateTime, Float, ForeignKey, Text, Enum, JSON, UniqueConstraint, Index
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 import enum
@@ -582,3 +582,116 @@ class UserHostPermission(Base):
 
     user = relationship("User", backref="host_permissions")
     host = relationship("ProxmoxHost", backref="user_permissions")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# AI Reports subsystem
+# ─────────────────────────────────────────────────────────────────────────────
+
+class AIProviderSettings(Base):
+    """Global AI provider configuration (one row per provider)."""
+    __tablename__ = "ai_provider_settings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    provider = Column(String(50), unique=True, nullable=False)  # e.g. "openai"
+    api_key = Column(Text, nullable=True)       # Fernet-encrypted
+    model = Column(String(100), nullable=False, default="gpt-4o-mini")
+    enabled = Column(Boolean, default=True, nullable=False)
+    last_test_at = Column(DateTime, nullable=True)
+    last_test_ok = Column(Boolean, nullable=True)
+    created_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class PowerCostSettings(Base):
+    """Singleton electricity/cost settings (id=1)."""
+    __tablename__ = "power_cost_settings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    electricity_rate_per_kwh = Column(Float, default=0.12, nullable=False)
+    currency = Column(String(10), default="USD", nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class NodePowerProfile(Base):
+    """Idle/load watt profile per node. node_id=NULL is the cluster-wide default."""
+    __tablename__ = "node_power_profiles"
+
+    id = Column(Integer, primary_key=True, index=True)
+    node_id = Column(Integer, ForeignKey("proxmox_nodes.id"), nullable=True)
+    idle_watts = Column(Integer, nullable=False, default=120)
+    load_watts = Column(Integer, nullable=False, default=350)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    __table_args__ = (UniqueConstraint("node_id", name="uq_node_power_profile"),)
+
+    node = relationship("ProxmoxNode")
+
+
+class ReportRun(Base):
+    """A single AI-reports generation run (historical record)."""
+    __tablename__ = "ai_report_runs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String(255), nullable=False)
+    report_type = Column(String(40), nullable=False, index=True)   # health/optimization/redundancy/power/hardware/capacity/comprehensive
+    scope_type = Column(String(20), nullable=False, default="global")  # global/cluster/node
+    scope_ref = Column(String(255), nullable=True)                     # host id / node name
+
+    status = Column(String(30), nullable=False, default="queued")     # queued/running/complete/complete_ai_failed/failed
+    created_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    completed_at = Column(DateTime, nullable=True)
+
+    model_used = Column(String(100), nullable=True)
+    token_usage_json = Column(Text, nullable=True)
+    findings_json = Column(Text, nullable=True)        # deterministic rules output
+    ai_narrative_json = Column(Text, nullable=True)    # LLM response JSON
+    rendered_markdown = Column(Text, nullable=True)
+    rendered_html = Column(Text, nullable=True)
+    assumptions_json = Column(Text, nullable=True)
+    data_freshness_seconds = Column(Integer, nullable=True)
+    error_message = Column(Text, nullable=True)
+    manual_notes = Column(Text, nullable=True)
+
+
+class ReportSchedule(Base):
+    """Recurring report schedule."""
+    __tablename__ = "ai_report_schedules"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(200), nullable=False)
+    report_type = Column(String(40), nullable=False)
+    scope_type = Column(String(20), nullable=False, default="global")
+    scope_ref = Column(String(255), nullable=True)
+    cadence = Column(String(20), nullable=False, default="weekly")  # daily/weekly/monthly/cron
+    cron_expr = Column(String(100), nullable=True)
+    enabled = Column(Boolean, default=True, nullable=False)
+    last_run_at = Column(DateTime, nullable=True)
+    next_run_at = Column(DateTime, nullable=True, index=True)
+    include_executive_summary = Column(Boolean, default=True, nullable=False)
+    include_raw_appendix = Column(Boolean, default=True, nullable=False)
+    created_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class NodeMetricSnapshot(Base):
+    """Periodic point-in-time metric snapshot per node (rolling history)."""
+    __tablename__ = "node_metric_snapshots"
+
+    id = Column(Integer, primary_key=True, index=True)
+    node_id = Column(Integer, ForeignKey("proxmox_nodes.id"), nullable=False)
+    captured_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    cpu_pct = Column(Float, nullable=True)
+    memory_pct = Column(Float, nullable=True)
+    disk_pct = Column(Float, nullable=True)
+    vm_count = Column(Integer, nullable=True)
+    lxc_count = Column(Integer, nullable=True)
+
+    __table_args__ = (
+        Index("ix_node_metric_snapshots_node_captured", "node_id", "captured_at"),
+    )
+
+    node = relationship("ProxmoxNode")

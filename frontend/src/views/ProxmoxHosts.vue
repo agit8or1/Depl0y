@@ -1463,7 +1463,7 @@ export default {
                 memory: status?.memory ?? null,
                 rootfs: status?.rootfs ?? null,
                 uptime: status?.uptime ?? null,
-                vmCount: Array.isArray(vms) ? vms.length : 0,
+                vmCount: Array.isArray(vms) ? vms.filter(v => !v.template).length : 0,
                 lxcCount: Array.isArray(lxcs) ? lxcs.length : 0,
               }
             }

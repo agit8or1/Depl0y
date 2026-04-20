@@ -11,6 +11,27 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+# Cloud-init image VMs that the user hasn't run `qm template` on yet still
+# behave as images (stopped, used only as clone sources). Exclude them from
+# "real VM" counts.
+_CLOUD_NAME_PATTERNS = ("-cloud-image", "_cloud_image", "-cloudinit", "cloud-init-image")
+
+def is_cloud_template(vm: Dict[str, Any]) -> bool:
+    """True if a VM resource should be treated as an image/template, not a real VM."""
+    if vm.get("template"):
+        return True
+    name = (vm.get("name") or "").lower()
+    if any(p in name for p in _CLOUD_NAME_PATTERNS):
+        return True
+    # Proxmox convention: 9000-9999 vmid range + stopped + "cloud" in the name
+    # is used for cloud-init image storage by many playbooks.
+    vmid = vm.get("vmid")
+    if isinstance(vmid, int) and 9000 <= vmid <= 9999:
+        if "cloud" in name and (vm.get("status") or "").lower() in ("stopped", ""):
+            return True
+    return False
+
+
 class ProxmoxService:
     """Service for interacting with Proxmox VE"""
 
@@ -761,9 +782,10 @@ class ProxmoxService:
             return None
 
     def get_vms(self, node_name: str) -> List[Dict[str, Any]]:
-        """Get list of QEMU VMs on a specific node"""
+        """Get list of QEMU VMs on a specific node (excludes cloud-init templates)"""
         try:
-            return self.proxmox.nodes(node_name).qemu.get()
+            vms = self.proxmox.nodes(node_name).qemu.get()
+            return [v for v in vms if not is_cloud_template(v)]
         except Exception as e:
             logger.error(f"Failed to get VMs for node {node_name}: {e}")
             return []

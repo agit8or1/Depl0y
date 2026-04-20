@@ -187,28 +187,60 @@
             <h3>Cluster Totals</h3>
           </div>
           <div class="stat-summary-body">
-            <div class="ss-row">
+            <div
+              class="ss-row ss-row--link"
+              role="link"
+              tabindex="0"
+              title="View all Proxmox hosts"
+              @click="$router.push('/proxmox')"
+              @keydown.enter="$router.push('/proxmox')"
+              @keydown.space.prevent="$router.push('/proxmox')"
+            >
               <div class="ss-icon">&#128386;</div>
               <div>
                 <div class="ss-value">{{ summary.totalHosts }}</div>
                 <div class="ss-label">Hosts</div>
               </div>
             </div>
-            <div class="ss-row">
+            <div
+              class="ss-row ss-row--link"
+              role="link"
+              tabindex="0"
+              title="View node monitor"
+              @click="$router.push('/node-monitor')"
+              @keydown.enter="$router.push('/node-monitor')"
+              @keydown.space.prevent="$router.push('/node-monitor')"
+            >
               <div class="ss-icon">&#9881;</div>
               <div>
                 <div class="ss-value">{{ summary.totalNodes }}</div>
                 <div class="ss-label">Nodes</div>
               </div>
             </div>
-            <div class="ss-row">
+            <div
+              class="ss-row ss-row--link"
+              role="link"
+              tabindex="0"
+              title="View storage management"
+              @click="$router.push('/storage-management')"
+              @keydown.enter="$router.push('/storage-management')"
+              @keydown.space.prevent="$router.push('/storage-management')"
+            >
               <div class="ss-icon">&#128190;</div>
               <div>
                 <div class="ss-value">{{ formatBytes(summary.storageTotal) }}</div>
                 <div class="ss-label">Storage ({{ storageUsedPct }}% used)</div>
               </div>
             </div>
-            <div class="ss-row">
+            <div
+              class="ss-row ss-row--link"
+              role="link"
+              tabindex="0"
+              title="View running VMs"
+              @click="$router.push('/vms?status=running')"
+              @keydown.enter="$router.push('/vms?status=running')"
+              @keydown.space.prevent="$router.push('/vms?status=running')"
+            >
               <div class="ss-icon">&#9654;</div>
               <div>
                 <div class="ss-value stat-green">{{ summary.vmsRunning + summary.lxcRunning }}</div>
@@ -225,10 +257,16 @@
         <div
           v-for="nd in nodeDistribution"
           :key="`${nd.hostId}-${nd.node}`"
-          class="node-dist-card"
+          class="node-dist-card node-dist-card--link"
           :class="{ 'node-dist-card--warn': nd.imbalanced }"
+          role="link"
+          tabindex="0"
+          :title="`View node ${nd.node}`"
           @mouseenter="hoveredNode = nd"
           @mouseleave="hoveredNode = null"
+          @click="$router.push(`/proxmox/${nd.hostId}/nodes/${nd.node}`)"
+          @keydown.enter="$router.push(`/proxmox/${nd.hostId}/nodes/${nd.node}`)"
+          @keydown.space.prevent="$router.push(`/proxmox/${nd.hostId}/nodes/${nd.node}`)"
         >
           <!-- Imbalance warning badge -->
           <div v-if="nd.imbalanced" class="imbalance-badge" title="This node holds >80% of cluster guests">
@@ -333,21 +371,45 @@
 
             <!-- Counts row -->
             <div class="host-counts text-sm">
-              <div class="host-count-item">
+              <div
+                class="host-count-item host-count-item--link"
+                role="link"
+                tabindex="0"
+                title="View VMs"
+                @click="$router.push('/vms')"
+                @keydown.enter="$router.push('/vms')"
+                @keydown.space.prevent="$router.push('/vms')"
+              >
                 <span class="count-label text-muted">VMs</span>
                 <span class="count-value">
                   <span class="text-green">{{ panel.vmsRunning }}</span>
                   <span class="text-muted"> / {{ panel.vmsTotal }}</span>
                 </span>
               </div>
-              <div class="host-count-item">
+              <div
+                class="host-count-item host-count-item--link"
+                role="link"
+                tabindex="0"
+                title="View containers"
+                @click="$router.push('/containers')"
+                @keydown.enter="$router.push('/containers')"
+                @keydown.space.prevent="$router.push('/containers')"
+              >
                 <span class="count-label text-muted">LXC</span>
                 <span class="count-value">
                   <span class="text-green">{{ panel.lxcRunning }}</span>
                   <span class="text-muted"> / {{ panel.lxcTotal }}</span>
                 </span>
               </div>
-              <div class="host-count-item">
+              <div
+                class="host-count-item host-count-item--link"
+                role="link"
+                tabindex="0"
+                title="View cluster for this host"
+                @click="$router.push(`/proxmox/${panel.hostId}/cluster`)"
+                @keydown.enter="$router.push(`/proxmox/${panel.hostId}/cluster`)"
+                @keydown.space.prevent="$router.push(`/proxmox/${panel.hostId}/cluster`)"
+              >
                 <span class="count-label text-muted">Nodes</span>
                 <span class="count-value">{{ panel.nodeCount }}</span>
               </div>
@@ -2838,6 +2900,20 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 0.1rem;
+  padding: 0.2rem 0.4rem;
+  border-radius: 4px;
+  transition: background 0.15s, color 0.15s;
+}
+
+.host-count-item--link {
+  cursor: pointer;
+}
+.host-count-item--link:hover {
+  background: color-mix(in srgb, var(--accent, #6366f1) 10%, transparent);
+}
+.host-count-item--link:focus-visible {
+  outline: 2px solid var(--accent, #6366f1);
+  outline-offset: 2px;
 }
 
 .count-label {
@@ -2852,6 +2928,32 @@ onUnmounted(() => {
 }
 
 .text-green { color: #10b981; }
+
+/* ── Clickable stat-summary rows ─────────────────────────────────────────── */
+.ss-row--link {
+  cursor: pointer;
+  padding: 0.25rem 0.35rem;
+  border-radius: 5px;
+  transition: background 0.15s ease, transform 0.15s ease;
+  margin: -0.25rem -0.35rem;
+}
+.ss-row--link:hover {
+  background: color-mix(in srgb, var(--accent, #6366f1) 10%, transparent);
+  transform: translateX(2px);
+}
+.ss-row--link:focus-visible {
+  outline: 2px solid var(--accent, #6366f1);
+  outline-offset: 2px;
+}
+
+/* ── Clickable node-distribution card ────────────────────────────────────── */
+.node-dist-card--link {
+  cursor: pointer;
+}
+.node-dist-card--link:focus-visible {
+  outline: 2px solid var(--accent, #6366f1);
+  outline-offset: 2px;
+}
 
 /* ── Resource trends section ─────────────────────────────────────────────── */
 .trend-time-selector {

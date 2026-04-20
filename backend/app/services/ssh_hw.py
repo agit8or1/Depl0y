@@ -100,27 +100,109 @@ def _parse_lsblk(raw: str) -> list:
     return drives
 
 
+def _parse_sensors_temp(raw: str):
+    """Return max temperature (°C) from sensors -j output, or None."""
+    try:
+        data = json.loads(raw)
+        temps = []
+        for adapter_data in data.values():
+            if not isinstance(adapter_data, dict):
+                continue
+            for sensor_data in adapter_data.values():
+                if not isinstance(sensor_data, dict):
+                    continue
+                for key, val in sensor_data.items():
+                    if "input" in key and isinstance(val, (int, float)) and 0 < val < 200:
+                        temps.append(val)
+        return round(max(temps), 1) if temps else None
+    except Exception:
+        return None
+
+
+def _parse_hwmon_temp(raw: str):
+    """Parse /sys/class/hwmon temp*_input files (millidegrees), return max °C or None."""
+    temps = []
+    for line in raw.splitlines():
+        if ":" in line:
+            _, _, val = line.partition(":")
+            try:
+                t = int(val.strip()) / 1000.0
+                # Valid CPU/system temperatures are 1–120 °C; filter bogus sensor values
+                if 1.0 <= t <= 120.0:
+                    temps.append(t)
+            except Exception:
+                pass
+    return round(max(temps), 1) if temps else None
+
+
+def _parse_mdstat(raw: str) -> list:
+    """Parse /proc/mdstat into a list of RAID array status dicts."""
+    arrays = []
+    lines = raw.splitlines()
+    for i, line in enumerate(lines):
+        m = re.match(r'^(md\w+)\s*:\s*(\w+)\s+(\w+)\s+(.*)', line)
+        if not m:
+            continue
+        name, state, level, devices = m.groups()
+        status_line = lines[i + 1].strip() if i + 1 < len(lines) else ""
+        health = "OK"
+        if state == "inactive":
+            health = "Failed"
+        elif re.search(r'\[.*_.*\]', status_line):
+            health = "Degraded"
+        level_label = level.upper()
+        if level_label.startswith("RAID"):
+            level_label = "RAID " + level_label[4:]
+        arrays.append({
+            "name": name,
+            "level": level_label,
+            "state": state,
+            "health": health,
+            "detail": status_line,
+        })
+    return arrays
+
+
 def get_hardware_info(hostname: str, username: str, password: str, port: int = 22) -> Dict[str, Any]:
     client = get_ssh_client(hostname, username, password, port)
     try:
-        # Fire all commands; exec_command is non-blocking
-        cmds = {
-            "lscpu":   "lscpu 2>/dev/null",
-            "memory":  "dmidecode -t memory 2>/dev/null",
-            "disks":   "lsblk -J -b -o NAME,SIZE,TYPE,MODEL,SERIAL,VENDOR,ROTA,TRAN 2>/dev/null",
-            "bios":    "dmidecode -t bios 2>/dev/null | grep -E 'Version:|Release Date:'",
-            "system":  "dmidecode -t system 2>/dev/null | grep -E 'Manufacturer:|Product Name:|Serial Number:'",
-            "uptime":  "uptime -p 2>/dev/null || uptime",
-            "kernel":  "uname -r",
-            "os":      "cat /etc/os-release 2>/dev/null | grep PRETTY_NAME | cut -d= -f2 | tr -d '\"'",
+        # Fire the core commands in parallel (8 channels — safely within OpenSSH MaxSessions=10)
+        core_cmds = {
+            "lscpu":  "lscpu 2>/dev/null",
+            "memory": "dmidecode -t memory 2>/dev/null",
+            "disks":  "lsblk -J -b -o NAME,SIZE,TYPE,MODEL,SERIAL,VENDOR,ROTA,TRAN 2>/dev/null",
+            "bios":   "dmidecode -t bios 2>/dev/null | grep -E 'Version:|Release Date:'",
+            "system": "dmidecode -t system 2>/dev/null | grep -E 'Manufacturer:|Product Name:|Serial Number:'",
+            "uptime": "uptime -p 2>/dev/null || uptime",
+            "kernel": "uname -r",
+            "os":     "cat /etc/os-release 2>/dev/null | grep PRETTY_NAME | cut -d= -f2 | tr -d '\"'",
         }
-        import paramiko
         channels = {}
-        for k, cmd in cmds.items():
+        for k, cmd in core_cmds.items():
             _, stdout, _ = client.exec_command(cmd, timeout=15)
             channels[k] = stdout
-
         results = {k: ch.read().decode("utf-8", errors="replace").strip() for k, ch in channels.items()}
+
+        # Run telemetry commands sequentially after core batch to avoid exceeding MaxSessions
+        results["temps"]      = _run(client, "sensors -j 2>/dev/null || true")
+        results["hwmon"]      = _run(client, "for f in /sys/class/hwmon/hwmon*/temp*_input; do [ -f \"$f\" ] && echo \"$f:$(cat $f)\"; done 2>/dev/null || true")
+        results["ipmi_power"] = _run(client, "ipmitool dcmi power reading 2>/dev/null | grep -i 'Instantaneous power reading' | grep -oE '[0-9]+' | head -1 || true")
+        results["mdstat"]     = _run(client, "cat /proc/mdstat 2>/dev/null || true")
+        # RAPL power: CPU packages + DRAM sub-domains (DRAM is NOT included in package totals)
+        # Two samples 1s apart → CPU+DRAM power across all sockets
+        results["rapl_power"] = _run(client,
+            # Sample 0: sum all package domains + dram sub-domains
+            "sample() {"
+            " local s=0;"
+            " for p in $(ls /sys/class/powercap/ 2>/dev/null | grep -E '^intel-rapl:[0-9]+$');"
+            "  do v=$(cat /sys/class/powercap/$p/energy_uj 2>/dev/null); s=$(( s + ${v:-0} )); done;"
+            " for d in /sys/class/powercap/intel-rapl:*:*/;"
+            "  do n=$(cat ${d}name 2>/dev/null); [ \"$n\" = \"dram\" ] &&"
+            "  v=$(cat ${d}energy_uj 2>/dev/null) && s=$(( s + ${v:-0} )); done;"
+            " echo $s; };"
+            " e0=$(sample); sleep 1; e1=$(sample);"
+            " [ $e0 -gt 0 ] && echo $(( (e1 - e0) / 1000000 )) || true"
+        )
 
         # Parse CPU
         cpu_raw = _parse_lscpu(results["lscpu"])
@@ -168,6 +250,32 @@ def get_hardware_info(hostname: str, username: str, password: str, port: int = 2
 
         os_name = results["os"].strip().strip('"')
 
+        # Temperature: try sensors -j first, fall back to hwmon sysfs
+        max_temp_c = _parse_sensors_temp(results.get("temps", ""))
+        if max_temp_c is None:
+            max_temp_c = _parse_hwmon_temp(results.get("hwmon", ""))
+
+        # Power consumption — ipmitool first, RAPL as fallback
+        consumed_watts = None
+        ipmi_raw = results.get("ipmi_power", "").strip()
+        if ipmi_raw:
+            try:
+                consumed_watts = int(ipmi_raw)
+            except Exception:
+                pass
+        if consumed_watts is None:
+            rapl_raw = results.get("rapl_power", "").strip()
+            if rapl_raw:
+                try:
+                    w = int(rapl_raw)
+                    if 1 <= w <= 3000:  # sanity check
+                        consumed_watts = w
+                except Exception:
+                    pass
+
+        # Software RAID status
+        raid_arrays = _parse_mdstat(results.get("mdstat", ""))
+
         return {
             "processors": processors,
             "modules": modules,
@@ -188,6 +296,9 @@ def get_hardware_info(hostname: str, username: str, password: str, port: int = 2
                 "os": os_name,
                 "uptime": results["uptime"],
             },
+            "max_temp_c": max_temp_c,
+            "consumed_watts": consumed_watts,
+            "raid_arrays": raid_arrays,
         }
     finally:
         client.close()

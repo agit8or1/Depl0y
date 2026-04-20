@@ -478,9 +478,10 @@ async def get_federation_summary(
             vm_count = 0
             lxc_count = 0
 
+            from app.services.proxmox import is_cloud_template
             for r in resources:
                 rtype = r.get("type", "")
-                if rtype == "qemu":
+                if rtype == "qemu" and not is_cloud_template(r):
                     vm_count += 1
                 elif rtype == "lxc":
                     lxc_count += 1

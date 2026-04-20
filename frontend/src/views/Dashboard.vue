@@ -330,8 +330,9 @@
           <span class="rsb-label">Storage</span>
           <div class="rsb-value-row">
             <span class="rsb-big">{{ resourceStats ? resourceStats.used_disk_gb.toFixed(1) : (dashSummary.storage_used_gb ?? '—') }} GB</span>
-            <span class="rsb-sub" v-if="resourceStats">
-              <span class="rsb-chip rsb-chip-gray">/ {{ resourceStats.total_disk_gb.toFixed(1) }} GB</span>
+            <span :class="['rsb-trend', trendClass(diskTrend)]" :title="trendTitle(diskTrend)" v-if="resourceStats">{{ trendArrow(diskTrend) }}</span>
+            <span class="rsb-sub" v-if="resourceStats || dashSummary.storage_total_gb != null">
+              <span class="rsb-chip rsb-chip-gray">/ {{ resourceStats ? resourceStats.total_disk_gb.toFixed(1) : dashSummary.storage_total_gb.toFixed(1) }} GB total</span>
             </span>
           </div>
         </div>
@@ -345,6 +346,7 @@
           <span class="rsb-label">CPU Usage</span>
           <div class="rsb-value-row">
             <span class="rsb-big" :class="cpuUsedPct > 80 ? 'rsb-big-warn' : ''">{{ cpuUsedPct }}%</span>
+            <span :class="['rsb-trend', trendClass(cpuTrend)]" :title="trendTitle(cpuTrend)">{{ trendArrow(cpuTrend) }}</span>
             <span class="rsb-sub">
               <span class="rsb-chip rsb-chip-gray">{{ resourceStats.used_cpu_cores }}/{{ resourceStats.total_cpu_cores }} cores</span>
             </span>
@@ -360,6 +362,7 @@
           <span class="rsb-label">RAM Usage</span>
           <div class="rsb-value-row">
             <span class="rsb-big" :class="ramUsedPct > 85 ? 'rsb-big-warn' : ''">{{ ramUsedPct }}%</span>
+            <span :class="['rsb-trend', trendClass(ramTrend)]" :title="trendTitle(ramTrend)">{{ trendArrow(ramTrend) }}</span>
             <span class="rsb-sub">
               <span class="rsb-chip rsb-chip-gray">{{ resourceStats.used_memory_gb.toFixed(1) }}/{{ resourceStats.total_memory_gb.toFixed(1) }} GB</span>
             </span>
@@ -403,33 +406,6 @@
           Manage Hosts
         </button>
       </div>
-    </div>
-
-    <!-- ── Resource Trending Row ── -->
-    <div v-if="resourceStats" class="resource-trending-row">
-      <div class="rt-card">
-        <span class="rt-label">CPU</span>
-        <span class="rt-value">{{ cpuUsedPct }}%</span>
-        <span :class="['rt-arrow', trendClass(cpuTrend)]" :title="trendTitle(cpuTrend)">{{ trendArrow(cpuTrend) }}</span>
-      </div>
-      <div class="rt-card">
-        <span class="rt-label">RAM</span>
-        <span class="rt-value">{{ ramUsedPct }}%</span>
-        <span :class="['rt-arrow', trendClass(ramTrend)]" :title="trendTitle(ramTrend)">{{ trendArrow(ramTrend) }}</span>
-      </div>
-      <div class="rt-card">
-        <span class="rt-label">Storage</span>
-        <span class="rt-value">{{ diskUsedPct }}%</span>
-        <span :class="['rt-arrow', trendClass(diskTrend)]" :title="trendTitle(diskTrend)">{{ trendArrow(diskTrend) }}</span>
-      </div>
-      <div class="rt-card">
-        <span class="rt-label">RAM Used</span>
-        <span class="rt-value">{{ resourceStats.used_memory_gb.toFixed(1) }} / {{ resourceStats.total_memory_gb.toFixed(1) }} GB</span>
-      </div>
-    </div>
-    <!-- Loading skeleton for resource row -->
-    <div v-else-if="initialLoading" class="resource-trending-row">
-      <SkeletonLoader type="stat" :count="5" />
     </div>
 
     <!-- Widget grid -->
@@ -1879,6 +1855,9 @@ export default {
   font-size: 0.8rem;
   flex-shrink: 0;
 }
+.rt-card--link { cursor: pointer; transition: transform 0.08s, box-shadow 0.08s, border-color 0.08s; }
+.rt-card--link:hover { transform: translateY(-1px); box-shadow: 0 2px 6px rgba(0,0,0,0.08); border-color: var(--color-primary, #2563eb); }
+.rt-card--link:focus-visible { outline: 2px solid var(--color-primary, #2563eb); outline-offset: 1px; }
 
 .rt-label {
   color: var(--text-secondary);
@@ -3065,6 +3044,10 @@ export default {
 
 .rsb-chip-green { background: rgba(34, 197, 94, 0.12); color: #22c55e; }
 .rsb-chip-gray  { background: rgba(148, 163, 184, 0.12); color: #94a3b8; }
+.rsb-trend { font-size: 0.75rem; margin-left: 0.15rem; line-height: 1; }
+.rsb-trend.trend-up     { color: #ef4444; }
+.rsb-trend.trend-down   { color: #22c55e; }
+.rsb-trend.trend-stable { color: #94a3b8; }
 
 /* Skeleton */
 .rsb-card-skel {

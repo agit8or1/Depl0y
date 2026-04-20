@@ -489,6 +489,24 @@ const router = createRouter({
       meta: { requiresAuth: true }
     },
     {
+      path: '/ai-reports',
+      name: 'AIReports',
+      component: () => import('@/views/AIReports.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/ai-reports/settings',
+      name: 'AIReportsSettings',
+      component: () => import('@/views/AIReportsSettings.vue'),
+      meta: { requiresAuth: true, requiresAdmin: true }
+    },
+    {
+      path: '/ai-reports/:id',
+      name: 'AIReportDetail',
+      component: () => import('@/views/AIReportDetail.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
       path: '/notifications',
       name: 'NotificationCenter',
       component: () => import('@/views/NotificationCenter.vue'),

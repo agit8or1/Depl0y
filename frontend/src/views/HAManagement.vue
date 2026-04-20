@@ -67,19 +67,51 @@
         <div v-if="loadingStatus" class="loading-state loading-state-sm">Loading cluster status...</div>
 
         <div v-else class="status-grid">
-          <div class="status-item">
+          <div
+            class="status-item status-item--link"
+            role="link"
+            tabindex="0"
+            title="View cluster status"
+            @click="$router.push('/cluster')"
+            @keydown.enter="$router.push('/cluster')"
+            @keydown.space.prevent="$router.push('/cluster')"
+          >
             <span class="status-item-label">Quorum</span>
             <span :class="['badge', quorumBadgeClass]">{{ quorumDisplay }}</span>
           </div>
-          <div class="status-item">
+          <div
+            class="status-item status-item--link"
+            role="link"
+            tabindex="0"
+            title="View cluster nodes"
+            @click="$router.push('/cluster')"
+            @keydown.enter="$router.push('/cluster')"
+            @keydown.space.prevent="$router.push('/cluster')"
+          >
             <span class="status-item-label">Nodes Online</span>
             <span class="status-item-value">{{ onlineNodeCount }} / {{ totalNodeCount }}</span>
           </div>
-          <div class="status-item">
+          <div
+            class="status-item status-item--link"
+            role="link"
+            tabindex="0"
+            title="Jump to HA Resources"
+            @click="activeTab = 'resources'"
+            @keydown.enter="activeTab = 'resources'"
+            @keydown.space.prevent="activeTab = 'resources'"
+          >
             <span class="status-item-label">HA Resources</span>
             <span class="status-item-value">{{ haResources.length }}</span>
           </div>
-          <div class="status-item">
+          <div
+            class="status-item status-item--link"
+            role="link"
+            tabindex="0"
+            title="Jump to Fence Devices"
+            @click="activeTab = 'fence'"
+            @keydown.enter="activeTab = 'fence'"
+            @keydown.space.prevent="activeTab = 'fence'"
+          >
             <span class="status-item-label">Fence Device</span>
             <span v-if="fenceStatus" :class="['badge', fenceBadgeClass]">{{ fenceStatus }}</span>
             <span v-else class="text-muted text-sm">Not configured</span>
@@ -1689,6 +1721,20 @@ watch(selectedHostId, (val) => { if (val) startPoll(); else stopPoll() })
   background: var(--bg-secondary, #151824);
   border: 1px solid var(--border-color, #2d3348);
   border-radius: 0.375rem;
+}
+
+.status-item--link {
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+.status-item--link:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 14px rgba(0,0,0,0.18);
+  border-color: var(--accent, #6366f1);
+}
+.status-item--link:focus-visible {
+  outline: 2px solid var(--accent, #6366f1);
+  outline-offset: 2px;
 }
 
 .status-item-label {

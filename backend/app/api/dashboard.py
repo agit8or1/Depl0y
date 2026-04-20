@@ -16,6 +16,7 @@ from app.models import (
     UpdateLog,
 )
 from app.api.auth import get_current_user
+from app.services.proxmox import is_cloud_template
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -81,6 +82,8 @@ async def get_dashboard_stats(
         if isinstance(resources, Exception) or not resources:
             continue
         for vm in resources:
+            if is_cloud_template(vm):
+                continue
             total_vms += 1
             status = vm.get('status', '').lower()
             if status == 'running':
@@ -247,8 +250,9 @@ async def get_dashboard_summary(
     for resources in results:
         if isinstance(resources, Exception) or not resources:
             continue
-        total_vms += len(resources)
-        running_vms += sum(1 for v in resources if v.get("status", "").lower() == "running")
+        real_vms = [v for v in resources if not is_cloud_template(v)]
+        total_vms += len(real_vms)
+        running_vms += sum(1 for v in real_vms if v.get("status", "").lower() == "running")
 
     node_count = db.query(ProxmoxNode).count()
 
@@ -257,6 +261,7 @@ async def get_dashboard_summary(
     total_disk_bytes = sum(n.disk_total or 0 for n in nodes)
     used_disk_bytes = sum(n.disk_used or 0 for n in nodes)
     storage_used_gb = round(used_disk_bytes / (1024 ** 3), 2)
+    storage_total_gb = round(total_disk_bytes / (1024 ** 3), 2)
 
     # Failed tasks in last 24h via audit log
     from sqlalchemy import or_
@@ -281,6 +286,7 @@ async def get_dashboard_summary(
         "running_vms": running_vms,
         "node_count": node_count,
         "storage_used_gb": storage_used_gb,
+        "storage_total_gb": storage_total_gb,
         "failed_tasks_24h": failed_tasks_24h,
         "active_users": active_users,
     }

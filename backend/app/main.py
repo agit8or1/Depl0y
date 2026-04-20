@@ -14,6 +14,7 @@ from app.api import bulk_ops
 from app.api import integrations
 from app.api import alerts as alerts_api
 from app.api import analysis as analysis_api
+from app.api import ai_reports as ai_reports_api
 from app.middleware.security import SecurityHeadersMiddleware
 from app.middleware.rate_limit import RateLimitMiddleware
 from app.middleware.ip_filter import IPFilterMiddleware
@@ -349,6 +350,7 @@ app.include_router(integrations.router, prefix=f"{settings.API_V1_PREFIX}/integr
 app.include_router(alerts_api.router, prefix=f"{settings.API_V1_PREFIX}/alerts", tags=["Alerts"])
 app.include_router(analysis_api.router, prefix=f"{settings.API_V1_PREFIX}/analysis", tags=["Analysis"])
 app.include_router(pve_access.router, prefix=f"{settings.API_V1_PREFIX}/pve-access", tags=["PVE Access Control"])
+app.include_router(ai_reports_api.router, prefix=f"{settings.API_V1_PREFIX}/ai-reports", tags=["AI Reports"])
 
 
 if __name__ == "__main__":

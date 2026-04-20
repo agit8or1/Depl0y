@@ -55,3 +55,6 @@ weasyprint==66.0
 markdown==3.10
 apscheduler>=3.10.4
 geoip2==4.8.1
+
+# AI Reports subsystem
+openai>=1.35.0

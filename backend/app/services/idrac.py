@@ -1,5 +1,7 @@
 """iDRAC / iLO out-of-band management via Redfish API."""
+import ssl
 import requests
+from requests.adapters import HTTPAdapter
 import logging
 from typing import Optional, Dict, Any
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -9,6 +11,73 @@ logger = logging.getLogger(__name__)
 # Disable insecure HTTPS warnings for BMC connections (self-signed certs are the norm)
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+
+class _LegacyTLSAdapter(HTTPAdapter):
+    """HTTPAdapter that handles legacy BMC TLS (iDRAC 7/8, iLO 3/4).
+
+    OpenSSL 3.0 requires OP_LEGACY_SERVER_CONNECT for servers that use
+    unsafe legacy renegotiation (common on older iDRAC firmware).
+    """
+    def init_poolmanager(self, *args, **kwargs):
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        try:
+            ctx.minimum_version = ssl.TLSVersion.TLSv1
+        except AttributeError:
+            ctx.options &= ~(ssl.OP_NO_TLSv1 | ssl.OP_NO_TLSv1_1)
+        ctx.set_ciphers("DEFAULT:@SECLEVEL=0")
+        # Required for iDRAC 7 (and other older BMCs) on OpenSSL 3.0+
+        if hasattr(ssl, "OP_LEGACY_SERVER_CONNECT"):
+            ctx.options |= ssl.OP_LEGACY_SERVER_CONNECT
+        kwargs["ssl_context"] = ctx
+        super().init_poolmanager(*args, **kwargs)
+
+# ── Dell PCI subsystem device ID → PowerEdge model name ──────────────────
+# Source: PCI IDs database + Dell product datasheets. Used to identify server
+# model when iDRAC Redfish Model field is blank (common on 13G / iDRAC 8).
+_DELL_PCI_SUBSYS_MODEL = {
+    "0x048c": "PowerEdge R910",
+    "0x04de": "PowerEdge R720",
+    "0x04f7": "PowerEdge R720xd",
+    "0x0503": "PowerEdge R420",
+    "0x0505": "PowerEdge R620",
+    "0x0511": "PowerEdge T320",
+    "0x0512": "PowerEdge T420",
+    "0x051f": "PowerEdge R520",
+    "0x052c": "PowerEdge M620",
+    "0x0539": "PowerEdge R820",
+    "0x053b": "PowerEdge R320",
+    "0x0554": "PowerEdge R220",
+    "0x05d2": "PowerEdge R430",
+    "0x05d3": "PowerEdge R530",
+    "0x0601": "PowerEdge R230",
+    "0x0602": "PowerEdge R330",
+    "0x0617": "PowerEdge R630",
+    "0x0618": "PowerEdge R730",
+    "0x0619": "PowerEdge R930",
+    "0x0627": "PowerEdge R730xd",
+    "0x0628": "PowerEdge M630",
+    "0x0640": "PowerEdge R230",
+    "0x06b7": "PowerEdge R440",
+    "0x06bb": "PowerEdge R540",
+    "0x06ba": "PowerEdge R640",
+    "0x06b9": "PowerEdge R740",
+    "0x06bc": "PowerEdge R740xd",
+    "0x06c8": "PowerEdge R940",
+    "0x0704": "PowerEdge R650",
+    "0x0705": "PowerEdge R750",
+    "0x0706": "PowerEdge R750xs",
+    "0x0738": "PowerEdge R660",
+    "0x073a": "PowerEdge R760",
+}
+
+
+def lookup_dell_model_from_pci(subsys_device_id: str) -> str:
+    """Return PowerEdge model name for a Dell PCI subsystem device ID, or ''."""
+    return _DELL_PCI_SUBSYS_MODEL.get(subsys_device_id.lower(), "")
+
 
 # ── Redfish paths differ slightly between vendors ──────────────────────────
 _PATHS = {
@@ -51,7 +120,7 @@ class RedfishClient:
         password: str,
         port: int = 443,
         bmc_type: str = "idrac",  # "idrac" or "ilo"
-        timeout: int = 10,
+        timeout: int = 20,
     ):
         self.base_url = f"https://{hostname}:{port}"
         self.username = username
@@ -66,6 +135,9 @@ class RedfishClient:
             "Content-Type": "application/json",
             "Accept": "application/json",
         })
+        # Mount legacy TLS adapter for all HTTPS — handles iDRAC 7 (TLS 1.0) transparently
+        _adapter = _LegacyTLSAdapter()
+        self.session.mount("https://", _adapter)
 
     def _get(self, path: str) -> Dict[str, Any]:
         url = self.base_url + path
@@ -97,19 +169,24 @@ class RedfishClient:
         # Older iDRAC 8 (13G) returns Model/Manufacturer as ' ' (whitespace)
         model = (data.get("Model") or "").strip()
         manufacturer = (data.get("Manufacturer") or "").strip()
-        # Fall back to SKU (service tag) if model is blank — better than nothing
-        if not model:
-            model = (data.get("SKU") or data.get("PartNumber") or "").strip()
-        # Try manager endpoint as last resort to get at least the iDRAC generation
+        # NOTE: SKU is the 7-char Dell Express Service Code (e.g. "CVPVS52"), not a model name.
+        # Do NOT use it as a model fallback — it is misleading.
+        # Try manager endpoint for manufacturer and generation hint
         if not model or not manufacturer:
             try:
                 mgr = self._get(self.paths["manager"])
                 if not manufacturer:
                     manufacturer = (mgr.get("Manufacturer") or "Dell").strip()
                 if not model:
+                    # mgr.get("Model") returns e.g. "13G Monolithic", "14G Monolithic"
+                    # Convert generation label → "Dell PowerEdge (13G)" style fallback
                     mgr_model = (mgr.get("Model") or "").strip()
-                    if mgr_model:
-                        model = mgr_model
+                    import re as _re
+                    gen_m = _re.match(r'^(\d+G)', mgr_model)
+                    if gen_m:
+                        model = f"Dell PowerEdge ({gen_m.group(1)})"
+                    elif mgr_model and not mgr_model[0].isdigit():
+                        model = mgr_model  # e.g. "iDRAC8" from some versions
             except Exception:
                 pass
         return {
@@ -297,6 +374,20 @@ class RedfishClient:
             "health": data.get("Status", {}).get("Health", ""),
             "id": data.get("Id", ""),
         }
+
+    def get_dell_system_id(self) -> str:
+        """Return Dell system ID (hex string like '0x0627') from Redfish OEM data, or ''."""
+        try:
+            data = self._get(self.paths["system"])
+            # Dell iDRAC 8/9 expose SystemID in Oem.Dell.DellSystem
+            oem_dell = (data.get("Oem") or {}).get("Dell") or {}
+            dell_sys = oem_dell.get("DellSystem") or {}
+            raw = dell_sys.get("SystemID")
+            if raw is not None:
+                return hex(int(raw))
+        except Exception:
+            pass
+        return ""
 
     def _fetch_all(self, urls: list, parse_fn) -> list:
         """Fetch multiple URLs in parallel and parse each result."""

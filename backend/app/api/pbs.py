@@ -375,6 +375,18 @@ def get_pbs_firmware(server_id: int, current_user: User = Depends(get_current_us
     try: return client.get_firmware_inventory()
     except Exception as e: raise HTTPException(status_code=502, detail=f"Redfish error: {str(e)}")
 
+@router.post("/{server_id}/idrac/clear-sel")
+def clear_pbs_sel(server_id: int, current_user: User = Depends(require_operator), db: Session = Depends(get_db)):
+    server = _get_or_404(db, server_id)
+    client = _build_client(server)
+    try:
+        result = client.clear_sel()
+        logger.info(f"SEL cleared on PBS {server_id} by {current_user.username}")
+        return {"status": "success", "result": result}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Redfish error: {str(e)}")
+
+
 @router.get("/{server_id}/idrac/sensors")
 def get_pbs_sensors(server_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Return unified IPMI-style sensor table for a PBS server's BMC."""

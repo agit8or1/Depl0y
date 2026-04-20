@@ -214,7 +214,14 @@ def run_bmc_poll():
                         )
                         rf_info = client.get_system_info()
                         power_state = rf_info.get("power_state")
-                        health = rf_info.get("health")
+                        # Prefer component-level current health over the SEL-aware
+                        # rollup so stale event-log entries don't keep us at Warning
+                        # after a hardware condition has cleared.
+                        try:
+                            cur = client.compute_current_health()
+                            health = cur.get("health") or rf_info.get("health")
+                        except Exception:
+                            health = rf_info.get("health")
                         model = rf_info.get("model")
                         serial_number = rf_info.get("serial_number")
                         bios_version = rf_info.get("bios_version") or None

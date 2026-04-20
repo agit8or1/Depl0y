@@ -288,19 +288,21 @@
         </div>
       </div>
 
-      <!-- IO Wait -->
+      <!-- IO Wait (% of CPU time waiting on disk/network I/O) -->
       <div class="chart-card card">
         <div class="chart-card__header">
-          <span class="chart-card__title">IO Wait</span>
+          <span class="chart-card__title" title="Percentage of CPU time spent waiting on disk or network I/O. Healthy clusters typically sit near 0%; sustained values above ~5% suggest storage contention.">
+            CPU I/O Wait
+          </span>
           <span class="chart-card__badge" v-if="ioWaitData.length">
-            {{ latestVal(ioWaitData).toFixed(1) }}%
+            {{ fmtPct(latestVal(ioWaitData)) }}
           </span>
         </div>
         <div class="chart-body">
           <PerformanceCharts
             v-if="ioWaitData.length"
             :data="ioWaitData"
-            label="IO Wait"
+            label="CPU I/O Wait"
             unit="%"
             color="#ec4899"
             :height="chartHeight"
@@ -310,9 +312,9 @@
           <div v-else class="chart-empty text-muted text-sm">No data</div>
         </div>
         <div class="chart-stats" v-if="ioWaitData.length">
-          <span>Min <strong>{{ seriesStat(ioWaitData, 'min').toFixed(1) }}%</strong></span>
-          <span>Avg <strong>{{ seriesStat(ioWaitData, 'avg').toFixed(1) }}%</strong></span>
-          <span>Max <strong>{{ seriesStat(ioWaitData, 'max').toFixed(1) }}%</strong></span>
+          <span>Min <strong>{{ fmtPct(seriesStat(ioWaitData, 'min')) }}</strong></span>
+          <span>Avg <strong>{{ fmtPct(seriesStat(ioWaitData, 'avg')) }}</strong></span>
+          <span>Max <strong>{{ fmtPct(seriesStat(ioWaitData, 'max')) }}</strong></span>
         </div>
       </div>
     </div>
@@ -674,6 +676,14 @@ const seriesStat = (series, stat) => {
   if (stat === 'max') return Math.max(...vals)
   if (stat === 'avg') return vals.reduce((a, b) => a + b, 0) / vals.length
   return 0
+}
+
+const fmtPct = (v) => {
+  if (v == null || !isFinite(v)) return '—'
+  if (v === 0) return '0%'
+  if (v < 0.01) return '<0.01%'
+  if (v < 1) return v.toFixed(2) + '%'
+  return v.toFixed(1) + '%'
 }
 
 const formatMBs = (v) => {

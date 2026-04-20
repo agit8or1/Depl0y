@@ -139,6 +139,13 @@ p:last-child { margin-bottom: 0; }
   color: white;
 }
 
+.btn-danger-outline {
+  background-color: transparent;
+  border: 1px solid var(--danger-color);
+  color: var(--danger-color);
+}
+.btn-danger-outline:hover { background-color: rgba(239, 68, 68, 0.12); }
+
 .btn-outline {
   background-color: transparent;
   border: 1px solid var(--border-color);

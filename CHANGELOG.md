@@ -5,6 +5,16 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.22] - 2026-04-20 🩺 Current-state health, Clear SEL, Node Monitor IO Wait fix
+
+### Added
+- **Clear Event Log** button in the iDRAC Details → Logs tab for PVE nodes, PBS servers, and standalone BMCs. Clears the BMC System Event Log (no effect on hardware or guests). Tries Redfish's generic `LogService.ClearLog` first, falls back to Dell OEM `DellLogService.ClearLog` for older iDRACs.
+- `POST /api/v1/idrac/node/{id}/clear-sel`, `POST /api/v1/idrac/{host_id}/clear-sel`, `POST /api/v1/idrac/standalone/{id}/clear-sel`, `POST /api/v1/pbs/{id}/idrac/clear-sel` (operator+, logged).
+
+### Fixed
+- **iDRAC "Warning" stuck on after incidents clear** — e.g. pve01 and pbs1 showing PSU warnings when every PSU currently reads OK. Root cause: Dell's rollup `Status.Health` incorporates stale SEL entries. Scheduler now recomputes overall health from *current* component-level state (PowerSupplies, Fans, Temperatures, Processors, MemorySummary) and prefers that over the rollup. Clearing the event log is still the right fix if you'd like the iDRAC's own web UI to also clear.
+- **Node Monitor "IO Wait" showed all 0%** — data was correct (Proxmox returns iowait as a 0.0–1.0 fraction which `*100` converts to percent). Healthy hosts sit near 0.005%, which `toFixed(1)` rounded down to `0.0%`. New `fmtPct()` helper renders `<0.01%` for tiny values and 2 decimals for sub-1% values. Title changed to **"CPU I/O Wait"** with a tooltip explaining the metric.
+
 ## [2.2.21] - 2026-04-20 🧹 Reports page polish: delete, dark-mode, AI/Logic split
 
 ### Added

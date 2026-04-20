@@ -668,6 +668,13 @@
               <div class="flex gap-1 mb-1" style="align-items:center">
                 <h4 style="margin:0">{{ srv._useSSH ? 'System Journal' : 'System Event Log' }}</h4>
                 <button @click="loadLogs(srv)" class="btn btn-outline btn-sm">Refresh</button>
+                <button v-if="srv._stype !== 'pve_host'"
+                        @click="clearSel(srv)"
+                        class="btn btn-danger-outline btn-sm"
+                        :disabled="srv._clearingSel"
+                        title="Clear the BMC's System Event Log. Current hardware state is unaffected; this only removes historical entries that may keep the iDRAC at Warning after a condition has cleared.">
+                  {{ srv._clearingSel ? 'Clearing…' : 'Clear Event Log' }}
+                </button>
               </div>
               <div v-if="srv._logs !== null" class="log-table-wrapper">
                 <table class="table">
@@ -1422,6 +1429,24 @@ export default {
       }
     }
 
+    const clearSel = async (srv) => {
+      if (!window.confirm(`Clear the System Event Log on ${srv.name}?\n\nThis only removes the BMC's historical event records. Current hardware state is unchanged. Use this when the rollup health stays Warning even though every component reports OK.`)) return
+      srv._clearingSel = true
+      try {
+        if (srv._stype === 'pve_node') await api.idrac.clearNodeSel(srv.id)
+        else if (srv._stype === 'pbs') await api.pbs.clearIdracSel(srv.id)
+        else if (srv._stype === 'standalone') await api.idrac.clearStandaloneSel(srv.id)
+        else await api.idrac.clearHostSel(srv.id)
+        toast.success('Event log cleared. Health will update on the next poll (~2 min).')
+        srv._logs = null
+        await loadLogs(srv)
+      } catch (e) {
+        toast.error(e.response?.data?.detail || 'Failed to clear event log')
+      } finally {
+        srv._clearingSel = false
+      }
+    }
+
     // ── Tab switching and lazy loading ──
     const switchTab = async (srv, tab) => {
       srv._activeTab = tab
@@ -2052,7 +2077,7 @@ export default {
       loading, polling, allServers, filteredServers, tileFilter, tileFilterLabel, setTileFilter, typeLabel, bmcTypeLabel, dash, alertedServers, alertLevel, alertReason, healthIssues, recentAlertLogs,
       powerHistory, powerEventClass,
       healthChartData, powerStateChartData, tempBarData, dashChartOptions, tempBarOptions,
-      expandServer, collapseServer, jumpToServer, loadServerDetail, loadLogs, testConnection, powerAction,
+      expandServer, collapseServer, jumpToServer, loadServerDetail, loadLogs, clearSel, testConnection, powerAction,
       switchTab, loadHardware, loadNetwork, loadFirmware, loadSensors,
       showUpdateModal, updateOutput, updateRunning, updateSuccess, runUpdate,
       netEditForm, netSaving, startNetEdit, cancelNetEdit, saveNetwork,

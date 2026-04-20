@@ -522,6 +522,41 @@ def get_node_power_state(node_id: int, current_user: User = Depends(get_current_
         raise HTTPException(status_code=502, detail=f"Redfish error: {str(e)}")
 
 
+@router.post("/node/{node_id}/clear-sel")
+def node_clear_sel(node_id: int, current_user: User = Depends(require_operator), db: Session = Depends(get_db)):
+    node = _get_node_or_404(db, node_id)
+    try:
+        result = _build_client_from_obj(node).clear_sel()
+        logger.info(f"SEL cleared on node {node_id} by {current_user.username}")
+        return {"status": "success", "result": result}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Redfish error: {str(e)}")
+
+
+@router.post("/{host_id}/clear-sel")
+def host_clear_sel(host_id: int, current_user: User = Depends(require_operator), db: Session = Depends(get_db)):
+    host = _get_host_or_404(db, host_id)
+    try:
+        result = _build_client_from_obj(host).clear_sel()
+        logger.info(f"SEL cleared on host {host_id} by {current_user.username}")
+        return {"status": "success", "result": result}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Redfish error: {str(e)}")
+
+
+@router.post("/standalone/{bmc_id}/clear-sel")
+def standalone_clear_sel(bmc_id: int, current_user: User = Depends(require_operator), db: Session = Depends(get_db)):
+    bmc = db.query(StandaloneBMC).filter(StandaloneBMC.id == bmc_id).first()
+    if not bmc:
+        raise HTTPException(status_code=404, detail="Standalone BMC not found")
+    try:
+        result = _build_client_from_obj(bmc).clear_sel()
+        logger.info(f"SEL cleared on standalone BMC {bmc_id} by {current_user.username}")
+        return {"status": "success", "result": result}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Redfish error: {str(e)}")
+
+
 @router.post("/node/{node_id}/power/{action}")
 def node_power_action(node_id: int, action: str = Path(...), current_user: User = Depends(require_operator), db: Session = Depends(get_db)):
     valid_actions = ("on", "off", "graceful_off", "reset", "graceful_reset", "power_cycle", "pxe")

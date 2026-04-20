@@ -276,6 +276,91 @@ class RedfishClient:
             logger.warning(f"Failed to get power usage: {e}")
             return {"power_control": []}
 
+    def clear_sel(self) -> Dict[str, Any]:
+        """Clear the iDRAC/iLO System Event Log. Stale SEL entries keep the
+        rollup Status.Health at Warning even after the condition clears, so
+        operators routinely clear this after resolving hardware events."""
+        # Try modern Redfish action path first
+        action_path = f"{self.paths['manager']}/LogServices/Sel/Actions/LogService.ClearLog"
+        try:
+            url = self.base_url + action_path
+            resp = self.session.post(url, json={}, timeout=self.timeout)
+            if resp.status_code in (200, 202, 204):
+                return {"status": "ok", "method": "redfish", "http_status": resp.status_code}
+            # iDRAC 7 often rejects the Redfish action — fall through to racadm
+            logger.info(f"Redfish SEL clear rejected ({resp.status_code}); trying OEM endpoint")
+        except Exception as e:
+            logger.warning(f"Redfish SEL clear errored: {e}")
+        # Dell OEM fallback
+        try:
+            oem = "/redfish/v1/Managers/iDRAC.Embedded.1/LogServices/Sel/Actions/Oem/DellLogService.ClearLog"
+            resp = self.session.post(self.base_url + oem, json={}, timeout=self.timeout)
+            if resp.status_code in (200, 202, 204):
+                return {"status": "ok", "method": "redfish-oem", "http_status": resp.status_code}
+            resp.raise_for_status()
+        except Exception as e:
+            logger.warning(f"OEM SEL clear failed: {e}")
+            raise
+
+    def compute_current_health(self) -> Dict[str, Any]:
+        """Compute overall health from *current* component state only, bypassing
+        the rollup Status.Health which reflects stale SEL entries.
+
+        Returns {health, reasons: [str]} where health is OK / Warning / Critical.
+        """
+        reasons: list[str] = []
+        worst = "OK"
+
+        def _rank(h):
+            return {"Critical": 2, "Warning": 1, "OK": 0}.get(h, 0)
+
+        def _consider(h, label):
+            nonlocal worst
+            if h in ("Warning", "Critical") and _rank(h) > _rank(worst):
+                worst = h
+            if h in ("Warning", "Critical"):
+                reasons.append(f"{label}: {h}")
+
+        # Power supplies
+        try:
+            p = self._get(self.paths["power"])
+            for ps in p.get("PowerSupplies", []) or []:
+                h = (ps.get("Status") or {}).get("Health") or ""
+                _consider(h, ps.get("Name") or "PSU")
+        except Exception:
+            pass
+        # Thermal (fans + temps) — Warning only if currently above threshold
+        try:
+            t = self._get(self.paths["thermal"])
+            for f in t.get("Fans", []) or []:
+                h = (f.get("Status") or {}).get("Health") or ""
+                _consider(h, f.get("Name") or f.get("FanName") or "Fan")
+            for tp in t.get("Temperatures", []) or []:
+                h = (tp.get("Status") or {}).get("Health") or ""
+                _consider(h, tp.get("Name") or "Temp")
+        except Exception:
+            pass
+        # Processors
+        try:
+            procs = self._get(self.paths["system"] + "/Processors")
+            for m in procs.get("Members") or []:
+                try:
+                    data = self._get(m.get("@odata.id", "").replace(self.base_url, "") or "")
+                    h = (data.get("Status") or {}).get("Health") or ""
+                    _consider(h, data.get("Name") or "CPU")
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        # Memory — only summary, individual DIMM checks are expensive
+        try:
+            sys_data = self._get(self.paths["system"])
+            mh = (sys_data.get("MemorySummary") or {}).get("Status", {}).get("HealthRollup")
+            _consider(mh or "", "Memory")
+        except Exception:
+            pass
+        return {"health": worst, "reasons": reasons}
+
     def get_sensors(self) -> Dict[str, Any]:
         """Return a unified IPMI-style sensor table combining thermal and power readings."""
         sensors = []

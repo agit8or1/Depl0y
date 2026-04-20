@@ -82,8 +82,19 @@ def get_running_tasks(db: Session = Depends(get_db), current_user=Depends(get_cu
 
     result = tracked + pve_running
     for t in result:
-        if t.get("source") != "proxmox":
+        if t.get("source") == "proxmox":
+            # External task — fetch+parse log with short TTL cache
+            t["progress"] = task_tracker.progress_for_external(
+                upid=t.get("upid"),
+                host_id=t.get("host_id"),
+                node=t.get("node"),
+                started_at_ts=t.get("started_at"),
+                task_type=t.get("task_type") or "",
+            )
+        else:
             t["progress"] = task_tracker.estimate_progress(t)
+    # Drop cache entries for tasks that are no longer running
+    task_tracker.prune_ext_progress({t.get("upid") for t in result if t.get("upid")})
     return result
 
 

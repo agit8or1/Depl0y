@@ -5,6 +5,13 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.26] - 2026-04-20 ⏱️ Progress parsing for externally-started tasks
+
+### Fixed
+- **Migration progress still wrong when migration was started outside depl0y.** `/tasks/running` explicitly skipped the progress parser for `source=proxmox` tasks (anything pulled from the cluster active list rather than initiated via our UI). Added `TaskTracker.progress_for_external(upid, host_id, node, started_at, task_type)` which fetches the task log (with an 8s TTL cache to avoid hammering PVE) and runs the same percentage parser. Monotonic per-UPID so a flaky poll can't move the bar backwards.
+- Falls back to a time-based estimate capped at 60% when the log hasn't produced a percentage yet.
+- Cache self-prunes when a task disappears from the running list.
+
 ## [2.2.25] - 2026-04-20 ⏱️ Accurate migration progress + VM edit audit
 
 ### Fixed

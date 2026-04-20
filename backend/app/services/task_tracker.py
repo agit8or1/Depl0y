@@ -46,6 +46,11 @@ class TaskTracker:
     def __init__(self, max_history: int = 500):
         self._tasks: dict[str, dict] = {}       # upid → task_info
         self._history: deque = deque(maxlen=max_history)
+        # Progress cache for tasks not registered through depl0y (e.g. a
+        # migration started directly from the Proxmox UI). Keyed by UPID →
+        # (timestamp, pct). TTL keeps us from hammering PVE on every UI poll.
+        self._ext_progress: dict[str, tuple[float, float]] = {}
+        self._ext_progress_ttl = 8.0  # seconds
         self._lock = threading.Lock()
         self._poll_thread: threading.Thread | None = None
         self._stop_event = threading.Event()
@@ -211,6 +216,62 @@ class TaskTracker:
                 db.close()
         except Exception as exc:
             logger.debug("TaskTracker poll error for %s: %s", task.get("upid"), exc)
+
+    def progress_for_external(self, upid: str, host_id: int, node: str, started_at_ts: float | None, task_type: str) -> float:
+        """Compute a live progress % for a task NOT registered through depl0y.
+        Used for tasks pulled straight from Proxmox's cluster/node task list
+        (source=proxmox). Fetches the task log with a short TTL cache and
+        parses the actual percentage out, falling back to a conservative
+        time-based estimate.
+        """
+        import time
+        now = time.time()
+        # TTL-cached parsed progress
+        cached = self._ext_progress.get(upid)
+        if cached and (now - cached[0]) < self._ext_progress_ttl:
+            base = cached[1]
+        else:
+            base = None
+            try:
+                from app.core.database import SessionLocal
+                from app.models import ProxmoxHost
+                from app.services.proxmox import ProxmoxService
+                db = SessionLocal()
+                try:
+                    host = db.query(ProxmoxHost).filter(
+                        ProxmoxHost.id == host_id,
+                        ProxmoxHost.is_active == True,
+                    ).first()
+                    if host is not None:
+                        pve = ProxmoxService(host).proxmox
+                        log_tail = pve.nodes(node).tasks(upid).log.get(start=0, limit=200)
+                        base = self._parse_log_progress(log_tail, task_type)
+                finally:
+                    db.close()
+            except Exception as exc:
+                logger.debug("external progress fetch failed for %s: %s", upid, exc)
+            # Monotonic cache: never let progress move backwards between polls
+            prev = self._ext_progress.get(upid, (0.0, 0.0))[1]
+            if base is not None and base < prev:
+                base = prev
+            self._ext_progress[upid] = (now, base if base is not None else prev)
+        if base is not None:
+            return round(float(base), 1)
+        # Fallback: time-based, capped at 60% until the log yields a real number
+        if started_at_ts:
+            try:
+                elapsed = now - float(started_at_ts)
+            except Exception:
+                elapsed = 0.0
+            duration = _TASK_DURATIONS.get(task_type, 60)
+            return round(min(elapsed / duration * 100, 60.0), 1)
+        return 0.0
+
+    def prune_ext_progress(self, keep_upids: set[str]) -> None:
+        """Drop entries for tasks that are no longer running to keep the cache small."""
+        for upid in list(self._ext_progress.keys()):
+            if upid not in keep_upids:
+                self._ext_progress.pop(upid, None)
 
     @staticmethod
     def _parse_log_progress(log_entries, task_type: str) -> float | None:

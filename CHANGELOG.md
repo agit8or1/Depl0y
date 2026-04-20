@@ -5,6 +5,12 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.24] - 2026-04-20 📜 Fix PBS event log loading after clear
+
+### Fixed
+- **PBS event log stuck on "Loading…" after clear** — loadServerDetail was routing PBS log reads through SSH because `isOsSshPrimary` is set on PBS. When `idrac_hostname` is a dedicated BMC (as with pbs1 on .12), SSH lands on iDRAC's racadm shell, not the OS journal — so the log fetch returned nothing. Logs now always try Redfish SEL first; only fall back to OS SSH journal if Redfish returns empty AND it's a legacy PBS where idrac_hostname == hostname.
+- Empty event log now shows a friendly "Event log is empty" message instead of an empty table. Tells the user that health will refresh on the next 2-min poll.
+
 ## [2.2.23] - 2026-04-20 🔧 Per-DIMM health reasons + responsive detail load + Clear SEL shortcut
 
 ### Added

@@ -684,7 +684,7 @@
                   {{ srv._clearingSel ? 'Clearing…' : 'Clear Event Log' }}
                 </button>
               </div>
-              <div v-if="srv._logs !== null" class="log-table-wrapper">
+              <div v-if="srv._logs !== null && srv._logs.length > 0" class="log-table-wrapper">
                 <table class="table">
                   <thead><tr><th>Time</th><th>Severity</th><th>Message</th></tr></thead>
                   <tbody>
@@ -696,6 +696,9 @@
                     </tr>
                   </tbody>
                 </table>
+              </div>
+              <div v-else-if="srv._logs !== null" class="text-muted text-sm" style="padding:1rem;text-align:center">
+                Event log is empty. <span v-if="srv._stype !== 'pve_host'">Current hardware health will update on the next 2-minute poll.</span>
               </div>
               <div v-else class="details-loading">
                 <div class="loading-spinner"></div><span class="text-muted text-sm">Loading logs…</span>
@@ -1395,8 +1398,28 @@ export default {
           srv._error = srv._rfInfoErr?.response?.data?.detail || srv._rfInfoErr?.message || 'BMC unreachable'
         }
 
-        const logCall = isOsSshPrimary ? calls.getSshLogs() : calls.getLogs()
-        logCall.then(r => { srv._logs = r.data?.entries ?? [] }).catch(() => { srv._logs = [] })
+        // One IP per BMC — always try Redfish SEL first. Fall back to OS
+        // journal via SSH only if Redfish returns nothing (legacy setup where
+        // idrac_hostname is actually the OS IP, not a dedicated BMC).
+        calls.getLogs()
+          .then(r => {
+            const entries = r.data?.entries ?? []
+            if (entries.length === 0 && isOsSshPrimary) {
+              return calls.getSshLogs()
+                .then(sr => { srv._logs = sr.data?.entries ?? [] })
+                .catch(() => { srv._logs = entries })
+            }
+            srv._logs = entries
+          })
+          .catch(() => {
+            if (isOsSshPrimary) {
+              calls.getSshLogs()
+                .then(sr => { srv._logs = sr.data?.entries ?? [] })
+                .catch(() => { srv._logs = [] })
+            } else {
+              srv._logs = []
+            }
+          })
       } else {
         // Redfish-only mode: try all three endpoints in parallel
         const [infoR, thermalR, powerR] = await Promise.allSettled([

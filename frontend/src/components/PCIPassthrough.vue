@@ -414,7 +414,7 @@ watch(() => props.node, (newNode) => {
 }
 
 .iommu-group {
-  border-bottom: 1px solid var(--border-color, #e5e7eb);
+  border-bottom: 1px solid var(--border-color);
 }
 
 .iommu-group:last-child {
@@ -427,19 +427,19 @@ watch(() => props.node, (newNode) => {
   gap: 0.5rem;
   padding: 0.65rem 1.25rem;
   cursor: pointer;
-  background: var(--bg-secondary, #f8f9fa);
+  background: var(--surface);
   user-select: none;
   font-weight: 600;
   font-size: 0.85rem;
 }
 
 .iommu-group-header:hover {
-  background: var(--bg-hover, #f0f2f5);
+  background: rgba(148, 163, 184, 0.12);
 }
 
 .iommu-group-toggle {
   font-size: 0.7rem;
-  color: var(--text-secondary, #6b7280);
+  color: var(--text-secondary);
   width: 12px;
 }
 
@@ -458,8 +458,8 @@ watch(() => props.node, (newNode) => {
   padding: 0.5rem 0.75rem;
   border-radius: 4px;
   margin: 0.25rem 0;
-  background: var(--bg-card, #fff);
-  border: 1px solid var(--border-color, #e5e7eb);
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
 }
 
 .pci-device-row--gpu {
@@ -468,7 +468,7 @@ watch(() => props.node, (newNode) => {
 }
 
 .pci-device-row--attached {
-  border-color: var(--success-color, #10b981);
+  border-color: #10b981;
   background: rgba(16, 185, 129, 0.04);
   opacity: 0.8;
 }
@@ -512,7 +512,7 @@ watch(() => props.node, (newNode) => {
 }
 
 .modal-content {
-  background: var(--bg-card, #fff);
+  background: var(--bg-card);
   border-radius: 8px;
   width: 90%;
   max-width: 520px;
@@ -526,7 +526,7 @@ watch(() => props.node, (newNode) => {
   align-items: center;
   justify-content: space-between;
   padding: 1rem 1.5rem;
-  border-bottom: 1px solid var(--border-color, #e5e7eb);
+  border-bottom: 1px solid var(--border-color);
 }
 
 .modal-header h3 {
@@ -545,7 +545,7 @@ watch(() => props.node, (newNode) => {
   justify-content: flex-end;
   gap: 0.5rem;
   padding: 1rem 1.5rem;
-  border-top: 1px solid var(--border-color, #e5e7eb);
+  border-top: 1px solid var(--border-color);
 }
 
 .btn-close {
@@ -589,6 +589,6 @@ watch(() => props.node, (newNode) => {
 .gap-1 { gap: 0.5rem; }
 .align-center { align-items: center; }
 .text-sm { font-size: 0.85rem; }
-.text-muted { color: var(--text-secondary, #6b7280); }
+.text-muted { color: var(--text-secondary); }
 .text-center { text-align: center; }
 </style>

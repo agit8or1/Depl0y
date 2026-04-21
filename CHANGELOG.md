@@ -5,6 +5,11 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.35] - 2026-04-21 🌗 PCIPassthrough dark-mode contrast
+
+### Fixed
+- **"Available PCI Devices on Node" was near-white in dark mode.** `PCIPassthrough.vue` referenced CSS variables that don't exist in this project's theme (`--bg-secondary`, `--bg-hover`). The `var(x, #f8f9fa)` fallback kicked in and rendered a light-grey block on dark backgrounds. Replaced with real theme vars (`--surface`) and an alpha-tint hover state that works in both themes. Also dropped stale hex fallbacks on vars that *do* exist (`--bg-card`, `--border-color`, `--text-secondary`) so a missed context doesn't flash light values.
+
 ## [2.2.34] - 2026-04-21 ✂️ VM Config + Hardware tab declutter
 
 ### Changed

@@ -5,6 +5,19 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.33] - 2026-04-21 🧹 VM details tabs layout polish
+
+### Changed
+- **Config / Hardware / Options tabs** reorganized into clearly-labeled sections with a consistent 2-column settings grid. Related fields group together instead of a long flat form: e.g. Hardware splits into **CPU**, **Machine & Firmware**, **Display / Controllers / Audio**; Options into **Guest OS**, **Startup & Hotplug**, **Devices & Integration**, **Toggles**.
+- **Auto-save on change** for single-value dropdowns (CPU Type, BIOS, Machine Type, VGA, scsihw, OS Type) with a subtle "Saving…" / "Saved" chip. 400ms debounce. Multi-field rows (Sockets × Cores, Audio, Startup-order, Hotplug, RNG, SPICE, SMBIOS) keep explicit Save buttons.
+- **Boolean fields** rendered as uniform toggle cards in a grid instead of scattered checkboxes.
+- **Tables** (Disks / CD-ROMs / Unused / Network / Backup archives / Replication jobs) switched to a `.table-tidy` style: sticky headers, uniform 40-px rows, uppercase header labels, right-aligned action column with tooltip-only icons where space is tight.
+- **Tab strip**: added scrollbar styling so it scrolls cleanly when the 14 tabs overflow on narrow viewports.
+
+### Under the hood
+- New script helpers wrap the existing save handlers with debounce + chip flash — `autoSaveConfig / autoSaveOpt / autoSaveHw / autoSaveHwCpu`. **No API calls changed.** Business logic untouched; this is pure layout + UX polish.
+- All new styles use theme CSS variables (`--border-color`, `--surface`, `--bg-card`, `--text-primary`, `--text-secondary`, `--primary-color`) so dark-mode inherits correctly.
+
 ## [2.2.32] - 2026-04-21 📺 VM console aspect ratio fix
 
 ### Fixed

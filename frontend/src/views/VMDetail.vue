@@ -383,14 +383,21 @@
         <div class="card">
           <div class="card-header">
             <h3>VM Configuration</h3>
+            <span class="text-sm text-muted">Dropdowns auto-save; free-text fields use Save buttons</span>
           </div>
-          <div class="card-body">
-            <div class="config-grid">
 
-              <!-- Name -->
-              <div class="form-group inline-field">
-                <label class="form-label">Name</label>
-                <div class="inline-edit-row">
+          <!-- ── Identity ── -->
+          <div class="settings-section">
+            <div class="settings-section-header">
+              <h4 class="settings-section-title">Identity</h4>
+              <span class="settings-section-subtitle">Name and description of the VM</span>
+            </div>
+            <div class="settings-grid settings-grid--2col">
+              <div class="settings-row">
+                <label class="settings-label">Name
+                  <span class="settings-hint">Current: <code>{{ config.name || '—' }}</code></span>
+                </label>
+                <div class="settings-control">
                   <input v-model="inlineEdit.name" class="form-control" placeholder="vm-name"
                     @keyup.enter="saveInlineField('name', inlineEdit.name)" />
                   <button @click="saveInlineField('name', inlineEdit.name)"
@@ -398,110 +405,34 @@
                     {{ savingField.name ? '...' : 'Save' }}
                   </button>
                 </div>
-                <div class="inline-current">Current: <code>{{ config.name || '—' }}</code></div>
               </div>
 
-              <!-- CPU Cores -->
-              <div class="form-group inline-field">
-                <label class="form-label">CPU Cores</label>
-                <div class="inline-edit-row">
-                  <input v-model.number="inlineEdit.cores" type="number" min="1" max="128"
-                    class="form-control"
-                    @keyup.enter="saveInlineField('cores', inlineEdit.cores)" />
-                  <button @click="saveInlineField('cores', inlineEdit.cores)"
-                    class="btn btn-primary btn-sm" :disabled="savingField.cores">
-                    {{ savingField.cores ? '...' : 'Save' }}
+              <div class="settings-row settings-row--full">
+                <label class="settings-label">Description</label>
+                <div class="settings-control" style="align-items:flex-start;">
+                  <textarea v-model="inlineEdit.description" class="form-control" rows="3"
+                    style="resize:vertical;"></textarea>
+                  <button @click="saveInlineField('description', inlineEdit.description)"
+                    class="btn btn-primary btn-sm" :disabled="savingField.description">
+                    {{ savingField.description ? '...' : 'Save' }}
                   </button>
                 </div>
-                <div class="inline-current">Current: <code>{{ config.cores || 1 }}</code></div>
               </div>
+            </div>
+          </div>
 
-              <!-- Memory -->
-              <div class="form-group inline-field">
-                <label class="form-label">Memory (MB)</label>
-                <div class="inline-edit-row">
-                  <input v-model.number="inlineEdit.memory" type="number" min="64" step="64"
-                    class="form-control"
-                    @keyup.enter="saveInlineField('memory', inlineEdit.memory)" />
-                  <button @click="saveInlineField('memory', inlineEdit.memory)"
-                    class="btn btn-primary btn-sm" :disabled="savingField.memory">
-                    {{ savingField.memory ? '...' : 'Save' }}
-                  </button>
-                </div>
-                <div class="inline-current">Current: <code>{{ config.memory || '—' }} MB</code></div>
-              </div>
-
-              <!-- CPU Type -->
-              <div class="form-group inline-field">
-                <label class="form-label">CPU Type</label>
-                <div class="inline-edit-row">
-                  <select v-model="inlineEdit.cpu" class="form-control">
-                    <option value="host">host</option>
-                    <option value="kvm64">kvm64</option>
-                    <option value="x86-64-v2-AES">x86-64-v2-AES</option>
-                    <option value="qemu64">qemu64</option>
-                  </select>
-                  <button @click="saveInlineField('cpu', inlineEdit.cpu)"
-                    class="btn btn-primary btn-sm" :disabled="savingField.cpu">
-                    {{ savingField.cpu ? '...' : 'Save' }}
-                  </button>
-                </div>
-                <div class="inline-current">Current: <code>{{ config.cpu || 'host' }}</code></div>
-              </div>
-
-              <!-- BIOS -->
-              <div class="form-group inline-field">
-                <label class="form-label">BIOS</label>
-                <div class="inline-edit-row">
-                  <select v-model="inlineEdit.bios" class="form-control">
-                    <option value="seabios">SeaBIOS (default)</option>
-                    <option value="ovmf">OVMF (UEFI)</option>
-                  </select>
-                  <button @click="saveInlineField('bios', inlineEdit.bios)"
-                    class="btn btn-primary btn-sm" :disabled="savingField.bios">
-                    {{ savingField.bios ? '...' : 'Save' }}
-                  </button>
-                </div>
-                <div class="inline-current">Current: <code>{{ config.bios || 'seabios' }}</code></div>
-              </div>
-
-              <!-- Machine Type -->
-              <div class="form-group inline-field">
-                <label class="form-label">Machine Type</label>
-                <div class="inline-edit-row">
-                  <select v-model="inlineEdit.machine" class="form-control">
-                    <option value="">default</option>
-                    <option value="pc">pc</option>
-                    <option value="q35">q35</option>
-                    <option value="pc-i440fx-2.2">pc-i440fx-2.2</option>
-                  </select>
-                  <button @click="saveInlineField('machine', inlineEdit.machine)"
-                    class="btn btn-primary btn-sm" :disabled="savingField.machine">
-                    {{ savingField.machine ? '...' : 'Save' }}
-                  </button>
-                </div>
-                <div class="inline-current">Current: <code>{{ config.machine || 'default' }}</code></div>
-              </div>
-
-              <!-- Boot Disk / Order -->
-              <div class="form-group inline-field">
-                <label class="form-label">Boot Order</label>
-                <div class="inline-edit-row">
-                  <input v-model="inlineEdit.boot" class="form-control"
-                    placeholder="order=scsi0;ide2;net0"
-                    @keyup.enter="saveInlineField('boot', inlineEdit.boot)" />
-                  <button @click="saveInlineField('boot', inlineEdit.boot)"
-                    class="btn btn-primary btn-sm" :disabled="savingField.boot">
-                    {{ savingField.boot ? '...' : 'Save' }}
-                  </button>
-                </div>
-                <div class="inline-current">Current: <code>{{ config.boot || '—' }}</code></div>
-              </div>
-
-              <!-- Sockets -->
-              <div class="form-group inline-field">
-                <label class="form-label">Sockets</label>
-                <div class="inline-edit-row">
+          <!-- ── CPU & Memory ── -->
+          <div class="settings-section">
+            <div class="settings-section-header">
+              <h4 class="settings-section-title">CPU &amp; Memory</h4>
+              <span class="settings-section-subtitle">vCPU topology and RAM</span>
+            </div>
+            <div class="settings-grid settings-grid--2col">
+              <div class="settings-row">
+                <label class="settings-label">Sockets
+                  <span class="settings-hint">Current: <code>{{ config.sockets || 1 }}</code></span>
+                </label>
+                <div class="settings-control">
                   <input v-model.number="inlineEdit.sockets" type="number" min="1" max="8"
                     class="form-control"
                     @keyup.enter="saveInlineField('sockets', inlineEdit.sockets)" />
@@ -510,13 +441,61 @@
                     {{ savingField.sockets ? '...' : 'Save' }}
                   </button>
                 </div>
-                <div class="inline-current">Current: <code>{{ config.sockets || 1 }}</code></div>
               </div>
 
-              <!-- Balloon (MB) -->
-              <div class="form-group inline-field">
-                <label class="form-label">Balloon (MB)</label>
-                <div class="inline-edit-row">
+              <div class="settings-row">
+                <label class="settings-label">Cores
+                  <span class="settings-hint">Current: <code>{{ config.cores || 1 }}</code></span>
+                </label>
+                <div class="settings-control">
+                  <input v-model.number="inlineEdit.cores" type="number" min="1" max="128"
+                    class="form-control"
+                    @keyup.enter="saveInlineField('cores', inlineEdit.cores)" />
+                  <button @click="saveInlineField('cores', inlineEdit.cores)"
+                    class="btn btn-primary btn-sm" :disabled="savingField.cores">
+                    {{ savingField.cores ? '...' : 'Save' }}
+                  </button>
+                </div>
+              </div>
+
+              <div class="settings-row">
+                <label class="settings-label">CPU Type
+                  <span class="settings-hint">Current: <code>{{ config.cpu || 'host' }}</code></span>
+                </label>
+                <div class="settings-control">
+                  <select v-model="inlineEdit.cpu" class="form-control"
+                    @change="autoSaveConfig('cpu', inlineEdit.cpu)">
+                    <option value="host">host</option>
+                    <option value="kvm64">kvm64</option>
+                    <option value="x86-64-v2-AES">x86-64-v2-AES</option>
+                    <option value="qemu64">qemu64</option>
+                  </select>
+                  <span v-if="savedChip.cpu" :class="['saved-chip', 'saved-chip--show', savedChip.cpu === 'saving' ? 'saved-chip--saving' : '']">
+                    {{ savedChip.cpu === 'saving' ? 'Saving…' : 'Saved' }}
+                  </span>
+                </div>
+              </div>
+
+              <div class="settings-row">
+                <label class="settings-label">Memory (MB)
+                  <span class="settings-hint">Current: <code>{{ config.memory || '—' }} MB</code></span>
+                </label>
+                <div class="settings-control">
+                  <input v-model.number="inlineEdit.memory" type="number" min="64" step="64"
+                    class="form-control"
+                    @keyup.enter="saveInlineField('memory', inlineEdit.memory)" />
+                  <button @click="saveInlineField('memory', inlineEdit.memory)"
+                    class="btn btn-primary btn-sm" :disabled="savingField.memory">
+                    {{ savingField.memory ? '...' : 'Save' }}
+                  </button>
+                </div>
+              </div>
+
+              <div class="settings-row">
+                <label class="settings-label">Balloon (MB)
+                  <span class="settings-hint">Current: <code>{{ config.balloon ?? 0 }} MB</code></span>
+                </label>
+                <div class="settings-control">
                   <input v-model.number="inlineEdit.balloon" type="number" min="0" step="64"
                     class="form-control"
                     @keyup.enter="saveInlineField('balloon', inlineEdit.balloon)" />
@@ -525,64 +504,111 @@
                     {{ savingField.balloon ? '...' : 'Save' }}
                   </button>
                 </div>
-                <div class="inline-current">Current: <code>{{ config.balloon ?? 0 }} MB</code></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ── Firmware & Boot ── -->
+          <div class="settings-section">
+            <div class="settings-section-header">
+              <h4 class="settings-section-title">Firmware &amp; Boot</h4>
+              <span class="settings-section-subtitle">BIOS, machine type, and boot order</span>
+            </div>
+            <div class="settings-grid settings-grid--2col">
+              <div class="settings-row">
+                <label class="settings-label">BIOS
+                  <span class="settings-hint">Current: <code>{{ config.bios || 'seabios' }}</code></span>
+                </label>
+                <div class="settings-control">
+                  <select v-model="inlineEdit.bios" class="form-control"
+                    @change="autoSaveConfig('bios', inlineEdit.bios)">
+                    <option value="seabios">SeaBIOS (default)</option>
+                    <option value="ovmf">OVMF (UEFI)</option>
+                  </select>
+                  <span v-if="savedChip.bios" :class="['saved-chip', 'saved-chip--show', savedChip.bios === 'saving' ? 'saved-chip--saving' : '']">
+                    {{ savedChip.bios === 'saving' ? 'Saving…' : 'Saved' }}
+                  </span>
+                </div>
               </div>
 
-              <!-- Description (full width) -->
-              <div class="form-group inline-field config-grid-span2">
-                <label class="form-label">Description</label>
-                <textarea v-model="inlineEdit.description" class="form-control" rows="3"></textarea>
-                <div class="flex gap-1 mt-1">
-                  <button @click="saveInlineField('description', inlineEdit.description)"
-                    class="btn btn-primary btn-sm" :disabled="savingField.description">
-                    {{ savingField.description ? 'Saving...' : 'Save Description' }}
+              <div class="settings-row">
+                <label class="settings-label">Machine Type
+                  <span class="settings-hint">Current: <code>{{ config.machine || 'default' }}</code></span>
+                </label>
+                <div class="settings-control">
+                  <select v-model="inlineEdit.machine" class="form-control"
+                    @change="autoSaveConfig('machine', inlineEdit.machine)">
+                    <option value="">default</option>
+                    <option value="pc">pc</option>
+                    <option value="q35">q35</option>
+                    <option value="pc-i440fx-2.2">pc-i440fx-2.2</option>
+                  </select>
+                  <span v-if="savedChip.machine" :class="['saved-chip', 'saved-chip--show', savedChip.machine === 'saving' ? 'saved-chip--saving' : '']">
+                    {{ savedChip.machine === 'saving' ? 'Saving…' : 'Saved' }}
+                  </span>
+                </div>
+              </div>
+
+              <div class="settings-row settings-row--full">
+                <label class="settings-label">Boot Order
+                  <span class="settings-hint">Current: <code>{{ config.boot || '—' }}</code></span>
+                </label>
+                <div class="settings-control">
+                  <input v-model="inlineEdit.boot" class="form-control"
+                    placeholder="order=scsi0;ide2;net0"
+                    @keyup.enter="saveInlineField('boot', inlineEdit.boot)" />
+                  <button @click="saveInlineField('boot', inlineEdit.boot)"
+                    class="btn btn-primary btn-sm" :disabled="savingField.boot">
+                    {{ savingField.boot ? '...' : 'Save' }}
                   </button>
                 </div>
               </div>
+            </div>
+          </div>
 
-              <!-- Boolean toggles row -->
-              <div class="form-group config-grid-span2">
-                <label class="form-label" style="margin-bottom:0.5rem;">Toggles</label>
-                <div class="toggle-row">
-                  <label class="toggle-item">
-                    <input type="checkbox" class="toggle-check"
-                      :checked="!!inlineEdit.numa"
-                      @change="saveInlineField('numa', $event.target.checked ? 1 : 0)" />
-                    <span class="toggle-label">NUMA</span>
-                    <span class="toggle-status" :class="inlineEdit.numa ? 'badge badge-success' : 'badge badge-info'">
-                      {{ inlineEdit.numa ? 'On' : 'Off' }}
-                    </span>
-                  </label>
-                  <label class="toggle-item">
-                    <input type="checkbox" class="toggle-check"
-                      :checked="!!inlineEdit.agent"
-                      @change="saveInlineField('agent', $event.target.checked ? 1 : 0)" />
-                    <span class="toggle-label">QEMU Agent</span>
-                    <span class="toggle-status" :class="inlineEdit.agent ? 'badge badge-success' : 'badge badge-info'">
-                      {{ inlineEdit.agent ? 'On' : 'Off' }}
-                    </span>
-                  </label>
-                  <label class="toggle-item">
-                    <input type="checkbox" class="toggle-check"
-                      :checked="!!inlineEdit.onboot"
-                      @change="saveInlineField('onboot', $event.target.checked ? 1 : 0)" />
-                    <span class="toggle-label">Start at Boot</span>
-                    <span class="toggle-status" :class="inlineEdit.onboot ? 'badge badge-success' : 'badge badge-danger'">
-                      {{ inlineEdit.onboot ? 'Yes' : 'No' }}
-                    </span>
-                  </label>
-                  <label class="toggle-item">
-                    <input type="checkbox" class="toggle-check"
-                      :checked="!!inlineEdit.protection"
-                      @change="saveInlineField('protection', $event.target.checked ? 1 : 0)" />
-                    <span class="toggle-label">Protection</span>
-                    <span class="toggle-status" :class="inlineEdit.protection ? 'badge badge-warning' : 'badge badge-info'">
-                      {{ inlineEdit.protection ? 'On' : 'Off' }}
-                    </span>
-                  </label>
+          <!-- ── Toggles ── -->
+          <div class="settings-section">
+            <div class="settings-section-header">
+              <h4 class="settings-section-title">Toggles</h4>
+              <span class="settings-section-subtitle">Click to toggle — auto-saved</span>
+            </div>
+            <div class="toggle-grid">
+              <label class="toggle-card" title="Non-uniform memory access">
+                <input type="checkbox"
+                  :checked="!!inlineEdit.numa"
+                  @change="saveInlineField('numa', $event.target.checked ? 1 : 0)" />
+                <div class="toggle-card-text">
+                  <span class="toggle-card-label">NUMA</span>
+                  <span class="toggle-card-desc">{{ inlineEdit.numa ? 'On' : 'Off' }}</span>
                 </div>
-              </div>
-
+              </label>
+              <label class="toggle-card" title="QEMU guest agent">
+                <input type="checkbox"
+                  :checked="!!inlineEdit.agent"
+                  @change="saveInlineField('agent', $event.target.checked ? 1 : 0)" />
+                <div class="toggle-card-text">
+                  <span class="toggle-card-label">QEMU Agent</span>
+                  <span class="toggle-card-desc">{{ inlineEdit.agent ? 'On' : 'Off' }}</span>
+                </div>
+              </label>
+              <label class="toggle-card" title="Auto-start on host boot">
+                <input type="checkbox"
+                  :checked="!!inlineEdit.onboot"
+                  @change="saveInlineField('onboot', $event.target.checked ? 1 : 0)" />
+                <div class="toggle-card-text">
+                  <span class="toggle-card-label">Start at Boot</span>
+                  <span class="toggle-card-desc">{{ inlineEdit.onboot ? 'Yes' : 'No' }}</span>
+                </div>
+              </label>
+              <label class="toggle-card" title="Protection against accidental deletion">
+                <input type="checkbox"
+                  :checked="!!inlineEdit.protection"
+                  @change="saveInlineField('protection', $event.target.checked ? 1 : 0)" />
+                <div class="toggle-card-text">
+                  <span class="toggle-card-label">Protection</span>
+                  <span class="toggle-card-desc">{{ inlineEdit.protection ? 'On' : 'Off' }}</span>
+                </div>
+              </label>
             </div>
           </div>
         </div>
@@ -667,7 +693,7 @@
           </div>
 
           <div class="table-container">
-            <table class="table">
+            <table class="table table-tidy">
               <thead>
                 <tr>
                   <th>Interface</th>
@@ -680,7 +706,7 @@
                   <th>SSD</th>
                   <th>Discard</th>
                   <th>IOThread</th>
-                  <th>Actions</th>
+                  <th class="col-actions">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -722,11 +748,11 @@
                       {{ disk.parsed.iothread ? 'On' : 'Off' }}
                     </button>
                   </td>
-                  <td>
-                    <div class="flex gap-1 flex-wrap">
-                      <button @click="openResizeDisk(disk)" class="btn btn-outline btn-sm">Resize</button>
-                      <button @click="openMoveDisk(disk)" class="btn btn-outline btn-sm">Move</button>
-                      <button @click="detachDisk(disk.key)" class="btn btn-warning btn-sm" :disabled="actioning">Detach</button>
+                  <td class="col-actions">
+                    <div class="flex gap-1 flex-wrap" style="justify-content:flex-end;">
+                      <button @click="openResizeDisk(disk)" class="btn btn-outline btn-sm" title="Resize disk">Resize</button>
+                      <button @click="openMoveDisk(disk)" class="btn btn-outline btn-sm" title="Move to another storage">Move</button>
+                      <button @click="detachDisk(disk.key)" class="btn btn-warning btn-sm" :disabled="actioning" title="Detach disk">Detach</button>
                     </div>
                   </td>
                 </tr>
@@ -741,12 +767,12 @@
             <h3>CD-ROM / ISO Drives</h3>
           </div>
           <div class="table-container">
-            <table class="table">
+            <table class="table table-tidy">
               <thead>
                 <tr>
                   <th>Slot</th>
                   <th>Media / ISO</th>
-                  <th>Actions</th>
+                  <th class="col-actions">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -756,8 +782,8 @@
                     <span v-if="cd.iso" class="cdrom-iso-label">{{ cd.iso }}</span>
                     <span v-else class="text-muted">Empty (no media)</span>
                   </td>
-                  <td>
-                    <div class="flex gap-1">
+                  <td class="col-actions">
+                    <div class="flex gap-1" style="justify-content:flex-end;">
                       <button v-if="cd.iso" @click="ejectCdrom(cd.key)"
                         class="btn btn-outline btn-sm" :disabled="actioning">Eject</button>
                       <button @click="openChangeIsoModal(cd)" class="btn btn-outline btn-sm" :disabled="actioning">
@@ -779,14 +805,14 @@
             <span class="badge badge-warning">{{ unusedDisks.length }}</span>
           </div>
           <div class="table-container">
-            <table class="table">
-              <thead><tr><th>Slot</th><th>Volume ID</th><th>Actions</th></tr></thead>
+            <table class="table table-tidy">
+              <thead><tr><th>Slot</th><th>Volume ID</th><th class="col-actions">Actions</th></tr></thead>
               <tbody>
                 <tr v-for="ud in unusedDisks" :key="ud.key">
                   <td><code>{{ ud.key }}</code></td>
                   <td class="text-sm text-muted">{{ ud.volid }}</td>
-                  <td>
-                    <div class="flex gap-1">
+                  <td class="col-actions">
+                    <div class="flex gap-1" style="justify-content:flex-end;">
                       <button @click="openReattachDisk(ud)" class="btn btn-primary btn-sm" :disabled="actioning">Reattach</button>
                       <button @click="deleteUnused(ud)" class="btn btn-danger btn-sm" :disabled="actioning">Delete</button>
                     </div>
@@ -817,7 +843,7 @@
             </div>
           </div>
           <div class="table-container">
-            <table class="table">
+            <table class="table table-tidy">
               <thead>
                 <tr>
                   <th>Interface</th>
@@ -828,7 +854,7 @@
                   <th>Firewall</th>
                   <th>Link</th>
                   <th>Rate (MB/s)</th>
-                  <th>Actions</th>
+                  <th class="col-actions">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -857,10 +883,10 @@
                     </button>
                   </td>
                   <td>{{ nic.parsed.rate || '—' }}</td>
-                  <td>
-                    <div class="flex gap-1">
-                      <button @click="openEditNic(nic)" class="btn btn-outline btn-sm">Edit</button>
-                      <button @click="removeNic(nic.key)" class="btn btn-danger btn-sm" :disabled="actioning">Delete</button>
+                  <td class="col-actions">
+                    <div class="flex gap-1" style="justify-content:flex-end;">
+                      <button @click="openEditNic(nic)" class="btn btn-outline btn-sm" title="Edit NIC">Edit</button>
+                      <button @click="removeNic(nic.key)" class="btn btn-danger btn-sm" :disabled="actioning" title="Delete NIC">Delete</button>
                     </div>
                   </td>
                 </tr>
@@ -1444,16 +1470,23 @@
         <div class="card mb-2">
           <div class="card-header">
             <h3>VM Options</h3>
-            <span class="text-sm text-muted">Mirrors Proxmox VE's <em>Options</em> tab.</span>
+            <span class="text-sm text-muted">Mirrors Proxmox VE's <em>Options</em> tab — dropdowns auto-save</span>
           </div>
-          <div class="card-body">
-            <div class="config-grid">
 
-              <!-- OS Type -->
-              <div class="form-group inline-field">
-                <label class="form-label">OS Type</label>
-                <div class="inline-edit-row">
-                  <select v-model="optEdit.ostype" class="form-control">
+          <!-- ── Guest OS ── -->
+          <div class="settings-section">
+            <div class="settings-section-header">
+              <h4 class="settings-section-title">Guest OS</h4>
+              <span class="settings-section-subtitle">Tells QEMU which guest optimisations to apply</span>
+            </div>
+            <div class="settings-grid settings-grid--2col">
+              <div class="settings-row">
+                <label class="settings-label">OS Type
+                  <span class="settings-hint">Current: <code>{{ config.ostype || 'auto' }}</code></span>
+                </label>
+                <div class="settings-control">
+                  <select v-model="optEdit.ostype" class="form-control"
+                    @change="autoSaveOpt('ostype', optEdit.ostype)">
                     <option value="">(auto)</option>
                     <option value="l26">Linux 2.6 - 6.x (l26)</option>
                     <option value="l24">Linux 2.4 (l24)</option>
@@ -1466,55 +1499,74 @@
                     <option value="solaris">Solaris Kernel</option>
                     <option value="other">Other</option>
                   </select>
-                  <button @click="saveOpt('ostype', optEdit.ostype)"
-                    class="btn btn-primary btn-sm" :disabled="savingOpt.ostype">
-                    {{ savingOpt.ostype ? '...' : 'Save' }}
-                  </button>
+                  <span v-if="savedChip.ostype" :class="['saved-chip', 'saved-chip--show', savedChip.ostype === 'saving' ? 'saved-chip--saving' : '']">
+                    {{ savedChip.ostype === 'saving' ? 'Saving…' : 'Saved' }}
+                  </span>
                 </div>
-                <div class="inline-current">Current: <code>{{ config.ostype || 'auto' }}</code></div>
               </div>
+            </div>
+          </div>
 
-              <!-- Start/Shutdown order & delay -->
-              <div class="form-group inline-field config-grid-span2">
-                <label class="form-label">Start/Shutdown Order &amp; Delay</label>
-                <div class="inline-edit-row">
+          <!-- ── Startup & Hotplug ── -->
+          <div class="settings-section">
+            <div class="settings-section-header">
+              <h4 class="settings-section-title">Startup &amp; Hotplug</h4>
+              <span class="settings-section-subtitle">Host-boot order and runtime device hotplug</span>
+            </div>
+            <div class="settings-grid">
+              <div class="settings-row settings-row--full">
+                <label class="settings-label">Start/Shutdown Order &amp; Delay
+                  <span class="settings-hint">Current: <code>{{ config.startup || 'default' }}</code></span>
+                </label>
+                <div class="settings-control">
                   <input v-model.number="optEdit.startup_order" type="number" min="0" max="999"
-                    placeholder="order" class="form-control" style="max-width:100px;"
+                    placeholder="order" class="form-control" style="max-width:110px;flex:none;"
                     @keyup.enter="saveStartupOrder" title="Lower runs first" />
                   <input v-model.number="optEdit.startup_up" type="number" min="0" max="3600"
-                    placeholder="up delay (s)" class="form-control" style="max-width:120px;"
+                    placeholder="up delay (s)" class="form-control" style="max-width:130px;flex:none;"
                     @keyup.enter="saveStartupOrder" />
                   <input v-model.number="optEdit.startup_down" type="number" min="0" max="3600"
-                    placeholder="down delay (s)" class="form-control" style="max-width:120px;"
+                    placeholder="down delay (s)" class="form-control" style="max-width:140px;flex:none;"
                     @keyup.enter="saveStartupOrder" />
+                  <span style="flex:1;"></span>
                   <button @click="saveStartupOrder"
                     class="btn btn-primary btn-sm" :disabled="savingOpt.startup">
                     {{ savingOpt.startup ? '...' : 'Save' }}
                   </button>
                 </div>
-                <div class="inline-current">Current: <code>{{ config.startup || 'default' }}</code></div>
               </div>
 
-              <!-- Hotplug -->
-              <div class="form-group inline-field config-grid-span2">
-                <label class="form-label">Hotplug</label>
-                <div class="hotplug-row">
+              <div class="settings-row settings-row--full">
+                <label class="settings-label">Hotplug
+                  <span class="settings-hint">Current: <code>{{ config.hotplug || 'disk,network,usb' }}</code></span>
+                </label>
+                <div class="settings-control" style="flex-wrap:wrap;">
                   <label v-for="h in hotplugOptions" :key="h.key" class="hotplug-chip">
                     <input type="checkbox" :value="h.key" v-model="optEdit.hotplug_set" />
                     <span>{{ h.label }}</span>
                   </label>
+                  <span style="flex:1;"></span>
                   <button @click="saveHotplug"
                     class="btn btn-primary btn-sm" :disabled="savingOpt.hotplug">
-                    {{ savingOpt.hotplug ? '...' : 'Save Hotplug' }}
+                    {{ savingOpt.hotplug ? '...' : 'Save' }}
                   </button>
                 </div>
-                <div class="inline-current">Current: <code>{{ config.hotplug || 'disk,network,usb' }}</code></div>
               </div>
+            </div>
+          </div>
 
-              <!-- VirtIO RNG -->
-              <div class="form-group inline-field">
-                <label class="form-label">VirtIO RNG source</label>
-                <div class="inline-edit-row">
+          <!-- ── Devices ── -->
+          <div class="settings-section">
+            <div class="settings-section-header">
+              <h4 class="settings-section-title">Devices &amp; Integration</h4>
+              <span class="settings-section-subtitle">RNG, SPICE and SMBIOS</span>
+            </div>
+            <div class="settings-grid settings-grid--2col">
+              <div class="settings-row">
+                <label class="settings-label">VirtIO RNG source
+                  <span class="settings-hint">Current: <code>{{ config.rng0 || '(off)' }}</code></span>
+                </label>
+                <div class="settings-control">
                   <select v-model="optEdit.rng_source" class="form-control">
                     <option value="">(disabled)</option>
                     <option value="/dev/urandom">/dev/urandom (recommended)</option>
@@ -1526,13 +1578,13 @@
                     {{ savingOpt.rng0 ? '...' : 'Save' }}
                   </button>
                 </div>
-                <div class="inline-current">Current: <code>{{ config.rng0 || '(off)' }}</code></div>
               </div>
 
-              <!-- SPICE enhancements -->
-              <div class="form-group inline-field">
-                <label class="form-label">SPICE Enhancements</label>
-                <div class="inline-edit-row">
+              <div class="settings-row">
+                <label class="settings-label">SPICE Enhancements
+                  <span class="settings-hint">Current: <code>{{ config['spice-enhancements'] || config.spice_enhancements || '(off)' }}</code></span>
+                </label>
+                <div class="settings-control" style="flex-wrap:wrap;">
                   <label class="flex align-center gap-1 text-sm">
                     <input type="checkbox" v-model="optEdit.spice_folder" />
                     Folder sharing
@@ -1541,18 +1593,19 @@
                     <input type="checkbox" v-model="optEdit.spice_video" />
                     Video streaming
                   </label>
+                  <span style="flex:1;"></span>
                   <button @click="saveSpice"
                     class="btn btn-primary btn-sm" :disabled="savingOpt.spice_enhancements">
                     {{ savingOpt.spice_enhancements ? '...' : 'Save' }}
                   </button>
                 </div>
-                <div class="inline-current">Current: <code>{{ config['spice-enhancements'] || config.spice_enhancements || '(off)' }}</code></div>
               </div>
 
-              <!-- SMBIOS serial -->
-              <div class="form-group inline-field config-grid-span2">
-                <label class="form-label">SMBIOS 1 (settings string)</label>
-                <div class="inline-edit-row">
+              <div class="settings-row settings-row--full">
+                <label class="settings-label">SMBIOS 1
+                  <span class="settings-hint">Current: <code>{{ config.smbios1 || '(auto)' }}</code></span>
+                </label>
+                <div class="settings-control">
                   <input v-model="optEdit.smbios1" class="form-control"
                     placeholder="uuid=...,manufacturer=...,product=..."
                     @keyup.enter="saveOpt('smbios1', optEdit.smbios1)" />
@@ -1561,88 +1614,89 @@
                     {{ savingOpt.smbios1 ? '...' : 'Save' }}
                   </button>
                 </div>
-                <div class="inline-current text-xs">Current: <code>{{ config.smbios1 || '(auto)' }}</code></div>
               </div>
+            </div>
+          </div>
 
-              <!-- Boolean toggles -->
-              <div class="form-group config-grid-span2">
-                <label class="form-label" style="margin-bottom:0.5rem;">Toggles</label>
-                <div class="toggle-row">
-                  <label class="toggle-item" title="Start VM automatically when host boots">
-                    <input type="checkbox" class="toggle-check"
-                      :checked="!!optEdit.onboot"
-                      @change="saveOpt('onboot', $event.target.checked ? 1 : 0, 'onboot')" />
-                    <span class="toggle-label">Start at boot</span>
-                    <span class="toggle-status" :class="optEdit.onboot ? 'badge badge-success' : 'badge badge-info'">
-                      {{ optEdit.onboot ? 'Yes' : 'No' }}
-                    </span>
-                  </label>
-                  <label class="toggle-item" title="Enable ACPI support in guest">
-                    <input type="checkbox" class="toggle-check"
-                      :checked="optEdit.acpi !== 0"
-                      @change="saveOpt('acpi', $event.target.checked ? 1 : 0, 'acpi')" />
-                    <span class="toggle-label">ACPI</span>
-                    <span class="toggle-status" :class="optEdit.acpi !== 0 ? 'badge badge-success' : 'badge badge-warning'">
-                      {{ optEdit.acpi !== 0 ? 'On' : 'Off' }}
-                    </span>
-                  </label>
-                  <label class="toggle-item" title="KVM hardware virtualisation">
-                    <input type="checkbox" class="toggle-check"
-                      :checked="optEdit.kvm !== 0"
-                      @change="saveOpt('kvm', $event.target.checked ? 1 : 0, 'kvm')" />
-                    <span class="toggle-label">KVM hw-virt</span>
-                    <span class="toggle-status" :class="optEdit.kvm !== 0 ? 'badge badge-success' : 'badge badge-warning'">
-                      {{ optEdit.kvm !== 0 ? 'On' : 'Off' }}
-                    </span>
-                  </label>
-                  <label class="toggle-item" title="Use tablet device for absolute mouse pointer (recommended for GUIs)">
-                    <input type="checkbox" class="toggle-check"
-                      :checked="optEdit.tablet !== 0"
-                      @change="saveOpt('tablet', $event.target.checked ? 1 : 0, 'tablet')" />
-                    <span class="toggle-label">Tablet pointer</span>
-                    <span class="toggle-status" :class="optEdit.tablet !== 0 ? 'badge badge-success' : 'badge badge-info'">
-                      {{ optEdit.tablet !== 0 ? 'On' : 'Off' }}
-                    </span>
-                  </label>
-                  <label class="toggle-item" title="Start the VM paused (useful for debugging)">
-                    <input type="checkbox" class="toggle-check"
-                      :checked="!!optEdit.freeze"
-                      @change="saveOpt('freeze', $event.target.checked ? 1 : 0, 'freeze')" />
-                    <span class="toggle-label">Freeze CPU at startup</span>
-                    <span class="toggle-status" :class="optEdit.freeze ? 'badge badge-warning' : 'badge badge-info'">
-                      {{ optEdit.freeze ? 'Yes' : 'No' }}
-                    </span>
-                  </label>
-                  <label class="toggle-item" title="Allow reboot from within the guest (disable to force a full stop+start)">
-                    <input type="checkbox" class="toggle-check"
-                      :checked="optEdit.reboot !== 0"
-                      @change="saveOpt('reboot', $event.target.checked ? 1 : 0, 'reboot')" />
-                    <span class="toggle-label">Allow guest reboot</span>
-                    <span class="toggle-status" :class="optEdit.reboot !== 0 ? 'badge badge-success' : 'badge badge-warning'">
-                      {{ optEdit.reboot !== 0 ? 'Yes' : 'No' }}
-                    </span>
-                  </label>
-                  <label class="toggle-item" title="Protect VM from deletion / disk removal">
-                    <input type="checkbox" class="toggle-check"
-                      :checked="!!optEdit.protection"
-                      @change="saveOpt('protection', $event.target.checked ? 1 : 0, 'protection')" />
-                    <span class="toggle-label">Protection</span>
-                    <span class="toggle-status" :class="optEdit.protection ? 'badge badge-warning' : 'badge badge-info'">
-                      {{ optEdit.protection ? 'On' : 'Off' }}
-                    </span>
-                  </label>
-                  <label class="toggle-item" title="NUMA node awareness">
-                    <input type="checkbox" class="toggle-check"
-                      :checked="!!optEdit.numa"
-                      @change="saveOpt('numa', $event.target.checked ? 1 : 0, 'numa')" />
-                    <span class="toggle-label">NUMA</span>
-                    <span class="toggle-status" :class="optEdit.numa ? 'badge badge-success' : 'badge badge-info'">
-                      {{ optEdit.numa ? 'On' : 'Off' }}
-                    </span>
-                  </label>
+          <!-- ── Toggles ── -->
+          <div class="settings-section">
+            <div class="settings-section-header">
+              <h4 class="settings-section-title">Toggles</h4>
+              <span class="settings-section-subtitle">Click to toggle — auto-saved</span>
+            </div>
+            <div class="toggle-grid">
+              <label class="toggle-card" title="Start VM automatically when host boots">
+                <input type="checkbox"
+                  :checked="!!optEdit.onboot"
+                  @change="saveOpt('onboot', $event.target.checked ? 1 : 0, 'onboot')" />
+                <div class="toggle-card-text">
+                  <span class="toggle-card-label">Start at boot</span>
+                  <span class="toggle-card-desc">{{ optEdit.onboot ? 'Yes' : 'No' }}</span>
                 </div>
-              </div>
-
+              </label>
+              <label class="toggle-card" title="Enable ACPI support in guest">
+                <input type="checkbox"
+                  :checked="optEdit.acpi !== 0"
+                  @change="saveOpt('acpi', $event.target.checked ? 1 : 0, 'acpi')" />
+                <div class="toggle-card-text">
+                  <span class="toggle-card-label">ACPI</span>
+                  <span class="toggle-card-desc">{{ optEdit.acpi !== 0 ? 'On' : 'Off' }}</span>
+                </div>
+              </label>
+              <label class="toggle-card" title="KVM hardware virtualisation">
+                <input type="checkbox"
+                  :checked="optEdit.kvm !== 0"
+                  @change="saveOpt('kvm', $event.target.checked ? 1 : 0, 'kvm')" />
+                <div class="toggle-card-text">
+                  <span class="toggle-card-label">KVM hw-virt</span>
+                  <span class="toggle-card-desc">{{ optEdit.kvm !== 0 ? 'On' : 'Off' }}</span>
+                </div>
+              </label>
+              <label class="toggle-card" title="Use tablet device for absolute mouse pointer (recommended for GUIs)">
+                <input type="checkbox"
+                  :checked="optEdit.tablet !== 0"
+                  @change="saveOpt('tablet', $event.target.checked ? 1 : 0, 'tablet')" />
+                <div class="toggle-card-text">
+                  <span class="toggle-card-label">Tablet pointer</span>
+                  <span class="toggle-card-desc">{{ optEdit.tablet !== 0 ? 'On' : 'Off' }}</span>
+                </div>
+              </label>
+              <label class="toggle-card" title="Start the VM paused (useful for debugging)">
+                <input type="checkbox"
+                  :checked="!!optEdit.freeze"
+                  @change="saveOpt('freeze', $event.target.checked ? 1 : 0, 'freeze')" />
+                <div class="toggle-card-text">
+                  <span class="toggle-card-label">Freeze CPU at startup</span>
+                  <span class="toggle-card-desc">{{ optEdit.freeze ? 'Yes' : 'No' }}</span>
+                </div>
+              </label>
+              <label class="toggle-card" title="Allow reboot from within the guest">
+                <input type="checkbox"
+                  :checked="optEdit.reboot !== 0"
+                  @change="saveOpt('reboot', $event.target.checked ? 1 : 0, 'reboot')" />
+                <div class="toggle-card-text">
+                  <span class="toggle-card-label">Allow guest reboot</span>
+                  <span class="toggle-card-desc">{{ optEdit.reboot !== 0 ? 'Yes' : 'No' }}</span>
+                </div>
+              </label>
+              <label class="toggle-card" title="Protect VM from deletion / disk removal">
+                <input type="checkbox"
+                  :checked="!!optEdit.protection"
+                  @change="saveOpt('protection', $event.target.checked ? 1 : 0, 'protection')" />
+                <div class="toggle-card-text">
+                  <span class="toggle-card-label">Protection</span>
+                  <span class="toggle-card-desc">{{ optEdit.protection ? 'On' : 'Off' }}</span>
+                </div>
+              </label>
+              <label class="toggle-card" title="NUMA node awareness">
+                <input type="checkbox"
+                  :checked="!!optEdit.numa"
+                  @change="saveOpt('numa', $event.target.checked ? 1 : 0, 'numa')" />
+                <div class="toggle-card-text">
+                  <span class="toggle-card-label">NUMA</span>
+                  <span class="toggle-card-desc">{{ optEdit.numa ? 'On' : 'Off' }}</span>
+                </div>
+              </label>
             </div>
           </div>
         </div>
@@ -1653,57 +1707,68 @@
         <div class="card mb-2">
           <div class="card-header">
             <h3>Backup VM {{ vmid }}</h3>
-            <span class="text-sm text-muted">One-click vzdump to a configured backup storage.</span>
+            <span class="text-sm text-muted">One-click vzdump to a configured backup storage</span>
           </div>
-          <div class="card-body">
-            <div class="config-grid">
-              <div class="form-group inline-field">
-                <label class="form-label">Target Storage</label>
-                <select v-model="backupForm.storage" class="form-control" :disabled="loadingBackupStorages">
-                  <option value="" disabled>
-                    {{ loadingBackupStorages ? 'Loading...' : 'Select backup storage' }}
-                  </option>
-                  <option v-for="s in backupStorages" :key="s.storage" :value="s.storage">
-                    {{ s.storage }} ({{ s.type }})
-                  </option>
-                </select>
-                <div v-if="!loadingBackupStorages && backupStorages.length === 0"
-                     class="text-sm text-muted mt-1">
-                  No storage on this node has <code>backup</code> content type.
+          <div class="settings-section" style="border-bottom:none;">
+            <div class="settings-grid settings-grid--2col">
+              <div class="settings-row">
+                <label class="settings-label">Target Storage</label>
+                <div class="settings-control" style="flex-direction:column;align-items:stretch;">
+                  <select v-model="backupForm.storage" class="form-control" :disabled="loadingBackupStorages">
+                    <option value="" disabled>
+                      {{ loadingBackupStorages ? 'Loading...' : 'Select backup storage' }}
+                    </option>
+                    <option v-for="s in backupStorages" :key="s.storage" :value="s.storage">
+                      {{ s.storage }} ({{ s.type }})
+                    </option>
+                  </select>
+                  <div v-if="!loadingBackupStorages && backupStorages.length === 0"
+                       class="text-sm text-muted mt-1">
+                    No storage on this node has <code>backup</code> content type.
+                  </div>
                 </div>
               </div>
-              <div class="form-group inline-field">
-                <label class="form-label">Mode</label>
-                <select v-model="backupForm.mode" class="form-control">
-                  <option value="snapshot">snapshot (no downtime, recommended)</option>
-                  <option value="suspend">suspend (brief pause)</option>
-                  <option value="stop">stop (guaranteed consistent)</option>
-                </select>
+              <div class="settings-row">
+                <label class="settings-label">Mode</label>
+                <div class="settings-control">
+                  <select v-model="backupForm.mode" class="form-control">
+                    <option value="snapshot">snapshot (no downtime, recommended)</option>
+                    <option value="suspend">suspend (brief pause)</option>
+                    <option value="stop">stop (guaranteed consistent)</option>
+                  </select>
+                </div>
               </div>
-              <div class="form-group inline-field">
-                <label class="form-label">Compression</label>
-                <select v-model="backupForm.compress" class="form-control">
-                  <option value="zstd">zstd (fast, recommended)</option>
-                  <option value="lzo">lzo (fastest)</option>
-                  <option value="gzip">gzip (smaller)</option>
-                  <option value="0">none</option>
-                </select>
+              <div class="settings-row">
+                <label class="settings-label">Compression</label>
+                <div class="settings-control">
+                  <select v-model="backupForm.compress" class="form-control">
+                    <option value="zstd">zstd (fast, recommended)</option>
+                    <option value="lzo">lzo (fastest)</option>
+                    <option value="gzip">gzip (smaller)</option>
+                    <option value="0">none</option>
+                  </select>
+                </div>
               </div>
-              <div class="form-group inline-field">
-                <label class="form-label">Notes</label>
-                <input v-model="backupForm.notes_template" class="form-control"
-                       placeholder="e.g. pre-update {{node}} {{vmid}}" />
+              <div class="settings-row">
+                <label class="settings-label">Notes</label>
+                <div class="settings-control">
+                  <input v-model="backupForm.notes_template" class="form-control"
+                         placeholder="e.g. pre-update {{node}} {{vmid}}" />
+                </div>
               </div>
-              <div class="form-group config-grid-span2 flex gap-1">
-                <label class="flex align-center gap-1">
-                  <input type="checkbox" v-model="backupForm.protected" />
-                  Mark archive as protected (prevents prune)
-                </label>
-                <span style="flex:1;"></span>
-                <button @click="runBackupNow" class="btn btn-primary"
-                        :disabled="!backupForm.storage || backupSubmitting">
-                  {{ backupSubmitting ? 'Submitting...' : 'Backup Now' }}
-                </button>
+              <div class="settings-row settings-row--full">
+                <label class="settings-label"></label>
+                <div class="settings-control">
+                  <label class="flex align-center gap-1">
+                    <input type="checkbox" v-model="backupForm.protected" />
+                    Mark archive as protected (prevents prune)
+                  </label>
+                  <span style="flex:1;"></span>
+                  <button @click="runBackupNow" class="btn btn-primary"
+                          :disabled="!backupForm.storage || backupSubmitting">
+                    {{ backupSubmitting ? 'Submitting...' : 'Backup Now' }}
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -1722,7 +1787,7 @@
             No backup archives found for this VM.
           </div>
           <div v-else class="table-container">
-            <table class="table">
+            <table class="table table-tidy">
               <thead>
                 <tr>
                   <th>When</th>
@@ -1767,7 +1832,7 @@
             No replication jobs for this VM. Replication requires ZFS-backed storage on both nodes.
           </div>
           <div v-else class="table-container">
-            <table class="table">
+            <table class="table table-tidy">
               <thead>
                 <tr>
                   <th>ID</th>
@@ -1776,7 +1841,7 @@
                   <th>Rate</th>
                   <th>Status</th>
                   <th>Comment</th>
-                  <th>Actions</th>
+                  <th class="col-actions">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -1793,16 +1858,18 @@
                     <span v-else class="badge badge-success">OK</span>
                   </td>
                   <td class="text-sm text-muted">{{ j.comment || '—' }}</td>
-                  <td class="flex gap-1">
-                    <button @click="runReplicationJob(j.id)" class="btn btn-outline btn-sm"
-                            :disabled="runningReplication === j.id" title="Run now">
-                      {{ runningReplication === j.id ? '...' : 'Run' }}
-                    </button>
-                    <button @click="openEditReplication(j)" class="btn btn-outline btn-sm">Edit</button>
-                    <button @click="removeReplicationJob(j)" class="btn btn-danger btn-sm"
-                            :disabled="deletingReplication === j.id">
-                      {{ deletingReplication === j.id ? '...' : 'Delete' }}
-                    </button>
+                  <td class="col-actions">
+                    <div class="flex gap-1" style="justify-content:flex-end;">
+                      <button @click="runReplicationJob(j.id)" class="btn btn-outline btn-sm"
+                              :disabled="runningReplication === j.id" title="Run now">
+                        {{ runningReplication === j.id ? '...' : 'Run' }}
+                      </button>
+                      <button @click="openEditReplication(j)" class="btn btn-outline btn-sm" title="Edit job">Edit</button>
+                      <button @click="removeReplicationJob(j)" class="btn btn-danger btn-sm"
+                              :disabled="deletingReplication === j.id" title="Delete job">
+                        {{ deletingReplication === j.id ? '...' : 'Delete' }}
+                      </button>
+                    </div>
                   </td>
                 </tr>
               </tbody>
@@ -1868,137 +1935,143 @@
       <!-- ─── Hardware Tab ─── -->
       <div v-if="activeTab === 'hardware'">
 
-        <!-- Machine Type, BIOS & CPU -->
+        <!-- CPU / Memory / Firmware card -->
         <div class="card mb-2">
           <div class="card-header">
-            <h4>Machine Type, BIOS &amp; CPU</h4>
+            <h3>CPU, Memory &amp; Firmware</h3>
             <span class="text-sm text-muted">Most changes require a reboot to take effect</span>
           </div>
-          <div class="card-body hw-machine-grid">
 
-            <!-- Machine Type -->
-            <div class="form-group inline-field">
-              <label class="form-label">Machine Type</label>
-              <div class="inline-edit-row">
-                <select v-model="hwEdit.machine" class="form-control">
-                  <option value="">default (i440fx)</option>
-                  <option value="pc">pc (i440fx)</option>
-                  <option value="q35">q35 (PCIe — recommended for GPU passthrough)</option>
-                  <option value="pc-i440fx-2.2">pc-i440fx-2.2</option>
-                  <option value="pc-i440fx-3.1">pc-i440fx-3.1</option>
-                  <option value="pc-i440fx-6.2">pc-i440fx-6.2</option>
-                  <option value="pc-i440fx-8.1">pc-i440fx-8.1</option>
-                  <option value="pc-q35-2.10">pc-q35-2.10</option>
-                  <option value="pc-q35-6.2">pc-q35-6.2</option>
-                  <option value="pc-q35-8.1">pc-q35-8.1</option>
-                </select>
-                <button @click="saveHwField('machine', hwEdit.machine)"
-                  class="btn btn-primary btn-sm" :disabled="savingHw.machine">
-                  {{ savingHw.machine ? '...' : 'Save' }}
-                </button>
-              </div>
-              <div class="inline-current">Current: <code>{{ config.machine || 'default' }}</code></div>
+          <!-- ── CPU ── -->
+          <div class="settings-section">
+            <div class="settings-section-header">
+              <h4 class="settings-section-title">CPU</h4>
+              <span class="settings-section-subtitle">Topology, model and feature flags</span>
             </div>
-
-            <!-- BIOS -->
-            <div class="form-group inline-field">
-              <label class="form-label">BIOS Type</label>
-              <div class="inline-edit-row">
-                <select v-model="hwEdit.bios" class="form-control">
-                  <option value="seabios">SeaBIOS (legacy, default)</option>
-                  <option value="ovmf">OVMF (UEFI — required for Secure Boot)</option>
-                </select>
-                <button @click="saveHwField('bios', hwEdit.bios)"
-                  class="btn btn-primary btn-sm" :disabled="savingHw.bios">
-                  {{ savingHw.bios ? '...' : 'Save' }}
-                </button>
+            <div class="settings-grid settings-grid--2col">
+              <div class="settings-row">
+                <label class="settings-label">CPU Type
+                  <span class="settings-hint">Current: <code>{{ parsedCpuType }}</code></span>
+                </label>
+                <div class="settings-control">
+                  <select v-model="hwEdit.cpuType" class="form-control"
+                    @change="autoSaveHwCpu('cpu_type')">
+                    <option value="host">host (pass-through — best performance)</option>
+                    <option value="max">max (all features QEMU supports)</option>
+                    <option value="kvm64">kvm64 (default KVM, good compatibility)</option>
+                    <option value="kvm32">kvm32</option>
+                    <option value="qemu64">qemu64</option>
+                    <option value="qemu32">qemu32</option>
+                    <option value="x86-64-v2-AES">x86-64-v2-AES</option>
+                    <option value="x86-64-v3">x86-64-v3</option>
+                    <option value="x86-64-v4">x86-64-v4</option>
+                    <option value="Nehalem">Nehalem</option>
+                    <option value="Westmere">Westmere</option>
+                    <option value="SandyBridge">SandyBridge</option>
+                    <option value="IvyBridge">IvyBridge</option>
+                    <option value="Haswell">Haswell</option>
+                    <option value="Broadwell">Broadwell</option>
+                    <option value="Skylake-Client">Skylake-Client</option>
+                    <option value="Skylake-Server">Skylake-Server</option>
+                    <option value="Cascadelake-Server">Cascadelake-Server</option>
+                    <option value="Icelake-Client">Icelake-Client</option>
+                    <option value="Icelake-Server">Icelake-Server</option>
+                  </select>
+                  <span v-if="savedChip.cpu_type" :class="['saved-chip', 'saved-chip--show', savedChip.cpu_type === 'saving' ? 'saved-chip--saving' : '']">
+                    {{ savedChip.cpu_type === 'saving' ? 'Saving…' : 'Saved' }}
+                  </span>
+                </div>
               </div>
-              <div class="inline-current">Current: <code>{{ config.bios || 'seabios' }}</code></div>
-            </div>
 
-            <!-- CPU Type -->
-            <div class="form-group inline-field">
-              <label class="form-label">CPU Type</label>
-              <div class="inline-edit-row">
-                <select v-model="hwEdit.cpuType" class="form-control">
-                  <option value="host">host (pass-through host CPU — best performance)</option>
-                  <option value="max">max (all features QEMU supports)</option>
-                  <option value="kvm64">kvm64 (default KVM, good compatibility)</option>
-                  <option value="kvm32">kvm32</option>
-                  <option value="qemu64">qemu64</option>
-                  <option value="qemu32">qemu32</option>
-                  <option value="x86-64-v2-AES">x86-64-v2-AES</option>
-                  <option value="x86-64-v3">x86-64-v3</option>
-                  <option value="x86-64-v4">x86-64-v4</option>
-                  <option value="Nehalem">Nehalem</option>
-                  <option value="Westmere">Westmere</option>
-                  <option value="SandyBridge">SandyBridge</option>
-                  <option value="IvyBridge">IvyBridge</option>
-                  <option value="Haswell">Haswell</option>
-                  <option value="Broadwell">Broadwell</option>
-                  <option value="Skylake-Client">Skylake-Client</option>
-                  <option value="Skylake-Server">Skylake-Server</option>
-                  <option value="Cascadelake-Server">Cascadelake-Server</option>
-                  <option value="Icelake-Client">Icelake-Client</option>
-                  <option value="Icelake-Server">Icelake-Server</option>
-                </select>
-                <button @click="saveHwCpu"
-                  class="btn btn-primary btn-sm" :disabled="savingHw.cpu">
-                  {{ savingHw.cpu ? '...' : 'Save CPU' }}
-                </button>
-              </div>
-              <div class="inline-current">
-                Current type: <code>{{ parsedCpuType }}</code>
-                <span v-if="parsedCpuFlags.length" class="ml-1 text-sm text-muted">
-                  — flags: <code>{{ parsedCpuFlags.join(' ') }}</code>
-                </span>
-              </div>
-            </div>
-
-            <!-- CPU Sockets x Cores -->
-            <div class="form-group inline-field">
-              <label class="form-label">Sockets &times; Cores</label>
-              <div class="inline-edit-row">
-                <div class="flex gap-1 align-center" style="flex:1;">
+              <div class="settings-row">
+                <label class="settings-label">Sockets &times; Cores
+                  <span class="settings-hint">Current: <code>{{ config.sockets || 1 }}</code> &times; <code>{{ config.cores || 1 }}</code> = {{ (config.sockets || 1) * (config.cores || 1) }} vCPUs</span>
+                </label>
+                <div class="settings-control">
                   <input v-model.number="hwEdit.sockets" type="number" min="1" max="8"
-                    class="form-control" style="max-width:72px;" />
+                    class="form-control" style="max-width:80px;flex:none;" />
                   <span class="text-muted">&times;</span>
                   <input v-model.number="hwEdit.cores" type="number" min="1" max="512"
-                    class="form-control" style="max-width:72px;" />
+                    class="form-control" style="max-width:80px;flex:none;" />
                   <span class="text-muted text-sm">= {{ (hwEdit.sockets || 1) * (hwEdit.cores || 1) }} vCPUs</span>
+                  <span style="flex:1;"></span>
+                  <button @click="saveHwField2({ sockets: hwEdit.sockets, cores: hwEdit.cores })"
+                    class="btn btn-primary btn-sm" :disabled="savingHw.sockets">
+                    {{ savingHw.sockets ? '...' : 'Save' }}
+                  </button>
                 </div>
-                <button @click="saveHwField2({ sockets: hwEdit.sockets, cores: hwEdit.cores })"
-                  class="btn btn-primary btn-sm" :disabled="savingHw.sockets">
-                  {{ savingHw.sockets ? '...' : 'Save' }}
+              </div>
+            </div>
+
+            <!-- CPU Feature Flags block -->
+            <div class="hw-cpu-flags-section" style="padding:0.75rem 0 0;">
+              <div class="hw-cpu-flags-header">
+                <span class="hw-cpu-flags-title">CPU Feature Flags</span>
+                <span class="text-xs text-muted ml-1">Override individual CPU features (requires reboot)</span>
+                <button @click="saveHwCpu" class="btn btn-primary btn-sm" :disabled="savingHw.cpu">
+                  {{ savingHw.cpu ? 'Saving...' : 'Apply Flag Changes' }}
                 </button>
               </div>
-              <div class="inline-current">
-                Current: <code>{{ config.sockets || 1 }}</code> &times; <code>{{ config.cores || 1 }}</code>
-                = {{ (config.sockets || 1) * (config.cores || 1) }} vCPUs
+              <div class="hw-cpu-flags-grid">
+                <div v-for="flag in cpuFlagOptions" :key="flag.name" class="hw-cpu-flag-item"
+                     :title="flag.desc">
+                  <select v-model="hwCpuFlagState[flag.name]" class="form-control form-control-sm hw-flag-select">
+                    <option value="">default</option>
+                    <option value="+">+ enable</option>
+                    <option value="-">- disable</option>
+                  </select>
+                  <span class="hw-flag-name">{{ flag.name }}</span>
+                  <span class="hw-flag-desc">{{ flag.desc }}</span>
+                </div>
               </div>
             </div>
-
           </div>
 
-          <!-- CPU Flags section -->
-          <div class="hw-cpu-flags-section">
-            <div class="hw-cpu-flags-header">
-              <span class="hw-cpu-flags-title">CPU Feature Flags</span>
-              <span class="text-xs text-muted ml-1">Override individual CPU features (requires reboot)</span>
-              <button @click="saveHwCpu" class="btn btn-primary btn-sm" :disabled="savingHw.cpu">
-                {{ savingHw.cpu ? 'Saving...' : 'Apply Flag Changes' }}
-              </button>
+          <!-- ── Machine & Firmware ── -->
+          <div class="settings-section">
+            <div class="settings-section-header">
+              <h4 class="settings-section-title">Machine &amp; Firmware</h4>
+              <span class="settings-section-subtitle">Chipset and boot firmware</span>
             </div>
-            <div class="hw-cpu-flags-grid">
-              <div v-for="flag in cpuFlagOptions" :key="flag.name" class="hw-cpu-flag-item"
-                   :title="flag.desc">
-                <select v-model="hwCpuFlagState[flag.name]" class="form-control form-control-sm hw-flag-select">
-                  <option value="">default</option>
-                  <option value="+">+ enable</option>
-                  <option value="-">- disable</option>
-                </select>
-                <span class="hw-flag-name">{{ flag.name }}</span>
-                <span class="hw-flag-desc">{{ flag.desc }}</span>
+            <div class="settings-grid settings-grid--2col">
+              <div class="settings-row">
+                <label class="settings-label">Machine Type
+                  <span class="settings-hint">Current: <code>{{ config.machine || 'default' }}</code></span>
+                </label>
+                <div class="settings-control">
+                  <select v-model="hwEdit.machine" class="form-control"
+                    @change="autoSaveHw('machine', hwEdit.machine)">
+                    <option value="">default (i440fx)</option>
+                    <option value="pc">pc (i440fx)</option>
+                    <option value="q35">q35 (PCIe — recommended for GPU passthrough)</option>
+                    <option value="pc-i440fx-2.2">pc-i440fx-2.2</option>
+                    <option value="pc-i440fx-3.1">pc-i440fx-3.1</option>
+                    <option value="pc-i440fx-6.2">pc-i440fx-6.2</option>
+                    <option value="pc-i440fx-8.1">pc-i440fx-8.1</option>
+                    <option value="pc-q35-2.10">pc-q35-2.10</option>
+                    <option value="pc-q35-6.2">pc-q35-6.2</option>
+                    <option value="pc-q35-8.1">pc-q35-8.1</option>
+                  </select>
+                  <span v-if="savedChip.machine" :class="['saved-chip', 'saved-chip--show', savedChip.machine === 'saving' ? 'saved-chip--saving' : '']">
+                    {{ savedChip.machine === 'saving' ? 'Saving…' : 'Saved' }}
+                  </span>
+                </div>
+              </div>
+
+              <div class="settings-row">
+                <label class="settings-label">BIOS Type
+                  <span class="settings-hint">Current: <code>{{ config.bios || 'seabios' }}</code></span>
+                </label>
+                <div class="settings-control">
+                  <select v-model="hwEdit.bios" class="form-control"
+                    @change="autoSaveHw('bios', hwEdit.bios)">
+                    <option value="seabios">SeaBIOS (legacy, default)</option>
+                    <option value="ovmf">OVMF (UEFI — required for Secure Boot)</option>
+                  </select>
+                  <span v-if="savedChip.bios" :class="['saved-chip', 'saved-chip--show', savedChip.bios === 'saving' ? 'saved-chip--saving' : '']">
+                    {{ savedChip.bios === 'saving' ? 'Saving…' : 'Saved' }}
+                  </span>
+                </div>
               </div>
             </div>
           </div>
@@ -2007,82 +2080,82 @@
         <!-- Display / Controller / Audio -->
         <div class="card mb-2">
           <div class="card-header">
-            <h4>Display, Controllers &amp; Audio</h4>
+            <h3>Display, Controllers &amp; Audio</h3>
             <span class="text-sm text-muted">Requires reboot for most changes</span>
           </div>
-          <div class="card-body hw-machine-grid">
-
-            <!-- VGA / Display -->
-            <div class="form-group inline-field">
-              <label class="form-label">Display (VGA)</label>
-              <div class="inline-edit-row">
-                <select v-model="hwEdit.vga" class="form-control">
-                  <option value="">default</option>
-                  <option value="std">Standard VGA (std)</option>
-                  <option value="cirrus">Cirrus (legacy)</option>
-                  <option value="vmware">VMware compatible</option>
-                  <option value="qxl">QXL (SPICE)</option>
-                  <option value="qxl2">QXL2 (2 heads)</option>
-                  <option value="qxl3">QXL3 (3 heads)</option>
-                  <option value="qxl4">QXL4 (4 heads)</option>
-                  <option value="virtio">VirtIO-GPU</option>
-                  <option value="virtio-gl">VirtIO-GL (VirGL)</option>
-                  <option value="none">none (headless / serial only)</option>
-                  <option value="serial0">Serial Console (serial0)</option>
-                </select>
-                <button @click="saveHwField('vga', hwEdit.vga)"
-                  class="btn btn-primary btn-sm" :disabled="savingHw.vga">
-                  {{ savingHw.vga ? '...' : 'Save' }}
-                </button>
+          <div class="settings-section" style="border-bottom:none;">
+            <div class="settings-grid settings-grid--2col">
+              <div class="settings-row">
+                <label class="settings-label">Display (VGA)
+                  <span class="settings-hint">Current: <code>{{ config.vga || 'default' }}</code></span>
+                </label>
+                <div class="settings-control">
+                  <select v-model="hwEdit.vga" class="form-control"
+                    @change="autoSaveHw('vga', hwEdit.vga)">
+                    <option value="">default</option>
+                    <option value="std">Standard VGA (std)</option>
+                    <option value="cirrus">Cirrus (legacy)</option>
+                    <option value="vmware">VMware compatible</option>
+                    <option value="qxl">QXL (SPICE)</option>
+                    <option value="qxl2">QXL2 (2 heads)</option>
+                    <option value="qxl3">QXL3 (3 heads)</option>
+                    <option value="qxl4">QXL4 (4 heads)</option>
+                    <option value="virtio">VirtIO-GPU</option>
+                    <option value="virtio-gl">VirtIO-GL (VirGL)</option>
+                    <option value="none">none (headless / serial only)</option>
+                    <option value="serial0">Serial Console (serial0)</option>
+                  </select>
+                  <span v-if="savedChip.vga" :class="['saved-chip', 'saved-chip--show', savedChip.vga === 'saving' ? 'saved-chip--saving' : '']">
+                    {{ savedChip.vga === 'saving' ? 'Saving…' : 'Saved' }}
+                  </span>
+                </div>
               </div>
-              <div class="inline-current">Current: <code>{{ config.vga || 'default' }}</code></div>
-            </div>
 
-            <!-- SCSI controller -->
-            <div class="form-group inline-field">
-              <label class="form-label">SCSI Controller</label>
-              <div class="inline-edit-row">
-                <select v-model="hwEdit.scsihw" class="form-control">
-                  <option value="">default (LSI)</option>
-                  <option value="lsi">LSI 53C895A (lsi)</option>
-                  <option value="lsi53c810">LSI 53C810</option>
-                  <option value="virtio-scsi-pci">VirtIO SCSI (virtio-scsi-pci)</option>
-                  <option value="virtio-scsi-single">VirtIO SCSI single (recommended)</option>
-                  <option value="megasas">MegaRAID SAS 8708EM2</option>
-                  <option value="pvscsi">VMware PVSCSI</option>
-                </select>
-                <button @click="saveHwField('scsihw', hwEdit.scsihw)"
-                  class="btn btn-primary btn-sm" :disabled="savingHw.scsihw">
-                  {{ savingHw.scsihw ? '...' : 'Save' }}
-                </button>
+              <div class="settings-row">
+                <label class="settings-label">SCSI Controller
+                  <span class="settings-hint">Current: <code>{{ config.scsihw || 'default' }}</code></span>
+                </label>
+                <div class="settings-control">
+                  <select v-model="hwEdit.scsihw" class="form-control"
+                    @change="autoSaveHw('scsihw', hwEdit.scsihw)">
+                    <option value="">default (LSI)</option>
+                    <option value="lsi">LSI 53C895A (lsi)</option>
+                    <option value="lsi53c810">LSI 53C810</option>
+                    <option value="virtio-scsi-pci">VirtIO SCSI (virtio-scsi-pci)</option>
+                    <option value="virtio-scsi-single">VirtIO SCSI single (recommended)</option>
+                    <option value="megasas">MegaRAID SAS 8708EM2</option>
+                    <option value="pvscsi">VMware PVSCSI</option>
+                  </select>
+                  <span v-if="savedChip.scsihw" :class="['saved-chip', 'saved-chip--show', savedChip.scsihw === 'saving' ? 'saved-chip--saving' : '']">
+                    {{ savedChip.scsihw === 'saving' ? 'Saving…' : 'Saved' }}
+                  </span>
+                </div>
               </div>
-              <div class="inline-current">Current: <code>{{ config.scsihw || 'default' }}</code></div>
-            </div>
 
-            <!-- Audio Device -->
-            <div class="form-group inline-field">
-              <label class="form-label">Audio Device</label>
-              <div class="inline-edit-row">
-                <select v-model="hwEdit.audioDevice" class="form-control">
-                  <option value="">(none)</option>
-                  <option value="ich9-intel-hda">ich9-intel-hda</option>
-                  <option value="intel-hda">intel-hda</option>
-                  <option value="AC97">AC97</option>
-                </select>
-                <select v-if="hwEdit.audioDevice" v-model="hwEdit.audioDriver" class="form-control">
-                  <option value="spice">driver: spice</option>
-                  <option value="none">driver: none</option>
-                </select>
-                <button @click="saveAudio"
-                  class="btn btn-primary btn-sm" :disabled="savingHw.audio0">
-                  {{ savingHw.audio0 ? '...' : 'Save' }}
-                </button>
-                <button v-if="config.audio0" @click="removeAudio"
-                  class="btn btn-outline btn-sm" :disabled="savingHw.audio0">Remove</button>
+              <div class="settings-row settings-row--full">
+                <label class="settings-label">Audio Device
+                  <span class="settings-hint">Current: <code>{{ config.audio0 || '(none)' }}</code></span>
+                </label>
+                <div class="settings-control">
+                  <select v-model="hwEdit.audioDevice" class="form-control">
+                    <option value="">(none)</option>
+                    <option value="ich9-intel-hda">ich9-intel-hda</option>
+                    <option value="intel-hda">intel-hda</option>
+                    <option value="AC97">AC97</option>
+                  </select>
+                  <select v-if="hwEdit.audioDevice" v-model="hwEdit.audioDriver" class="form-control" style="max-width:180px;flex:none;">
+                    <option value="spice">driver: spice</option>
+                    <option value="none">driver: none</option>
+                  </select>
+                  <button @click="saveAudio"
+                    class="btn btn-primary btn-sm" :disabled="savingHw.audio0">
+                    {{ savingHw.audio0 ? '...' : 'Save' }}
+                  </button>
+                  <button v-if="config.audio0" @click="removeAudio"
+                    class="btn btn-outline btn-sm" :disabled="savingHw.audio0">Remove</button>
+                </div>
               </div>
-              <div class="inline-current">Current: <code>{{ config.audio0 || '(none)' }}</code></div>
             </div>
-
           </div>
         </div>
 
@@ -2193,14 +2266,14 @@
             No USB devices passed through.
           </div>
           <div v-else class="table-container">
-            <table class="table">
+            <table class="table table-tidy">
               <thead>
                 <tr>
                   <th>Slot</th>
                   <th>Host Device</th>
                   <th>Type</th>
                   <th>USB3</th>
-                  <th>Actions</th>
+                  <th class="col-actions">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -2222,9 +2295,9 @@
                       {{ dev.usb3 ? 'USB 3.0' : 'USB 2.0' }}
                     </span>
                   </td>
-                  <td>
+                  <td class="col-actions">
                     <button @click="removeUsb(dev)" class="btn btn-danger btn-sm"
-                            :disabled="removingUsb === dev.key">
+                            :disabled="removingUsb === dev.key" title="Remove USB device">
                       {{ removingUsb === dev.key ? '...' : 'Remove' }}
                     </button>
                   </td>
@@ -2251,12 +2324,12 @@
             No serial ports configured. Serial ports enable console access or host device passthrough.
           </div>
           <div v-else class="table-container">
-            <table class="table">
+            <table class="table table-tidy">
               <thead>
                 <tr>
                   <th>Port</th>
                   <th>Type / Path</th>
-                  <th>Actions</th>
+                  <th class="col-actions">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -2266,9 +2339,9 @@
                     <span v-if="port.type === 'socket'" class="badge badge-info">unix socket</span>
                     <code v-else>{{ port.type }}</code>
                   </td>
-                  <td>
+                  <td class="col-actions">
                     <button @click="removeSerial(port)" class="btn btn-danger btn-sm"
-                            :disabled="removingSerial === port.key">
+                            :disabled="removingSerial === port.key" title="Remove serial port">
                       {{ removingSerial === port.key ? '...' : 'Remove' }}
                     </button>
                   </td>
@@ -4421,6 +4494,62 @@ const saveInlineField = async (field, value) => {
   } finally {
     savingField.value = { ...savingField.value, [field]: false }
   }
+}
+
+// ── Auto-save helpers ────────────────────────────────────────────────────────
+// Tracks debounce timers per field key, and whether a "Saved" chip should show
+// next to auto-saved dropdowns/toggles. All calls delegate to the existing
+// saveInlineField / saveOpt / saveHwField handlers — no API path changes.
+const _autoSaveTimers = {}
+const savedChip = ref({}) // { key: 'saving' | 'saved' | null }
+
+function _flashSavedChip(key) {
+  savedChip.value = { ...savedChip.value, [key]: 'saved' }
+  setTimeout(() => {
+    if (savedChip.value[key] === 'saved') {
+      savedChip.value = { ...savedChip.value, [key]: null }
+    }
+  }, 1800)
+}
+
+function autoSaveConfig(field, value, key = null) {
+  const k = key || field
+  if (_autoSaveTimers[k]) clearTimeout(_autoSaveTimers[k])
+  savedChip.value = { ...savedChip.value, [k]: 'saving' }
+  _autoSaveTimers[k] = setTimeout(async () => {
+    await saveInlineField(field, value)
+    _flashSavedChip(k)
+  }, 400)
+}
+
+function autoSaveOpt(field, value, stateKey = null, key = null) {
+  const k = key || stateKey || field
+  if (_autoSaveTimers[k]) clearTimeout(_autoSaveTimers[k])
+  savedChip.value = { ...savedChip.value, [k]: 'saving' }
+  _autoSaveTimers[k] = setTimeout(async () => {
+    await saveOpt(field, value, stateKey)
+    _flashSavedChip(k)
+  }, 400)
+}
+
+function autoSaveHw(field, value, key = null) {
+  const k = key || field
+  if (_autoSaveTimers[k]) clearTimeout(_autoSaveTimers[k])
+  savedChip.value = { ...savedChip.value, [k]: 'saving' }
+  _autoSaveTimers[k] = setTimeout(async () => {
+    await saveHwField(field, value)
+    _flashSavedChip(k)
+  }, 400)
+}
+
+// Wraps saveHwCpu (applies cpu type + feature flag overrides)
+function autoSaveHwCpu(key = 'cpu_type') {
+  if (_autoSaveTimers[key]) clearTimeout(_autoSaveTimers[key])
+  savedChip.value = { ...savedChip.value, [key]: 'saving' }
+  _autoSaveTimers[key] = setTimeout(async () => {
+    await saveHwCpu()
+    _flashSavedChip(key)
+  }, 400)
 }
 
 // Modal forms
@@ -8309,5 +8438,263 @@ const copySshCommand = () => {
 }
 .hotplug-chip input[type="checkbox"] {
   accent-color: var(--color-primary, #3b82f6);
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Unified settings layout (Config / Hardware / Options / Backup / Replication)
+   ────────────────────────────────────────────────────────────────────────── */
+
+/* Section subcard within a card — groups related fields with a header+divider */
+.settings-section {
+  padding: 1rem 1.5rem 1.25rem;
+  border-bottom: 1px solid var(--border-color);
+}
+.settings-section:last-child {
+  border-bottom: none;
+}
+.settings-section-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.9rem;
+  flex-wrap: wrap;
+}
+.settings-section-title {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+}
+.settings-section-subtitle {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  opacity: 0.85;
+}
+
+/* 2-column settings grid: label + input column.
+   On wide containers, two label+input pairs sit side-by-side. */
+.settings-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.85rem 1.75rem;
+}
+@media (min-width: 900px) {
+  .settings-grid--2col {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* A single row: label on the left, control on the right */
+.settings-row {
+  display: grid;
+  grid-template-columns: minmax(140px, 180px) 1fr;
+  gap: 0.4rem 1rem;
+  align-items: center;
+}
+.settings-row--stack {
+  grid-template-columns: 1fr;
+}
+.settings-row--full {
+  grid-column: 1 / -1;
+}
+@media (max-width: 640px) {
+  .settings-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.settings-label {
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  line-height: 1.3;
+}
+.settings-hint {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 400;
+  color: var(--text-secondary);
+  margin-top: 0.1rem;
+}
+.settings-current {
+  grid-column: 2;
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+}
+.settings-current code {
+  font-size: 0.7rem;
+}
+@media (max-width: 640px) {
+  .settings-current { grid-column: 1; }
+}
+
+/* Control slot: input + optional save button, aligned and consistent */
+.settings-control {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+.settings-control > .form-control,
+.settings-control > select.form-control,
+.settings-control > input.form-control {
+  flex: 1;
+  min-width: 0;
+}
+.settings-control .btn {
+  flex-shrink: 0;
+}
+
+/* "Saved" confirmation chip for auto-saved dropdowns/toggles */
+.saved-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.7rem;
+  font-weight: 500;
+  padding: 0.1rem 0.45rem;
+  border-radius: 9999px;
+  background: rgba(16, 185, 129, 0.12);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.28);
+  opacity: 0;
+  transition: opacity 0.2s;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.saved-chip--show {
+  opacity: 1;
+}
+.saved-chip--saving {
+  background: rgba(59, 130, 246, 0.1);
+  color: #60a5fa;
+  border-color: rgba(59, 130, 246, 0.28);
+  opacity: 1;
+}
+
+/* Toggle cards — one per boolean field, uniform size */
+.toggle-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 0.6rem;
+}
+.toggle-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.55rem 0.8rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--surface, transparent);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  min-height: 42px;
+}
+.toggle-card:hover {
+  border-color: var(--primary-color);
+}
+.toggle-card input[type="checkbox"] {
+  flex-shrink: 0;
+  accent-color: var(--primary-color);
+  cursor: pointer;
+}
+.toggle-card-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  flex: 1;
+  min-width: 0;
+}
+.toggle-card-label {
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+.toggle-card-desc {
+  font-size: 0.68rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Sticky table header + uniform row height for data tables */
+.table-tidy {
+  width: 100%;
+}
+.table-tidy thead th {
+  position: sticky;
+  top: 0;
+  background: var(--bg-card, var(--surface));
+  z-index: 1;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+  font-weight: 600;
+  border-bottom: 1px solid var(--border-color);
+  padding: 0.55rem 0.75rem;
+  white-space: nowrap;
+}
+.table-tidy tbody td {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border-color);
+  vertical-align: middle;
+  height: 40px;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+}
+.table-tidy tbody tr:last-child td {
+  border-bottom: none;
+}
+.table-tidy tbody tr:hover {
+  background: color-mix(in srgb, var(--primary-color) 4%, transparent);
+}
+.table-tidy td.col-actions,
+.table-tidy th.col-actions {
+  text-align: right;
+  white-space: nowrap;
+}
+.table-tidy td.col-actions .flex,
+.table-tidy td.col-actions .action-btns {
+  justify-content: flex-end;
+}
+
+/* Tabs: responsive horizontal scroll on narrow screens (already partially
+   supported; reinforce for 14-tab strip) */
+.tabs {
+  scrollbar-width: thin;
+}
+.tabs::-webkit-scrollbar {
+  height: 4px;
+}
+.tabs::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 2px;
+}
+
+/* Hardware tab override: re-use settings-grid, drop old hw-machine-grid padding */
+.hw-section-body {
+  padding: 1rem 1.5rem 1.25rem;
+}
+
+/* Boot-order strip: tidy in dark mode too */
+.disk-boot-order {
+  background: var(--bg-card, var(--surface));
+}
+.boot-order-item {
+  background: var(--surface, var(--bg-card));
+}
+
+/* Tab strip scroll-indicator subtle shadow on edges when overflowing */
+@media (min-width: 769px) {
+  .tabs {
+    overflow-x: auto;
+    flex-wrap: wrap;
+  }
 }
 </style>

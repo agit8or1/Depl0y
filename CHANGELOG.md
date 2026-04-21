@@ -5,6 +5,11 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.32] - 2026-04-21 📺 VM console aspect ratio fix
+
+### Fixed
+- **VM console was stretched / wrong size.** The canvas had `width: 100% !important; height: 100% !important` forced via CSS, which overrode noVNC's internal sizing and ignored the guest's native aspect ratio. Canvas now uses `max-width/max-height: 100%` so noVNC's `scaleViewport` controls actual dimensions, and the container is a flex centerer. Default scale mode changed to `local` (client-side scaling) so it works without guest-agent/mode-setting cooperation.
+
 ## [2.2.31] - 2026-04-21 🛑 PBS Delete-was-misleading + VM console WebSocket fix
 
 ### Fixed

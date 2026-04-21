@@ -392,7 +392,7 @@ const showSpecialMenu = ref(false)
 const showClipboardModal = ref(false)
 const clipboardText = ref('')
 const qualityLevel = ref('medium')
-const scaleMode = ref('remote')
+const scaleMode = ref('local')
 
 // Session timer
 const sessionTimer = ref('')
@@ -1172,18 +1172,26 @@ onBeforeUnmount(() => {
   position: relative;
   overflow: hidden;
   background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .novnc-screen {
   width: 100%;
   height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
 }
 
+/* noVNC sets inline width/height on the canvas based on scaleViewport /
+   resizeSession. Letting it win keeps the guest's native aspect ratio. */
 .novnc-screen :deep(canvas) {
   display: block;
-  width: 100% !important;
-  height: 100% !important;
-  object-fit: contain;
+  max-width: 100%;
+  max-height: 100%;
 }
 
 /* ---- Overlays ---- */

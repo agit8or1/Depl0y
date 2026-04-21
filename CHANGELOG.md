@@ -5,6 +5,17 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.37] - 2026-04-21 🔁 iDRAC log-tab fallback + inline BMC Edit
+
+### Fixed
+- **"Loading system event log…" stuck for 25+ seconds after clearing the SEL on pbs1.** The detail panel was falling back to SSH logs whenever Redfish returned empty — which is exactly what a cleared log looks like. For PBS with a **dedicated BMC** (idrac_hostname ≠ hostname) that SSH call lands on the iDRAC's racadm shell (~25s) with nothing useful to show. Fallback now only triggers on legacy setups where `idrac_hostname === hostname` (SSH goes to the OS journal there).
+
+### Added
+- **Inline "Edit" button next to BMC IP** on the iDRAC Details → Overview tab. Opens the existing Edit-BMC modal so you can update hostname, port, or credentials without digging through the actions row.
+
+### Clarified (not code)
+- **pbs1's DIMMSLOTA4 Warning is a real hardware fault**, not a stale log entry. The memory module itself is flagging an ECC-correctable condition at the BMC level. Clearing the SEL will never dismiss it. Reseat or replace the DIMM in slot A4 — that's the only fix.
+
 ## [2.2.36] - 2026-04-21 🛰️ Guest Agent info on VM Overview
 
 ### Added

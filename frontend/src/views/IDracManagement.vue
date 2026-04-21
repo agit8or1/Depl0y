@@ -335,7 +335,13 @@
                     <div class="stat-row"><span>Hostname</span><span>{{ srv._info.hostname }}</span></div>
                     <div class="stat-row"><span>Memory</span><span>{{ srv._info.memory_total_gb }} GB</span></div>
                     <div class="stat-row"><span>CPU</span><span>{{ srv._info.processor_count }}x {{ srv._info.processor_model }}</span></div>
-                    <div class="stat-row"><span>BMC IP</span><a :href="`https://${srv.idrac_hostname}:${srv.idrac_port || 443}`" target="_blank" rel="noopener" class="font-mono bmc-link">{{ srv.idrac_hostname }}:{{ srv.idrac_port || 443 }}</a></div>
+                    <div class="stat-row">
+                      <span>BMC IP</span>
+                      <span style="display:flex;align-items:center;gap:0.4rem">
+                        <a :href="`https://${srv.idrac_hostname}:${srv.idrac_port || 443}`" target="_blank" rel="noopener" class="font-mono bmc-link">{{ srv.idrac_hostname }}:{{ srv.idrac_port || 443 }}</a>
+                        <button class="btn btn-outline btn-xs" style="padding:0.05rem 0.4rem;font-size:0.65rem" @click="openConfigBMC(srv)" title="Edit hostname, port, credentials">Edit</button>
+                      </span>
+                    </div>
                     <template v-if="srv._useSSH">
                       <div v-if="srv._info._ssh_os" class="stat-row"><span>OS</span><span>{{ srv._info._ssh_os }}</span></div>
                       <div v-if="srv._info._ssh_kernel" class="stat-row"><span>Kernel</span><span>{{ srv._info._ssh_kernel }}</span></div>
@@ -1371,7 +1377,11 @@ export default {
       if (srv._useSSH) {
         // iDRAC Redfish calls can take 5–20s each; do NOT block on Promise.all.
         // Fire each request independently and render as it arrives.
-        const isOsSshPrimary = srv._stype === 'pbs'
+        // "OS SSH primary" only makes sense when the PBS server's BMC IP is
+        // the same as its OS IP (legacy setup). With a dedicated BMC (PBS's
+        // idrac_hostname differs from hostname), SSH lands on racadm which is
+        // slow and useless for logs — respect whatever Redfish returns.
+        const isOsSshPrimary = srv._stype === 'pbs' && (!srv.idrac_hostname || srv.idrac_hostname === srv.hostname)
         const arr = srv._stype === 'pbs' ? allPBS : srv._stype === 'pve_node' ? allNodes : allStandalone
         const nudge = () => { arr.value = [...arr.value] }
 

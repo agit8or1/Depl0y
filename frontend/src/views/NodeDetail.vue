@@ -1373,7 +1373,16 @@ const node = computed(() => route.params.node)
 
 // Host name for breadcrumb
 const hostName = ref(null)
+// Guard used by every async that touches hostId/node. Prevents fire-and-forget
+// polls or route-race navigations from calling the API with the literal string
+// "undefined" in the path.
+const _routeReady = () => {
+  const h = hostId.value, n = node.value
+  return !!h && h !== 'undefined' && !!n && n !== 'undefined'
+}
+
 const fetchHostName = async () => {
+  if (!hostId.value || hostId.value === 'undefined') return
   try {
     const res = await api.proxmox.getHost(hostId.value)
     hostName.value = res.data?.name || null
@@ -1684,11 +1693,13 @@ async function retryOnce(fn) {
 // ── Data Loading ──────────────────────────────────────────────────────────────
 
 const loadNodeStatus = async () => {
+  if (!_routeReady()) return
   const res = await withNodeTimeout(api.pveNode.nodeStatus(hostId.value, node.value))
   nodeStatus.value = res.data
 }
 
 const loadRrd = async () => {
+  if (!_routeReady()) return
   try {
     const res = await withNodeTimeout(
       api.pveNode.nodeRrdData(hostId.value, node.value, { timeframe: rrdTimeframe.value, cf: 'AVERAGE' })
@@ -1701,10 +1712,11 @@ const loadRrd = async () => {
   }
   // If RRD has no disk data, fetch live aggregate from VM counters (two-call delta)
   const hasRrdDisk = rrdData.value?.some(d => d.diskread != null || d.diskwrite != null)
-  if (!hasRrdDisk) {
+  if (!hasRrdDisk && _routeReady()) {
     try {
       await api.pveNode.diskIoRates(hostId.value)  // prime the counter
       await new Promise(r => setTimeout(r, 3000))
+      if (!_routeReady()) return  // route changed during the delay
       const r2 = await api.pveNode.diskIoRates(hostId.value)
       const nodeEntry = (r2.data || []).find(n => n.node === node.value)
       if (nodeEntry) diskIoLive.value = { read: nodeEntry.read || 0, write: nodeEntry.write || 0 }

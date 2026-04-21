@@ -73,7 +73,7 @@ class AlertEngine:
         self._alert_states[rule_key] = datetime.utcnow()
 
     def _fire_builtin(self, db, rule_key: str, severity: str, title: str, message: str,
-                      cooldown_minutes: int = 60):
+                      cooldown_minutes: int = 60, action_url: str = "/alerts"):
         """Create an AlertEvent, broadcast in-app notifications, dispatch webhooks/Slack/PagerDuty."""
         if not self._should_fire(rule_key, cooldown_minutes):
             return
@@ -121,7 +121,7 @@ class AlertEngine:
                     title=title,
                     message=message,
                     type=self._severity_to_notif_type(severity),
-                    action_url="/alerts",
+                    action_url=action_url,
                 )
                 db.add(notif)
 
@@ -155,6 +155,76 @@ class AlertEngine:
         self._check_high_cpu(db)
         self._check_high_memory(db)
         self._check_login_failures(db)
+        self._check_pbs_sync_failed(db)
+
+    def _check_pbs_sync_failed(self, db):
+        """Fire when a configured PBS sync job's last run ended in an error state.
+        Also resolves (acks) the alert when the job's next run comes back OK.
+
+        rule_key: pbs_sync_fail:{server_id}:{job_id}  — one per job per server.
+        """
+        try:
+            from app.models.database import PBSServer, AlertEvent
+            from app.services.pbs import PBSService
+            from sqlalchemy import and_
+
+            for server in db.query(PBSServer).filter(PBSServer.is_active == True).all():
+                if not ((server.username and server.password) or (server.api_token_id and server.api_token_secret)):
+                    continue
+                try:
+                    svc = PBSService(server)
+                    jobs = svc.get_sync_jobs() or []
+                except Exception as e:
+                    logger.debug("PBS %s sync-check skipped: %s", server.name, e)
+                    continue
+
+                for j in jobs:
+                    if (j.get("job-type") or "sync") != "sync":
+                        continue
+                    job_id = j.get("id") or j.get("job-id")
+                    if not job_id:
+                        continue
+                    state = (j.get("last-run-state") or "").lower()
+                    rule_key = f"pbs_sync_fail:{server.id}:{job_id}"
+
+                    if state and "error" in state:
+                        remote = j.get("remote") or "?"
+                        remote_store = j.get("remote-store") or "?"
+                        local_store = j.get("store") or "?"
+                        endtime = j.get("last-run-endtime")
+                        when = ""
+                        if endtime:
+                            from datetime import datetime as _dt
+                            try:
+                                when = f" at {_dt.fromtimestamp(int(endtime)).strftime('%Y-%m-%d %H:%M')}"
+                            except Exception:
+                                pass
+                        title = f"PBS sync failed: {server.name} / {job_id}"
+                        message = (
+                            f"Sync job '{job_id}' on PBS '{server.name}' failed{when}. "
+                            f"Pulling {remote_store} from remote '{remote}' into local datastore '{local_store}'. "
+                            f"State reported by PBS: {j.get('last-run-state') or state}. "
+                            "Open PBS Management and click Run Now on this job to retry."
+                        )
+                        self._fire_builtin(
+                            db, rule_key, "warning", title, message,
+                            action_url=f"/pbs-management?highlight=sync:{server.id}:{job_id}",
+                            cooldown_minutes=30,
+                        )
+                    elif state in ("ok", ""):
+                        # Auto-acknowledge any open events for this job now that it's back to OK.
+                        open_evts = db.query(AlertEvent).filter(
+                            and_(AlertEvent.rule_key == rule_key, AlertEvent.acknowledged == False)
+                        ).all()
+                        if open_evts:
+                            from datetime import datetime as _dt
+                            for e in open_evts:
+                                e.acknowledged = True
+                                e.acknowledged_at = _dt.utcnow()
+                            db.commit()
+                            logger.info("Auto-acked %d PBS sync alerts for %s", len(open_evts), rule_key)
+        except Exception as e:
+            logger.debug("PBS sync-alert check errored: %s", e)
 
     def _check_node_offline(self, db):
         """Fire if any Proxmox node hasn't been updated for > 10 minutes."""

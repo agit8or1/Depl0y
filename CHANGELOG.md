@@ -5,6 +5,16 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.39] - 2026-04-21 📣 PBS sync-failure alerts with jump-to-fix
+
+### Added
+- **Built-in alert rule: PBS sync job failed.** `alert_engine._check_pbs_sync_failed()` iterates every active PBS server, reads `/config/sync` + `/admin/sync`, and fires an alert for any job whose `last-run-state` contains "error". Alert severity `warning`, 30-minute cooldown.
+- **Rule key** `pbs_sync_fail:{server_id}:{job_id}` — one alert per job, deduplicated.
+- **Auto-resolve** — when the same job's next run returns state=ok, any open alert events for that job are auto-acknowledged. No stuck alerts when the problem clears itself.
+- **Message includes** the target remote, remote datastore, local datastore, PBS-reported state, and when it failed.
+- **Action URL** points at `/pbs-management?highlight=sync:{server_id}:{job_id}`. Clicking the notification scrolls to the failed sync row on the PBS Management page and pulses a red border around it for 4–6 seconds. Click **Run Now** (added in v2.2.30) to retry.
+- `_fire_builtin()` now accepts an `action_url` so custom built-in rules can route the notification anywhere — previous checks still default to `/alerts`.
+
 ## [2.2.38] - 2026-04-21 🛡️ NodeDetail undefined-hostId guard
 
 ### Fixed

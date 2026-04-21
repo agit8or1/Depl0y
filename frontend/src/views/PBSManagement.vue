@@ -112,7 +112,9 @@
               <div
                 v-for="j in serverSummaries[srv.id].sync_jobs"
                 :key="`${srv.id}-${j.id}`"
+                :id="`sync-row-${srv.id}-${j.id}`"
                 class="pbs-summary-job"
+                :class="{ 'pbs-summary-job--highlight': highlightKey === `sync:${srv.id}:${j.id}` }"
               >
                 <span
                   class="job-status-badge"
@@ -797,6 +799,7 @@ export default {
 
       lastRefreshed: null,
       _refreshTimer: null,
+      highlightKey: null,
       runningSync: {},
       syncModal: {
         show: false,
@@ -1409,6 +1412,18 @@ export default {
   },
 
   mounted() {
+    // Deep-link highlight: /pbs-management?highlight=sync:<server_id>:<job_id>
+    // Set by alert notifications so clicking the bell scrolls to + flashes the
+    // failing sync job row.
+    const q = this.$route?.query?.highlight
+    if (q) {
+      this.highlightKey = q
+      this.$nextTick(() => setTimeout(() => {
+        const el = document.getElementById(`sync-row-${q.split(':').slice(1).join('-')}`)
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }, 800))
+      setTimeout(() => { this.highlightKey = null }, 6000)
+    }
     this.fetchServers()
     this._refreshTimer = setInterval(() => {
       this.fetchServers()
@@ -2128,6 +2143,18 @@ export default {
   gap: 0.4rem;
   flex-wrap: wrap;
   font-size: 0.75rem;
+  padding: 0.2rem 0.35rem;
+  border-radius: 4px;
+  transition: background 0.2s, box-shadow 0.2s;
+}
+.pbs-summary-job--highlight {
+  background: rgba(239, 68, 68, 0.12);
+  box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.45);
+  animation: pbs-sync-pulse 1.2s ease-in-out 3;
+}
+@keyframes pbs-sync-pulse {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.45); }
+  50%      { box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.75); }
 }
 
 .pbs-summary-job-id {

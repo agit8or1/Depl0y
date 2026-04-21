@@ -5,7 +5,7 @@
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)
 ![Vue.js](https://img.shields.io/badge/vue.js-3.x-green.svg)
-[![Version](https://img.shields.io/badge/version-2.2.38-brightgreen.svg)](https://github.com/agit8or1/Depl0y/releases)
+[![Version](https://img.shields.io/badge/version-2.2.39-brightgreen.svg)](https://github.com/agit8or1/Depl0y/releases)
 [![GitHub Stars](https://img.shields.io/github/stars/agit8or1/Depl0y?style=social)](https://github.com/agit8or1/Depl0y/stargazers)
 
 ⭐ If Depl0y saves you time, give it a star — it helps others find the project!

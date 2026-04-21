@@ -5,6 +5,16 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.34] - 2026-04-21 ✂️ VM Config + Hardware tab declutter
+
+### Changed
+- **Removed the 22 "Current: `xxx`" hints** scattered below every field label — the input already shows the current value. The hints just doubled the label height.
+- **Dropped the 6 per-field Save buttons** on single-value text inputs (name, sockets, cores, memory, balloon, boot). They now **auto-save on blur + Enter** with a subtle "Saving…" / "Saved" chip — same UX as the dropdowns. Multi-field rows (Sockets × Cores groups, Audio, Startup order, Hotplug, RNG, SPICE, SMBIOS) keep explicit Save buttons because partial-save would break them.
+- **Description textarea** keeps its Save button (blur-save while typing prose is hostile).
+- **Tightened section padding** (1rem → 0.75rem) and grid gaps (0.85rem → 0.55rem) so the Config and Hardware tabs feel like a settings page, not a wizard.
+
+Result: the CPU / Memory card alone dropped from ~12 buttons + 6 "Current:" spans to 2 buttons + no duplicate labels.
+
 ## [2.2.33] - 2026-04-21 🧹 VM details tabs layout polish
 
 ### Changed

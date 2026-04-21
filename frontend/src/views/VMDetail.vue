@@ -395,15 +395,11 @@
             <div class="settings-grid settings-grid--2col">
               <div class="settings-row">
                 <label class="settings-label">Name
-                  <span class="settings-hint">Current: <code>{{ config.name || '—' }}</code></span>
                 </label>
                 <div class="settings-control">
                   <input v-model="inlineEdit.name" class="form-control" placeholder="vm-name"
-                    @keyup.enter="saveInlineField('name', inlineEdit.name)" />
-                  <button @click="saveInlineField('name', inlineEdit.name)"
-                    class="btn btn-primary btn-sm" :disabled="savingField.name">
-                    {{ savingField.name ? '...' : 'Save' }}
-                  </button>
+                    @keyup.enter="autoSaveConfig('name', inlineEdit.name); $event.target.blur()" @blur="autoSaveConfig('name', inlineEdit.name)" />
+                  <span v-if="savedChip.name" :class="['saved-chip', 'saved-chip--show', savedChip.name === 'saving' ? 'saved-chip--saving' : '']">{{ savedChip.name === 'saving' ? 'Saving…' : 'Saved' }}</span>
                 </div>
               </div>
 
@@ -430,37 +426,28 @@
             <div class="settings-grid settings-grid--2col">
               <div class="settings-row">
                 <label class="settings-label">Sockets
-                  <span class="settings-hint">Current: <code>{{ config.sockets || 1 }}</code></span>
                 </label>
                 <div class="settings-control">
                   <input v-model.number="inlineEdit.sockets" type="number" min="1" max="8"
                     class="form-control"
-                    @keyup.enter="saveInlineField('sockets', inlineEdit.sockets)" />
-                  <button @click="saveInlineField('sockets', inlineEdit.sockets)"
-                    class="btn btn-primary btn-sm" :disabled="savingField.sockets">
-                    {{ savingField.sockets ? '...' : 'Save' }}
-                  </button>
+                    @keyup.enter="autoSaveConfig('sockets', inlineEdit.sockets); $event.target.blur()" @blur="autoSaveConfig('sockets', inlineEdit.sockets)" />
+                  <span v-if="savedChip.sockets" :class="['saved-chip', 'saved-chip--show', savedChip.sockets === 'saving' ? 'saved-chip--saving' : '']">{{ savedChip.sockets === 'saving' ? 'Saving…' : 'Saved' }}</span>
                 </div>
               </div>
 
               <div class="settings-row">
                 <label class="settings-label">Cores
-                  <span class="settings-hint">Current: <code>{{ config.cores || 1 }}</code></span>
                 </label>
                 <div class="settings-control">
                   <input v-model.number="inlineEdit.cores" type="number" min="1" max="128"
                     class="form-control"
-                    @keyup.enter="saveInlineField('cores', inlineEdit.cores)" />
-                  <button @click="saveInlineField('cores', inlineEdit.cores)"
-                    class="btn btn-primary btn-sm" :disabled="savingField.cores">
-                    {{ savingField.cores ? '...' : 'Save' }}
-                  </button>
+                    @keyup.enter="autoSaveConfig('cores', inlineEdit.cores); $event.target.blur()" @blur="autoSaveConfig('cores', inlineEdit.cores)" />
+                  <span v-if="savedChip.cores" :class="['saved-chip', 'saved-chip--show', savedChip.cores === 'saving' ? 'saved-chip--saving' : '']">{{ savedChip.cores === 'saving' ? 'Saving…' : 'Saved' }}</span>
                 </div>
               </div>
 
               <div class="settings-row">
                 <label class="settings-label">CPU Type
-                  <span class="settings-hint">Current: <code>{{ config.cpu || 'host' }}</code></span>
                 </label>
                 <div class="settings-control">
                   <select v-model="inlineEdit.cpu" class="form-control"
@@ -478,31 +465,23 @@
 
               <div class="settings-row">
                 <label class="settings-label">Memory (MB)
-                  <span class="settings-hint">Current: <code>{{ config.memory || '—' }} MB</code></span>
                 </label>
                 <div class="settings-control">
                   <input v-model.number="inlineEdit.memory" type="number" min="64" step="64"
                     class="form-control"
-                    @keyup.enter="saveInlineField('memory', inlineEdit.memory)" />
-                  <button @click="saveInlineField('memory', inlineEdit.memory)"
-                    class="btn btn-primary btn-sm" :disabled="savingField.memory">
-                    {{ savingField.memory ? '...' : 'Save' }}
-                  </button>
+                    @keyup.enter="autoSaveConfig('memory', inlineEdit.memory); $event.target.blur()" @blur="autoSaveConfig('memory', inlineEdit.memory)" />
+                  <span v-if="savedChip.memory" :class="['saved-chip', 'saved-chip--show', savedChip.memory === 'saving' ? 'saved-chip--saving' : '']">{{ savedChip.memory === 'saving' ? 'Saving…' : 'Saved' }}</span>
                 </div>
               </div>
 
               <div class="settings-row">
                 <label class="settings-label">Balloon (MB)
-                  <span class="settings-hint">Current: <code>{{ config.balloon ?? 0 }} MB</code></span>
                 </label>
                 <div class="settings-control">
                   <input v-model.number="inlineEdit.balloon" type="number" min="0" step="64"
                     class="form-control"
-                    @keyup.enter="saveInlineField('balloon', inlineEdit.balloon)" />
-                  <button @click="saveInlineField('balloon', inlineEdit.balloon)"
-                    class="btn btn-primary btn-sm" :disabled="savingField.balloon">
-                    {{ savingField.balloon ? '...' : 'Save' }}
-                  </button>
+                    @keyup.enter="autoSaveConfig('balloon', inlineEdit.balloon); $event.target.blur()" @blur="autoSaveConfig('balloon', inlineEdit.balloon)" />
+                  <span v-if="savedChip.balloon" :class="['saved-chip', 'saved-chip--show', savedChip.balloon === 'saving' ? 'saved-chip--saving' : '']">{{ savedChip.balloon === 'saving' ? 'Saving…' : 'Saved' }}</span>
                 </div>
               </div>
             </div>
@@ -517,7 +496,6 @@
             <div class="settings-grid settings-grid--2col">
               <div class="settings-row">
                 <label class="settings-label">BIOS
-                  <span class="settings-hint">Current: <code>{{ config.bios || 'seabios' }}</code></span>
                 </label>
                 <div class="settings-control">
                   <select v-model="inlineEdit.bios" class="form-control"
@@ -533,7 +511,6 @@
 
               <div class="settings-row">
                 <label class="settings-label">Machine Type
-                  <span class="settings-hint">Current: <code>{{ config.machine || 'default' }}</code></span>
                 </label>
                 <div class="settings-control">
                   <select v-model="inlineEdit.machine" class="form-control"
@@ -551,16 +528,12 @@
 
               <div class="settings-row settings-row--full">
                 <label class="settings-label">Boot Order
-                  <span class="settings-hint">Current: <code>{{ config.boot || '—' }}</code></span>
                 </label>
                 <div class="settings-control">
                   <input v-model="inlineEdit.boot" class="form-control"
                     placeholder="order=scsi0;ide2;net0"
-                    @keyup.enter="saveInlineField('boot', inlineEdit.boot)" />
-                  <button @click="saveInlineField('boot', inlineEdit.boot)"
-                    class="btn btn-primary btn-sm" :disabled="savingField.boot">
-                    {{ savingField.boot ? '...' : 'Save' }}
-                  </button>
+                    @keyup.enter="autoSaveConfig('boot', inlineEdit.boot); $event.target.blur()" @blur="autoSaveConfig('boot', inlineEdit.boot)" />
+                  <span v-if="savedChip.boot" :class="['saved-chip', 'saved-chip--show', savedChip.boot === 'saving' ? 'saved-chip--saving' : '']">{{ savedChip.boot === 'saving' ? 'Saving…' : 'Saved' }}</span>
                 </div>
               </div>
             </div>
@@ -1482,7 +1455,6 @@
             <div class="settings-grid settings-grid--2col">
               <div class="settings-row">
                 <label class="settings-label">OS Type
-                  <span class="settings-hint">Current: <code>{{ config.ostype || 'auto' }}</code></span>
                 </label>
                 <div class="settings-control">
                   <select v-model="optEdit.ostype" class="form-control"
@@ -1516,7 +1488,6 @@
             <div class="settings-grid">
               <div class="settings-row settings-row--full">
                 <label class="settings-label">Start/Shutdown Order &amp; Delay
-                  <span class="settings-hint">Current: <code>{{ config.startup || 'default' }}</code></span>
                 </label>
                 <div class="settings-control">
                   <input v-model.number="optEdit.startup_order" type="number" min="0" max="999"
@@ -1538,7 +1509,6 @@
 
               <div class="settings-row settings-row--full">
                 <label class="settings-label">Hotplug
-                  <span class="settings-hint">Current: <code>{{ config.hotplug || 'disk,network,usb' }}</code></span>
                 </label>
                 <div class="settings-control" style="flex-wrap:wrap;">
                   <label v-for="h in hotplugOptions" :key="h.key" class="hotplug-chip">
@@ -1564,7 +1534,6 @@
             <div class="settings-grid settings-grid--2col">
               <div class="settings-row">
                 <label class="settings-label">VirtIO RNG source
-                  <span class="settings-hint">Current: <code>{{ config.rng0 || '(off)' }}</code></span>
                 </label>
                 <div class="settings-control">
                   <select v-model="optEdit.rng_source" class="form-control">
@@ -1582,7 +1551,6 @@
 
               <div class="settings-row">
                 <label class="settings-label">SPICE Enhancements
-                  <span class="settings-hint">Current: <code>{{ config['spice-enhancements'] || config.spice_enhancements || '(off)' }}</code></span>
                 </label>
                 <div class="settings-control" style="flex-wrap:wrap;">
                   <label class="flex align-center gap-1 text-sm">
@@ -1603,7 +1571,6 @@
 
               <div class="settings-row settings-row--full">
                 <label class="settings-label">SMBIOS 1
-                  <span class="settings-hint">Current: <code>{{ config.smbios1 || '(auto)' }}</code></span>
                 </label>
                 <div class="settings-control">
                   <input v-model="optEdit.smbios1" class="form-control"
@@ -1951,7 +1918,6 @@
             <div class="settings-grid settings-grid--2col">
               <div class="settings-row">
                 <label class="settings-label">CPU Type
-                  <span class="settings-hint">Current: <code>{{ parsedCpuType }}</code></span>
                 </label>
                 <div class="settings-control">
                   <select v-model="hwEdit.cpuType" class="form-control"
@@ -1985,58 +1951,6 @@
 
               <div class="settings-row">
                 <label class="settings-label">Sockets &times; Cores
-                  <span class="settings-hint">Current: <code>{{ config.sockets || 1 }}</code> &times; <code>{{ config.cores || 1 }}</code> = {{ (config.sockets || 1) * (config.cores || 1) }} vCPUs</span>
-                </label>
-                <div class="settings-control">
-                  <input v-model.number="hwEdit.sockets" type="number" min="1" max="8"
-                    class="form-control" style="max-width:80px;flex:none;" />
-                  <span class="text-muted">&times;</span>
-                  <input v-model.number="hwEdit.cores" type="number" min="1" max="512"
-                    class="form-control" style="max-width:80px;flex:none;" />
-                  <span class="text-muted text-sm">= {{ (hwEdit.sockets || 1) * (hwEdit.cores || 1) }} vCPUs</span>
-                  <span style="flex:1;"></span>
-                  <button @click="saveHwField2({ sockets: hwEdit.sockets, cores: hwEdit.cores })"
-                    class="btn btn-primary btn-sm" :disabled="savingHw.sockets">
-                    {{ savingHw.sockets ? '...' : 'Save' }}
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <!-- CPU Feature Flags block -->
-            <div class="hw-cpu-flags-section" style="padding:0.75rem 0 0;">
-              <div class="hw-cpu-flags-header">
-                <span class="hw-cpu-flags-title">CPU Feature Flags</span>
-                <span class="text-xs text-muted ml-1">Override individual CPU features (requires reboot)</span>
-                <button @click="saveHwCpu" class="btn btn-primary btn-sm" :disabled="savingHw.cpu">
-                  {{ savingHw.cpu ? 'Saving...' : 'Apply Flag Changes' }}
-                </button>
-              </div>
-              <div class="hw-cpu-flags-grid">
-                <div v-for="flag in cpuFlagOptions" :key="flag.name" class="hw-cpu-flag-item"
-                     :title="flag.desc">
-                  <select v-model="hwCpuFlagState[flag.name]" class="form-control form-control-sm hw-flag-select">
-                    <option value="">default</option>
-                    <option value="+">+ enable</option>
-                    <option value="-">- disable</option>
-                  </select>
-                  <span class="hw-flag-name">{{ flag.name }}</span>
-                  <span class="hw-flag-desc">{{ flag.desc }}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- ── Machine & Firmware ── -->
-          <div class="settings-section">
-            <div class="settings-section-header">
-              <h4 class="settings-section-title">Machine &amp; Firmware</h4>
-              <span class="settings-section-subtitle">Chipset and boot firmware</span>
-            </div>
-            <div class="settings-grid settings-grid--2col">
-              <div class="settings-row">
-                <label class="settings-label">Machine Type
-                  <span class="settings-hint">Current: <code>{{ config.machine || 'default' }}</code></span>
                 </label>
                 <div class="settings-control">
                   <select v-model="hwEdit.machine" class="form-control"
@@ -2060,7 +1974,6 @@
 
               <div class="settings-row">
                 <label class="settings-label">BIOS Type
-                  <span class="settings-hint">Current: <code>{{ config.bios || 'seabios' }}</code></span>
                 </label>
                 <div class="settings-control">
                   <select v-model="hwEdit.bios" class="form-control"
@@ -2087,7 +2000,6 @@
             <div class="settings-grid settings-grid--2col">
               <div class="settings-row">
                 <label class="settings-label">Display (VGA)
-                  <span class="settings-hint">Current: <code>{{ config.vga || 'default' }}</code></span>
                 </label>
                 <div class="settings-control">
                   <select v-model="hwEdit.vga" class="form-control"
@@ -2113,7 +2025,6 @@
 
               <div class="settings-row">
                 <label class="settings-label">SCSI Controller
-                  <span class="settings-hint">Current: <code>{{ config.scsihw || 'default' }}</code></span>
                 </label>
                 <div class="settings-control">
                   <select v-model="hwEdit.scsihw" class="form-control"
@@ -2134,7 +2045,6 @@
 
               <div class="settings-row settings-row--full">
                 <label class="settings-label">Audio Device
-                  <span class="settings-hint">Current: <code>{{ config.audio0 || '(none)' }}</code></span>
                 </label>
                 <div class="settings-control">
                   <select v-model="hwEdit.audioDevice" class="form-control">
@@ -8446,7 +8356,7 @@ const copySshCommand = () => {
 
 /* Section subcard within a card — groups related fields with a header+divider */
 .settings-section {
-  padding: 1rem 1.5rem 1.25rem;
+  padding: 0.75rem 1.25rem 0.9rem;
   border-bottom: 1px solid var(--border-color);
 }
 .settings-section:last-child {
@@ -8457,7 +8367,7 @@ const copySshCommand = () => {
   align-items: baseline;
   justify-content: space-between;
   gap: 0.75rem;
-  margin-bottom: 0.9rem;
+  margin-bottom: 0.5rem;
   flex-wrap: wrap;
 }
 .settings-section-title {
@@ -8479,7 +8389,7 @@ const copySshCommand = () => {
 .settings-grid {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 0.85rem 1.75rem;
+  gap: 0.55rem 1.5rem;
 }
 @media (min-width: 900px) {
   .settings-grid--2col {

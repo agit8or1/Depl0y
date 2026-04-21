@@ -206,7 +206,7 @@
               </template>
               <template v-else-if="srv._stype === 'pbs'">
                 <button @click="openConfigBMC(srv)" class="btn btn-outline btn-sm">{{ srv.idrac_hostname ? 'Edit BMC' : 'Configure BMC' }}</button>
-                <button @click="deletePBS(srv)" class="btn btn-danger btn-sm">Delete</button>
+                <button v-if="srv.idrac_hostname" @click="clearBMCDirect(srv)" class="btn btn-danger btn-sm" title="Clear BMC credentials only — does NOT delete the PBS server">Clear BMC</button>
               </template>
               <template v-else>
                 <button @click="openConfigBMC(srv)" class="btn btn-outline btn-sm">{{ srv.idrac_hostname ? 'Edit BMC' : 'Configure BMC' }}</button>

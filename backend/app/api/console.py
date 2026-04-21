@@ -403,7 +403,7 @@ async def vm_vnc_proxy(
                     (k, v) for k, v in websocket.scope.get("headers", [])
                     if k.lower() != b"sec-websocket-extensions"
                 ]
-                await websocket.accept(subprotocol="binary")
+                await websocket.accept(subprotocol=("binary" if "binary" in (websocket.scope.get("subprotocols") or []) else None))
                 await _relay(websocket, ws_proxmox)
             logger.info("VNC relay ended cleanly: user=%s vmid=%s", user.username, vmid)
             try:
@@ -491,7 +491,7 @@ async def lxc_terminal_proxy(
                     (k, v) for k, v in websocket.scope.get("headers", [])
                     if k.lower() != b"sec-websocket-extensions"
                 ]
-                await websocket.accept(subprotocol="binary")
+                await websocket.accept(subprotocol=("binary" if "binary" in (websocket.scope.get("subprotocols") or []) else None))
                 await _relay(websocket, ws_proxmox)
         except Exception as exc:
             logger.error("LXC terminal proxy connection failed: %s", exc)
@@ -567,7 +567,7 @@ async def node_terminal_proxy(
                     (k, v) for k, v in websocket.scope.get("headers", [])
                     if k.lower() != b"sec-websocket-extensions"
                 ]
-                await websocket.accept(subprotocol="binary")
+                await websocket.accept(subprotocol=("binary" if "binary" in (websocket.scope.get("subprotocols") or []) else None))
                 await _relay(websocket, ws_proxmox)
         except Exception as exc:
             logger.error("Node terminal proxy connection failed: %s", exc)

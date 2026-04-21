@@ -5,6 +5,12 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.31] - 2026-04-21 🛑 PBS Delete-was-misleading + VM console WebSocket fix
+
+### Fixed
+- **iDRAC Management's PBS row had a "Delete" button that deleted the entire PBS server** when the user only wanted to remove the iDRAC config. Replaced with **"Clear BMC"** matching the PVE-node row's behavior. Tooltip explicitly states it does not remove the PBS entry. Full PBS-server deletion still lives on the PBS Management page where it belongs.
+- **VM console WebSocket failed with code 1006** ("connection closed abnormally"). The backend always replied `Sec-WebSocket-Protocol: binary` even when the browser sent no subprotocol — per RFC 6455 the browser must reject any subprotocol it didn't request. Console relay now only echoes `binary` when the client actually asked for it. Fix applied to all 3 accept sites in `console.py` (per-VM, per-host, per-LXC paths).
+
 ## [2.2.30] - 2026-04-20 🔁 PBS sync visibility + Create Sync Job + Run Now
 
 ### Added

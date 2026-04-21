@@ -376,6 +376,113 @@
             <div v-else class="text-muted text-sm" style="min-height:40px;">No notes. Click "Edit Notes" to add a description.</div>
           </div>
         </div>
+
+        <!-- Guest Agent (QEMU) -->
+        <div class="card mt-2">
+          <div class="card-header">
+            <h3>Guest Agent</h3>
+            <span class="text-sm text-muted">
+              <template v-if="guestAgentLoading">Loading…</template>
+              <template v-else-if="guestAgent && guestAgent.available">qemu-guest-agent is running</template>
+              <template v-else-if="guestAgent">Not available — install qemu-guest-agent and enable it in Options</template>
+              <template v-else>—</template>
+            </span>
+            <button @click="loadGuestAgent" class="btn btn-outline btn-sm" style="margin-left:auto">Refresh</button>
+          </div>
+          <div class="card-body">
+            <template v-if="guestAgent && guestAgent.available && guestAgent.data">
+              <div class="settings-grid settings-grid--2col">
+                <div class="settings-row" v-if="guestAgent.data.hostname">
+                  <label class="settings-label">Hostname</label>
+                  <div class="settings-control"><code>{{ guestAgent.data.hostname }}</code></div>
+                </div>
+                <div class="settings-row" v-if="guestAgent.data.os?.pretty_name || guestAgent.data.os?.name">
+                  <label class="settings-label">OS</label>
+                  <div class="settings-control">
+                    {{ guestAgent.data.os.pretty_name || guestAgent.data.os.name }}
+                    <span v-if="guestAgent.data.os.version" class="text-muted text-xs">({{ guestAgent.data.os.version }})</span>
+                  </div>
+                </div>
+                <div class="settings-row" v-if="guestAgent.data.os?.kernel_release">
+                  <label class="settings-label">Kernel</label>
+                  <div class="settings-control"><code>{{ guestAgent.data.os.kernel_release }}</code></div>
+                </div>
+                <div class="settings-row" v-if="guestAgent.data.timezone">
+                  <label class="settings-label">Timezone</label>
+                  <div class="settings-control">{{ guestAgent.data.timezone }}</div>
+                </div>
+                <div class="settings-row" v-if="guestAgent.data.agent_version">
+                  <label class="settings-label">Agent Version</label>
+                  <div class="settings-control"><code>{{ guestAgent.data.agent_version }}</code></div>
+                </div>
+                <div class="settings-row" v-if="guestAgent.data.users?.length">
+                  <label class="settings-label">Logged-in Users</label>
+                  <div class="settings-control">
+                    <span v-for="(u, i) in guestAgent.data.users" :key="i" class="tag tag-sm" style="margin-right:4px">
+                      {{ u.user }}{{ u.domain ? '@' + u.domain : '' }}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div v-if="guestAgent.data.network_interfaces?.length" class="mt-2">
+                <h4 class="settings-section-title">Network Interfaces</h4>
+                <table class="table-tidy" style="margin-top:0.5rem">
+                  <thead><tr><th>Interface</th><th>MAC</th><th>IPv4</th><th>IPv6</th></tr></thead>
+                  <tbody>
+                    <tr v-for="iface in guestAgent.data.network_interfaces" :key="iface.name || iface.hardware_address">
+                      <td><code>{{ iface.name }}</code></td>
+                      <td class="text-muted text-xs"><code>{{ iface.hardware_address || '—' }}</code></td>
+                      <td>
+                        <div v-for="ip in iface.ipv4" :key="ip" class="text-xs"><code>{{ ip }}</code></div>
+                        <span v-if="!iface.ipv4?.length" class="text-muted text-xs">—</span>
+                      </td>
+                      <td>
+                        <div v-for="ip in iface.ipv6" :key="ip" class="text-xs"><code>{{ ip }}</code></div>
+                        <span v-if="!iface.ipv6?.length" class="text-muted text-xs">—</span>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div v-if="guestAgent.data.filesystems?.length" class="mt-2">
+                <h4 class="settings-section-title">Mounted Filesystems</h4>
+                <table class="table-tidy" style="margin-top:0.5rem">
+                  <thead><tr><th>Mount</th><th>Device</th><th>Type</th><th>Used / Total</th></tr></thead>
+                  <tbody>
+                    <tr v-for="fs in guestAgent.data.filesystems" :key="fs.mountpoint + fs.name">
+                      <td><code>{{ fs.mountpoint }}</code></td>
+                      <td class="text-muted text-xs"><code>{{ fs.name }}</code></td>
+                      <td class="text-xs">{{ fs.type }}</td>
+                      <td class="text-xs">
+                        <template v-if="fs.used_bytes != null && fs.total_bytes">
+                          {{ (fs.used_bytes / 1e9).toFixed(1) }} / {{ (fs.total_bytes / 1e9).toFixed(1) }} GB
+                          <span class="text-muted">({{ Math.round(100 * fs.used_bytes / fs.total_bytes) }}%)</span>
+                        </template>
+                        <template v-else>—</template>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </template>
+            <template v-else-if="guestAgent && !guestAgent.available">
+              <div class="text-muted text-sm">
+                QEMU guest agent is not responding. To enable:
+                <ol style="margin-top:0.3rem;padding-left:1.25rem">
+                  <li>In the VM's <strong>Options</strong> tab, turn on <code>QEMU Guest Agent</code>.</li>
+                  <li>Install the agent inside the guest (<code>qemu-guest-agent</code> on Linux, Red Hat virtio tools on Windows) and start the service.</li>
+                  <li>Reboot the VM.</li>
+                </ol>
+                <div v-if="guestAgent.error" class="text-xs text-muted mt-1"><code>{{ guestAgent.error }}</code></div>
+              </div>
+            </template>
+            <template v-else-if="guestAgentLoading">
+              <div class="text-muted text-sm">Loading guest agent data…</div>
+            </template>
+          </div>
+        </div>
       </div>
 
       <!-- ─── Config Tab ─── -->
@@ -3431,6 +3538,20 @@ const editingNotes = ref(false)
 const savingNotes = ref(false)
 const notesText = ref('')
 const activeTab = ref('overview')
+const guestAgent = ref(null)
+const guestAgentLoading = ref(false)
+
+async function loadGuestAgent() {
+  guestAgentLoading.value = true
+  try {
+    const res = await api.pveVm.getGuestAgent(hostId.value, node.value, vmid.value)
+    guestAgent.value = res.data
+  } catch (e) {
+    guestAgent.value = { available: false, error: e?.response?.data?.detail || e?.message || 'Failed to load guest agent data' }
+  } finally {
+    guestAgentLoading.value = false
+  }
+}
 
 // ── Overview tab — live stats sparklines ──────────────────────────────────────
 const SPARK_MAX = 20
@@ -6388,6 +6509,7 @@ const openConsole = () => {
 onMounted(async () => {
   await loadAll()
   await loadNextId()
+  loadGuestAgent()
   startPolling()
 })
 

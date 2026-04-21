@@ -612,6 +612,7 @@ export default {
     setFirewallOptions: (h, node, vmid, data) => api.put(`/pve-vm/${h}/${node}/${vmid}/firewall/options`, data),
     getVncTicket: (h, node, vmid) => api.post(`/pve-vm/${h}/${node}/${vmid}/vncticket`),
     getRrdData: (h, node, vmid, params) => api.get(`/pve-vm/${h}/${node}/${vmid}/rrddata`, { params }),
+    getGuestAgent: (h, node, vmid) => api.get(`/pve-vm/${h}/${node}/${vmid}/guest-agent`),
     vmPending: (h, node, vmid) => api.get(`/pve-vm/${h}/${node}/${vmid}/pending`),
     // Aliases for VMDetail.vue naming convention
     config: (h, node, vmid) => api.get(`/pve-vm/${h}/${node}/${vmid}/config`),

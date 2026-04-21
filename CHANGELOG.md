@@ -5,6 +5,16 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.36] - 2026-04-21 🛰️ Guest Agent info on VM Overview
+
+### Added
+- **New "Guest Agent" card on the VM Overview tab** showing everything the QEMU guest agent reports: hostname, OS name + version + kernel, timezone, agent version, logged-in users, network interfaces (with MAC + all IPv4/IPv6 addresses), and mounted filesystems (used / total + percent).
+- **Endpoint:** `GET /api/v1/pve-vm/{h}/{node}/{vmid}/guest-agent` — aggregates `get-host-name`, `get-osinfo`, `get-timezone`, `get-users`, `get-fsinfo`, `network-get-interfaces`, `info`. Each sub-call wrapped in its own try/except so a missing command doesn't blank the whole response. 30-second server-side cache.
+- **Graceful empty state** when the agent isn't responding — lists the 3 steps to enable it (turn on QEMU Guest Agent in Options → install `qemu-guest-agent` in the guest → reboot).
+
+### Verified
+- VM 120 (Ubuntu 24.04) on pve2: hostname=ubuntu, kernel 6.8.0-106-generic, eth0 at 192.168.22.69, 3 filesystems, qemu-guest-agent 8.2.2.
+
 ## [2.2.35] - 2026-04-21 🌗 PCIPassthrough dark-mode contrast
 
 ### Fixed

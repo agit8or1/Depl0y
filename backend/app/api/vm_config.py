@@ -216,6 +216,124 @@ def update_vm_config(host_id: int, node: str, vmid: int, update: ConfigUpdate,
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/{host_id}/{node}/{vmid}/guest-agent")
+def get_vm_guest_agent(host_id: int, node: str, vmid: int,
+                       db: Session = Depends(get_db),
+                       current_user=Depends(get_current_user)):
+    """Aggregate data reported by the QEMU guest agent: hostname, OS info,
+    network interfaces, timezone, logged-in users, mounted filesystems.
+
+    Returns `{available: bool, data: {...}, error: str?}`. Never 500s —
+    individual sub-calls are caught and returned as `null` so the UI can
+    render partial info when only some commands are supported by the
+    guest-agent version.
+    """
+    host = _get_host(host_id, db)
+    cache_key = f"pve:{host_id}:{node}/{vmid}/guest-agent"
+    cached = pve_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    pve = _pve(_svc(host)).nodes(node).qemu(vmid).agent
+
+    last_err: Optional[str] = None
+    def _call(cmd: str):
+        nonlocal last_err
+        try:
+            # Proxmox exposes each read-only QGA command as a sub-path under /agent
+            return getattr(pve, cmd).get()
+        except Exception as e:
+            last_err = str(e)
+            return None
+
+    # Pull each sub-call with its own try/except. If ALL fail, agent is unavailable.
+    network = _call("network-get-interfaces") or {}
+    osinfo  = _call("get-osinfo") or {}
+    host_name = _call("get-host-name") or {}
+    tz      = _call("get-timezone") or {}
+    users   = _call("get-users") or {}
+    fsinfo  = _call("get-fsinfo") or {}
+    agent_info = _call("info") or {}
+
+    # Flatten network interfaces into a compact shape
+    ifaces = []
+    for iface in (network.get("result") if isinstance(network, dict) else network) or []:
+        ips_v4 = []
+        ips_v6 = []
+        for a in iface.get("ip-addresses") or []:
+            ip = a.get("ip-address")
+            if not ip:
+                continue
+            if a.get("ip-address-type") == "ipv4" and not ip.startswith("127."):
+                ips_v4.append(ip + "/" + str(a.get("prefix") or ""))
+            elif a.get("ip-address-type") == "ipv6" and not ip.startswith("fe80:") and ip != "::1":
+                ips_v6.append(ip + "/" + str(a.get("prefix") or ""))
+        ifaces.append({
+            "name": iface.get("name"),
+            "hardware_address": iface.get("hardware-address"),
+            "ipv4": ips_v4,
+            "ipv6": ips_v6,
+            "statistics": iface.get("statistics") or {},
+        })
+
+    # QGA responses sometimes arrive as {"result": {...}} (Proxmox's wrapper) and
+    # sometimes as the raw QGA payload — normalize.
+    def _inner(x):
+        if isinstance(x, dict) and "result" in x and not any(k in x for k in ("host-name", "name", "zone", "pretty-name")):
+            return x.get("result")
+        return x
+    host_name = _inner(host_name) or {}
+    osinfo_i = _inner(osinfo) or {}
+    tz_i = _inner(tz) or {}
+    users_i = _inner(users) if isinstance(_inner(users), list) else (users.get("result") if isinstance(users, dict) else users) or []
+    fsinfo_i = _inner(fsinfo) if isinstance(_inner(fsinfo), list) else (fsinfo.get("result") if isinstance(fsinfo, dict) else fsinfo) or []
+    agent_info_i = _inner(agent_info) if isinstance(_inner(agent_info), dict) else {}
+
+    data = {
+        "hostname": host_name.get("host-name") if isinstance(host_name, dict) else None,
+        "os": {
+            "name": osinfo_i.get("name"),
+            "pretty_name": osinfo_i.get("pretty-name"),
+            "version": osinfo_i.get("version"),
+            "kernel_release": osinfo_i.get("kernel-release"),
+            "kernel_version": osinfo_i.get("kernel-version"),
+            "machine": osinfo_i.get("machine"),
+            "id": osinfo_i.get("id"),
+        },
+        "timezone": tz_i.get("zone"),
+        "timezone_offset": tz_i.get("offset"),
+        "users": [
+            {"user": u.get("user"), "login_time": u.get("login-time"), "domain": u.get("domain")}
+            for u in (users_i or [])
+        ],
+        "filesystems": [
+            {
+                "name": f.get("name"),
+                "mountpoint": f.get("mountpoint"),
+                "type": f.get("type"),
+                "total_bytes": f.get("total-bytes"),
+                "used_bytes": f.get("used-bytes"),
+            }
+            for f in (fsinfo_i or [])
+        ],
+        "network_interfaces": ifaces,
+        "agent_version": agent_info_i.get("version") if isinstance(agent_info_i, dict) else None,
+    }
+    # Agent is available if any read returned anything useful
+    any_success = any([
+        data["hostname"], data["os"].get("name"), data["timezone"],
+        data["network_interfaces"], data["filesystems"], data["users"],
+    ])
+    if not any_success:
+        payload = {"available": False, "data": None, "error": last_err or "Guest agent not responding"}
+        pve_cache.set(cache_key, payload, ttl=15)
+        return payload
+
+    payload = {"available": True, "data": data, "error": None}
+    pve_cache.set(cache_key, payload, ttl=30)
+    return payload
+
+
 @router.get("/{host_id}/{node}/{vmid}/status")
 def get_vm_status(host_id: int, node: str, vmid: int, db: Session = Depends(get_db),
                   current_user=Depends(get_current_user)):

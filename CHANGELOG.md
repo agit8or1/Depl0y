@@ -5,6 +5,22 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.42] - 2026-04-22 🛠️ Topology physics loop + pve05 apt repair
+
+### Fixed
+- **Topology graph still rendered blank after v2.2.41** — the rAF spam in the console was force-directed physics running indefinitely with nodes laid out beyond the viewport. The initial view wasn't calling `network.fit()` after stabilization and physics never turned off.
+  - Now listens for `stabilizationIterationsDone`, then calls `network.fit({ animation: false })` and `setOptions({ physics: { enabled: false } })`.
+  - Hard fallback: even if stabilization never fires, a 4-second `setTimeout` force-fits and kills physics.
+  - Result: nodes are visible on load, rAF loop stops.
+
+### Fixed (operator action taken)
+- **pve05 `apt-get update` exit 100** — resolved directly on the host.
+  - pve05 is Debian trixie which uses the deb822 `.sources` format (not `.list`). Two sources pointed at enterprise repos and returned 401:
+    - `/etc/apt/sources.list.d/pve-enterprise.sources` → `https://enterprise.proxmox.com/debian/pve`
+    - `/etc/apt/sources.list.d/ceph.sources` → `https://enterprise.proxmox.com/debian/ceph-squid`
+  - Added `Enabled: no` to both. `proxmox.sources` already had `pve-no-subscription` configured, so the no-subscription repo was always working — the 401 from the enterprise repos was the only reason apt exited 100.
+  - Verified: `apt-get update` now exits 0 on pve05.
+
 ## [2.2.41] - 2026-04-22 🔧 Topology canvas fix + sync-alert diagnosis
 
 ### Fixed

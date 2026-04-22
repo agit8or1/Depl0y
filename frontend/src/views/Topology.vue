@@ -288,6 +288,20 @@ export default {
         network = new Network(graphContainer.value, data, options)
         network.on('click', onClick)
         network.on('doubleClick', onDoubleClick)
+        // When stabilization is done, fit the view and turn physics off.
+        // Without this, the force-directed layout keeps running forever — 30+
+        // nodes + 140+ edges = rAF fires ~60×/s with no visible change after
+        // stability. Users see a blank canvas because nodes land off-screen.
+        network.once('stabilizationIterationsDone', () => {
+          try { network.fit({ animation: false }) } catch {}
+          try { network.setOptions({ physics: { enabled: false } }) } catch {}
+        })
+        // Hard fallback — if stabilization never fires (very rare), force a
+        // fit after 4 seconds so the user at least sees something.
+        setTimeout(() => {
+          try { network.fit({ animation: false }) } catch {}
+          try { network.setOptions({ physics: { enabled: false } }) } catch {}
+        }, 4000)
       }
     }
 

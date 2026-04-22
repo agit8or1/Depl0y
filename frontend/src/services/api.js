@@ -1153,6 +1153,11 @@ export default {
     updateAcl: (h, data) => api.put(`/pve-access/${h}/acl`, data),
   },
 
+  // Topology — live environment graph
+  topology: {
+    getGraph: (params) => api.get('/topology/graph', { params }),
+  },
+
   // SDN — Software-Defined Networking
   sdn: {
     listVnets: (hostId) => api.get(`/sdn/${hostId}/vnets`),

@@ -5,6 +5,28 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.40] - 2026-04-22 🗺️ Topology map + draw.io / PNG / SVG exports
+
+### Added
+- **New Topology page** at `/topology` (Infrastructure → Topology in the sidebar). Interactive live graph of the whole environment: PVE hosts, nodes, VMs, LXC, storage, network bridges, PBS servers, iDRAC/BMC. PBS sync edges show last-run state — dashed red when in error.
+- **Filter toolbar** on the left: Show stopped VMs / LXC / storage / bridges / BMC / PBS / sync edges. Each toggle reshapes the graph.
+- **Click a node** to jump to its detail page (VMDetail / NodeDetail / PBSManagement / IDracManagement).
+- **Double-click** to zoom-focus on a node.
+- **Exports:**
+  - **draw.io** — uncompressed `.drawio` XML with mxCell vertices + edges. Opens directly in app.diagrams.net. Each node type maps to an appropriate mxShape (rounded/rhombus/hexagon/cylinder/triangle).
+  - **PNG** — full-frame raster from the vis-network canvas. Filename `topology-YYYYMMDD-HHmm.png`.
+  - **SVG** — synthesized from vis-computed positions; no canvas2svg dependency.
+- Endpoint: `GET /api/v1/topology/graph` with query flags `include_stopped|include_bridges|include_storage|include_bmc|include_pbs|include_lxc|include_sync|refresh`. 60-second in-memory cache keyed by filter combo. Per-host + per-PBS fan-out via `ThreadPoolExecutor`. Graceful degradation: unreachable sub-trees attach `data.error` instead of 500ing.
+- New deps: `vis-network@^10.0.2`, `vis-data@^8.0.3`.
+
+### Performance
+- Cold fetch 4.6s / cached 10ms on live infra (1 host, 5 nodes, 29 VMs → 84–88 nodes + 141–151 edges).
+
+### Deferred
+- Bridge-to-bridge uplink edges (bond_slaves / bridge_ports parsing) — node-to-bridge + VM-to-bridge already covered.
+- Per-NIC MAC/IP on edges.
+- Layout presets (hierarchical by layer) — force-directed default is usable.
+
 ## [2.2.39] - 2026-04-21 📣 PBS sync-failure alerts with jump-to-fix
 
 ### Added

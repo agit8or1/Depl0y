@@ -1,6 +1,6 @@
 {
   "name": "depl0y-frontend",
-  "version": "2.2.39",
+  "version": "2.2.40",
   "description": "Depl0y Frontend - Vue.js deployment panel",
   "private": true,
   "scripts": {
@@ -17,6 +17,8 @@
     "marked": "^17.0.0",
     "pinia": "^2.1.7",
     "qrcode.vue": "^3.4.1",
+    "vis-data": "^8.0.3",
+    "vis-network": "^10.0.2",
     "vue": "^3.3.8",
     "vue-chartjs": "^5.2.0",
     "vue-router": "^4.2.5",

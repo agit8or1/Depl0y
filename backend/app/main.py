@@ -16,6 +16,7 @@ from app.api import alerts as alerts_api
 from app.api import analysis as analysis_api
 from app.api import ai_reports as ai_reports_api
 from app.api import updates_mgmt
+from app.api import topology as topology_api
 from app.middleware.security import SecurityHeadersMiddleware
 from app.middleware.rate_limit import RateLimitMiddleware
 from app.middleware.ip_filter import IPFilterMiddleware
@@ -353,6 +354,7 @@ app.include_router(analysis_api.router, prefix=f"{settings.API_V1_PREFIX}/analys
 app.include_router(pve_access.router, prefix=f"{settings.API_V1_PREFIX}/pve-access", tags=["PVE Access Control"])
 app.include_router(ai_reports_api.router, prefix=f"{settings.API_V1_PREFIX}/ai-reports", tags=["AI Reports"])
 app.include_router(updates_mgmt.router, prefix=f"{settings.API_V1_PREFIX}/updates-mgmt", tags=["System Updates Manager"])
+app.include_router(topology_api.router, prefix=f"{settings.API_V1_PREFIX}/topology", tags=["Topology"])
 
 
 if __name__ == "__main__":

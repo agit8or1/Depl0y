@@ -321,6 +321,12 @@ const router = createRouter({
       meta: { requiresAuth: true, requiresOperator: true }
     },
     {
+      path: '/topology',
+      name: 'Topology',
+      component: () => import('@/views/Topology.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
       path: '/proxmox/:hostId/nodes/:node/:vmid',
       name: 'VMDetailDirect',
       component: () => import('@/views/VMDetail.vue'),

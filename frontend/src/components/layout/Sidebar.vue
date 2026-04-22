@@ -76,6 +76,7 @@
       </div>
       <div v-show="!collapsed.infrastructure" class="nav-section-items">
         <NavItem :to="'/proxmox'" :icon="'🌐'" :label="t('nav.proxmox_hosts')" @click="handleNavClick" />
+        <NavItem :to="'/topology'" :icon="'🗺️'" :label="'Topology'" @click="handleNavClick" />
         <NavItem v-if="isAdmin" :to="'/ha-management'" :icon="'🔄'" :label="t('nav.ha_management')" @click="handleNavClick" />
         <NavItem v-if="isOperator" :to="'/replication'" :icon="'🔁'" :label="t('nav.replication')" @click="handleNavClick" />
         <NavItem v-if="isOperator" :to="'/idrac'" :icon="'🖧'" :label="t('nav.idrac')" @click="handleNavClick" />
@@ -191,7 +192,7 @@ const COLLAPSED_KEY = 'sidebar_collapsed_sections'
 const SECTION_ROUTES = {
   overview: ['/', '/federation', '/datacenter', '/cluster', '/tasks'],
   compute: ['/containers', '/create-lxc', '/create-pve-vm', '/deploy', '/import-vm', '/llm-deploy', '/templates', '/vms', '/vm-management', '/vm-groups', '/bulk-ops', '/vm-search'],
-  infrastructure: ['/ha-management', '/replication', '/idrac', '/network', '/sdn', '/firewall-manager', '/node-monitor', '/proxmox'],
+  infrastructure: ['/ha-management', '/replication', '/idrac', '/network', '/sdn', '/firewall-manager', '/node-monitor', '/proxmox', '/topology'],
   storage: ['/backup', '/snapshots', '/pbs-management', '/storage-management', '/images', '/ceph', '/pools'],
   admin: ['/audit-log', '/linux-vms', '/security', '/alerts', '/analysis', '/ai-reports', '/notifications', '/system-health', '/system-logs', '/updates', '/users', '/pve-users', '/integrations', '/api-explorer'],
   account: ['/about', '/documentation', '/profile', '/settings', '/support'],

@@ -5,6 +5,18 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.44] - 2026-04-22 🏷️ Topology custom labels + sync diagnosis
+
+### Added
+- **Right-click any node on the Topology graph to set a custom label.** Prompts for the new label; blank input restores the auto-generated one. Stored client-side in `localStorage` under `depl0y.topology.labels` — survives reloads. A small hint lives under the View toggle.
+
+### Clarified (not code)
+- **PBS sync jobs from pbs1 → pbs2 don't exist at the PBS level.** Verified both servers directly with ticket-auth:
+  - pbs1 (192.168.22.8): `/config/sync=[]`, `/admin/sync=[]`
+  - pbs2 (10.0.0.4): `/config/sync=[]`, `/admin/sync=[]`, **`/config/remote=[]`**
+  Neither PBS has any sync job *or* a configured remote. Whatever the UI showed — PBS itself is empty. The Create-Sync-Job flow (v2.2.30) must have either failed to save or was not actually submitted. Try it again: PBS Management → Add Server (re-add pbs2 if not already registered), then use the **+ Create Sync Job** button on pbs1's card. First pick the remote (it'll scan pbs2's datastores), then the local datastore, schedule, Save.
+  Network view of Topology: hard-refresh the page and look at the **View** toggle in the top-left toolbar — three buttons: **Infrastructure · Network · Combined**.
+
 ## [2.2.43] - 2026-04-22 🌐 Topology network view + PBS sync-jobs tile
 
 ### Added

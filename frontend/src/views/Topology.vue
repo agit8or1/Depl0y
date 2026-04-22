@@ -35,6 +35,9 @@
           <button :class="['vt-btn', viewMode === 'network' ? 'vt-btn--active' : '']" @click="setViewMode('network')">Network</button>
           <button :class="['vt-btn', viewMode === 'combined' ? 'vt-btn--active' : '']" @click="setViewMode('combined')">Combined</button>
         </div>
+        <p class="text-xs text-muted" style="margin:0 0 0.5rem 0">
+          Tip: right-click a node to set a custom label (saved in your browser).
+        </p>
 
         <h3 class="topo-sec-title mt-2">Filters</h3>
         <label class="topo-check">
@@ -171,6 +174,49 @@ export default {
       include_sync: true,
     })
     const viewMode = ref('infrastructure')
+
+    // ── Custom labels (localStorage-backed) ──────────────────────────────
+    const CUSTOM_LABELS_KEY = 'depl0y.topology.labels'
+    const customLabels = reactive(
+      JSON.parse(localStorage.getItem(CUSTOM_LABELS_KEY) || '{}')
+    )
+    function saveCustomLabels() {
+      localStorage.setItem(CUSTOM_LABELS_KEY, JSON.stringify(customLabels))
+    }
+    function labelFor(node) {
+      // Prefer custom label if set; otherwise the auto-generated one.
+      const custom = customLabels[node.id]
+      if (custom && custom.trim()) return custom
+      return node.label
+    }
+    function onContext(params) {
+      // Right-click in the vis canvas. params.event has DOM event; prevent default menu.
+      if (params.event) params.event.preventDefault()
+      if (!network) return
+      const nodeId = network.getNodeAt(params.pointer.DOM)
+      if (!nodeId || !graph.value) return
+      const n = graph.value.nodes.find(x => x.id === nodeId)
+      if (!n) return
+      const current = customLabels[nodeId] || ''
+      const next = window.prompt(
+        `Custom label for "${n.label}"\n(blank to restore auto label, Cancel to abort)`,
+        current,
+      )
+      if (next === null) return // cancelled
+      if (next.trim()) {
+        customLabels[nodeId] = next.trim()
+      } else {
+        delete customLabels[nodeId]
+      }
+      saveCustomLabels()
+      // Update just this node's label in the vis DataSet
+      try {
+        network.body.data.nodes.update({ id: nodeId, label: labelFor(n) })
+      } catch {
+        renderGraph() // fallback
+      }
+    }
+
     function setViewMode(m) {
       if (viewMode.value === m) return
       viewMode.value = m
@@ -206,8 +252,8 @@ export default {
     function toVisNodes (g) {
       return g.nodes.map(n => {
         const st = styleForNode(n.type, n.data && n.data.status)
-        let label = n.label
-        const tooltip = buildTooltip(n)
+        let label = labelFor(n)
+        const tooltip = buildTooltip(n) + (customLabels[n.id] ? `\n(custom label; right-click to change)` : '')
         const base = {
           id: n.id,
           label,
@@ -315,6 +361,7 @@ export default {
         network = new Network(graphContainer.value, data, options)
         network.on('click', onClick)
         network.on('doubleClick', onDoubleClick)
+        network.on('oncontext', onContext)
         // When stabilization is done, fit the view and turn physics off.
         // Without this, the force-directed layout keeps running forever — 30+
         // nodes + 140+ edges = rAF fires ~60×/s with no visible change after

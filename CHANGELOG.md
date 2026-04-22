@@ -5,6 +5,20 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.47] - 2026-04-22 🧹 Condensed sidebar menu
+
+### Changed — sidebar cleanup
+The menu had grown to **46 items**. Trimmed and reorganized:
+
+- **Overview** (5 → 5): moved Federation behind admin-only (rarely used by daily operators).
+- **Compute** (6 → 5): removed `VM Management` from the sidebar (route still exists, but it duplicated the `/vms` list; users get the same via the VM detail row). Renamed `VM Groups` → `Groups`.
+- **Infrastructure** (9 → 9 but re-ordered): grouped by frequency of use: Proxmox Hosts / Nodes / Topology / iDRAC at the top; HA / Replication / Network / SDN / Firewall below. `Node Monitor` → `Nodes`. `HA Management` → `HA`.
+- **Storage** (7 → 7): re-ordered to put aggregated views (Storage, PBS) first, then operations (Backup, Snapshots, Images). `PBS Management` → `PBS`. `Storage Management` → `Storage`.
+- **Admin** (14 → 7 top-level + 7 behind "More ›"): surfaced the ones operators actually click daily (Alerts, Reports, Updates, Security, Linux Security, Users, Health). Moved rarely-used items into a collapsible **More** subsection (Audit Log, System Logs, Notifications, PVE Users, Integrations, API Explorer, Analysis).
+- Dropped `Alert Rules` i18n key in favor of just `Alerts`, `Analysis` kept under More (Reports is the primary place now).
+
+Net: **46 items → 25 visible + 7 behind More**. Section structure and persistence of collapsed state unchanged.
+
 ## [2.2.46] - 2026-04-22 🏃 PBS Run Now — correct /admin/ path
 
 ### Fixed

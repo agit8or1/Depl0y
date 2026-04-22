@@ -31,10 +31,10 @@
       </div>
       <div v-show="!collapsed.overview" class="nav-section-items">
         <NavItem :to="'/'" :icon="'📊'" :label="t('nav.dashboard')" :badge="unreadNotifications || null" @click="handleNavClick" />
-        <NavItem :to="'/federation'" :icon="'🌍'" :label="t('nav.federation')" @click="handleNavClick" />
         <NavItem :to="'/datacenter'" :icon="'🏢'" :label="t('nav.datacenter')" @click="handleNavClick" />
         <NavItem :to="'/cluster'" :icon="'🌐'" :label="t('nav.cluster')" @click="handleNavClick" />
         <NavItem :to="'/tasks'" :icon="'📋'" :label="t('nav.tasklog')" @click="handleNavClick" />
+        <NavItem v-if="isAdmin" :to="'/federation'" :icon="'🌍'" :label="t('nav.federation')" @click="handleNavClick" />
       </div>
 
       <!-- ── Compute ── -->
@@ -52,11 +52,10 @@
         <span class="nav-section-arrow" :class="{ 'arrow-collapsed': collapsed.compute }">›</span>
       </div>
       <div v-show="!collapsed.compute" class="nav-section-items">
+        <NavItem :to="'/vms'" :icon="'🖥️'" :label="t('nav.vms')" @click="handleNavClick" />
         <NavItem v-if="isOperator" :to="'/containers'" :icon="'📦'" :label="t('nav.containers')" @click="handleNavClick" />
         <NavItem :to="'/templates'" :icon="'📄'" :label="t('nav.templates')" @click="handleNavClick" />
-        <NavItem :to="'/vms'" :icon="'🖥️'" :label="t('nav.vms')" @click="handleNavClick" />
-        <NavItem v-if="isOperator" :to="'/vm-management'" :icon="'🛠️'" :label="t('nav.vm_management')" @click="handleNavClick" />
-        <NavItem v-if="isOperator" :to="'/vm-groups'" :icon="'🗃️'" :label="t('nav.vm_groups')" @click="handleNavClick" />
+        <NavItem v-if="isOperator" :to="'/vm-groups'" :icon="'🗃️'" :label="'Groups'" @click="handleNavClick" />
         <NavItem v-if="isOperator" :to="'/bulk-ops'" :icon="'⚡'" :label="t('nav.bulk_ops')" @click="handleNavClick" />
       </div>
 
@@ -76,11 +75,11 @@
       </div>
       <div v-show="!collapsed.infrastructure" class="nav-section-items">
         <NavItem :to="'/proxmox'" :icon="'🌐'" :label="t('nav.proxmox_hosts')" @click="handleNavClick" />
+        <NavItem v-if="isOperator" :to="'/node-monitor'" :icon="'📡'" :label="'Nodes'" @click="handleNavClick" />
         <NavItem :to="'/topology'" :icon="'🗺️'" :label="'Topology'" @click="handleNavClick" />
-        <NavItem v-if="isAdmin" :to="'/ha-management'" :icon="'🔄'" :label="t('nav.ha_management')" @click="handleNavClick" />
-        <NavItem v-if="isOperator" :to="'/replication'" :icon="'🔁'" :label="t('nav.replication')" @click="handleNavClick" />
         <NavItem v-if="isOperator" :to="'/idrac'" :icon="'🖧'" :label="t('nav.idrac')" @click="handleNavClick" />
-        <NavItem v-if="isOperator" :to="'/node-monitor'" :icon="'📡'" :label="t('nav.node_monitor')" @click="handleNavClick" />
+        <NavItem v-if="isAdmin" :to="'/ha-management'" :icon="'🔄'" :label="'HA'" @click="handleNavClick" />
+        <NavItem v-if="isOperator" :to="'/replication'" :icon="'🔁'" :label="t('nav.replication')" @click="handleNavClick" />
         <NavItem v-if="isOperator" :to="'/network'" :icon="'🔌'" :label="t('nav.network')" @click="handleNavClick" />
         <NavItem v-if="isAdmin" :to="'/sdn'" :icon="'🕸️'" :label="t('nav.sdn')" @click="handleNavClick" />
         <NavItem v-if="isOperator" :to="'/firewall-manager'" :icon="'🛡️'" :label="t('nav.firewall')" @click="handleNavClick" />
@@ -101,10 +100,10 @@
         <span class="nav-section-arrow" :class="{ 'arrow-collapsed': collapsed.storage }">›</span>
       </div>
       <div v-show="!collapsed.storage" class="nav-section-items">
+        <NavItem v-if="isAdmin" :to="'/storage-management'" :icon="'🗄️'" :label="'Storage'" @click="handleNavClick" />
+        <NavItem v-if="isAdmin" :to="'/pbs-management'" :icon="'💽'" :label="'PBS'" @click="handleNavClick" />
         <NavItem :to="'/backup'" :icon="'💾'" :label="t('nav.backup')" @click="handleNavClick" />
         <NavItem :to="'/snapshots'" :icon="'📷'" :label="t('nav.snapshots')" @click="handleNavClick" />
-        <NavItem v-if="isAdmin" :to="'/pbs-management'" :icon="'🗄️'" :label="t('nav.pbs_management')" @click="handleNavClick" />
-        <NavItem v-if="isAdmin" :to="'/storage-management'" :icon="'🗄️'" :label="t('nav.storage_management')" @click="handleNavClick" />
         <NavItem :to="'/images'" :icon="'💿'" :label="t('nav.images')" @click="handleNavClick" />
         <NavItem v-if="isAdmin" :to="'/ceph'" :icon="'🪨'" :label="t('nav.ceph')" @click="handleNavClick" />
         <NavItem v-if="isAdmin" :to="'/pools'" :icon="'🗂️'" :label="t('nav.resource_pools')" @click="handleNavClick" />
@@ -126,20 +125,28 @@
           <span class="nav-section-arrow" :class="{ 'arrow-collapsed': collapsed.admin }">›</span>
         </div>
         <div v-show="!collapsed.admin" class="nav-section-items">
-          <NavItem :to="'/audit-log'" :icon="'🔍'" :label="t('nav.audit_log')" @click="handleNavClick" />
-          <NavItem v-if="linuxAgentEnabled" :to="'/linux-vms'" :icon="'🛡️'" :label="t('nav.linux_vm_security')" @click="handleNavClick" />
-          <NavItem :to="'/security'" :icon="'🔒'" :label="t('nav.security')" @click="handleNavClick" />
-          <NavItem :to="'/alerts'" :icon="'🚨'" :label="t('nav.alert_rules')" @click="handleNavClick" />
-          <NavItem :to="'/analysis'" :icon="'🔬'" :label="t('nav.analysis')" @click="handleNavClick" />
+          <NavItem :to="'/alerts'" :icon="'🚨'" :label="'Alerts'" @click="handleNavClick" />
           <NavItem :to="'/ai-reports'" :icon="'📊'" :label="'Reports'" @click="handleNavClick" />
-          <NavItem :to="'/notifications'" :icon="'🔔'" :label="t('nav.notifications')" @click="handleNavClick" />
-          <NavItem :to="'/system-health'" :icon="'💚'" :label="t('nav.system_health')" @click="handleNavClick" />
-          <NavItem :to="'/system-logs'" :icon="'📜'" :label="t('nav.system_logs')" @click="handleNavClick" />
           <NavItem :to="'/updates'" :icon="'⬆️'" :label="'Updates'" @click="handleNavClick" />
+          <NavItem :to="'/security'" :icon="'🔒'" :label="t('nav.security')" @click="handleNavClick" />
+          <NavItem v-if="linuxAgentEnabled" :to="'/linux-vms'" :icon="'🛡️'" :label="'Linux Security'" @click="handleNavClick" />
           <NavItem :to="'/users'" :icon="'👥'" :label="t('nav.users')" @click="handleNavClick" />
-          <NavItem :to="'/pve-users'" :icon="'👤'" :label="t('nav.pve_users')" @click="handleNavClick" />
-          <NavItem :to="'/integrations'" :icon="'🔗'" :label="t('nav.integrations')" @click="handleNavClick" />
-          <NavItem :to="'/api-explorer'" :icon="'⚡'" :label="t('nav.api_explorer')" @click="handleNavClick" />
+          <NavItem :to="'/system-health'" :icon="'💚'" :label="'Health'" @click="handleNavClick" />
+
+          <!-- Less-frequently-used tools — collapsed by default -->
+          <div class="nav-subsection-header" @click="moreAdmin = !moreAdmin" role="button" tabindex="0" @keydown.enter.prevent="moreAdmin = !moreAdmin" @keydown.space.prevent="moreAdmin = !moreAdmin">
+            <span class="nav-subsection-label">More</span>
+            <span class="nav-section-arrow" :class="{ 'arrow-collapsed': !moreAdmin }">›</span>
+          </div>
+          <template v-if="moreAdmin">
+            <NavItem :to="'/audit-log'" :icon="'🔍'" :label="t('nav.audit_log')" @click="handleNavClick" />
+            <NavItem :to="'/system-logs'" :icon="'📜'" :label="t('nav.system_logs')" @click="handleNavClick" />
+            <NavItem :to="'/notifications'" :icon="'🔔'" :label="t('nav.notifications')" @click="handleNavClick" />
+            <NavItem :to="'/pve-users'" :icon="'👤'" :label="t('nav.pve_users')" @click="handleNavClick" />
+            <NavItem :to="'/integrations'" :icon="'🔗'" :label="t('nav.integrations')" @click="handleNavClick" />
+            <NavItem :to="'/api-explorer'" :icon="'⚡'" :label="t('nav.api_explorer')" @click="handleNavClick" />
+            <NavItem :to="'/analysis'" :icon="'🔬'" :label="t('nav.analysis')" @click="handleNavClick" />
+          </template>
         </div>
       </template>
 
@@ -218,6 +225,7 @@ export default {
     const appVersion = ref('1.8.0')
     const linuxAgentEnabled = ref(false)
     const unreadNotifications = ref(0)
+    const moreAdmin = ref(false)
 
     // ── Collapsed sections (persisted) ──────────────────────────────────────
     const collapsed = reactive({
@@ -333,6 +341,7 @@ export default {
       appVersion,
       linuxAgentEnabled,
       unreadNotifications,
+      moreAdmin,
       handleNavClick,
       collapsed,
       toggleSection,
@@ -466,6 +475,23 @@ export default {
 
 .nav-section-items {
   overflow: hidden;
+}
+
+.nav-subsection-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.4rem 1.5rem 0.3rem 2.25rem;
+  cursor: pointer;
+  user-select: none;
+  opacity: 0.65;
+}
+.nav-subsection-header:hover { background: rgba(255, 255, 255, 0.04); opacity: 1; }
+.nav-subsection-label {
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: #7a8fa8;
 }
 
 /* ── Nav items ── */

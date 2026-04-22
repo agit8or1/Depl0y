@@ -29,7 +29,14 @@
     <div class="topo-body">
       <!-- ── Left toolbar: filters + legend ── -->
       <aside class="topo-sidebar card">
-        <h3 class="topo-sec-title">Filters</h3>
+        <h3 class="topo-sec-title">View</h3>
+        <div class="view-toggle">
+          <button :class="['vt-btn', viewMode === 'infrastructure' ? 'vt-btn--active' : '']" @click="setViewMode('infrastructure')">Infrastructure</button>
+          <button :class="['vt-btn', viewMode === 'network' ? 'vt-btn--active' : '']" @click="setViewMode('network')">Network</button>
+          <button :class="['vt-btn', viewMode === 'combined' ? 'vt-btn--active' : '']" @click="setViewMode('combined')">Combined</button>
+        </div>
+
+        <h3 class="topo-sec-title mt-2">Filters</h3>
         <label class="topo-check">
           <input type="checkbox" v-model="filters.include_stopped" @change="refresh(false)" />
           <span>Show stopped VMs</span>
@@ -132,6 +139,12 @@ function styleForNode (type, status) {
       return { shape: 'box', color: '#f97316', border: '#9a3412', font: '#ffffff', drawioStyle: 'rounded=0;whiteSpace=wrap;html=1;fillColor=#f97316;strokeColor=#9a3412;fontColor=#ffffff;' }
     case 'bmc':
       return { shape: 'triangle', color: '#eab308', border: '#854d0e', font: '#111827', drawioStyle: 'triangle;whiteSpace=wrap;html=1;fillColor=#eab308;strokeColor=#854d0e;' }
+    case 'bond':
+      return { shape: 'box', color: '#a855f7', border: '#6b21a8', font: '#ffffff', drawioStyle: 'rounded=1;whiteSpace=wrap;html=1;fillColor=#a855f7;strokeColor=#6b21a8;fontColor=#ffffff;' }
+    case 'nic':
+      return { shape: 'dot', size: 14, color: '#0ea5e9', border: '#075985', font: '#ffffff', drawioStyle: 'ellipse;whiteSpace=wrap;html=1;fillColor=#0ea5e9;strokeColor=#075985;fontColor=#ffffff;' }
+    case 'vlan':
+      return { shape: 'dot', size: 14, color: '#06b6d4', border: '#0e7490', font: '#ffffff', drawioStyle: 'ellipse;whiteSpace=wrap;html=1;fillColor=#06b6d4;strokeColor=#0e7490;fontColor=#ffffff;' }
     default:
       return { shape: 'box', color: '#9ca3af', border: '#4b5563', font: '#111827', drawioStyle: 'rounded=1;whiteSpace=wrap;html=1;fillColor=#9ca3af;strokeColor=#4b5563;' }
   }
@@ -157,6 +170,19 @@ export default {
       include_pbs: true,
       include_sync: true,
     })
+    const viewMode = ref('infrastructure')
+    function setViewMode(m) {
+      if (viewMode.value === m) return
+      viewMode.value = m
+      // Network-only mode hides BMC/storage to keep it readable
+      if (m === 'network') {
+        filters.include_bmc = false
+        filters.include_storage = false
+      }
+      // Destroy existing network so we re-fit on next render
+      if (network) { try { network.destroy() } catch {} network = null }
+      refresh(true)
+    }
 
     const legend = computed(() => ([
       { type: 'pve_host', label: 'Proxmox host', color: '#3b82f6', border: '#1d4ed8', radius: '4px' },
@@ -239,6 +265,7 @@ export default {
           include_pbs: filters.include_pbs,
           include_lxc: filters.include_lxc,
           include_sync: filters.include_sync,
+          view_mode: viewMode.value,
           refresh: !!force,
         })
         graph.value = resp.data
@@ -555,6 +582,7 @@ export default {
     return {
       graphContainer, graph, loading, errorMsg, generatedAt,
       filters, legend,
+      viewMode, setViewMode,
       refresh, fit, exportPNG, exportSVG, exportDrawio,
       formatTime,
     }
@@ -607,6 +635,29 @@ export default {
   margin: 0 0 0.5rem 0;
   font-weight: 700;
 }
+.view-toggle {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.25rem;
+  margin-bottom: 0.5rem;
+}
+.vt-btn {
+  font-size: 0.7rem;
+  padding: 0.35rem 0.25rem;
+  border: 1px solid var(--border-color);
+  background: var(--surface);
+  color: var(--text-primary);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.vt-btn:hover { background: rgba(59, 130, 246, 0.08); }
+.vt-btn--active {
+  background: #3b82f6;
+  border-color: #1d4ed8;
+  color: #ffffff;
+  font-weight: 600;
+}
+
 .topo-check {
   display: flex;
   gap: 0.5rem;

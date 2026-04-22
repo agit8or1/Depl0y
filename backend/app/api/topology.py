@@ -308,15 +308,18 @@ def _collect_host_subtree(
                     {"from": node_id, "to": ct_id, "kind": "hosts"}
                 )
 
-        # Bridges
+        # Bridges / bonds / physical NICs
         if include_bridges:
             try:
-                bridges = service.get_network_interfaces(node_name)
+                ifaces = service.get_network_interfaces(node_name)
             except Exception:
-                bridges = []
-            for br in bridges:
+                ifaces = []
+            # Pre-index by name for bridge-port / bond-slave lookups
+            by_name = {ii.get("iface"): ii for ii in (ifaces or []) if ii.get("iface")}
+            for br in ifaces or []:
                 name = br.get("iface")
-                if not name:
+                itype = br.get("type")
+                if not name or itype not in ("bridge",):
                     continue
                 br_id = f"bridge:{host.id}:{node_name}:{name}"
                 node_result["nodes"].append(
@@ -325,17 +328,77 @@ def _collect_host_subtree(
                         "type": "bridge",
                         "label": name,
                         "data": {
-                            "iface_type": br.get("type"),
+                            "iface_type": itype,
                             "active": br.get("active"),
                             "address": br.get("address"),
                             "gateway": br.get("gateway"),
                             "bridge_ports": br.get("bridge_ports"),
+                            "vlan_aware": br.get("bridge_vlan_aware"),
+                            "host_id": host.id,
+                            "node": node_name,
                         },
                     }
                 )
                 node_result["edges"].append(
                     {"from": node_id, "to": br_id, "kind": "has-bridge"}
                 )
+                # In network / combined view, drill into ports
+                if vm in ("network", "combined"):
+                    ports = (br.get("bridge_ports") or "").split()
+                    for p in ports:
+                        target = by_name.get(p, {})
+                        ptype = target.get("type")
+                        if ptype == "bond":
+                            bond_id = f"bond:{host.id}:{node_name}:{p}"
+                            node_result["nodes"].append(
+                                {
+                                    "id": bond_id, "type": "bond", "label": p,
+                                    "data": {
+                                        "bond_mode": target.get("bond_mode"),
+                                        "bond_slaves": target.get("bond_slaves"),
+                                        "bond_miimon": target.get("bond_miimon"),
+                                        "host_id": host.id, "node": node_name,
+                                    },
+                                }
+                            )
+                            node_result["edges"].append(
+                                {"from": br_id, "to": bond_id, "kind": "bridge-port"}
+                            )
+                            for slave in (target.get("bond_slaves") or "").split():
+                                nic_id = f"nic:{host.id}:{node_name}:{slave}"
+                                snic = by_name.get(slave, {})
+                                node_result["nodes"].append(
+                                    {
+                                        "id": nic_id, "type": "nic", "label": slave,
+                                        "data": {
+                                            "active": snic.get("active"),
+                                            "exists": snic.get("exists"),
+                                            "host_id": host.id, "node": node_name,
+                                        },
+                                    }
+                                )
+                                node_result["edges"].append(
+                                    {"from": bond_id, "to": nic_id, "kind": "bond-slave"}
+                                )
+                        else:
+                            # Plain physical NIC or VLAN sub-interface
+                            nic_id = f"nic:{host.id}:{node_name}:{p}"
+                            node_result["nodes"].append(
+                                {
+                                    "id": nic_id,
+                                    "type": "nic" if ptype != "vlan" else "vlan",
+                                    "label": p,
+                                    "data": {
+                                        "iface_type": ptype,
+                                        "active": target.get("active"),
+                                        "vlan_id": target.get("vlan-id"),
+                                        "host_id": host.id, "node": node_name,
+                                    },
+                                }
+                            )
+                            node_result["edges"].append(
+                                {"from": br_id, "to": nic_id, "kind": "bridge-port"}
+                            )
 
         # Storage pools
         if include_storage:
@@ -473,19 +536,35 @@ async def get_topology_graph(
     include_pbs: bool = Query(True, description="Include PBS servers"),
     include_lxc: bool = Query(True, description="Include LXC containers"),
     include_sync: bool = Query(True, description="Include PBS sync job edges"),
+    view_mode: str = Query("infrastructure", description="infrastructure | network | combined"),
     refresh: bool = Query(False, description="Bypass 60s cache"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> Dict[str, Any]:
     """Return a full topology graph with nodes and edges.
 
-    Response is cached for 60 seconds (key includes all filter flags).
-    Individual subsystem failures are surfaced as `data.error` on the
-    affected node instead of 500ing the whole response.
+    `view_mode`:
+    - `infrastructure` (default): hosts → nodes → VMs / LXC / storage; bridges
+      are shown as a single node per node. Storage + BMC + PBS + sync visible.
+    - `network`: bridges are exploded into their `bridge_ports`, bonds into
+      their `bond_slaves`, and physical NICs appear as leaves. Storage/BMC
+      hidden so the network layer reads cleanly. Bridges with the same name
+      across different PVE nodes get a virtual "L2 peer" edge so operators
+      can see where the same VLAN bridge spans the cluster.
+    - `combined`: both layers on one canvas (dense but complete).
     """
+    vm = (view_mode or "infrastructure").lower()
+    if vm not in ("infrastructure", "network", "combined"):
+        vm = "infrastructure"
+    # In network mode, force bridges on and storage/bmc off for readability.
+    if vm == "network":
+        include_bridges = True
+        include_storage = False
+        include_bmc = False
     cache_key = (
         f"graph|stopped={include_stopped}|br={include_bridges}|st={include_storage}"
         f"|bmc={include_bmc}|pbs={include_pbs}|lxc={include_lxc}|sync={include_sync}"
+        f"|view={vm}"
     )
     if not refresh:
         cached = _cache_get(cache_key)
@@ -708,8 +787,27 @@ async def get_topology_graph(
                 # No parent edge — standalones are free-floating.
 
     # --- De-duplicate bridges / storage nodes that VMs referenced but the
-    # node-level network/storage listing didn't include (e.g. include_bridges
-    # off at node level but VM refs still pointed at them). Drop orphan edges.
+    # Cross-node bridge peer edges — when the same-named bridge exists on
+    # multiple PVE nodes (typical for cluster-wide vmbr0), draw a dashed peer
+    # link so operators can see where an L2 domain spans.
+    if vm in ("network", "combined"):
+        by_bridge_name: Dict[str, List[str]] = {}
+        for n in nodes:
+            if n.get("type") != "bridge":
+                continue
+            name = (n.get("label") or "").strip()
+            if not name:
+                continue
+            by_bridge_name.setdefault(name, []).append(n["id"])
+        for name, ids in by_bridge_name.items():
+            if len(ids) < 2:
+                continue
+            # Link each to the first as a hub rather than full mesh
+            hub = ids[0]
+            for other in ids[1:]:
+                edges.append({"from": hub, "to": other, "kind": "l2-peer",
+                              "label": name, "data": {"bridge": name}})
+
     node_ids = {n["id"] for n in nodes}
     cleaned_edges: List[Dict[str, Any]] = []
     for e in edges:

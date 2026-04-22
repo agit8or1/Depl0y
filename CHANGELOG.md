@@ -5,6 +5,19 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.43] - 2026-04-22 🌐 Topology network view + PBS sync-jobs tile
+
+### Added
+- **Topology page now has three view modes** — Infrastructure / Network / Combined — toggled via a segmented button at the top-left toolbar.
+  - **Network mode**: bridges explode into their `bridge_ports`, bonds appear as their own nodes with `bond_slaves` as child NICs, VLAN sub-interfaces get their own node type. BMC + storage are auto-hidden in this mode for readability.
+  - **Cross-node L2 peer edges**: bridges with the same name on multiple PVE nodes (e.g. `vmbr0` spanning the cluster) get a dashed peer link so you can see where a VLAN or LAN domain extends.
+  - New node types: **bond** (purple rounded), **nic** (cyan dot), **vlan** (teal dot).
+  - Backend: new `view_mode` query param on `GET /api/v1/topology/graph` — `infrastructure` | `network` | `combined`.
+- **PBS Management sync-job counter tile.** The per-server card now shows **Sync Jobs** as its own pill (total sync-type jobs + inline "N failed" sub-text in red if any last run with errors), plus a separate **Other Jobs** pill (verify / prune / tape-backup). Replaces the previous ambiguous "Jobs" pill that lumped everything together.
+
+### Verified
+- Network view on live cluster: 46 nodes (1 host, 4 nodes, 29 VMs, 10 bridges, 2 PBS) with 4 `l2-peer` edges plus 30 VM-attached edges.
+
 ## [2.2.42] - 2026-04-22 🛠️ Topology physics loop + pve05 apt repair
 
 ### Fixed

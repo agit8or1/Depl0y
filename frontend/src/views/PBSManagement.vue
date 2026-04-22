@@ -188,8 +188,15 @@
             <span class="stat-value">{{ (serverStats[srv.id].datastores || []).length }}</span>
           </div>
           <div class="stat-pill">
-            <span class="stat-label">Jobs</span>
-            <span class="stat-value">{{ (serverStats[srv.id].jobs || []).length }}</span>
+            <span class="stat-label">Sync Jobs</span>
+            <span class="stat-value">{{ syncJobCount(srv.id) }}</span>
+            <span v-if="syncJobFailedCount(srv.id) > 0" class="stat-sub text-danger" :title="`${syncJobFailedCount(srv.id)} sync job(s) last ran with errors`">
+              {{ syncJobFailedCount(srv.id) }} failed
+            </span>
+          </div>
+          <div class="stat-pill">
+            <span class="stat-label">Other Jobs</span>
+            <span class="stat-value">{{ otherJobCount(srv.id) }}</span>
           </div>
           <div class="stat-pill">
             <span class="stat-label">Failed</span>
@@ -937,6 +944,23 @@ export default {
       if (!stats) return 0
       return (stats.jobs || []).filter(j => this.jobStatusClass(j) === 'failed').length
     },
+    syncJobCount(serverId) {
+      const stats = this.serverStats[serverId]
+      if (!stats) return 0
+      return (stats.jobs || []).filter(j => (j['job-type'] || 'sync') === 'sync').length
+    },
+    syncJobFailedCount(serverId) {
+      const stats = this.serverStats[serverId]
+      if (!stats) return 0
+      return (stats.jobs || [])
+        .filter(j => (j['job-type'] || 'sync') === 'sync')
+        .filter(j => this.jobStatusClass(j) === 'failed').length
+    },
+    otherJobCount(serverId) {
+      const stats = this.serverStats[serverId]
+      if (!stats) return 0
+      return (stats.jobs || []).filter(j => (j['job-type'] || 'sync') !== 'sync').length
+    },
 
     // ── Overview ─────────────────────────────────────────────────────────
     async fetchServerOverview(serverId) {
@@ -1585,6 +1609,12 @@ export default {
   text-transform: uppercase;
   color: #7a8fa8;
   letter-spacing: 0.04em;
+}
+
+.stat-sub {
+  font-size: 0.6rem;
+  line-height: 1;
+  margin-top: 0.1rem;
 }
 
 .stat-value {

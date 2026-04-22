@@ -681,7 +681,15 @@
             <div class="text-xs text-muted mt-1">Letters, digits, hyphens, underscores. PBS uses this as the job key.</div>
           </div>
           <div class="form-group">
-            <label class="form-label">Local datastore (destination)</label>
+            <label class="form-label">Direction</label>
+            <div class="flex gap-2" style="align-items:center">
+              <label class="radio-label"><input type="radio" value="pull" v-model="syncModal.form['sync-direction']" /> Pull (remote → local)</label>
+              <label class="radio-label"><input type="radio" value="push" v-model="syncModal.form['sync-direction']" /> Push (local → remote)</label>
+            </div>
+            <div class="text-xs text-muted mt-1">Pull imports from remote into the local datastore. Push sends local backups out to the remote (requires PBS ≥ 3.3 on both ends).</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">{{ syncModal.form['sync-direction'] === 'push' ? 'Local datastore (source)' : 'Local datastore (destination)' }}</label>
             <select v-model="syncModal.form.store" class="form-control" required>
               <option value="" disabled>— pick datastore —</option>
               <option v-for="d in syncModal.localStores" :key="d" :value="d">{{ d }}</option>
@@ -695,7 +703,7 @@
             </select>
           </div>
           <div class="form-group">
-            <label class="form-label">Remote datastore (source)</label>
+            <label class="form-label">{{ syncModal.form['sync-direction'] === 'push' ? 'Remote datastore (destination)' : 'Remote datastore (source)' }}</label>
             <select v-model="syncModal.form['remote-store']" class="form-control" required>
               <option value="" disabled>{{ syncModal.scanning ? 'Scanning remote…' : '— pick datastore —' }}</option>
               <option v-for="d in syncModal.remoteStores" :key="d" :value="d">{{ d }}</option>
@@ -1324,6 +1332,7 @@ export default {
         'remote-store': '',
         schedule: 'hourly',
         'remove-vanished': false,
+        'sync-direction': 'pull',
       }
       if (this.syncModal.form.remote) {
         await this.onRemoteChange()

@@ -468,13 +468,29 @@ def run_job(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> Any:
-    """Trigger a PBS job to run immediately. Supports sync, verify, and prune jobs."""
+    """Trigger a PBS job to run immediately. Supports sync (pull+push), verify, and prune jobs."""
     server = _get_pbs_server(db, server_id)
     try:
         svc = _make_service(server)
+        # For sync jobs, look up the direction so we can pass sync-direction
+        # to the run endpoint — PBS 4.x rejects the run call otherwise for
+        # push-direction jobs.
+        if job_type in ("sync", "pull", "push") or not job_type:
+            direction = "pull"
+            if job_type == "push":
+                direction = "push"
+            else:
+                # Introspect to find job's direction
+                try:
+                    for j in (svc.get_sync_jobs() or []):
+                        if j.get("id") == job_id:
+                            direction = (j.get("sync-direction") or "pull").lower()
+                            break
+                except Exception:
+                    pass
+            upid = svc.run_sync_job(job_id, direction=direction)
+            return {"upid": upid, "job_id": job_id, "job_type": "sync", "direction": direction}
         run_paths = {
-            "sync": f"/config/sync/{job_id}/run",
-            "pull": f"/config/pull/{job_id}/run",
             "verify": f"/config/verify/{job_id}/run",
             "prune": f"/config/prune/{job_id}/run",
         }

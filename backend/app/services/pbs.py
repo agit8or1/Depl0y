@@ -352,35 +352,62 @@ class PBSService:
 
     def get_sync_jobs(self) -> List[Dict[str, Any]]:
         """
-        Return all jobs configured on this PBS instance:
-        sync, pull, verify, and prune jobs.
+        Return all jobs configured on this PBS instance: sync (pull + push),
+        verify, and prune jobs.
+
+        PBS 4.x split sync jobs by direction — the default /config/sync
+        returns only pull jobs; push-direction jobs require explicit
+        ?sync-direction=push or sync-direction=all. Fetch both so push
+        sync jobs (common for pbs1 → pbs2 replication) don't disappear.
         """
         jobs: List[Dict[str, Any]] = []
+        # Sync jobs — try direction=all first (PBS 4.x+). If the PBS version
+        # rejects the param, fall through to default + explicit push (older
+        # 3.x-compatible path).
+        sync_seen = set()
+        for direction_param in ("?sync-direction=all", "", "?sync-direction=push"):
+            try:
+                data = self._get(f"/config/sync{direction_param}")
+            except Exception as exc:
+                logger.debug("config/sync%s failed on '%s': %s", direction_param, self.server.name, exc)
+                continue
+            for item in (data or []):
+                iid = item.get("id") or item.get("job-id")
+                if not iid or iid in sync_seen:
+                    continue
+                sync_seen.add(iid)
+                item.setdefault("job-type", "sync")
+                item.setdefault("id", iid)
+                # Surface direction explicitly (default is 'pull' when absent)
+                item.setdefault("sync-direction", "pull")
+                jobs.append(item)
+
+        # Other job types
         for job_type, path in (
-            ("sync", "/config/sync"),
-            ("pull", "/config/pull"),
             ("verify", "/config/verify"),
             ("prune", "/config/prune"),
         ):
             try:
-                data = self._get(path)
-                if data:
-                    for item in data:
-                        item.setdefault("job-type", job_type)
-                        # Normalise id field
-                        if "id" not in item and "job-id" in item:
-                            item["id"] = item["job-id"]
-                        # Merge admin (runtime) status for verify/sync jobs
-                        jobs.append(item)
+                for item in (self._get(path) or []):
+                    item.setdefault("job-type", job_type)
+                    if "id" not in item and "job-id" in item:
+                        item["id"] = item["job-id"]
+                    jobs.append(item)
             except Exception as exc:
                 logger.warning("Could not fetch %s jobs from PBS '%s': %s", job_type, self.server.name, exc)
 
-        # Enrich verify/sync jobs with last-run info from admin endpoints
+        # Enrich with last-run info from admin endpoints — admin split by
+        # direction same as config. Try push/pull/unfiltered.
         admin_map: Dict[str, Dict] = {}
-        for admin_path in ("/admin/sync", "/admin/verify"):
+        for admin_path in (
+            "/admin/sync?sync-direction=all", "/admin/sync?sync-direction=push",
+            "/admin/sync", "/admin/verify", "/admin/prune",
+        ):
             try:
                 for item in (self._get(admin_path) or []):
-                    admin_map[item.get("id", "")] = item
+                    iid = item.get("id")
+                    if iid:
+                        admin_map[iid] = item
             except Exception:
                 pass
         for job in jobs:
@@ -414,10 +441,11 @@ class PBSService:
     def create_sync_job(self, payload: Dict[str, Any]) -> Any:
         """Create a PBS sync job. Required fields in `payload`:
           - id (str): job id
-          - store (str): local datastore to pull into
+          - store (str): local datastore
           - remote (str): remote name (as configured under /config/remote)
           - remote-store (str): datastore name on the remote
           - schedule (str, optional): e.g. "*:0/30" or "daily"
+          - sync-direction (str, optional): "pull" (default) or "push"
           - remove-vanished (bool, optional)
           - comment (str, optional)
         """
@@ -426,14 +454,11 @@ class PBSService:
     def delete_sync_job(self, job_id: str) -> Any:
         return self._delete(f"/config/sync/{job_id}")
 
-    def run_sync_job(self, job_id: str) -> Any:
-        """
-        Trigger a sync job to run immediately.
-
-        PBS: POST /api2/json/config/sync/{job-id}/run
-        Returns the UPID of the started task.
-        """
-        return self._post(f"/config/sync/{job_id}/run")
+    def run_sync_job(self, job_id: str, direction: str = "pull") -> Any:
+        """Trigger a sync job to run immediately. Direction ('pull' or 'push')
+        matters on PBS 4.x — the run endpoint is gated by it."""
+        qs = f"?sync-direction={direction}" if direction and direction != "pull" else ""
+        return self._post(f"/config/sync/{job_id}/run{qs}")
 
     def get_tapes(self) -> Dict[str, Any]:
         """

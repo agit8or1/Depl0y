@@ -5,6 +5,20 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.45] - 2026-04-22 📤 PBS push-sync jobs finally visible
+
+### Fixed
+- **Push-direction PBS sync jobs were invisible.** PBS 4.x split sync config by direction: `GET /config/sync` returns only **pull** jobs by default; push jobs require `?sync-direction=push` (or `all`). pbs1's hourly `backup → PBS2:PBS2` push job (`s-cd228a39-4d1d`, last state OK) was therefore never returned to depl0y.
+- `PBSService.get_sync_jobs()` now fetches with `?sync-direction=all` first (falls back to both explicit pulls for older PBS), deduplicates by `id`, and exposes each job's `sync-direction` field to callers so the UI/alert engine can branch.
+- `run_sync_job(job_id, direction)` passes the direction through to the PBS run endpoint — push-direction jobs were previously rejected by the run call.
+- API `POST /pbs-mgmt/{id}/jobs/{job_id}/run` introspects the job's direction before triggering so a Run-Now on a push job works.
+
+### Added
+- **Create Sync Job modal** now has a **Direction** selector (Pull / Push). Labels on datastore fields flip accordingly (Local = destination for pull, source for push). Push requires PBS ≥ 3.3 on both ends.
+
+### Verified
+- Live response on pbs1 now includes the push job: `{"id":"s-cd228a39-4d1d", "sync-direction":"push", "store":"backup", "remote":"PBS2", "remote-store":"PBS2", "schedule":"hourly", "last-run-state":"OK"}`.
+
 ## [2.2.44] - 2026-04-22 🏷️ Topology custom labels + sync diagnosis
 
 ### Added

@@ -80,10 +80,47 @@ def get_running_tasks(db: Session = Depends(get_db), current_user=Depends(get_cu
     except Exception as exc:
         logger.debug("get_running_tasks pve poll error: %s", exc)
 
-    result = tracked + pve_running
+    # Also poll every PBS server for its active tasks (sync / verify / prune /
+    # garbage-collection / backup). Without this, manually-fired PBS jobs
+    # return a UPID but never show up in the floating running-tasks UI.
+    pbs_running = []
+    try:
+        from app.models.database import PBSServer
+        from app.services.pbs import PBSService
+        for pbs in db.query(PBSServer).filter(PBSServer.is_active == True).all():
+            try:
+                svc = PBSService(pbs)
+                # List running tasks — /nodes/localhost/tasks with running=1
+                tasks = svc._get("/nodes/localhost/tasks?running=1&limit=100") or []
+                for t in tasks:
+                    upid = t.get("upid")
+                    if not upid or upid in tracked_upids:
+                        continue
+                    ttype = t.get("worker_type") or t.get("type") or "unknown"
+                    worker_id = t.get("worker_id") or ""
+                    desc = f"{ttype} on {pbs.name}" + (f" ({worker_id})" if worker_id else "")
+                    pbs_running.append({
+                        "upid": upid,
+                        "host_id": None,
+                        "server_id": pbs.id,
+                        "pbs_name": pbs.name,
+                        "node": "localhost",
+                        "task_type": ttype,
+                        "description": desc,
+                        "status": "running",
+                        "started_at": t.get("starttime"),
+                        "source": "pbs",
+                    })
+                    tracked_upids.add(upid)
+            except Exception as e:
+                logger.debug("get_running_tasks pbs poll failed for %s: %s", pbs.name, e)
+    except Exception as exc:
+        logger.debug("get_running_tasks pbs poll outer error: %s", exc)
+
+    result = tracked + pve_running + pbs_running
     for t in result:
         if t.get("source") == "proxmox":
-            # External task — fetch+parse log with short TTL cache
+            # External PVE task — fetch+parse log with short TTL cache
             t["progress"] = task_tracker.progress_for_external(
                 upid=t.get("upid"),
                 host_id=t.get("host_id"),
@@ -91,6 +128,16 @@ def get_running_tasks(db: Session = Depends(get_db), current_user=Depends(get_cu
                 started_at_ts=t.get("started_at"),
                 task_type=t.get("task_type") or "",
             )
+        elif t.get("source") == "pbs":
+            # PBS tasks — use a time-based estimate for now (no log-parse yet).
+            # sync / verify / gc can run for hours; cap at 50% so the bar doesn't lie.
+            import time as _t
+            started = t.get("started_at")
+            if started:
+                elapsed = _t.time() - float(started)
+                t["progress"] = round(min(elapsed / 1800 * 100, 50.0), 1)  # 30-min reference
+            else:
+                t["progress"] = 0.0
         else:
             t["progress"] = task_tracker.estimate_progress(t)
     # Drop cache entries for tasks that are no longer running

@@ -450,9 +450,27 @@ def delete_ha_group(host_id: int, groupid: str, db: Session = Depends(get_db),
 
 @router.get("/{host_id}/cluster/ha/status")
 def ha_status(host_id: int, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    """Flatten PVE's /cluster/ha/status/manager_status wrapper so the UI gets
+    master_node / node_status at the top level (the PVE API returns them nested
+    under a `manager_status` key alongside `quorum` and `lrm_status`)."""
     host = _get_host(host_id, db)
     try:
-        return _pve(host).cluster.ha.status.manager_status.get()
+        wrapper = _pve(host).cluster.ha.status.manager_status.get() or {}
+        inner = wrapper.get("manager_status") or {}
+        quorum = wrapper.get("quorum") or {}
+        node_status = inner.get("node_status") or {}
+        online = sum(1 for s in node_status.values() if s == "online")
+        return {
+            "master_node": inner.get("master_node"),
+            "node_status": node_status,
+            "service_status": inner.get("service_status") or {},
+            "timestamp": inner.get("timestamp"),
+            "quorum": quorum,
+            "quorate": str(quorum.get("quorate", "")) == "1",
+            "nodes_online": online,
+            "nodes_total": len(node_status),
+            "lrm_status": wrapper.get("lrm_status") or {},
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

@@ -5,6 +5,14 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.49] - 2026-04-20 🛠️ Floating tasks show PBS jobs + HA status fixes
+
+### Fixed
+- **Floating Running Tasks now shows PBS jobs.** `/tasks/running` only polled PVE clusters; PBS-fired sync / verify / GC / prune / backup jobs returned a UPID but never appeared in the floating panel. Now polls every active PBS server via `/nodes/localhost/tasks?running=1` and merges results with PVE + tracker entries.
+- **PBS task progress** — time-based estimate (capped at 50 %) for sync / verify / GC which can run for hours, so the bar never lies.
+- **HA Manager Status no longer shows "No Master / 0 ⁄ 0".** `/pve-node/{host}/cluster/ha/status` was returning PVE's wrapper with `manager_status` nested, but the UI reads `master_node` / `node_status` at the top level. Flattened the response and added `quorate`, `nodes_online`, `nodes_total`.
+- **`/api/v1/ha/status`** — replaced the SSH + `pvesh` path with proxmoxer, and now surfaces `master_node`, `nodes_online`, `nodes_total`, `node_status` alongside `enabled` / `protected_vms` / `quorum`.
+
 ## [2.2.48] - 2026-04-22 🕰️ Time Sync audit + remediation
 
 ### Added

@@ -20,89 +20,57 @@ class HAEnableRequest(BaseModel):
 
 @router.get("/status")
 def check_ha_status(current_user=Depends(get_current_user), db: Session = Depends(get_db)):
-    """Check if High Availability is enabled on Proxmox cluster"""
+    """Check if High Availability is enabled on Proxmox cluster (via API, not SSH)."""
     try:
         from app.models import ProxmoxHost
-        import json
+        from app.services.proxmox import ProxmoxService
 
-        # Get first Proxmox host to check HA status
-        host = db.query(ProxmoxHost).first()
+        host = db.query(ProxmoxHost).filter(ProxmoxHost.is_active == True).first()
         if not host:
             return {
                 "enabled": False,
                 "protected_vms": 0,
                 "manager_status": "unknown",
                 "quorum": False,
-                "message": "No Proxmox hosts configured"
+                "master_node": None,
+                "nodes_online": 0,
+                "nodes_total": 0,
+                "message": "No Proxmox hosts configured",
             }
 
-        # Check if HA is enabled using pvesh
-        if not re.match(r'^[a-zA-Z0-9.\-_]+$', host.hostname):
-            raise HTTPException(status_code=400, detail="Invalid Proxmox hostname")
-        ssh_host = f"root@{host.hostname}"
-        result = subprocess.run(
-            ['ssh', '-o', 'StrictHostKeyChecking=no', '-o', 'BatchMode=yes',
-             ssh_host, 'pvesh get /cluster/ha/status/manager_status --output-format json 2>/dev/null'],
-            capture_output=True, timeout=10, text=True
-        )
+        px = ProxmoxService(host).proxmox
+        wrapper = px.cluster.ha.status.manager_status.get() or {}
+        inner = wrapper.get("manager_status") or {}
+        quorum_info = wrapper.get("quorum") or {}
+        node_status = inner.get("node_status") or {}
+        online = sum(1 for s in node_status.values() if s == "online")
+        master_node = inner.get("master_node")
+        quorate = str(quorum_info.get("quorate", "")) == "1"
 
-        manager_status = "unknown"
-        quorum = False
-        protected_vms = 0
+        try:
+            resources = px.cluster.ha.resources.get() or []
+            protected_vms = len(resources) if isinstance(resources, list) else 0
+        except Exception:
+            protected_vms = 0
 
-        if result.returncode == 0 and result.stdout:
-            try:
-                ha_data = json.loads(result.stdout)
+        if master_node and online > 0:
+            manager_state = "active"
+        elif online > 0:
+            manager_state = "no-master"
+        else:
+            manager_state = "inactive"
 
-                # Parse quorum status
-                if "quorum" in ha_data and isinstance(ha_data["quorum"], dict):
-                    quorum = ha_data["quorum"].get("quorate") == "1"
-
-                # Parse manager status
-                if "manager_status" in ha_data and isinstance(ha_data["manager_status"], dict):
-                    node_status = ha_data["manager_status"].get("node_status", {})
-                    if node_status:
-                        # node_status contains strings like "online", "offline", not dicts
-                        # Get first node's status (should be "online" if HA is working)
-                        first_node_status = next(iter(node_status.values()), "unknown")
-                        # Map Proxmox status to manager status
-                        if first_node_status == "online":
-                            manager_status = "active"
-                        else:
-                            manager_status = first_node_status
-                    else:
-                        manager_status = "active"
-
-                # Get number of protected resources
-                resources_result = subprocess.run(
-                    ['ssh', '-o', 'StrictHostKeyChecking=no', '-o', 'BatchMode=yes',
-                     ssh_host, 'pvesh get /cluster/ha/resources --output-format json 2>/dev/null'],
-                    capture_output=True, timeout=10, text=True
-                )
-
-                if resources_result.returncode == 0:
-                    try:
-                        resources = json.loads(resources_result.stdout)
-                        protected_vms = len(resources) if isinstance(resources, list) else 0
-                    except:
-                        pass
-
-                return {
-                    "enabled": True,
-                    "protected_vms": protected_vms,
-                    "manager_status": manager_status,
-                    "quorum": quorum,
-                    "message": "High Availability is enabled"
-                }
-            except json.JSONDecodeError:
-                logger.error(f"Failed to parse HA status JSON: {result.stdout}")
-
+        enabled = bool(node_status) or protected_vms > 0
         return {
-            "enabled": False,
-            "protected_vms": 0,
-            "manager_status": "unknown",
-            "quorum": False,
-            "message": "High Availability not configured"
+            "enabled": enabled,
+            "protected_vms": protected_vms,
+            "manager_status": manager_state,
+            "quorum": quorate,
+            "master_node": master_node,
+            "nodes_online": online,
+            "nodes_total": len(node_status),
+            "node_status": node_status,
+            "message": "High Availability is enabled" if enabled else "High Availability not configured",
         }
 
     except Exception as e:
@@ -112,7 +80,10 @@ def check_ha_status(current_user=Depends(get_current_user), db: Session = Depend
             "protected_vms": 0,
             "manager_status": "unknown",
             "quorum": False,
-            "message": "Failed to check HA status"
+            "master_node": None,
+            "nodes_online": 0,
+            "nodes_total": 0,
+            "message": "Failed to check HA status",
         }
 
 

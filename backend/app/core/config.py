@@ -26,7 +26,7 @@ def get_app_version():
         # Fallback to hardcoded version if database query fails
         pass
 
-    return "2.2.49"
+    return "2.2.50"
 
 
 class Settings(BaseSettings):
@@ -56,13 +56,18 @@ class Settings(BaseSettings):
         "sqlite:////var/lib/depl0y/db/depl0y.db"
     )
 
-    # CORS
-    BACKEND_CORS_ORIGINS: list = [
+    # CORS — set CORS_ORIGINS in /etc/depl0y/config.env to a comma-separated list of
+    # allowed browser origins (protocol + host + optional :port), e.g.
+    #   CORS_ORIGINS=https://deploy.example.com,https://panel.example.com
+    # When unset we fall back to the local-dev defaults. The localhost entries are
+    # kept in both cases so `npm run dev` against a production backend still works.
+    BACKEND_CORS_ORIGINS: list = sorted({
+        *(o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()),
         "http://localhost:3000",
         "http://localhost:8080",
         "http://127.0.0.1:3000",
         "http://127.0.0.1:8080",
-    ]
+    })
 
     # ISO Storage
     ISO_STORAGE_PATH: str = os.getenv("ISO_STORAGE_PATH", "/var/lib/depl0y/isos")

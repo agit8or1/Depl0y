@@ -1,7 +1,7 @@
 """Setup API endpoints for automated configuration"""
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from app.api.auth import get_current_user
+from app.api.auth import require_admin
 from app.models import ProxmoxHost, ProxmoxNode
 from app.core.database import get_db
 from sqlalchemy.orm import Session
@@ -26,7 +26,7 @@ class ProxmoxClusterSSHRequest(BaseModel):
 def enable_cloud_images(
     request: CloudImageSetupRequest,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user)
+    current_user=Depends(require_admin)
 ):
     """
     Automatically enable cloud images by running the setup script
@@ -211,7 +211,7 @@ def enable_cloud_images(
 def enable_proxmox_cluster_ssh(
     request: ProxmoxClusterSSHRequest,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user)
+    current_user=Depends(require_admin)
 ):
     """
     Set up SSH access between Proxmox cluster nodes

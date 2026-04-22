@@ -2,16 +2,34 @@
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
 from typing import List
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from app.core.database import get_db
 from app.models import CloudImage
 from app.api.auth import get_current_user
 import logging
 import os
+import re
+from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+_FILENAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+
+
+def _validate_filename(v: str) -> str:
+    if not v or not _FILENAME_RE.match(v) or v in (".", "..") or len(v) > 255:
+        raise ValueError("filename must match [A-Za-z0-9._-]{1,255}")
+    return v
+
+
+def _validate_download_url(v: str) -> str:
+    p = urlparse(v)
+    if p.scheme not in ("http", "https") or not p.netloc:
+        raise ValueError("download_url must be a http(s) URL")
+    return v
 
 
 class CloudImageResponse(BaseModel):
@@ -341,6 +359,16 @@ class CloudImageCreate(BaseModel):
     checksum: str | None = None
     download_url: str
 
+    @field_validator("filename")
+    @classmethod
+    def _v_filename(cls, v):
+        return _validate_filename(v)
+
+    @field_validator("download_url")
+    @classmethod
+    def _v_url(cls, v):
+        return _validate_download_url(v)
+
 
 class CloudImageUpdate(BaseModel):
     name: str | None = None
@@ -351,6 +379,20 @@ class CloudImageUpdate(BaseModel):
     checksum: str | None = None
     download_url: str | None = None
     is_available: bool | None = None
+
+    @field_validator("filename")
+    @classmethod
+    def _v_filename(cls, v):
+        if v is None:
+            return v
+        return _validate_filename(v)
+
+    @field_validator("download_url")
+    @classmethod
+    def _v_url(cls, v):
+        if v is None:
+            return v
+        return _validate_download_url(v)
 
 
 @router.post("/", response_model=CloudImageResponse)

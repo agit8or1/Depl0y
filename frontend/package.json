@@ -1,6 +1,6 @@
 {
   "name": "depl0y-frontend",
-  "version": "2.2.49",
+  "version": "2.2.50",
   "description": "Depl0y Frontend - Vue.js deployment panel",
   "private": true,
   "scripts": {
@@ -13,6 +13,7 @@
   "dependencies": {
     "axios": "^1.6.2",
     "chart.js": "^4.4.0",
+    "dompurify": "^3.4.1",
     "leaflet": "^1.9.4",
     "marked": "^17.0.0",
     "pinia": "^2.1.7",

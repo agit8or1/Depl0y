@@ -5,7 +5,50 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.2.49] - 2026-04-20 🛠️ Floating tasks show PBS jobs + HA status fixes
+## [2.2.50] - 2026-04-22 🔐 Security hardening pass
+
+Comprehensive CVE + static-analysis scan across the codebase; everything critical or high-severity fixed in this release. No functional regressions expected — if something breaks, the most likely cause is a tighter input validator rejecting data the old code silently accepted.
+
+### Dependency CVEs patched
+- **python-jose 3.3.0 → 3.4.0** — `PYSEC-2024-232` (algorithm confusion) and `PYSEC-2024-233` (JWT-bomb DoS). Would have let a single crafted token hang a worker or bypass signature checks.
+- **starlette 0.46.2 → 0.49.1** — `CVE-2025-54121` (event-loop block on large multipart) and `CVE-2025-62727` (`Range`-header quadratic-time ReDoS, unauth CPU exhaustion). Required bumping **fastapi 0.115.12 → 0.121.3** (starlette is a transitive dep).
+- **weasyprint 66.0 → 68.0** — `CVE-2025-68616` SSRF-bypass via HTTP redirect; the PDF export path could have been steered at `169.254.169.254` metadata.
+- **python-dotenv 1.1.0 → 1.2.2** — `CVE-2026-28684` symlink-follow arbitrary-file overwrite in `set_key`.
+- **defusedxml 0.7.1** added (OVF parsing; see below).
+
+### Command-injection fixes — `services/deployment.py::_create_cloud_template_automated`
+- All shell-interpolated values (`host.hostname`, `node.node_name`, `storage`, `cloud_image.filename`, `node_ip`) now pass through strict regex validators at function entry; a malformed value raises `ValueError` instead of reaching the shell.
+- `scp` upload converted from `subprocess.run(shell=True)` + f-string to an argv list.
+- Boundary validation added to `CloudImageCreate` / `CloudImageUpdate` (`api/cloud_images.py`) — filename must match `[A-Za-z0-9._-]{1,255}`, `download_url` must be `http(s)://`. These are the fields that fed the shell in the first place.
+
+### OVA/OVF import hardening — `services/vm_import_service.py`
+- **ZipSlip / TarSlip** fixed. `extract_ova()` no longer calls `tarfile.extractall()` / `zipfile.extractall()` blindly. New `_safe_tar_members()` / `_safe_zip_members()` iterators drop any entry whose resolved path escapes the extract dir, plus symlinks / hardlinks / device files / absolute paths. A malicious OVA can no longer overwrite `/etc/passwd` or drop files under `/opt`.
+- **XXE** fixed. OVF XML is now parsed via `defusedxml.ElementTree.parse` (external-entity / DTD attacks disabled). Stdlib `ET` is kept only for type hints.
+
+### Authentication / authorisation
+- `GET /api/v1/system/info` now requires authentication (was unauth; leaked app version + name).
+- `POST /api/v1/setup/cloud-images/enable` and `POST /api/v1/setup/proxmox-cluster-ssh/enable` now require `require_admin` (were `get_current_user`; any signed-in viewer could trigger package installs + SSH-key exchange on Proxmox hosts).
+
+### CORS is now configurable
+- `BACKEND_CORS_ORIGINS` reads from a new `CORS_ORIGINS` env var (comma-separated). Set it in `/etc/depl0y/config.env`:
+  ```
+  CORS_ORIGINS=https://deploy.example.com,https://panel.example.com
+  ```
+  Localhost dev entries remain in place so `npm run dev` keeps working. The old wildcard `allow_methods=["*"]` / `allow_headers=["*"]` with `allow_credentials=True` — an invalid spec combination — is replaced by an explicit allowlist.
+
+### Frontend XSS
+- `AIReportDetail.vue` sanitises `report.rendered_html` through **DOMPurify** before `v-html`. LLM-produced markup can no longer smuggle `<script>` / inline event handlers / `javascript:` URLs into an admin session.
+
+### Ancillary fix discovered during smoke tests
+- `RequestValidationError` handler now stringifies the raw `ValueError` in `ctx.error`; pydantic-v2 includes the exception object, which broke `JSONResponse` serialisation (422 turned into 500 when a validator fired). Affected any endpoint using pydantic `field_validator` — now fully visible.
+
+### Still open (deferred — cost/benefit or bigger change)
+- JWT tokens remain in `localStorage`. Moving to an HTTP-only cookie flow is a bigger refactor; flagged, not shipped.
+- `/vm_import_service.py` upload dir is still `/tmp/depl0y-imports` — hardcoded, low-risk on a single-tenant host.
+- `paramiko.AutoAddPolicy()` still in use in `ssh_hw.py` + `updates.py` — acceptable for a first-contact panel that owns the inventory, flagged as known-accepted.
+- 6 npm moderate advisories (vite / esbuild / vis-network / uuid) — all dev-time or low-impact; tracked.
+
+## [2.2.49] - 2026-04-22 🛠️ Floating tasks show PBS jobs + HA status fixes
 
 ### Fixed
 - **Floating Running Tasks now shows PBS jobs.** `/tasks/running` only polled PVE clusters; PBS-fired sync / verify / GC / prune / backup jobs returned a UPID but never appeared in the floating panel. Now polls every active PBS server via `/nodes/localhost/tasks?running=1` and merges results with PVE + tracker entries.

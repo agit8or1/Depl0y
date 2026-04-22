@@ -10,7 +10,8 @@ import logging
 import subprocess
 import asyncio
 import uuid
-import xml.etree.ElementTree as ET
+import xml.etree.ElementTree as ET  # kept for type hints (Element) only
+from defusedxml.ElementTree import parse as _safe_xml_parse
 from typing import Dict, Any, Optional, List
 
 logger = logging.getLogger(__name__)
@@ -84,7 +85,7 @@ def parse_ovf(ovf_path: str) -> Dict[str, Any]:
         "description": "",
     }
     try:
-        tree = ET.parse(ovf_path)
+        tree = _safe_xml_parse(ovf_path)
         root = tree.getroot()
 
         # VM name
@@ -206,17 +207,58 @@ def parse_ovf(ovf_path: str) -> Dict[str, Any]:
     return specs
 
 
+def _is_within(base: str, target: str) -> bool:
+    """True iff `target` resolves inside `base` (defeats ../ + absolute paths + symlinks)."""
+    base = os.path.realpath(base) + os.sep
+    resolved = os.path.realpath(target)
+    return (resolved + os.sep).startswith(base) or resolved == base.rstrip(os.sep)
+
+
+def _safe_tar_members(tar: tarfile.TarFile, dest: str):
+    """Yield only tar members that resolve inside `dest` and are regular files / dirs.
+    Rejects: absolute paths, traversal, symlinks, device files, hardlinks — i.e. classic
+    TarSlip vectors that `tarfile.extractall()` would otherwise honour."""
+    for m in tar.getmembers():
+        if m.name.startswith("/") or ".." in m.name.split("/"):
+            logger.warning(f"OVA: rejecting tar member with unsafe name: {m.name!r}")
+            continue
+        if m.issym() or m.islnk() or m.isdev():
+            logger.warning(f"OVA: rejecting non-regular tar member: {m.name!r}")
+            continue
+        target = os.path.join(dest, m.name)
+        if not _is_within(dest, target):
+            logger.warning(f"OVA: rejecting tar member escaping dest: {m.name!r}")
+            continue
+        yield m
+
+
+def _safe_zip_members(zf: zipfile.ZipFile, dest: str):
+    for info in zf.infolist():
+        name = info.filename
+        if name.startswith("/") or ".." in name.split("/"):
+            logger.warning(f"OVA: rejecting zip entry with unsafe name: {name!r}")
+            continue
+        target = os.path.join(dest, name)
+        if not _is_within(dest, target):
+            logger.warning(f"OVA: rejecting zip entry escaping dest: {name!r}")
+            continue
+        yield info
+
+
 def extract_ova(ova_path: str, extract_dir: str) -> Optional[str]:
     """Extract OVA archive to extract_dir. Returns path to OVF file if found."""
     ovf_path = None
+    os.makedirs(extract_dir, exist_ok=True)
     try:
         with tarfile.open(ova_path, "r") as tar:
-            tar.extractall(extract_dir)
+            safe = list(_safe_tar_members(tar, extract_dir))
+            tar.extractall(extract_dir, members=safe)
     except Exception as e:
         logger.warning(f"tarfile extraction failed: {e}. Trying zip...")
         try:
             with zipfile.ZipFile(ova_path, "r") as zf:
-                zf.extractall(extract_dir)
+                for info in _safe_zip_members(zf, extract_dir):
+                    zf.extract(info, extract_dir)
         except Exception as e2:
             logger.warning(f"zipfile extraction also failed: {e2}")
             return None

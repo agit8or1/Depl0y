@@ -70,13 +70,14 @@ app = FastAPI(
     openapi_url="/openapi.json",
 )
 
-# Configure CORS
+# Configure CORS — explicit method + header allowlist (wildcard + credentials is an
+# invalid combo per the CORS spec and several browsers silently reject it).
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.BACKEND_CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Requested-With", "Accept", "Accept-Language"],
 )
 
 # Add security headers middleware
@@ -226,18 +227,29 @@ async def audit_middleware(request: Request, call_next):
 # Add validation error handler for debugging
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    """Log validation errors with details"""
+    """Log validation errors and return a JSON-serialisable 422.
+
+    Pydantic-v2 errors may carry a raw Exception under ``ctx.error`` which
+    ``JSONResponse`` can't serialise — stringify it before handing the list
+    to the response encoder."""
+    errors = exc.errors()
+    safe_errors = []
+    for e in errors:
+        e = dict(e)
+        ctx = e.get("ctx")
+        if isinstance(ctx, dict) and "error" in ctx:
+            ctx = dict(ctx)
+            ctx["error"] = str(ctx["error"])
+            e["ctx"] = ctx
+        safe_errors.append(e)
     logger.error(f"Validation error on {request.method} {request.url}")
-    logger.error(f"Validation errors: {exc.errors()}")
+    logger.error(f"Validation errors: {safe_errors}")
     try:
         body = await request.body()
         logger.error(f"Request body: {body.decode()}")
-    except:
+    except Exception:
         pass
-    return JSONResponse(
-        status_code=422,
-        content={"detail": exc.errors()},
-    )
+    return JSONResponse(status_code=422, content={"detail": safe_errors})
 
 
 @app.on_event("startup")

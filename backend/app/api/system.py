@@ -44,8 +44,11 @@ def invalidate_settings_cache():
     _settings_last_fetch = 0
 
 
+from app.api.auth import get_current_user as _sysinfo_auth
+
+
 @router.get("/info")
-def get_system_info(db: Session = Depends(get_db)) -> Dict[str, str]:
+def get_system_info(db: Session = Depends(get_db), current_user=Depends(_sysinfo_auth)) -> Dict[str, str]:
     """Get system information including version"""
     try:
         # Get version from database

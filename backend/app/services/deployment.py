@@ -13,11 +13,28 @@ from app.services.proxmox import ProxmoxService
 from app.services.cloudinit import CloudInitService
 from app.core.security import encrypt_data, decrypt_data
 import logging
+import re
 import time
 import shlex
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
+
+
+_HOSTNAME_RE = re.compile(r"^[A-Za-z0-9.\-_]{1,253}$")
+_NODE_NAME_RE = re.compile(r"^[A-Za-z0-9\-_]{1,63}$")
+_STORAGE_RE = re.compile(r"^[A-Za-z0-9\-_.]{1,64}$")
+_FILENAME_RE = re.compile(r"^[A-Za-z0-9._\-]{1,255}$")
+_IP_RE = re.compile(r"^[0-9a-fA-F:.]{1,45}$")
+
+
+def _safe(value: str, pattern: re.Pattern, label: str) -> str:
+    """Validate a value against a strict regex and return it; raise if invalid.
+    Use for inputs that will be interpolated into shell strings — if it fails
+    here we refuse to run the command rather than escape it."""
+    if not isinstance(value, str) or not pattern.match(value):
+        raise ValueError(f"invalid {label}: {value!r}")
+    return value
 
 
 class DeploymentService:
@@ -1263,10 +1280,18 @@ runcmd:
         """
         import subprocess
 
-        logger.info(f"Creating cloud image template {template_vmid} on node {node.node_name} automatically...")
+        # Refuse to run if any value fails the strict format check; every
+        # interpolation below is then trivially injection-free.
+        hostname = _safe(host.hostname, _HOSTNAME_RE, "host.hostname")
+        target_node = _safe(node.node_name, _NODE_NAME_RE, "node.node_name")
+        storage = _safe(str(storage), _STORAGE_RE, "storage")
+        cloud_filename = _safe(cloud_image.filename, _FILENAME_RE, "cloud_image.filename")
+        template_vmid = int(template_vmid)  # raises TypeError if non-numeric
+
+        logger.info(f"Creating cloud image template {template_vmid} on node {target_node} automatically...")
 
         # Download cloud image if needed
-        cloud_image_path = cloud_image.storage_path or f"/var/lib/depl0y/cloud-images/{cloud_image.filename}"
+        cloud_image_path = cloud_image.storage_path or f"/var/lib/depl0y/cloud-images/{cloud_filename}"
 
         if not cloud_image.is_downloaded:
             logger.info(f"Downloading {cloud_image.name} from {cloud_image.download_url}")
@@ -1291,8 +1316,7 @@ runcmd:
 
         # SSH to cluster host and execute commands that target the specific node
         # Use pvesh or qm commands directly on cluster host with node parameter
-        ssh_host = f"root@{host.hostname}"
-        target_node = node.node_name
+        ssh_host = f"root@{hostname}"
         logger.info(f"SSH target: {ssh_host}, will create template on node: {target_node}")
 
         # Step 1: Create VM (delete first if it exists but isn't a template)
@@ -1350,10 +1374,17 @@ pvesh create /nodes/{target_node}/qemu \\
         # In a Proxmox cluster, storage is typically shared or accessible via the cluster
         # We upload to the cluster host and execute commands there that target the specific node
         logger.info(f"Uploading cloud image to cluster host...")
-        upload_script = f"""
-scp -o StrictHostKeyChecking=no -o BatchMode=yes {cloud_image_path} {ssh_host}:/tmp/{cloud_image.filename}
-"""
-        result = subprocess.run(upload_script, shell=True, capture_output=True)
+        # cloud_image_path is derived from a validated filename; no interpolation risk.
+        result = subprocess.run(
+            [
+                "scp",
+                "-o", "StrictHostKeyChecking=no",
+                "-o", "BatchMode=yes",
+                cloud_image_path,
+                f"{ssh_host}:/tmp/{cloud_filename}",
+            ],
+            capture_output=True,
+        )
         if result.returncode != 0:
             raise Exception(f"Failed to upload to cluster host: {result.stderr.decode()}")
 
@@ -1372,7 +1403,7 @@ scp -o StrictHostKeyChecking=no -o BatchMode=yes {cloud_image_path} {ssh_host}:/
         if ip_result.returncode != 0 or not ip_result.stdout.strip():
             raise Exception(f"Failed to get IP for node {target_node}")
 
-        node_ip = ip_result.stdout.strip()
+        node_ip = _safe(ip_result.stdout.strip(), _IP_RE, "corosync node_ip")
         logger.info(f"Node {target_node} IP: {node_ip}")
 
         # Step 4: Import disk and configure on specific node
@@ -1386,13 +1417,13 @@ set -e  # Exit on any error
 
 # Copy image file to target node
 echo "Copying cloud image to target node {target_node}..."
-scp -o StrictHostKeyChecking=no /tmp/{cloud_image.filename} root@{node_ip}:/tmp/{cloud_image.filename}
+scp -o StrictHostKeyChecking=no /tmp/{cloud_filename} root@{node_ip}:/tmp/{cloud_filename}
 echo "Cloud image copied successfully"
 
 # Run qm importdisk ON the target node (needs local VM config)
 # This outputs: "Successfully imported disk as unused0"
 echo "Importing disk to storage {storage}..."
-IMPORT_OUTPUT=$(ssh -o StrictHostKeyChecking=no root@{node_ip} "qm importdisk {template_vmid} /tmp/{cloud_image.filename} {storage} --format qcow2 2>&1")
+IMPORT_OUTPUT=$(ssh -o StrictHostKeyChecking=no root@{node_ip} "qm importdisk {template_vmid} /tmp/{cloud_filename} {storage} --format qcow2 2>&1")
 echo "$IMPORT_OUTPUT"
 
 # Verify disk was imported
@@ -1444,8 +1475,8 @@ echo "✓ scsi0 disk verified in configuration"
 
 # Cleanup and convert to template
 echo "Cleaning up temporary files..."
-ssh -o StrictHostKeyChecking=no root@{node_ip} "rm -f /tmp/{cloud_image.filename}"
-rm -f /tmp/{cloud_image.filename}
+ssh -o StrictHostKeyChecking=no root@{node_ip} "rm -f /tmp/{cloud_filename}"
+rm -f /tmp/{cloud_filename}
 
 echo "Converting VM to template..."
 pvesh create /nodes/{target_node}/qemu/{template_vmid}/template

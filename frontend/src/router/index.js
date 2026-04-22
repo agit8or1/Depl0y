@@ -525,6 +525,12 @@ const router = createRouter({
       meta: { requiresAuth: true }
     },
     {
+      path: '/time-sync',
+      name: 'TimeSync',
+      component: () => import('@/views/TimeSync.vue'),
+      meta: { requiresAuth: true, requiresOperator: true }
+    },
+    {
       path: '/:pathMatch(.*)*',
       name: 'NotFound',
       component: () => import('@/views/NotFound.vue')

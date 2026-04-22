@@ -100,8 +100,8 @@
         <span class="nav-section-arrow" :class="{ 'arrow-collapsed': collapsed.storage }">›</span>
       </div>
       <div v-show="!collapsed.storage" class="nav-section-items">
-        <NavItem v-if="isAdmin" :to="'/storage-management'" :icon="'🗄️'" :label="'Storage'" @click="handleNavClick" />
-        <NavItem v-if="isAdmin" :to="'/pbs-management'" :icon="'💽'" :label="'PBS'" @click="handleNavClick" />
+        <NavItem v-if="isAdmin" :to="'/storage-management'" :icon="'🗄️'" :label="'Storage Servers'" @click="handleNavClick" />
+        <NavItem v-if="isAdmin" :to="'/pbs-management'" :icon="'💽'" :label="'PBS Servers'" @click="handleNavClick" />
         <NavItem :to="'/backup'" :icon="'💾'" :label="t('nav.backup')" @click="handleNavClick" />
         <NavItem :to="'/snapshots'" :icon="'📷'" :label="t('nav.snapshots')" @click="handleNavClick" />
         <NavItem :to="'/images'" :icon="'💿'" :label="t('nav.images')" @click="handleNavClick" />
@@ -132,6 +132,7 @@
           <NavItem v-if="linuxAgentEnabled" :to="'/linux-vms'" :icon="'🛡️'" :label="'Linux Security'" @click="handleNavClick" />
           <NavItem :to="'/users'" :icon="'👥'" :label="t('nav.users')" @click="handleNavClick" />
           <NavItem :to="'/system-health'" :icon="'💚'" :label="'Health'" @click="handleNavClick" />
+          <NavItem :to="'/time-sync'" :icon="'🕒'" :label="'Time Sync'" @click="handleNavClick" />
 
           <!-- Less-frequently-used tools — collapsed by default -->
           <div class="nav-subsection-header" @click="moreAdmin = !moreAdmin" role="button" tabindex="0" @keydown.enter.prevent="moreAdmin = !moreAdmin" @keydown.space.prevent="moreAdmin = !moreAdmin">
@@ -201,7 +202,7 @@ const SECTION_ROUTES = {
   compute: ['/containers', '/create-lxc', '/create-pve-vm', '/deploy', '/import-vm', '/llm-deploy', '/templates', '/vms', '/vm-management', '/vm-groups', '/bulk-ops', '/vm-search'],
   infrastructure: ['/ha-management', '/replication', '/idrac', '/network', '/sdn', '/firewall-manager', '/node-monitor', '/proxmox', '/topology'],
   storage: ['/backup', '/snapshots', '/pbs-management', '/storage-management', '/images', '/ceph', '/pools'],
-  admin: ['/audit-log', '/linux-vms', '/security', '/alerts', '/analysis', '/ai-reports', '/notifications', '/system-health', '/system-logs', '/updates', '/users', '/pve-users', '/integrations', '/api-explorer'],
+  admin: ['/audit-log', '/linux-vms', '/security', '/alerts', '/analysis', '/ai-reports', '/notifications', '/system-health', '/system-logs', '/updates', '/users', '/pve-users', '/integrations', '/time-sync', '/api-explorer'],
   account: ['/about', '/documentation', '/profile', '/settings', '/support'],
 }
 

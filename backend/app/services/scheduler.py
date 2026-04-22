@@ -413,6 +413,28 @@ def run_node_metric_snapshot():
         db.close()
 
 
+def run_time_sync_drift_check():
+    """Hourly: audit clocks/NTP on PVE nodes, PBS, and BMCs; alert on drift."""
+    from app.core.database import SessionLocal
+    from app.services.time_sync import check_drift_and_alert
+
+    db = SessionLocal()
+    try:
+        summary = check_drift_and_alert(db)
+        logger.info(
+            "Time sync drift check: total=%d drifting=%d ntp_off=%d alerts=%d resolved=%d",
+            summary.get("total", 0),
+            summary.get("drifting", 0),
+            summary.get("ntp_off", 0),
+            summary.get("alerts", 0),
+            summary.get("resolved", 0),
+        )
+    except Exception as exc:
+        logger.error("run_time_sync_drift_check failed: %s", exc)
+    finally:
+        db.close()
+
+
 def run_ai_report_schedules():
     """Every 5 min: find due ReportSchedules and trigger generation."""
     from app.core.database import SessionLocal
@@ -547,6 +569,12 @@ def start_scheduler(update_hours: int = 24, scan_hours: int = 24):
         run_ai_report_schedules,
         IntervalTrigger(minutes=5),
         id="ai_report_schedules",
+        max_instances=1,
+    )
+    _scheduler.add_job(
+        run_time_sync_drift_check,
+        IntervalTrigger(hours=1),
+        id="time_sync_drift_check",
         max_instances=1,
     )
     _scheduler.start()

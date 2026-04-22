@@ -1158,6 +1158,15 @@ export default {
     getGraph: (params) => api.get('/topology/graph', { params }),
   },
 
+  // Time Sync — clock + NTP audit across PVE nodes, PBS, BMCs
+  timeSync: {
+    getStatus: (params) => api.get('/time-sync/status', { params }),
+    fix: (data) => api.post('/time-sync/fix', data),
+    fixAll: (data) => api.post('/time-sync/fix-all', data),
+    getSettings: () => api.get('/time-sync/settings'),
+    updateSettings: (data) => api.put('/time-sync/settings', data),
+  },
+
   // SDN — Software-Defined Networking
   sdn: {
     listVnets: (hostId) => api.get(`/sdn/${hostId}/vnets`),

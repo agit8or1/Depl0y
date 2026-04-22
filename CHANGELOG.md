@@ -5,6 +5,37 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.48] - 2026-04-22 🕰️ Time Sync audit + remediation
+
+### Added
+- **New admin page `/time-sync`** — single-pane audit of clock + NTP state across every PVE node, PBS server, and iDRAC/BMC in the fleet.
+  - Summary tiles: Total · OK · Drifting · Unreachable · NTP-enabled · NTP-disabled · NTP-unknown.
+  - Matrix table: Target · Kind · Address · Local Time · Drift (colored by magnitude) · NTP state · NTP servers · Actions.
+  - Per-row **Fix** button and a top-right **Fix All Drifting** batch action (admin only, with confirm).
+  - Settings modal: configurable default NTP server + drift threshold (stored in `system_settings`).
+- **Probe strategy per target kind:**
+  - **PVE nodes** — `pve.nodes(x).time.get()` + SSH `chronyc tracking` / `timedatectl status`.
+  - **PBS** — SSH into `PBSServer.hostname` using stored OS creds; parses `chronyc sources` / `timedatectl`.
+  - **iDRAC / BMC** — Redfish Manager `DateTime` + `NTPConfigGroup.*` attributes.
+- **Remediation:**
+  - **PVE / PBS** — SSH: `timedatectl set-ntp true`, restart `chrony` / `systemd-timesyncd`, `chronyc makestep` to force immediate step.
+  - **iDRAC** — PATCH `/Managers/iDRAC.Embedded.1/Attributes` with `NTPConfigGroup.1.NTPEnable=Enabled` + `NTPConfigGroup.1.NTP1=<server>`.
+- **Scheduled drift check** — new apscheduler job `run_time_sync_drift_check` runs hourly. Fires alert (rule_key `time_sync:<kind>:<id>`) when drift > threshold or NTP disabled; auto-acks when drift clears.
+- 30-second in-memory cache on `/status` so opening the page is instant after the first load.
+- Endpoints: `GET /time-sync/status`, `POST /fix`, `POST /fix-all`, `GET|PUT /settings`.
+
+### Changed
+- **PBS Servers / Storage Servers labels restored** — v2.2.47 shortened them to "PBS" and "Storage"; that was too ambiguous next to the overview pages. Back to explicit labels.
+
+### Live state (for reference)
+- 13 targets detected: 5 PVE nodes + 2 PBS + 5 node iDRACs + 1 PBS iDRAC.
+- 6 OK / 6 drifting / 1 unreachable.
+
+### Known limitations
+- API-token-only PBS entries can't be SSH'd from depl0y; NTP state shows unknown. Add username+password to the PBS record to enable.
+- HPE iLO remediation not implemented (attribute path is Dell-specific). Dell iDRAC fully supported.
+- First probe is slow (~60s) when BMCs are unreachable — bounded by TLS timeouts; 30s cache covers subsequent visits.
+
 ## [2.2.47] - 2026-04-22 🧹 Condensed sidebar menu
 
 ### Changed — sidebar cleanup

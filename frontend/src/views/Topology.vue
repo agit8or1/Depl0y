@@ -90,6 +90,7 @@
 import { ref, reactive, onMounted, onBeforeUnmount, computed, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { Network } from 'vis-network/standalone'
+import 'vis-network/styles/vis-network.css'
 import api from '@/services/api'
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -624,6 +625,10 @@ export default {
   border: 1px solid var(--border-color, #e5e7eb);
   border-radius: 8px;
   overflow: hidden;
+  /* Explicit height so vis-network canvas can size itself — height:100%
+     on the inner container only works when the parent has a real height,
+     not just min-height. */
+  height: calc(100vh - 200px);
   min-height: 600px;
 }
 .graph-container {
@@ -631,6 +636,7 @@ export default {
   height: 100%;
   min-height: 600px;
 }
+.graph-container canvas { display: block; }
 .graph-overlay {
   position: absolute;
   inset: 0;

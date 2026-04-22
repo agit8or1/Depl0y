@@ -5,6 +5,23 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.41] - 2026-04-22 🔧 Topology canvas fix + sync-alert diagnosis
+
+### Fixed
+- **Topology page rendered a blank canvas** — two issues: `vis-network/styles/vis-network.css` was never imported (the library needs it for proper canvas layout), and `.topo-graph` used `min-height` only while the inner `.graph-container` tried to `height: 100%` — which collapses when the parent has no explicit height. Added the CSS import and set `.topo-graph` to `height: calc(100vh - 200px)`. Graph now renders all 84+ nodes on load.
+
+### Clarified (not code)
+- **pbs1 → pbs2 sync alerts aren't firing because pbs2 isn't in depl0y's DB.** `SELECT * FROM pbs_servers` returns only pbs1 (id=5). The alert engine can only watch servers it knows about; a pull sync job on pbs2 is invisible to us until pbs2 is re-added. **Re-add pbs2 under PBS Management → Add Server** (use Password auth per v2.2.29 or an API token). Alerts will start firing on the next engine cycle once pbs2 is registered and its `/config/sync` list contains a job whose `last-run-state` contains "error".
+- **pve05 `apt-get update` exit code 100** is a Proxmox-without-subscription footgun, not a depl0y bug. The stock `/etc/apt/sources.list.d/pve-enterprise.list` points at `https://enterprise.proxmox.com` which returns 401 for unsubscribed hosts; `apt-get` always exits 100 when any repo fails, even though the other repos parsed successfully. That's why depl0y still shows **129 pending updates** despite the task failing. Fix on the node: disable the enterprise repo and enable the no-subscription one:
+  ```bash
+  # on pve05 as root
+  sed -i 's|^deb |# deb |' /etc/apt/sources.list.d/pve-enterprise.list
+  sed -i 's|^deb |# deb |' /etc/apt/sources.list.d/ceph.list 2>/dev/null || true
+  echo 'deb http://download.proxmox.com/debian/pve bookworm pve-no-subscription' > /etc/apt/sources.list.d/pve-no-subscription.list
+  apt-get update
+  ```
+  Then re-click Refresh in the UI.
+
 ## [2.2.40] - 2026-04-22 🗺️ Topology map + draw.io / PNG / SVG exports
 
 ### Added

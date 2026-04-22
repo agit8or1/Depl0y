@@ -490,11 +490,13 @@ def run_job(
                     pass
             upid = svc.run_sync_job(job_id, direction=direction)
             return {"upid": upid, "job_id": job_id, "job_type": "sync", "direction": direction}
+        # PBS run actions live under /admin/<type>/{id}/run — the /config/ path
+        # is for configuration CRUD only and 404s for run.
         run_paths = {
-            "verify": f"/config/verify/{job_id}/run",
-            "prune": f"/config/prune/{job_id}/run",
+            "verify": f"/admin/verify/{job_id}/run",
+            "prune": f"/admin/prune/{job_id}/run",
         }
-        path = run_paths.get(job_type, f"/config/sync/{job_id}/run")
+        path = run_paths.get(job_type, f"/admin/sync/{job_id}/run")
         upid = svc._post(path)
         return {"upid": upid, "job_id": job_id, "job_type": job_type}
     except HTTPException:

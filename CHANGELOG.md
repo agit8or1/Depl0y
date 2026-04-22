@@ -5,6 +5,16 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.46] - 2026-04-22 🏃 PBS Run Now — correct /admin/ path
+
+### Fixed
+- **Run Now on any PBS job returned 502.** Backend was POSTing to `/config/sync/{id}/run` — which PBS 4.x returns 404 for. Run actions live under `/admin/<type>/{id}/run`. Same story for verify and prune jobs: `/config/verify/{id}/run` 404s, `/admin/verify/{id}/run` works.
+- `PBSService.run_sync_job` no longer passes a `sync-direction` query param — PBS's admin endpoint rejects it with `schema does not allow additional properties` and infers the direction from the stored config.
+- `POST /api/v1/pbs-mgmt/{id}/jobs/{job_id}/run` for sync / verify / prune all route through `/admin/...`.
+
+### Verified
+- POST against pbs1's push job `s-cd228a39-4d1d` now returns 200 with a fresh UPID: `UPID:pbs1:...:syncjob:PBS2...:root@pam!depl0y:`.
+
 ## [2.2.45] - 2026-04-22 📤 PBS push-sync jobs finally visible
 
 ### Fixed

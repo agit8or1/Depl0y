@@ -455,10 +455,14 @@ class PBSService:
         return self._delete(f"/config/sync/{job_id}")
 
     def run_sync_job(self, job_id: str, direction: str = "pull") -> Any:
-        """Trigger a sync job to run immediately. Direction ('pull' or 'push')
-        matters on PBS 4.x — the run endpoint is gated by it."""
-        qs = f"?sync-direction={direction}" if direction and direction != "pull" else ""
-        return self._post(f"/config/sync/{job_id}/run{qs}")
+        """Trigger a sync job to run immediately.
+
+        PBS puts the run action under /admin/sync/{id}/run (NOT /config/...).
+        The admin endpoint dispatches to the correct direction internally —
+        no sync-direction query param is accepted (returns 400). Direction
+        kept in the signature for caller clarity only."""
+        _ = direction  # not passed — PBS figures it out from the stored config
+        return self._post(f"/admin/sync/{job_id}/run")
 
     def get_tapes(self) -> Dict[str, Any]:
         """

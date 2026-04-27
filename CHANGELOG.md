@@ -5,6 +5,22 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.63] - 2026-04-27 🔗 Top-level Add Node button
+
+### Added
+- **`+ Add Node` button alongside `+ Add Datacenter` in the page header.** From the top level: pick the target cluster from a dropdown, pick a standalone host from a dropdown, root password — done. Disabled with a clear tooltip when there are no eligible standalones or no multi-node clusters yet.
+- The same modal is reused from the per-cluster `+ Add Node` button on each cluster card; the cluster picker is hidden when the cluster is already known.
+
+## [2.2.62] - 2026-04-27 🔗 Streamlined cluster join + remove
+
+### Added
+- **`＋ Add Node` and `－ Remove Node` buttons** sit directly on every cluster's info row (next to the node count) — no longer buried in the More menu.
+- **Add Node Wizard**: from a cluster card, pick a standalone host from a dropdown of *available* standalones, enter root password, click Join. Fingerprint + cluster node address are auto-fetched and tucked under "Advanced" (only override if the join fails). Success polls cluster status until the new node appears, then auto-deletes the standalone host entry.
+
+### Changed
+- **Remove Node modal** now loads the live cluster node list from `/cluster/{id}/status` and presents a dropdown — no more typing the exact node name. Cluster master is auto-disabled in the picker (you can't remove the box you're running the unjoin from).
+- **Join Cluster modal** stripped of instructional copy and form hints. Required fields collapse to *Cluster + Root password*; fingerprint/addr live under an "Advanced" disclosure that's only shown after a cluster is selected.
+
 ## [2.2.61] - 2026-04-27 🧹 Host card actions: zoom-tolerant layout
 
 ### Fixed

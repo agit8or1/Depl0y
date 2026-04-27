@@ -28,6 +28,13 @@
             {{ testingAll ? 'Testing...' : 'Test All' }}
           </button>
           <button @click="showAddModal = true" class="btn btn-primary">+ Add Datacenter</button>
+          <button
+            @click="openAddNodeWizardTopLevel()"
+            class="btn btn-outline"
+            :disabled="standaloneHosts.length === 0 || hosts.length < 2"
+            :title="standaloneHosts.length === 0 ? 'Add a standalone datacenter first' : (hosts.length < 2 ? 'Need at least one cluster + one standalone host' : 'Join a standalone host into an existing datacenter as a node')">
+            + Add Node
+          </button>
         </div>
       </div>
 
@@ -106,12 +113,20 @@
               <span class="ci-label">Nodes</span>
               <span class="ci-value">{{ getFedSummary(host.id).node_count }}</span>
               <button
-                class="btn btn-outline btn-xs"
-                style="margin-left:0.5rem;padding:1px 6px;font-size:0.7rem;"
+                class="btn btn-outline btn-xs ci-action-btn"
                 @click.stop="refreshClusterNodes(host.id)"
                 :disabled="refreshingNodes[host.id]"
                 title="Fetch live cluster membership from Proxmox"
-              >{{ refreshingNodes[host.id] ? '…' : '⟳ Refresh' }}</button>
+              >{{ refreshingNodes[host.id] ? '…' : '⟳' }}</button>
+              <button
+                class="btn btn-outline btn-xs ci-action-btn"
+                @click.stop="openAddNodeWizard(host)"
+                title="Join a standalone host into this cluster">＋ Add Node</button>
+              <button
+                v-if="getFedSummary(host.id).node_count > 1"
+                class="btn btn-outline btn-xs ci-action-btn ci-action-danger"
+                @click.stop="openUnjoinCluster(host)"
+                title="Remove a node from this cluster">－ Remove Node</button>
             </div>
             <!-- Live node list (shown after clicking Refresh) -->
             <div v-if="hostClusterNodes[host.id]" class="cluster-node-list">
@@ -1080,28 +1095,95 @@
     </div>
   </div>
 
+  <!-- Add Node Modal (works both cluster-card and top-level invocations) -->
+  <div v-if="showAddNodeModal" class="modal-overlay" @click.self="closeAddNodeModal">
+    <div class="modal-container" style="max-width:480px">
+      <div class="modal-header">
+        <h3>Add Node{{ addNodeMasterHost ? ' to ' + addNodeMasterHost.name : '' }}</h3>
+        <button class="btn-close" @click="closeAddNodeModal">×</button>
+      </div>
+      <div class="modal-body">
+        <div v-if="!addNodeMasterHost" class="form-group">
+          <label class="form-label">Datacenter / cluster <span class="req">*</span></label>
+          <select v-model="addNodeMasterHostId" @change="onAddNodeMasterChange(addNodeMasterHostId)" class="form-control">
+            <option value="">— Select cluster —</option>
+            <option v-for="h in clusterHosts" :key="h.id" :value="h.id">{{ h.name }} ({{ h.hostname }})</option>
+          </select>
+          <p v-if="clusterHosts.length === 0" class="form-hint">No multi-node clusters yet. Form a cluster on a Proxmox host first (e.g. via PVE UI → Datacenter → Cluster → Create), then it will appear here.</p>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Standalone host to add <span class="req">*</span></label>
+          <select v-model="addNodeTargetId" class="form-control">
+            <option value="">— Select host —</option>
+            <option v-for="h in standaloneHosts" :key="h.id" :value="h.id">{{ h.name }} ({{ h.hostname }})</option>
+          </select>
+          <p v-if="standaloneHosts.length === 0" class="form-hint">No standalone hosts available. Add one with the "Add Datacenter" button first.</p>
+        </div>
+
+        <div v-if="addNodeTargetId && addNodeMasterHost" class="form-group">
+          <label class="form-label">Root password <span class="req">*</span></label>
+          <input v-model="addNodePassword" type="password" class="form-control" placeholder="root@pam on the cluster master" autocomplete="new-password" />
+        </div>
+
+        <details v-if="addNodeTargetId" class="form-group" style="margin-top:0.5rem">
+          <summary class="text-xs text-muted" style="cursor:pointer">Advanced (auto-detected — only override if join fails)</summary>
+          <div class="form-group" style="margin-top:0.5rem">
+            <label class="form-label">Fingerprint</label>
+            <div class="input-with-badge">
+              <input v-model="addNodeFingerprint" class="form-control" :disabled="fetchingAddNodeInfo" />
+              <span v-if="fetchingAddNodeInfo" class="input-badge">Fetching…</span>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Cluster node address</label>
+            <input v-model="addNodeAddr" class="form-control" />
+          </div>
+        </details>
+
+        <div v-if="addNodeError" class="alert alert-danger mt-1">{{ addNodeError }}</div>
+
+        <div v-if="addNodeVerifyStatus === 'verifying'" class="alert alert-info mt-1" style="background:rgba(59,130,246,0.12);border:1px solid rgba(59,130,246,0.3);color:#93c5fd;">
+          <span style="animation:spin 1s linear infinite;display:inline-block;margin-right:0.4rem;">⟳</span>
+          Polling cluster — waiting for the node to appear… (up to 3 min)
+        </div>
+        <div v-if="addNodeVerifyStatus === 'confirmed'" class="alert alert-success mt-1">
+          {{ addNodeSuccess }} The standalone host entry has been removed automatically.
+        </div>
+        <div v-if="addNodeVerifyStatus === 'timeout'" class="alert alert-danger mt-1">
+          Verification timed out — check <code>pvecm status</code> on the cluster master.
+        </div>
+
+        <div v-if="addNodeVerifyStatus !== 'confirmed'" class="flex gap-1 mt-2">
+          <button
+            class="btn btn-primary"
+            @click="submitAddNode"
+            :disabled="addingNode || !addNodeMasterHost || !addNodeTargetId || !addNodePassword || !addNodeFingerprint"
+          >
+            {{ addingNode ? 'Joining…' : 'Join' }}
+          </button>
+          <button class="btn btn-outline" @click="closeAddNodeModal">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Unjoin Cluster Modal -->
   <div v-if="showUnjoinClusterModal" class="modal-overlay" @click.self="showUnjoinClusterModal = false">
     <div class="modal-container" style="max-width:460px">
       <div class="modal-header">
-        <h3>Remove Node from Cluster</h3>
+        <h3>Remove Node from {{ unjoinClusterName || 'Cluster' }}</h3>
         <button class="btn-close" @click="showUnjoinClusterModal = false">×</button>
       </div>
       <div class="modal-body">
-        <p class="text-sm text-muted mb-2">
-          Select which node to remove from the cluster. Run this from an <strong>active cluster member</strong> (not the node being removed).
-        </p>
-        <div class="form-group">
-          <label class="form-label">Active cluster member (host to run from) <span class="req">*</span></label>
-          <select v-model="unjoinMasterHostId" class="form-control">
-            <option value="">— Select host —</option>
-            <option v-for="h in hosts" :key="h.id" :value="h.id">{{ h.name }} ({{ h.hostname }})</option>
-          </select>
-        </div>
         <div class="form-group">
           <label class="form-label">Node to remove <span class="req">*</span></label>
-          <input v-model="unjoinNodeName" class="form-control" placeholder="e.g. pve05" />
-          <p class="form-hint">Exact Proxmox node name (not the depl0y host name).</p>
+          <select v-model="unjoinNodeName" class="form-control" :disabled="loadingUnjoinNodes">
+            <option value="">{{ loadingUnjoinNodes ? 'Loading nodes…' : '— Select node —' }}</option>
+            <option v-for="n in unjoinNodeChoices" :key="n.name" :value="n.name" :disabled="n.local">
+              {{ n.name }}{{ n.local ? ' (this is the cluster master — pick another)' : '' }}
+            </option>
+          </select>
         </div>
         <div v-if="unjoinError" class="alert alert-danger mt-1">{{ unjoinError }}</div>
         <div v-if="unjoinSuccess" class="alert alert-success mt-1">{{ unjoinSuccess }}</div>
@@ -1111,7 +1193,7 @@
             @click="submitUnjoin"
             :disabled="unjoining || !unjoinMasterHostId || !unjoinNodeName"
           >
-            {{ unjoining ? 'Removing...' : 'Remove Node' }}
+            {{ unjoining ? 'Removing...' : `Remove ${unjoinNodeName || 'Node'}` }}
           </button>
           <button class="btn btn-outline" @click="showUnjoinClusterModal = false">Cancel</button>
         </div>
@@ -1127,42 +1209,38 @@
         <button class="btn-close" @click="closeJoinModal">×</button>
       </div>
       <div class="modal-body">
-        <p class="text-sm text-muted mb-2">
-          Join <strong>{{ joinClusterTarget?.name }}</strong> into an existing Proxmox cluster.
-        </p>
+        <div class="form-group">
+          <label class="form-label">Joining</label>
+          <div class="form-control" style="background:var(--background);font-weight:600">{{ joinClusterTarget?.name }} ({{ joinClusterTarget?.hostname }})</div>
+        </div>
 
         <div class="form-group">
-          <label class="form-label">Cluster to join <span class="req">*</span></label>
+          <label class="form-label">Into cluster <span class="req">*</span></label>
           <select v-model="joinClusterMasterHostId" class="form-control" @change="fetchJoinInfo">
-            <option value="">— Select existing datacenter —</option>
+            <option value="">— Select cluster —</option>
             <option v-for="h in joinableHosts" :key="h.id" :value="h.id">{{ h.name }} ({{ h.hostname }})</option>
           </select>
         </div>
 
-        <div class="form-group">
-          <label class="form-label">Fingerprint</label>
-          <div class="input-with-badge">
-            <input
-              v-model="joinClusterFingerprint"
-              class="form-control"
-              placeholder="Auto-fetched or enter manually"
-              :disabled="fetchingJoinInfo"
-            />
-            <span v-if="fetchingJoinInfo" class="input-badge">Fetching...</span>
+        <div v-if="joinClusterMasterHostId" class="form-group">
+          <label class="form-label">Root password <span class="req">*</span></label>
+          <input v-model="joinClusterPassword" type="password" class="form-control" placeholder="root@pam on the cluster master" autocomplete="new-password" />
+        </div>
+
+        <details v-if="joinClusterMasterHostId" class="form-group" style="margin-top:0.5rem">
+          <summary class="text-xs text-muted" style="cursor:pointer">Advanced (auto-detected — only override if join fails)</summary>
+          <div class="form-group" style="margin-top:0.5rem">
+            <label class="form-label">Fingerprint</label>
+            <div class="input-with-badge">
+              <input v-model="joinClusterFingerprint" class="form-control" :disabled="fetchingJoinInfo" />
+              <span v-if="fetchingJoinInfo" class="input-badge">Fetching…</span>
+            </div>
           </div>
-          <p class="form-hint">TLS fingerprint of the cluster node. Auto-filled when you select a datacenter.</p>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label">Cluster node address</label>
-          <input v-model="joinClusterNodeAddr" class="form-control" placeholder="Auto-fetched IP or enter manually" />
-          <p class="form-hint">IP or hostname of the cluster master node.</p>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label">Root password of cluster node <span class="req">*</span></label>
-          <input v-model="joinClusterPassword" type="password" class="form-control" placeholder="root@pam password" autocomplete="new-password" />
-        </div>
+          <div class="form-group">
+            <label class="form-label">Cluster node address</label>
+            <input v-model="joinClusterNodeAddr" class="form-control" />
+          </div>
+        </details>
 
         <div v-if="joinClusterError" class="alert alert-danger mt-1">{{ joinClusterError }}</div>
 
@@ -1308,6 +1386,150 @@ export default {
       showJoinClusterModal.value = true
     }
 
+    // Standalone hosts that can be added as nodes — anything not already in
+    // a multi-node cluster. (Single-node "clusters" are really standalones.)
+    const standaloneHosts = computed(() => {
+      return hosts.value.filter(h => {
+        const fed = federationSummary.value[h.id]
+        return !fed || fed.node_count <= 1
+      })
+    })
+
+    // Inverse of openJoinCluster: pick a standalone and join it into a cluster.
+    // Two entry points — from a cluster card (master pre-selected) and from
+    // the page header (user picks the cluster too).
+    const showAddNodeModal = ref(false)
+    const addNodeMasterHost = ref(null)
+    const addNodeMasterHostId = ref('')   // bound to dropdown when picker is shown
+    const addNodeTargetId = ref('')
+    const addNodePassword = ref('')
+    const addNodeFingerprint = ref('')
+    const addNodeAddr = ref('')
+    const addNodeError = ref('')
+    const addNodeSuccess = ref('')
+    const addingNode = ref(false)
+    const addNodeVerifyStatus = ref('')
+    const fetchingAddNodeInfo = ref(false)
+
+    // Hosts that have a real (multi-node) cluster — valid join targets.
+    const clusterHosts = computed(() => {
+      return hosts.value.filter(h => {
+        const fed = federationSummary.value[h.id]
+        return fed && fed.node_count > 1
+      })
+    })
+
+    const fetchAddNodeJoinInfo = async (clusterHost) => {
+      addNodeFingerprint.value = ''
+      addNodeAddr.value = ''
+      if (!clusterHost) return
+      fetchingAddNodeInfo.value = true
+      try {
+        const res = await api.cluster.getJoinInfo(clusterHost.id)
+        addNodeFingerprint.value = res.data?.fingerprint || ''
+        addNodeAddr.value = res.data?.preferred_node_addr || clusterHost.hostname
+      } catch (e) {
+        addNodeError.value = 'Could not fetch cluster info: ' + (e.response?.data?.detail || e.message)
+      } finally {
+        fetchingAddNodeInfo.value = false
+      }
+    }
+
+    // Cluster-card invocation: the cluster is already known.
+    const openAddNodeWizard = async (clusterHost) => {
+      _stopJoinPoll()
+      addNodeMasterHost.value = clusterHost
+      addNodeTargetId.value = ''
+      addNodePassword.value = ''
+      addNodeError.value = ''
+      addNodeSuccess.value = ''
+      addNodeVerifyStatus.value = ''
+      showAddNodeModal.value = true
+      await fetchAddNodeJoinInfo(clusterHost)
+    }
+
+    // Top-level (page-header) invocation: user picks both cluster and host.
+    const openAddNodeWizardTopLevel = () => {
+      _stopJoinPoll()
+      addNodeMasterHost.value = null
+      addNodeMasterHostId.value = ''
+      addNodeTargetId.value = ''
+      addNodePassword.value = ''
+      addNodeError.value = ''
+      addNodeSuccess.value = ''
+      addNodeVerifyStatus.value = ''
+      addNodeFingerprint.value = ''
+      addNodeAddr.value = ''
+      showAddNodeModal.value = true
+    }
+
+    const onAddNodeMasterChange = async (hostId) => {
+      const cluster = hosts.value.find(h => h.id === Number(hostId) || h.id === hostId)
+      addNodeMasterHost.value = cluster || null
+      if (cluster) await fetchAddNodeJoinInfo(cluster)
+    }
+
+    const submitAddNode = async () => {
+      const master = addNodeMasterHost.value
+      if (!master || !addNodeTargetId.value || !addNodePassword.value) return
+      addNodeError.value = ''
+      addNodeSuccess.value = ''
+      addingNode.value = true
+      try {
+        let knownNodes = []
+        try {
+          const pre = await api.cluster.getClusterStatus(master.id)
+          knownNodes = (pre.data?.nodes || []).map(n => n.name)
+        } catch (_) { /* non-fatal */ }
+        await api.cluster.joinCluster(addNodeTargetId.value, {
+          hostname: addNodeAddr.value || master.hostname,
+          password: addNodePassword.value,
+          fingerprint: addNodeFingerprint.value,
+        })
+        addNodeSuccess.value = 'Join initiated.'
+        addNodeVerifyStatus.value = 'verifying'
+        toast.success('Cluster join initiated — verifying…')
+        const targetId = addNodeTargetId.value
+        const masterId = master.id
+        const deadline = Date.now() + 3 * 60 * 1000
+        _stopJoinPoll()
+        _joinPollTimer = setInterval(async () => {
+          if (Date.now() > deadline) {
+            _stopJoinPoll()
+            addNodeVerifyStatus.value = 'timeout'
+            return
+          }
+          try {
+            const res = await api.cluster.getClusterStatus(masterId)
+            const nodes = res.data?.nodes || []
+            const newNode = nodes.find(n => !knownNodes.includes(n.name))
+            if (newNode) {
+              _stopJoinPoll()
+              addNodeVerifyStatus.value = 'confirmed'
+              addNodeSuccess.value = `${newNode.name} confirmed in cluster.`
+              toast.success(`${newNode.name} joined — removing standalone host entry…`)
+              await new Promise(r => setTimeout(r, 1500))
+              try { await api.proxmox.deleteHost(targetId) } catch (_) {}
+              showAddNodeModal.value = false
+              fetchHosts()
+              fetchFederationSummary()
+            }
+          } catch (_) { /* cluster API may briefly be unavailable while syncing */ }
+        }, 6000)
+      } catch (e) {
+        addNodeError.value = e.response?.data?.detail || 'Join failed.'
+        addNodeVerifyStatus.value = ''
+      } finally {
+        addingNode.value = false
+      }
+    }
+
+    const closeAddNodeModal = () => {
+      _stopJoinPoll()
+      showAddNodeModal.value = false
+      addNodeVerifyStatus.value = ''
+    }
+
     const fetchJoinInfo = async () => {
       if (!joinClusterMasterHostId.value) return
       fetchingJoinInfo.value = true
@@ -1416,17 +1638,35 @@ export default {
     // ── Unjoin Cluster state ───────────────────────────────────────────────
     const showUnjoinClusterModal = ref(false)
     const unjoinMasterHostId = ref('')
+    const unjoinClusterName = ref('')
     const unjoinNodeName = ref('')
+    const unjoinNodeChoices = ref([])
+    const loadingUnjoinNodes = ref(false)
     const unjoining = ref(false)
     const unjoinError = ref('')
     const unjoinSuccess = ref('')
 
-    const openUnjoinCluster = (host) => {
+    const openUnjoinCluster = async (host) => {
       unjoinMasterHostId.value = host.id
+      unjoinClusterName.value = getFedSummary(host.id)?.cluster_name || host.name
       unjoinNodeName.value = ''
+      unjoinNodeChoices.value = []
       unjoinError.value = ''
       unjoinSuccess.value = ''
       showUnjoinClusterModal.value = true
+      loadingUnjoinNodes.value = true
+      try {
+        const res = await api.cluster.getClusterStatus(host.id)
+        unjoinNodeChoices.value = (res.data?.nodes || []).map(n => ({
+          name: n.name,
+          local: !!n.local,
+          online: !!n.online,
+        }))
+      } catch (e) {
+        unjoinError.value = 'Could not load cluster nodes: ' + (e.response?.data?.detail || e.message)
+      } finally {
+        loadingUnjoinNodes.value = false
+      }
     }
 
     const submitUnjoin = async () => {
@@ -2557,10 +2797,20 @@ export default {
       openDetailDrawer,
       closeDetailDrawer,
       formatTaskTime,
+      // Add Node (cluster-centric AND top-level)
+      showAddNodeModal, addNodeMasterHost, addNodeMasterHostId, addNodeTargetId, addNodePassword,
+      addNodeFingerprint, addNodeAddr, addNodeError, addNodeSuccess,
+      addingNode, addNodeVerifyStatus, fetchingAddNodeInfo,
+      standaloneHosts, clusterHosts,
+      openAddNodeWizard, openAddNodeWizardTopLevel, onAddNodeMasterChange,
+      submitAddNode, closeAddNodeModal,
       // Unjoin Cluster
       showUnjoinClusterModal,
       unjoinMasterHostId,
+      unjoinClusterName,
       unjoinNodeName,
+      unjoinNodeChoices,
+      loadingUnjoinNodes,
       unjoining,
       unjoinError,
       unjoinSuccess,
@@ -2808,6 +3058,19 @@ export default {
   max-width: 280px;
 }
 .power-menu-divider { height: 1px; background: var(--border-color, #e2e8f0); margin: 4px 0; }
+
+/* Cluster info row inline action buttons */
+.ci-action-btn {
+  margin-left: 0.4rem;
+  padding: 1px 7px !important;
+  font-size: 0.7rem !important;
+  white-space: nowrap;
+}
+.ci-action-danger {
+  color: var(--danger-color, #ef4444) !important;
+  border-color: rgba(239, 68, 68, 0.4) !important;
+}
+.ci-action-danger:hover { background: rgba(239, 68, 68, 0.08); }
 
 /* Action area: primary CTA on its own full-width row, then a compact
    icon-only secondary row that fits regardless of zoom / font scaling. */

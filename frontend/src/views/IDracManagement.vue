@@ -212,6 +212,24 @@
                 <button @click="openConfigBMC(srv)" class="btn btn-outline btn-sm">{{ srv.idrac_hostname ? 'Edit BMC' : 'Configure BMC' }}</button>
                 <button v-if="srv.idrac_hostname" @click="clearBMCDirect(srv)" class="btn btn-danger btn-sm">Clear BMC</button>
               </template>
+              <div v-if="srv.idrac_hostname" class="idr-power-wrap" @click.stop>
+                <button @click="togglePowerMenu(srv._key, $event)" class="btn btn-outline btn-sm" :title="'Power actions'" :disabled="srv._actioning">
+                  ⚡ Power
+                  <span v-if="srv._status?.power_state" :class="['badge', 'badge-xs', srv._status.power_state === 'On' ? 'badge-success' : 'badge-danger']" style="margin-left:0.3rem">
+                    {{ srv._status.power_state }}
+                  </span>
+                </button>
+                <Teleport to="body">
+                  <div v-if="openPowerMenuKey === srv._key" class="idr-power-menu" :style="openPowerMenuStyle">
+                    <button @click="runPowerAndClose(srv, 'on')">⚡ Power On</button>
+                    <button class="idr-power-danger" @click="runPowerAndClose(srv, 'graceful_off')">⏻ Graceful Shutdown</button>
+                    <button class="idr-power-danger" @click="runPowerAndClose(srv, 'off')">⛔ Force Power Off</button>
+                    <button class="idr-power-danger" @click="runPowerAndClose(srv, 'graceful_reset')">↻ Graceful Restart</button>
+                    <button class="idr-power-danger" @click="runPowerAndClose(srv, 'reset')">⟳ Force Reset</button>
+                    <button class="idr-power-danger" @click="runPowerAndClose(srv, 'power_cycle')">⏼ Power Cycle</button>
+                  </div>
+                </Teleport>
+              </div>
               <a v-if="srv.idrac_hostname" :href="`https://${srv.idrac_hostname}:${srv.idrac_port || 443}`" target="_blank" rel="noopener" class="btn btn-outline btn-sm">Launch ↗</a>
               <button @click="testConnection(srv)" class="btn btn-outline btn-sm">Test</button>
               <button @click="srv._expanded ? collapseServer(srv) : expandServer(srv)" class="btn btn-primary btn-sm" :disabled="srv._loading">
@@ -919,6 +937,35 @@ export default {
       localStorage.setItem('depl0y_temp_unit', tempUnit.value)
     }
     const polling = ref(false)
+
+    // ── Power dropdown (top-of-card quick menu) ──
+    const openPowerMenuKey = ref(null)
+    const openPowerMenuStyle = ref({})
+    const _PWM_W = 200
+    const _PWM_H = 240
+    const togglePowerMenu = (key, e) => {
+      if (openPowerMenuKey.value === key) { openPowerMenuKey.value = null; return }
+      const btn = e?.currentTarget || e?.target?.closest('button')
+      if (btn) {
+        const r = btn.getBoundingClientRect()
+        const flipUp = r.bottom + _PWM_H > window.innerHeight - 8
+        const top = flipUp ? Math.max(8, r.top - _PWM_H - 4) : r.bottom + 4
+        const left = Math.max(8, Math.min(r.right - _PWM_W, window.innerWidth - _PWM_W - 8))
+        openPowerMenuStyle.value = { position: 'fixed', top: `${top}px`, left: `${left}px`, right: 'auto', zIndex: 1100 }
+      }
+      openPowerMenuKey.value = key
+    }
+    const runPowerAndClose = (srv, action) => {
+      openPowerMenuKey.value = null
+      // powerAction is defined later in this setup — reference via closure
+      try { powerAction(srv, action) } catch (e) { /* defined later */ }
+    }
+    const _powerMenuOutside = (e) => {
+      if (!e.target.closest('.idr-power-wrap') && !e.target.closest('.idr-power-menu')) {
+        openPowerMenuKey.value = null
+      }
+    }
+    const _powerMenuClose = () => { if (openPowerMenuKey.value) openPowerMenuKey.value = null }
 
     const allProxmox = ref([])
     const allPBS = ref([])
@@ -2103,14 +2150,21 @@ export default {
     onMounted(async () => {
       await loadAll()
       _pollInterval = setInterval(_refreshCache, 120000)
+      document.addEventListener('mousedown', _powerMenuOutside)
+      window.addEventListener('scroll', _powerMenuClose, true)
+      window.addEventListener('resize', _powerMenuClose)
     })
 
     onUnmounted(() => {
       if (_pollInterval) clearInterval(_pollInterval)
+      document.removeEventListener('mousedown', _powerMenuOutside)
+      window.removeEventListener('scroll', _powerMenuClose, true)
+      window.removeEventListener('resize', _powerMenuClose)
     })
 
     return {
       tempUnit, toDisplay, tempLabel, toggleTempUnit,
+      openPowerMenuKey, openPowerMenuStyle, togglePowerMenu, runPowerAndClose,
       loading, polling, allServers, filteredServers, tileFilter, tileFilterLabel, setTileFilter, typeLabel, bmcTypeLabel, dash, alertedServers, alertLevel, alertReason, healthIssues, recentAlertLogs,
       powerHistory, powerEventClass,
       healthChartData, powerStateChartData, tempBarData, dashChartOptions, tempBarOptions,
@@ -2818,4 +2872,32 @@ export default {
 [data-theme="dark"] .fw-update-badge--ok   { background: rgba(22,163,74,0.2)  !important; color: #86efac !important; }
 [data-theme="dark"] .fw-summary-warn { background: rgba(217,119,6,0.2) !important; color: #fcd34d !important; }
 [data-theme="dark"] .fw-summary-ok   { background: rgba(22,163,74,0.15) !important; color: #86efac !important; }
+
+/* Top-of-card power dropdown */
+.idr-power-wrap { position: relative; display: inline-block; }
+.idr-power-menu {
+  background: var(--surface, #fff);
+  border: 1px solid var(--border-color, #e2e8f0);
+  border-radius: 6px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
+  min-width: 200px;
+  padding: 4px 0;
+}
+.idr-power-menu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 0.5rem 0.85rem;
+  font-size: 0.875rem;
+  cursor: pointer;
+  color: var(--text-primary, #1e293b);
+  white-space: nowrap;
+}
+.idr-power-menu button:hover { background: var(--background, #f1f5f9); }
+.idr-power-danger { color: var(--danger-color, #ef4444) !important; }
+[data-theme="dark"] .idr-power-menu { background: #1e293b !important; border-color: #334155 !important; color: #e2e8f0 !important; }
+[data-theme="dark"] .idr-power-menu button { color: #e2e8f0 !important; }
+[data-theme="dark"] .idr-power-menu button:hover { background: #0f172a !important; }
 </style>

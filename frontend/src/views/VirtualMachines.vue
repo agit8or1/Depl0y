@@ -133,15 +133,17 @@
                     Console
                   </button>
                   <div class="more-menu-wrap">
-                    <button class="btn btn-outline btn-sm" @click.stop="toggleMoreMenu('m-'+vm.vmid)" title="More actions">⋮</button>
-                    <div v-if="openMoreMenuKey === 'm-'+vm.vmid" class="more-menu">
-                      <button @click="openSnapshotModal(adaptManagedVm(vm)); openMoreMenuKey = null">📷 Snapshot</button>
-                      <button @click="openCloneModal(adaptManagedVm(vm)); openMoreMenuKey = null">📋 Clone</button>
-                      <button @click="openMigrateModal(adaptManagedVm(vm)); openMoreMenuKey = null">🚀 Migrate</button>
-                      <button v-if="vm.status === 'running'" @click="suspendVm(adaptManagedVm(vm)); openMoreMenuKey = null">⏸ Suspend</button>
-                      <button v-if="vm.status === 'running'" @click="powerOffVM(vm.vmid, vm.node); openMoreMenuKey = null">⚡ Power Off</button>
-                      <button @click="showDeleteModal(vm); openMoreMenuKey = null" class="more-menu-danger">🗑 Delete</button>
-                    </div>
+                    <button class="btn btn-outline btn-sm" @click.stop="toggleMoreMenu('m-'+vm.vmid, $event)" title="More actions">⋮</button>
+                    <Teleport to="body">
+                      <div v-if="openMoreMenuKey === 'm-'+vm.vmid" class="more-menu" :style="openMoreMenuStyle">
+                        <button @click="openSnapshotModal(adaptManagedVm(vm)); openMoreMenuKey = null">📷 Snapshot</button>
+                        <button @click="openCloneModal(adaptManagedVm(vm)); openMoreMenuKey = null">📋 Clone</button>
+                        <button @click="openMigrateModal(adaptManagedVm(vm)); openMoreMenuKey = null">🚀 Migrate</button>
+                        <button v-if="vm.status === 'running'" @click="suspendVm(adaptManagedVm(vm)); openMoreMenuKey = null">⏸ Suspend</button>
+                        <button v-if="vm.status === 'running'" @click="powerOffVM(vm.vmid, vm.node); openMoreMenuKey = null">⚡ Power Off</button>
+                        <button @click="showDeleteModal(vm); openMoreMenuKey = null" class="more-menu-danger">🗑 Delete</button>
+                      </div>
+                    </Teleport>
                   </div>
                 </div>
               </td>
@@ -481,15 +483,17 @@
                     Console
                   </button>
                   <div class="more-menu-wrap">
-                    <button class="btn btn-outline btn-sm" @click.stop="toggleMoreMenu(vmKey(vm))" title="More actions">⋮</button>
-                    <div v-if="openMoreMenuKey === vmKey(vm)" class="more-menu">
-                      <button @click="openTagEditor(vm); openMoreMenuKey = null">🏷 Tags</button>
-                      <button @click="openSnapshotModal(vm); openMoreMenuKey = null">📷 Snapshot</button>
-                      <button @click="openCloneModal(vm); openMoreMenuKey = null">📋 Clone</button>
-                      <button @click="openMigrateModal(vm); openMoreMenuKey = null">🚀 Migrate</button>
-                      <button v-if="vm.status === 'running'" @click="suspendVm(vm); openMoreMenuKey = null">⏸ Suspend</button>
-                      <button @click="openVmDeleteModal(vm); openMoreMenuKey = null" class="more-menu-danger">🗑 Delete</button>
-                    </div>
+                    <button class="btn btn-outline btn-sm" @click.stop="toggleMoreMenu(vmKey(vm), $event)" title="More actions">⋮</button>
+                    <Teleport to="body">
+                      <div v-if="openMoreMenuKey === vmKey(vm)" class="more-menu" :style="openMoreMenuStyle">
+                        <button @click="openTagEditor(vm); openMoreMenuKey = null">🏷 Tags</button>
+                        <button @click="openSnapshotModal(vm); openMoreMenuKey = null">📷 Snapshot</button>
+                        <button @click="openCloneModal(vm); openMoreMenuKey = null">📋 Clone</button>
+                        <button @click="openMigrateModal(vm); openMoreMenuKey = null">🚀 Migrate</button>
+                        <button v-if="vm.status === 'running'" @click="suspendVm(vm); openMoreMenuKey = null">⏸ Suspend</button>
+                        <button @click="openVmDeleteModal(vm); openMoreMenuKey = null" class="more-menu-danger">🗑 Delete</button>
+                      </div>
+                    </Teleport>
                   </div>
                 </div>
               </td>
@@ -577,15 +581,17 @@
                       Console
                     </button>
                     <div class="more-menu-wrap">
-                      <button class="btn btn-outline btn-sm" @click.stop="toggleMoreMenu(vmKey(vm))" title="More actions">⋮</button>
-                      <div v-if="openMoreMenuKey === vmKey(vm)" class="more-menu">
-                        <button @click="openTagEditor(vm); openMoreMenuKey = null">🏷 Tags</button>
-                        <button @click="openSnapshotModal(vm); openMoreMenuKey = null">📷 Snapshot</button>
-                        <button @click="openCloneModal(vm); openMoreMenuKey = null">📋 Clone</button>
-                        <button @click="openMigrateModal(vm); openMoreMenuKey = null">🚀 Migrate</button>
-                        <button v-if="vm.status === 'running'" @click="suspendVm(vm); openMoreMenuKey = null">⏸ Suspend</button>
-                        <button @click="openVmDeleteModal(vm); openMoreMenuKey = null" class="more-menu-danger">🗑 Delete</button>
-                      </div>
+                      <button class="btn btn-outline btn-sm" @click.stop="toggleMoreMenu(vmKey(vm), $event)" title="More actions">⋮</button>
+                      <Teleport to="body">
+                        <div v-if="openMoreMenuKey === vmKey(vm)" class="more-menu" :style="openMoreMenuStyle">
+                          <button @click="openTagEditor(vm); openMoreMenuKey = null">🏷 Tags</button>
+                          <button @click="openSnapshotModal(vm); openMoreMenuKey = null">📷 Snapshot</button>
+                          <button @click="openCloneModal(vm); openMoreMenuKey = null">📋 Clone</button>
+                          <button @click="openMigrateModal(vm); openMoreMenuKey = null">🚀 Migrate</button>
+                          <button v-if="vm.status === 'running'" @click="suspendVm(vm); openMoreMenuKey = null">⏸ Suspend</button>
+                          <button @click="openVmDeleteModal(vm); openMoreMenuKey = null" class="more-menu-danger">🗑 Delete</button>
+                        </div>
+                      </Teleport>
                     </div>
                   </div>
                 </td>
@@ -1738,12 +1744,31 @@ export default {
 
     // ── More-actions dropdown ────────────────────────────────────────────────
     const openMoreMenuKey = ref(null)
-    const toggleMoreMenu = (key) => { openMoreMenuKey.value = openMoreMenuKey.value === key ? null : key }
+    const openMoreMenuStyle = ref({})
+    const MENU_WIDTH = 170
+    const MENU_HEIGHT_EST = 240
+    const computeMenuStyle = (btn) => {
+      const r = btn.getBoundingClientRect()
+      const flipUp = r.bottom + MENU_HEIGHT_EST > window.innerHeight - 8
+      const top = flipUp ? Math.max(8, r.top - MENU_HEIGHT_EST - 4) : r.bottom + 4
+      const left = Math.max(8, Math.min(r.right - MENU_WIDTH, window.innerWidth - MENU_WIDTH - 8))
+      return { position: 'fixed', top: `${top}px`, left: `${left}px`, right: 'auto', zIndex: 1100 }
+    }
+    const toggleMoreMenu = (key, e) => {
+      if (openMoreMenuKey.value === key) {
+        openMoreMenuKey.value = null
+        return
+      }
+      const btn = e?.currentTarget || e?.target?.closest('button')
+      if (btn) openMoreMenuStyle.value = computeMenuStyle(btn)
+      openMoreMenuKey.value = key
+    }
 
     const handleMenuOutsideClick = (e) => {
-      if (!e.target.closest('.more-menu-wrap')) openMoreMenuKey.value = null
+      if (!e.target.closest('.more-menu-wrap') && !e.target.closest('.more-menu')) openMoreMenuKey.value = null
       if (!e.target.closest('.col-toggle-wrap')) showColMenu.value = false
     }
+    const closeMoreMenuOnScroll = () => { if (openMoreMenuKey.value) openMoreMenuKey.value = null }
 
     // ── Suspend / Resume ─────────────────────────────────────────────────────
     const suspendVm = async (vm) => {
@@ -2104,6 +2129,8 @@ export default {
       startAllIntervals(intervalSecs)
       document.addEventListener('visibilitychange', handleVisibilityChange)
       document.addEventListener('mousedown', handleMenuOutsideClick)
+      window.addEventListener('scroll', closeMoreMenuOnScroll, true)
+      window.addEventListener('resize', closeMoreMenuOnScroll)
     })
 
     onUnmounted(() => {
@@ -2112,6 +2139,8 @@ export default {
       clearInterval(allTickInterval)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
       document.removeEventListener('mousedown', handleMenuOutsideClick)
+      window.removeEventListener('scroll', closeMoreMenuOnScroll, true)
+      window.removeEventListener('resize', closeMoreMenuOnScroll)
     })
 
     return {
@@ -2143,7 +2172,7 @@ export default {
       runBulkSnapshot, runBulkTag, runBulkDelete,
       toggleGroupSelect,
       adaptManagedVm,
-      openMoreMenuKey, toggleMoreMenu,
+      openMoreMenuKey, openMoreMenuStyle, toggleMoreMenu,
       suspendVm, resumeVm,
       showSnapshotModal, snapshotVm, snapshotName, snapshotDesc, snapshotVmState, snapshotRunning,
       openSnapshotModal, runSnapshot,

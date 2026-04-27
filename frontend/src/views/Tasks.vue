@@ -669,37 +669,59 @@ export default {
       return 'badge badge-danger'
     }
 
+    // Coerce mixed timestamp formats (ISO string, Unix seconds, Unix ms) to a Date.
+    // PVE/PBS return starttime as Unix seconds; depl0y-tracked tasks use ISO strings.
+    function _toDate(t) {
+      if (t == null) return null
+      if (t instanceof Date) return t
+      if (typeof t === 'number') return new Date(t < 1e12 ? t * 1000 : t)
+      if (typeof t === 'string') {
+        if (/^\d+(\.\d+)?$/.test(t)) {
+          const n = Number(t)
+          return new Date(n < 1e12 ? n * 1000 : n)
+        }
+        return new Date(t)
+      }
+      return null
+    }
+
+    function _fmtDur(secs) {
+      if (secs == null || !isFinite(secs) || secs < 0) return ''
+      const s = Math.floor(secs)
+      if (s < 60) return `${s}s`
+      const m = Math.floor(s / 60)
+      if (m < 60) return `${m}m ${s % 60}s`
+      const h = Math.floor(m / 60)
+      if (h < 24) return `${h}h ${m % 60}m`
+      const d = Math.floor(h / 24)
+      return `${d}d ${h % 24}h ${m % 60}m`
+    }
+
     function deplElapsed(task) {
-      if (!task.started_at) return ''
-      const secs = Math.floor((Date.now() - new Date(task.started_at).getTime()) / 1000)
-      if (secs < 60) return `${secs}s`
-      if (secs < 3600) return `${Math.floor(secs / 60)}m ${secs % 60}s`
-      return `${Math.floor(secs / 3600)}h ${Math.floor((secs % 3600) / 60)}m`
+      const d = _toDate(task.started_at)
+      if (!d || isNaN(d.getTime())) return ''
+      return _fmtDur((Date.now() - d.getTime()) / 1000)
     }
 
     function deplDuration(task) {
-      if (!task.started_at) return '—'
-      const end = task.finished_at ? new Date(task.finished_at).getTime() : Date.now()
-      const secs = Math.floor((end - new Date(task.started_at).getTime()) / 1000)
-      if (secs < 60) return `${secs}s`
-      if (secs < 3600) return `${Math.floor(secs / 60)}m ${secs % 60}s`
-      return `${Math.floor(secs / 3600)}h ${Math.floor((secs % 3600) / 60)}m`
+      const start = _toDate(task.started_at)
+      if (!start || isNaN(start.getTime())) return '—'
+      const endDate = _toDate(task.finished_at)
+      const end = endDate && !isNaN(endDate.getTime()) ? endDate.getTime() : Date.now()
+      return _fmtDur((end - start.getTime()) / 1000) || '—'
     }
 
-    function formatTime(isoStr) {
-      if (!isoStr) return '—'
-      try { return new Date(isoStr).toLocaleString() } catch { return isoStr }
+    function formatTime(t) {
+      const d = _toDate(t)
+      if (!d || isNaN(d.getTime())) return '—'
+      return d.toLocaleString()
     }
 
-    function formatAge(isoStr) {
-      if (!isoStr) return ''
-      try {
-        const diff = Date.now() - new Date(isoStr).getTime()
-        const s = Math.floor(diff / 1000)
-        if (s < 60) return `${s}s ago`
-        if (s < 3600) return `${Math.floor(s / 60)}m ago`
-        return `${Math.floor(s / 3600)}h ago`
-      } catch { return '' }
+    function formatAge(t) {
+      const d = _toDate(t)
+      if (!d || isNaN(d.getTime())) return ''
+      const dur = _fmtDur((Date.now() - d.getTime()) / 1000)
+      return dur ? `${dur} ago` : ''
     }
 
     // ── Proxmox Tasks ──────────────────────────────────────────────────────

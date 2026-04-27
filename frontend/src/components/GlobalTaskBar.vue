@@ -84,8 +84,8 @@
               </div>
 
               <!-- Progress bar -->
-              <div class="task-prog-track">
-                <div class="task-prog-fill" :style="{ width: `${task.progress || 0}%` }"></div>
+              <div v-if="task.progress != null" class="task-prog-track">
+                <div class="task-prog-fill" :style="{ width: `${task.progress}%` }"></div>
               </div>
 
               <!-- Log preview -->
@@ -182,9 +182,17 @@
                   <span class="detail-key">Started</span>
                   <span class="detail-val">{{ formatTime(detailTask.started_at) }}</span>
                 </div>
-                <div v-if="detailTask.progress !== undefined" class="detail-kv">
+                <div class="detail-kv">
+                  <span class="detail-key">Elapsed</span>
+                  <span class="detail-val">{{ formatElapsed(detailTask.started_at) || '—' }}</span>
+                </div>
+                <div v-if="detailTask.progress != null" class="detail-kv">
                   <span class="detail-key">Progress</span>
-                  <span class="detail-val">{{ detailTask.progress }}%</span>
+                  <span class="detail-val">{{ Number(detailTask.progress).toFixed(1) }}%</span>
+                </div>
+                <div v-if="formatEta(detailTask)" class="detail-kv">
+                  <span class="detail-key">ETA</span>
+                  <span class="detail-val">{{ formatEta(detailTask) }}</span>
                 </div>
                 <div class="detail-kv detail-kv--full">
                   <span class="detail-key">UPID</span>
@@ -425,19 +433,55 @@ export default {
 
     // ── Formatting ────────────────────────────────────────────────────────────
 
-    function formatElapsed(isoStr) {
-      if (!isoStr) return ''
-      try {
-        const s = Math.floor((Date.now() - new Date(isoStr).getTime()) / 1000)
-        if (s < 60) return `${s}s`
-        if (s < 3600) return `${Math.floor(s / 60)}m ${s % 60}s`
-        return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`
-      } catch { return '' }
+    // Coerce a timestamp to a Date. Accepts ISO strings, JS Date, Unix seconds,
+    // Unix milliseconds, or numeric strings. Unix seconds are detected as
+    // values < 1e12 (anything ≥ that is treated as ms).
+    function toDate(t) {
+      if (t == null) return null
+      if (t instanceof Date) return t
+      if (typeof t === 'number') return new Date(t < 1e12 ? t * 1000 : t)
+      if (typeof t === 'string') {
+        const n = Number(t)
+        if (!Number.isNaN(n) && /^\d+(\.\d+)?$/.test(t)) {
+          return new Date(n < 1e12 ? n * 1000 : n)
+        }
+        return new Date(t)
+      }
+      return null
     }
 
-    function formatTime(isoStr) {
-      if (!isoStr) return '—'
-      try { return new Date(isoStr).toLocaleString() } catch { return isoStr }
+    function formatDuration(secs) {
+      if (secs == null || !isFinite(secs) || secs < 0) return ''
+      const s = Math.floor(secs)
+      if (s < 60) return `${s}s`
+      const m = Math.floor(s / 60)
+      if (m < 60) return `${m}m ${s % 60}s`
+      const h = Math.floor(m / 60)
+      if (h < 24) return `${h}h ${m % 60}m`
+      const d = Math.floor(h / 24)
+      return `${d}d ${h % 24}h ${m % 60}m`
+    }
+
+    function formatElapsed(t) {
+      const d = toDate(t)
+      if (!d || isNaN(d.getTime())) return ''
+      return formatDuration((Date.now() - d.getTime()) / 1000)
+    }
+
+    function formatTime(t) {
+      const d = toDate(t)
+      if (!d || isNaN(d.getTime())) return '—'
+      return d.toLocaleString()
+    }
+
+    function formatEta(task) {
+      const d = toDate(task?.started_at)
+      const p = Number(task?.progress)
+      if (!d || isNaN(d.getTime()) || !isFinite(p) || p <= 0 || p >= 100) return ''
+      const elapsed = (Date.now() - d.getTime()) / 1000
+      if (elapsed <= 0) return ''
+      const remaining = elapsed * (100 - p) / p
+      return formatDuration(remaining)
     }
 
     // ── Type helpers ──────────────────────────────────────────────────────────
@@ -517,6 +561,7 @@ export default {
       copyLog,
       formatElapsed,
       formatTime,
+      formatEta,
       taskTypeClass,
       taskTypeIcon,
       taskDotClass,

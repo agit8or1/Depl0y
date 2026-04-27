@@ -79,6 +79,10 @@
             <span v-if="hostVersions[host.id]" class="version-chip">
               PVE {{ hostVersions[host.id] }}
             </span>
+            <span class="model-chip" :title="getHostModel(host.id) || 'Set server model'">
+              🖥 {{ getHostModel(host.id) || 'Set model…' }}
+              <button type="button" class="model-chip-edit" @click.stop="editModelOverride('pve:'+host.id, getHostModel(host.id), host.name)" title="Edit server model">✎</button>
+            </span>
             <button
               class="loc-btn"
               :class="host.latitude && host.longitude ? 'loc-btn--set' : 'loc-btn--unset'"
@@ -246,39 +250,73 @@
           </transition>
 
           <!-- Action buttons -->
-          <div class="host-card__actions flex gap-1 mt-1" @click.stop>
+          <div class="host-card__actions mt-1" @click.stop>
+            <!-- Primary CTA: own row, full width -->
             <router-link
               :to="`/proxmox/${host.id}/cluster`"
-              class="btn btn-primary btn-sm flex-1 text-center">
+              class="btn btn-primary btn-sm hca-primary text-center">
               Open Cluster
             </router-link>
-            <!-- Open in Proxmox Web UI -->
+            <!-- Secondary: icon-only row, always fits -->
+            <div class="hca-secondary">
             <a
               :href="`https://${host.hostname}:${host.port}`"
               target="_blank"
               rel="noopener noreferrer"
-              class="btn btn-outline btn-sm"
+              class="btn btn-outline btn-sm hca-icon"
               title="Open Proxmox Web UI">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
                 <polyline points="15 3 21 3 21 9"/>
                 <line x1="10" y1="14" x2="21" y2="3"/>
               </svg>
-              PVE UI
             </a>
-            <button @click="openDetailDrawer(host)" class="btn btn-outline btn-sm" title="View Details">Details</button>
-            <button @click="openEdit(host)" class="btn btn-outline btn-sm" title="Edit settings, location, notes">⚙️ Edit</button>
-            <button
-              @click="testConnection(host.id)"
-              class="btn btn-outline btn-sm"
-              :disabled="testing[host.id]"
-              title="Test Connection">
-              {{ testing[host.id] ? '...' : 'Test' }}
-            </button>
-            <button @click="pollHost(host.id)" class="btn btn-outline btn-sm" title="Force poll">Poll</button>
-            <button @click="openJoinCluster(host)" class="btn btn-outline btn-sm" title="Join this host to a cluster">Join Cluster</button>
-            <button v-if="getFedSummary(host.id)?.node_count > 1" @click="openUnjoinCluster(host)" class="btn btn-outline btn-sm" title="Remove a node from the cluster">Unjoin Node</button>
-            <button @click="deleteHost(host.id)" class="btn btn-danger btn-sm" title="Delete">Del</button>
+            <button @click="openDetailDrawer(host)" class="btn btn-outline btn-sm hca-icon" title="View Details">📊</button>
+            <div class="power-menu-wrap hca-icon-wrap">
+              <button @click.stop="togglePowerMenu('host-'+host.id, $event)" class="btn btn-outline btn-sm hca-power-btn" :title="'Power: ' + (getHostPower(host.id) || 'Unknown')">
+                <span>⚡</span>
+                <span v-if="getHostPower(host.id)" :class="['hca-power-dot', powerStateClass(getHostPower(host.id))]"></span>
+              </button>
+              <Teleport to="body">
+                <div v-if="openPowerMenuKey === 'host-'+host.id" class="power-menu" :style="openPowerMenuStyle">
+                  <div class="power-menu-section">Proxmox (OS)</div>
+                  <button v-for="(meta, command) in PVE_POWER_LABELS" :key="command"
+                    class="power-menu-danger"
+                    @click="runHostPvePower(host, command)">
+                    {{ meta.icon }} {{ meta.label }}
+                  </button>
+                  <template v-if="host.idrac_hostname">
+                    <div class="power-menu-divider"></div>
+                    <div class="power-menu-section">iDRAC / BMC (hardware)</div>
+                    <button v-for="(meta, action) in IDRAC_POWER_LABELS" :key="'idrac-'+action"
+                      :class="meta.danger ? 'power-menu-danger' : ''"
+                      @click="runHostIdracPower(host, action)">
+                      {{ meta.icon }} {{ meta.label }}
+                    </button>
+                  </template>
+                  <template v-else>
+                    <div class="power-menu-divider"></div>
+                    <div class="power-menu-section power-menu-muted">No iDRAC configured — Edit host to add one for hardware power on/off.</div>
+                  </template>
+                </div>
+              </Teleport>
+            </div>
+            <div class="power-menu-wrap hca-icon-wrap">
+              <button @click.stop="togglePowerMenu('more-'+host.id, $event)" class="btn btn-outline btn-sm hca-icon" title="More actions">⋮</button>
+              <Teleport to="body">
+                <div v-if="openPowerMenuKey === 'more-'+host.id" class="power-menu" :style="openPowerMenuStyle">
+                  <button @click="openEdit(host); openPowerMenuKey = null">⚙️ Edit</button>
+                  <button @click="testConnection(host.id); openPowerMenuKey = null" :disabled="testing[host.id]">{{ testing[host.id] ? '… Testing' : '🔌 Test Connection' }}</button>
+                  <button @click="pollHost(host.id); openPowerMenuKey = null">⟳ Poll Now</button>
+                  <div class="power-menu-divider"></div>
+                  <button @click="openJoinCluster(host); openPowerMenuKey = null">＋ Join Cluster</button>
+                  <button v-if="getFedSummary(host.id)?.node_count > 1" @click="openUnjoinCluster(host); openPowerMenuKey = null">－ Unjoin Node</button>
+                  <div class="power-menu-divider"></div>
+                  <button class="power-menu-danger" @click="deleteHost(host.id); openPowerMenuKey = null">🗑 Delete Host</button>
+                </div>
+              </Teleport>
+            </div>
+            </div>
           </div>
         </div>
       </div>
@@ -325,6 +363,13 @@
             <option value="ram">RAM Usage</option>
             <option value="host">Host</option>
           </select>
+          <span class="text-sm text-muted" style="margin-left:0.5rem">BMC poll:</span>
+          <select v-model.number="bmcPollMinutes" @change="updateBmcPollInterval" class="form-control form-control-sm" style="width:auto" title="iDRAC/BMC polling interval">
+            <option :value="1">1 min</option>
+            <option :value="2">2 min</option>
+            <option :value="5">5 min</option>
+            <option :value="10">10 min</option>
+          </select>
           <button @click="handleRefreshAll" class="btn btn-outline btn-sm" :disabled="loadingNodes">
             <span v-if="!loadingNodes">Refresh All</span>
             <span v-else>Loading...</span>
@@ -358,11 +403,46 @@
                     {{ node.node_name }}
                   </router-link>
                   <span v-if="node.notes" class="notes-chip ml-1" :title="node.notes">📝</span>
+                  <span class="model-chip ml-1" :title="getNodeModel(node.id) || 'Set server model'">
+                    🖥 {{ getNodeModel(node.id) || 'Set model…' }}
+                    <button type="button" class="model-chip-edit" @click.stop="editModelOverride('pve_node:'+node.id, getNodeModel(node.id), node.node_name)" title="Edit server model">✎</button>
+                  </span>
                 </h5>
                 <div class="flex align-center gap-1">
                   <button class="btn-notes-edit" @click.stop="openNodeNotes(node)" :title="node.notes ? 'Edit notes' : 'Add notes'">
                     {{ node.notes ? '📝' : '+ Note' }}
                   </button>
+                  <div class="power-menu-wrap">
+                    <button @click.stop="togglePowerMenu('node-'+node.id, $event)" class="btn btn-outline btn-xs" title="Power actions">
+                      ⚡
+                      <span v-if="getNodePower(node.id)" :class="['badge', 'badge-xs', powerStateClass(getNodePower(node.id))]" style="margin-left:0.2rem">
+                        {{ getNodePower(node.id) }}
+                      </span>
+                    </button>
+                    <Teleport to="body">
+                      <div v-if="openPowerMenuKey === 'node-'+node.id" class="power-menu" :style="openPowerMenuStyle">
+                        <div class="power-menu-section">Proxmox (OS)</div>
+                        <button v-for="(meta, command) in PVE_POWER_LABELS" :key="command"
+                          class="power-menu-danger"
+                          @click="runNodePvePower(datacenter, node, command)">
+                          {{ meta.icon }} {{ meta.label }}
+                        </button>
+                        <template v-if="node.idrac_hostname">
+                          <div class="power-menu-divider"></div>
+                          <div class="power-menu-section">iDRAC / BMC (hardware)</div>
+                          <button v-for="(meta, action) in IDRAC_POWER_LABELS" :key="'idrac-'+action"
+                            :class="meta.danger ? 'power-menu-danger' : ''"
+                            @click="runNodeIdracPower(node, action)">
+                            {{ meta.icon }} {{ meta.label }}
+                          </button>
+                        </template>
+                        <template v-else>
+                          <div class="power-menu-divider"></div>
+                          <div class="power-menu-section power-menu-muted">No iDRAC — configure on Node Detail to enable hardware power on/off.</div>
+                        </template>
+                      </div>
+                    </Teleport>
+                  </div>
                   <span :class="['badge', node.status === 'online' ? 'badge-success' : 'badge-danger']">
                     {{ node.status || 'unknown' }}
                   </span>
@@ -1117,7 +1197,7 @@
 </template>
 
 <script>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/services/api'
 import { useToast } from 'vue-toastification'
@@ -1738,14 +1818,39 @@ export default {
       }
     }
 
+    // Poll the BMC cache every 1.5s for up to ~20s after a trigger, so the UI
+    // updates as soon as each individual BMC poll completes (rather than waiting
+    // for two fixed checkpoints). Idempotent — overlapping calls share the same
+    // running interval.
+    let _bmcPollLoopTimer = null
+    const pollBmcUntilFresh = () => {
+      if (_bmcPollLoopTimer) return
+      const startedAt = Date.now()
+      const tick = async () => {
+        await loadBmcStatus()
+        if (Date.now() - startedAt > 20000) {
+          clearInterval(_bmcPollLoopTimer)
+          _bmcPollLoopTimer = null
+        }
+      }
+      _bmcPollLoopTimer = setInterval(tick, 1500)
+      tick()
+    }
+
     const pollHost = async (hostId) => {
       try {
-        await api.proxmox.pollHost(hostId)
+        // Kick the Proxmox poll AND the BMC poll in parallel so iDRAC-sourced
+        // fields (server model, health, firmware) refresh in the same click.
+        await Promise.all([
+          api.proxmox.pollHost(hostId),
+          api.idrac.triggerPoll().catch(() => {}),
+        ])
         toast.success('Polling started')
         setTimeout(() => {
           fetchHosts()
           handleRefreshAll()
-        }, 2000)
+        }, 1500)
+        pollBmcUntilFresh()
       } catch (error) {
         console.error('Failed to poll host:', error)
       }
@@ -1839,6 +1944,11 @@ export default {
     const handleRefreshAll = async () => {
       await refreshAllNodes()
       loadNodeStats()
+      // Trigger BMC poll in the background so per-node model/health refresh
+      // alongside the Proxmox node list. Re-read the cache twice: once
+      // quickly (catches fast iDRACs), once after the slow ones finish.
+      api.idrac.triggerPoll().catch(() => {})
+      pollBmcUntilFresh()
     }
 
     const datacentersWithNodes = computed(() => {
@@ -1895,9 +2005,180 @@ export default {
         // BMC poll may not have run yet — leave empty, model column will show '—'
       }
     }
+
+    // BMC poll interval (1/2/5/10 min, persisted in system_settings)
+    const bmcPollMinutes = ref(2)
+    const loadBmcPollInterval = async () => {
+      try {
+        const res = await api.system.getSettings()
+        const v = parseInt(res.data?.bmc_poll_interval_minutes, 10)
+        if ([1, 2, 5, 10].includes(v)) bmcPollMinutes.value = v
+      } catch (e) {
+        // requires admin — non-admins keep default 2
+      }
+    }
+    const editModelOverride = async (cacheKey, currentValue, label) => {
+      const v = window.prompt(
+        `Set server model for ${label || cacheKey}.\nLeave blank to clear and use auto-detected value.\n(Auto-detection requires iDRAC 8 / 14G or newer — older boxes need this manual override.)`,
+        currentValue || ''
+      )
+      if (v === null) return  // user cancelled
+      try {
+        await api.idrac.setModelOverride(cacheKey, v)
+        toast.success(v ? `Model set to ${v}` : 'Override cleared')
+        await loadBmcStatus()
+      } catch (err) {
+        toast.error(`Failed to save model: ${err.response?.data?.detail || err.message}`)
+      }
+    }
+
+    const updateBmcPollInterval = async () => {
+      try {
+        await api.system.updateSettings({ bmc_poll_interval_minutes: String(bmcPollMinutes.value) })
+        toast.success(`BMC poll set to ${bmcPollMinutes.value} min`)
+        // Backend reschedules with next_run_time=now → fresh poll is queued
+        // immediately. Read the cache repeatedly so updates appear ASAP.
+        pollBmcUntilFresh()
+      } catch (e) {
+        toast.error('Failed to update BMC poll interval — admin required?')
+      }
+    }
     const getNodeModel = (nodeId) => {
       const entry = bmcStatus.value[`pve_node:${nodeId}`]
       return entry?.model || null
+    }
+    const getNodePower = (nodeId) => {
+      const entry = bmcStatus.value[`pve_node:${nodeId}`]
+      return entry?.power_state || null
+    }
+    const getHostPower = (hostId) => {
+      const entry = bmcStatus.value[`pve:${hostId}`]
+      if (entry?.power_state) return entry.power_state
+      // Fall back: if all nodes report same state, surface it on the host card
+      const nodes = allNodes.value.filter(n => n.host_id === hostId)
+      const states = nodes.map(n => bmcStatus.value[`pve_node:${n.id}`]?.power_state).filter(Boolean)
+      if (states.length === 0) return null
+      const unique = [...new Set(states)]
+      return unique.length === 1 ? unique[0] : 'Mixed'
+    }
+    const powerStateClass = (state) => {
+      if (!state) return 'badge-secondary'
+      const s = String(state).toLowerCase()
+      if (s === 'on') return 'badge-success'
+      if (s === 'off') return 'badge-danger'
+      return 'badge-warning'
+    }
+
+    // ── Power menu (host + node iDRAC) ───────────────────────────────────────
+    const openPowerMenuKey = ref(null)
+    const openPowerMenuStyle = ref({})
+    const POWER_MENU_W = 200
+    const POWER_MENU_H = 240
+    const computePowerMenuStyle = (btn) => {
+      const r = btn.getBoundingClientRect()
+      const flipUp = r.bottom + POWER_MENU_H > window.innerHeight - 8
+      const top = flipUp ? Math.max(8, r.top - POWER_MENU_H - 4) : r.bottom + 4
+      const left = Math.max(8, Math.min(r.right - POWER_MENU_W, window.innerWidth - POWER_MENU_W - 8))
+      return { position: 'fixed', top: `${top}px`, left: `${left}px`, right: 'auto', zIndex: 1100 }
+    }
+    const togglePowerMenu = (key, e) => {
+      if (openPowerMenuKey.value === key) { openPowerMenuKey.value = null; return }
+      const btn = e?.currentTarget || e?.target?.closest('button')
+      if (btn) openPowerMenuStyle.value = computePowerMenuStyle(btn)
+      openPowerMenuKey.value = key
+    }
+    const closePowerMenuOnScroll = () => { if (openPowerMenuKey.value) openPowerMenuKey.value = null }
+    const handlePowerMenuOutsideClick = (e) => {
+      if (!e.target.closest('.power-menu-wrap') && !e.target.closest('.power-menu')) {
+        openPowerMenuKey.value = null
+      }
+    }
+    // Proxmox OS-level power commands (graceful only — runs through the OS).
+    // Cannot power on a fully-off machine; for that, use the iDRAC submenu.
+    const PVE_POWER_LABELS = {
+      shutdown: { icon: '⏻', label: 'Shutdown (PVE OS)', danger: true },
+      reboot:   { icon: '↻', label: 'Reboot (PVE OS)',   danger: true },
+    }
+    // iDRAC / BMC hardware-level power actions. These hit the BMC directly,
+    // so they work even when the OS is hung or off.
+    const IDRAC_POWER_LABELS = {
+      on:             { icon: '⚡', label: 'Power On',          danger: false, confirm: false },
+      graceful_off:   { icon: '⏻', label: 'Graceful Shutdown', danger: true,  confirm: true },
+      off:            { icon: '⛔', label: 'Force Power Off',   danger: true,  confirm: true },
+      graceful_reset: { icon: '↻', label: 'Graceful Restart',  danger: true,  confirm: true },
+      reset:          { icon: '⟳', label: 'Force Reset',       danger: true,  confirm: true },
+      power_cycle:    { icon: '⏼', label: 'Power Cycle',       danger: true,  confirm: true },
+    }
+    const runHostPvePower = async (host, command) => {
+      openPowerMenuKey.value = null
+      const meta = PVE_POWER_LABELS[command]
+      if (!confirm(`${meta.label} on ${host.name}?\n\nThis runs through the Proxmox OS — the host will be unreachable until it boots back up.`)) return
+      try {
+        // Host-level PVE shutdown applies to whichever node the user picks.
+        // For multi-node hosts, use the per-node menu instead.
+        const nodes = allNodes.value.filter(n => n.host_id === host.id)
+        const target = nodes.length === 1 ? nodes[0].node_name : (host.default_node || nodes[0]?.node_name)
+        if (!target) {
+          toast.error('No node found for this host')
+          return
+        }
+        await api.pveNode.nodePowerCommand(host.id, target, command)
+        toast.success(`${meta.label} sent to ${target}`)
+      } catch (err) {
+        toast.error(`PVE ${command} failed: ${err.response?.data?.detail || err.message}`)
+      }
+    }
+    const runNodePvePower = async (host, node, command) => {
+      openPowerMenuKey.value = null
+      const meta = PVE_POWER_LABELS[command]
+      if (!confirm(`${meta.label} on node ${node.node_name}?\n\nThis runs through the Proxmox OS — the node will be unreachable until it boots back up.`)) return
+      try {
+        await api.pveNode.nodePowerCommand(host.id, node.node_name, command)
+        toast.success(`${meta.label} sent to ${node.node_name}`)
+      } catch (err) {
+        toast.error(`PVE ${command} failed: ${err.response?.data?.detail || err.message}`)
+      }
+    }
+    const runHostIdracPower = async (host, action) => {
+      openPowerMenuKey.value = null
+      const meta = IDRAC_POWER_LABELS[action]
+      if (meta?.confirm && !confirm(`${meta.label} on ${host.name} (${host.idrac_hostname})?\n\nThis affects the physical server hardware.`)) return
+      try {
+        await api.idrac.powerAction(host.id, action)
+        toast.success(`${meta?.label || action} sent to ${host.name}`)
+        setTimeout(() => { api.idrac.triggerPoll().catch(() => {}); loadBmcStatus() }, 3000)
+      } catch (err) {
+        toast.error(`iDRAC power action failed: ${err.response?.data?.detail || err.message}`)
+      }
+    }
+    const runNodeIdracPower = async (node, action) => {
+      openPowerMenuKey.value = null
+      const meta = IDRAC_POWER_LABELS[action]
+      if (meta?.confirm && !confirm(`${meta.label} on node ${node.node_name} (${node.idrac_hostname})?\n\nThis affects the physical server hardware.`)) return
+      try {
+        await api.idrac.nodepower(node.id, action)
+        toast.success(`${meta?.label || action} sent to ${node.node_name}`)
+        setTimeout(() => { api.idrac.triggerPoll().catch(() => {}); loadBmcStatus() }, 3000)
+      } catch (err) {
+        toast.error(`iDRAC power action failed: ${err.response?.data?.detail || err.message}`)
+      }
+    }
+    // Summarize model across all nodes of a host. Returns a single model name
+    // when every node reports the same value, "Mixed (N)" when they differ,
+    // or null when no node has a model yet. Falls back to the host-level
+    // BMC entry (`pve:{id}`) for hosts without per-node iDRAC.
+    const getHostModel = (hostId) => {
+      const nodes = allNodes.value.filter(n => n.host_id === hostId)
+      const models = nodes
+        .map(n => bmcStatus.value[`pve_node:${n.id}`]?.model)
+        .filter(Boolean)
+      if (models.length === 0) {
+        const hostEntry = bmcStatus.value[`pve:${hostId}`]
+        return hostEntry?.model || null
+      }
+      const unique = [...new Set(models)]
+      if (unique.length === 1) return unique[0]
+      return `Mixed (${unique.length} models)`
     }
 
     // CPU helpers
@@ -2153,6 +2434,16 @@ export default {
       })
       fetchFederationSummary()
       loadBmcStatus()
+      loadBmcPollInterval()
+      document.addEventListener('mousedown', handlePowerMenuOutsideClick)
+      window.addEventListener('scroll', closePowerMenuOnScroll, true)
+      window.addEventListener('resize', closePowerMenuOnScroll)
+    })
+
+    onUnmounted(() => {
+      document.removeEventListener('mousedown', handlePowerMenuOutsideClick)
+      window.removeEventListener('scroll', closePowerMenuOnScroll, true)
+      window.removeEventListener('resize', closePowerMenuOnScroll)
     })
 
     return {
@@ -2222,6 +2513,22 @@ export default {
       formatGB,
       getNodeStat,
       getNodeModel,
+      getHostModel,
+      getHostPower,
+      getNodePower,
+      powerStateClass,
+      openPowerMenuKey,
+      openPowerMenuStyle,
+      togglePowerMenu,
+      runHostPvePower,
+      runNodePvePower,
+      runHostIdracPower,
+      runNodeIdracPower,
+      PVE_POWER_LABELS,
+      IDRAC_POWER_LABELS,
+      bmcPollMinutes,
+      updateBmcPollInterval,
+      editModelOverride,
       getHostNodes,
       getFedSummary,
       getHostResourceSummary,
@@ -2435,6 +2742,132 @@ export default {
   font-size: 0.7rem;
   font-weight: 600;
   font-family: monospace;
+}
+
+.model-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  background: rgba(168, 85, 247, 0.1);
+  color: #a855f7;
+  border: 1px solid rgba(168, 85, 247, 0.25);
+  border-radius: 9999px;
+  padding: 0.05rem 0.55rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.model-chip-edit {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: inherit;
+  opacity: 0.55;
+  font-size: 0.85em;
+  padding: 0 0.15rem;
+  line-height: 1;
+}
+.model-chip-edit:hover { opacity: 1; }
+
+.power-menu-wrap { position: relative; display: inline-block; }
+.power-menu {
+  background: var(--surface, #fff);
+  border: 1px solid var(--border-color, #e2e8f0);
+  border-radius: 6px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
+  min-width: 220px;
+  padding: 4px 0;
+}
+.power-menu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 0.5rem 0.85rem;
+  font-size: 0.875rem;
+  cursor: pointer;
+  color: var(--text-primary, #1e293b);
+  white-space: nowrap;
+}
+.power-menu button:hover { background: var(--background, #f1f5f9); }
+.power-menu-danger { color: var(--danger-color, #ef4444) !important; }
+.power-menu-section {
+  padding: 0.4rem 0.85rem 0.25rem;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary, #64748b);
+}
+.power-menu-muted {
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  white-space: normal;
+  max-width: 280px;
+}
+.power-menu-divider { height: 1px; background: var(--border-color, #e2e8f0); margin: 4px 0; }
+
+/* Action area: primary CTA on its own full-width row, then a compact
+   icon-only secondary row that fits regardless of zoom / font scaling. */
+.host-card__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.hca-primary {
+  width: 100%;
+  display: block;
+  white-space: nowrap;
+}
+.hca-secondary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  align-items: center;
+}
+.hca-icon, .hca-power-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  padding: 0.35rem 0.5rem !important;
+  min-width: 2rem;
+  font-size: 0.85rem;
+  line-height: 1;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.hca-icon-wrap { display: inline-block; }
+.hca-power-dot {
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.hca-power-dot.badge-success { background: #22c55e; }
+.hca-power-dot.badge-danger { background: #ef4444; }
+.hca-power-dot.badge-warning { background: #f59e0b; }
+.hca-power-dot.badge-secondary { background: #94a3b8; }
+.host-card__hostname { flex-wrap: wrap; min-width: 0; }
+.host-card__hostname code,
+.host-card__hostname .version-chip,
+.host-card__hostname .model-chip {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.node-header { flex-wrap: wrap; gap: 0.4rem; }
+.node-header h5 { min-width: 0; flex: 1 1 auto; word-break: break-word; }
+.node-header .model-chip {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: inline-block;
+  vertical-align: middle;
 }
 
 /* Location button on card */

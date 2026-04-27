@@ -467,6 +467,7 @@ export default {
   idrac: {
     getStatus: () => api.get('/idrac/status'),
     triggerPoll: () => api.post('/idrac/poll'),
+    setModelOverride: (cacheKey, model) => api.put(`/idrac/model-override/${cacheKey}`, { model }),
     testConnection: (hostId) => api.get(`/idrac/${hostId}/test`),
     getInfo: (hostId, cfg) => api.get(`/idrac/${hostId}/info`, cfg),
     getPowerState: (hostId) => api.get(`/idrac/${hostId}/power`),
@@ -663,6 +664,8 @@ export default {
 
   // PVE Node/Cluster Control (/pve-node/{host_id}/...)
   pveNode: {
+    // Node OS power (shutdown / reboot)
+    nodePowerCommand: (h, node, command) => api.post(`/pve-node/${h}/nodes/${node}/status/${command}`),
     // Cluster
     clusterStatus: (h) => api.get(`/pve-node/${h}/cluster/status`),
     nextId: (h) => api.get(`/pve-node/${h}/cluster/nextid`),

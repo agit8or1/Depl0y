@@ -13,6 +13,13 @@ import logging
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+# Interactive console / shell sessions that surface in PVE's task list but
+# don't represent meaningful "background work". They linger until the user
+# (or PVE's idle timeout) ends them, cluttering the floating task bar.
+_INTERACTIVE_TASK_TYPES = frozenset({
+    "vncshell", "vncproxy", "spiceshell", "spiceproxy", "termproxy",
+})
+
 
 def _get_host(host_id: int, db: Session) -> ProxmoxHost:
     host = db.query(ProxmoxHost).filter(
@@ -59,6 +66,11 @@ def get_running_tasks(db: Session = Depends(get_db), current_user=Depends(get_cu
                         node_tasks = pve.nodes(node_name).tasks.get(source="active")
                         for t in node_tasks:
                             if t.get("upid") in tracked_upids:
+                                continue
+                            # Skip interactive shell / console sessions — they
+                            # aren't background work and PVE leaves them in
+                            # "running" state long after the user disconnects.
+                            if t.get("type") in _INTERACTIVE_TASK_TYPES:
                                 continue
                             pve_running.append({
                                 "upid": t.get("upid"),

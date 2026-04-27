@@ -345,9 +345,11 @@ async def get_dashboard_alerts(
 
     # 1. Offline nodes (from cached node data — node.is_online or cpu_usage is None)
     all_nodes = db.query(ProxmoxNode).all()
+    offline_node_names = set()
     for node in all_nodes:
         # Heuristic: if cpu_usage is None, treat as potentially offline
         if node.cpu_usage is None and node.memory_total is None:
+            offline_node_names.add(node.node_name)
             alerts.append({
                 "severity": "error",
                 "type": "offline_node",

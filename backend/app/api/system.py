@@ -352,6 +352,16 @@ def update_settings(
                 db.add(row)
         db.commit()
         invalidate_settings_cache()
+        # Live-apply settings that drive scheduled jobs so the user doesn't
+        # have to restart the backend to see the new cadence take effect.
+        if "bmc_poll_interval_minutes" in updates:
+            try:
+                from app.services.scheduler import reschedule_bmc_poll, _BMC_POLL_ALLOWED_MIN
+                v = int(updates["bmc_poll_interval_minutes"])
+                if v in _BMC_POLL_ALLOWED_MIN:
+                    reschedule_bmc_poll(v)
+            except Exception as exc:
+                logger.warning("Could not live-apply bmc_poll_interval_minutes: %s", exc)
         return {"success": True, "updated": list(updates.keys())}
     except Exception as e:
         db.rollback()

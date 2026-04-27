@@ -217,55 +217,64 @@ class TaskTracker:
         except Exception as exc:
             logger.debug("TaskTracker poll error for %s: %s", task.get("upid"), exc)
 
-    def progress_for_external(self, upid: str, host_id: int, node: str, started_at_ts: float | None, task_type: str) -> float:
+    # Interactive / shell-style tasks have no meaningful progress
+    _NO_PROGRESS_TYPES = frozenset({
+        "vncshell", "vncproxy", "spiceshell", "spiceproxy", "termproxy",
+    })
+
+    def progress_for_external(self, upid: str, host_id: int, node: str, started_at_ts: float | None, task_type: str) -> float | None:
         """Compute a live progress % for a task NOT registered through depl0y.
         Used for tasks pulled straight from Proxmox's cluster/node task list
         (source=proxmox). Fetches the task log with a short TTL cache and
         parses the actual percentage out, falling back to a conservative
-        time-based estimate.
+        time-based estimate. Returns None for interactive/shell tasks where
+        progress is not meaningful.
         """
+        if task_type in self._NO_PROGRESS_TYPES:
+            return None
         import time
         now = time.time()
         # TTL-cached parsed progress
         cached = self._ext_progress.get(upid)
         if cached and (now - cached[0]) < self._ext_progress_ttl:
-            base = cached[1]
-        else:
-            base = None
+            return round(float(cached[1]), 1)
+
+        prev = self._ext_progress.get(upid, (0.0, 0.0))[1]
+        parsed = None
+        try:
+            from app.core.database import SessionLocal
+            from app.models import ProxmoxHost
+            from app.services.proxmox import ProxmoxService
+            db = SessionLocal()
             try:
-                from app.core.database import SessionLocal
-                from app.models import ProxmoxHost
-                from app.services.proxmox import ProxmoxService
-                db = SessionLocal()
-                try:
-                    host = db.query(ProxmoxHost).filter(
-                        ProxmoxHost.id == host_id,
-                        ProxmoxHost.is_active == True,
-                    ).first()
-                    if host is not None:
-                        pve = ProxmoxService(host).proxmox
-                        log_tail = pve.nodes(node).tasks(upid).log.get(start=0, limit=200)
-                        base = self._parse_log_progress(log_tail, task_type)
-                finally:
-                    db.close()
-            except Exception as exc:
-                logger.debug("external progress fetch failed for %s: %s", upid, exc)
-            # Monotonic cache: never let progress move backwards between polls
-            prev = self._ext_progress.get(upid, (0.0, 0.0))[1]
-            if base is not None and base < prev:
-                base = prev
-            self._ext_progress[upid] = (now, base if base is not None else prev)
-        if base is not None:
-            return round(float(base), 1)
-        # Fallback: time-based, capped at 60% until the log yields a real number
-        if started_at_ts:
+                host = db.query(ProxmoxHost).filter(
+                    ProxmoxHost.id == host_id,
+                    ProxmoxHost.is_active == True,
+                ).first()
+                if host is not None:
+                    pve = ProxmoxService(host).proxmox
+                    log_tail = pve.nodes(node).tasks(upid).log.get(start=0, limit=200)
+                    parsed = self._parse_log_progress(log_tail, task_type)
+            finally:
+                db.close()
+        except Exception as exc:
+            logger.debug("external progress fetch failed for %s: %s", upid, exc)
+
+        if parsed is not None:
+            value = max(parsed, prev)  # monotonic
+        elif prev > 0:
+            value = prev  # keep last known good — don't fall back to time-based once log gave a real number
+        elif started_at_ts:
             try:
                 elapsed = now - float(started_at_ts)
             except Exception:
                 elapsed = 0.0
             duration = _TASK_DURATIONS.get(task_type, 60)
-            return round(min(elapsed / duration * 100, 60.0), 1)
-        return 0.0
+            value = min(elapsed / duration * 100, 60.0)
+        else:
+            value = 0.0
+        self._ext_progress[upid] = (now, value)
+        return round(float(value), 1)
 
     def prune_ext_progress(self, keep_upids: set[str]) -> None:
         """Drop entries for tasks that are no longer running to keep the cache small."""

@@ -9,6 +9,7 @@
         v-for="(alert, i) in alerts"
         :key="i"
         :class="['alert-row', `alert-${alert.severity}`]"
+        :title="alert.detail"
       >
         <span class="alert-icon">{{ severityIcon(alert.severity) }}</span>
         <div class="alert-body">
@@ -102,9 +103,24 @@ export default {
 .alert-info    { border-left-color: #3b82f6; background: rgba(59,130,246,0.05); }
 
 .alert-icon { font-size: 0.9rem; flex-shrink: 0; margin-top: 0.05rem; }
-.alert-body { flex: 1; display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; }
-.alert-title { font-weight: 600; color: var(--text-primary); }
-.alert-detail { color: var(--text-secondary); font-size: 0.72rem; }
+.alert-body { flex: 1; display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; overflow: hidden; }
+.alert-title {
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.alert-detail {
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: break-word;
+}
 
 .alert-chip {
   font-size: 0.6rem; font-weight: 700; text-transform: uppercase;

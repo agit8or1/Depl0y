@@ -5,7 +5,7 @@
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)
 ![Vue.js](https://img.shields.io/badge/vue.js-3.x-green.svg)
-[![Version](https://img.shields.io/badge/version-2.2.51-brightgreen.svg)](https://github.com/agit8or1/Depl0y/releases)
+[![Version](https://img.shields.io/badge/version-2.2.61-brightgreen.svg)](https://github.com/agit8or1/Depl0y/releases)
 [![GitHub Stars](https://img.shields.io/github/stars/agit8or1/Depl0y?style=social)](https://github.com/agit8or1/Depl0y/stargazers)
 
 ⭐ If Depl0y saves you time, give it a star — it helps others find the project!
@@ -79,7 +79,7 @@ Depl0y is a free, open-source web control panel for Proxmox VE. Manage VMs, clus
 ### 🖥️ Full Proxmox VE Management
 - **VMs** — start/stop/reboot/suspend/resume, config editing (CPU, RAM, disks, NICs), snapshots, clone, migrate, firewall, VNC console, QEMU serial terminal
 - **LXC Containers** — lifecycle, config editing, snapshots, terminal (xterm.js)
-- **Nodes** — RRD metrics charts, VM + LXC list, storage browser, network config, task log, node terminal
+- **Nodes** — RRD metrics charts, VM + LXC list, storage browser, network config, task log, node terminal, **OS-level shutdown / reboot** via `pvesh`
 - **Cluster** — status, node list, HA groups and resources, quorum monitoring
 - **Cluster Join / Unjoin** — join any node to a cluster (fingerprint auto-fetched), remove nodes from cluster
 - **Replication** — job CRUD, force-sync, log viewer
@@ -88,6 +88,7 @@ Depl0y is a free, open-source web control panel for Proxmox VE. Manage VMs, clus
 - **Backup** — schedule CRUD, manual trigger, PBS datastore browsing
 - **Storage** — pool management, content browsing, ISO and cloud image management
 - **Networking** — bridge/bond/VLAN config with apply-pending support
+- **Offline-tolerant** — host/node endpoints (`status`, `vms`, `lxc`, `tasks`) return clean empty payloads when a node is powered off so the dashboard doesn't blow up
 
 ### 📊 Dashboard
 - **Widget grid** — drag-and-drop reordering with masonry (asymmetric column) layout
@@ -103,9 +104,14 @@ Depl0y is a free, open-source web control panel for Proxmox VE. Manage VMs, clus
 
 ### 🖧 iDRAC / iLO Out-of-Band Management
 - **Redfish Dashboard** — unified health, power, temperature, wattage for all BMC-equipped servers
-- **Power Control** — on, off, graceful shutdown, force/graceful restart, PXE boot
+- **Two-section Power menu** — surface a **⚡ Power** dropdown on every host card, node card, and on the iDRAC management page. Top section runs through the **Proxmox OS** (graceful shutdown / reboot via `pvesh`), bottom section runs through **iDRAC/BMC** (Power On / Force Off / Graceful Off / Reset / Power Cycle / PXE) — the only path that can power on a fully-off machine
+- **Server model auto-detection** — Redfish `Model` → Dell `SystemPID` → Dell `SystemID` → PCI subsystem lookup → manager generation tag, in that order. Resolves PowerEdge model names directly from the BMC even on 13G boxes where the standard `Model` field is blank
+- **Manual model override** — pencil-edit on the host/node model chip; persists to `system_settings` and applies to the live cache instantly. Required for older (iDRAC 7) BMCs that don't expose model metadata at all
+- **Configurable poll interval** — 1 / 2 / 5 / 10 minutes, persisted globally; backend live-reschedules the job and queues an immediate poll on change
+- **Continuous post-poll refresh** — Refresh All / Poll Now drives a 1.5 s cache re-fetch loop for ~20 s, so per-server model/health/power-state updates appear as soon as each individual BMC responds (rather than waiting for the slowest)
 - **Hardware Inventory** — CPUs, DIMMs, storage controllers & drives, firmware, NICs, SEL
-- **Multi-vendor** — Dell iDRAC (including iDRAC 8 / 13G) and HPE iLO via Redfish v1
+- **Daily firmware-update check** — Dell catalog XML parsed daily; BIOS / iDRAC available-version chips with direct support links
+- **Multi-vendor** — Dell iDRAC (iDRAC 7 / 8 / 9 / 14G+) and HPE iLO via Redfish v1; SSH-based hardware reporting for hosts without Redfish
 
 ### 🤖 LLM Deployment
 - **Simple + Advanced modes** — 4 questions to deploy, or full control over engine/model/GPU/OS/storage

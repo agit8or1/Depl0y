@@ -5,6 +5,91 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.61] - 2026-04-27 🧹 Host card actions: zoom-tolerant layout
+
+### Fixed
+- **Action row still overflowed at higher browser zoom** even after the previous consolidation. Restructured into two rows: `Open Cluster` as a full-width primary CTA on its own line, and a compact **icon-only** secondary row (PVE UI · Details · ⚡ Power · ⋮ More) that fits at any zoom level. Power state is now a colored dot (green/red/amber) instead of a text badge — same info, no chance of wrapping. All actions keep tooltips with full text labels.
+
+## [2.2.60] - 2026-04-27 🧹 Host card action row cleanup
+
+### Fixed
+- **Host-card action row was 10 buttons wide and overflowed**, with the Power-button label wrapping ("⚡ Power" / "Mixed" stacked on two lines). Reduced to four primary buttons in the row — `Open Cluster`, `PVE UI`, `Details`, `⚡ Power` — with `Edit` / `Test` / `Poll Now` / `Join Cluster` / `Unjoin Node` / `Delete` consolidated into a single `⋮ More` dropdown. Power-button label and state badge now `nowrap` so they always sit on one line.
+
+## [2.2.59] - 2026-04-27 ⚡ iDRAC page power menu + PBS polling fixes
+
+### Added
+- **Power dropdown on the iDRAC/iLO Management page**, in the always-visible status row of every server card. Same six actions as the host/node cards (On / Graceful Off / Force Off / Graceful Restart / Force Reset / Power Cycle), routed to the right backend per server type (`pve` / `pve_node` / `pbs` / `standalone`). Teleported with auto flip-up.
+
+### Fixed
+- **PBS servers without iDRAC (e.g. `pbs2`, a VM) were being added to the BMC poll cycle** because `idrac_hostname.isnot(None)` only excludes SQL NULL — the empty-string column slipped through. Filter now excludes both NULL and `""`. Also drops cache entries that no longer correspond to a configured BMC, so old polls of cleared rows stop showing stale "error" entries.
+- **`pbs1` Redfish reads were timing out** at the new 8s per-call cap (its iDRAC takes ~5–6s for the first response on cold connections, plus thermal/power calls that can each push past 8s individually). Bumped the per-call timeout back up to 15s — still well below the original 20s, but enough headroom for slower BMCs.
+- **Dashboard alerts overflow** when a backup audit log entry includes a long termproxy command. Title truncates to one line with ellipsis; detail clamps to 2 lines; full text accessible via hover tooltip.
+
+## [2.2.58] - 2026-04-27 ✎ Manual model override for older iDRAC + offline-node task tolerance
+
+### Fixed
+- **All per-node Proxmox endpoints now tolerate an offline target node** instead of bubbling 500s into the dashboard console. Extracted `_is_offline_error()` helper in `node.py` matching `no route to host` / `connection refused` / `timed out` / `name or service not known` / `unreachable` / `network is unreachable`, and applied it to `/nodes/{node}/status`, `/vms`, `/lxc`, and `/tasks`. Offline shape: status returns `{status: "offline", error: ...}`, vms returns `{vms: [], containers: [], offline: true}`, lxc/tasks return `[]`. Other failure modes still 500.
+
+### Background
+- Confirmed against pve2 (iDRAC 7, R730xd): the BMC literally does not expose `Model`, `SystemPID`, `SystemID`, or any Dell OEM model field via Redfish — every endpoint returns blank or whitespace. iDRAC 7 firmware predates the Dell Redfish OEM extension that newer boxes use. Auto-detection isn't fixable for these — there's no field to read.
+
+### Added
+- **Manual model override** (admin only) via the new `🖥 ✎` pencil button on every host and node card. Sets `system_settings.model_override:<cache_key>` and instantly applies to the live BMC cache so the chip updates without waiting for the next poll. Auto-detected value is preserved as `auto_model` so we can restore it by clearing the override. New `PUT /api/v1/idrac/model-override/{cache_key}` endpoint backs it.
+- Pre-seeded `model_override:pve_node:1` = `Dell PowerEdge R730xd` so pve2 reads correctly out of the gate.
+
+## [2.2.57] - 2026-04-27 ⚡ Faster BMC refresh + SystemID-based model lookup
+
+### Fixed
+- **pve2 (and other 13G hosts) still showed `Dell PowerEdge (13G)` after a fresh poll** because the OEM `SystemPID` field is empty on iDRAC 8 too. The poll already retrieves Dell's `SystemID` (e.g. 1575 → `0x0627`) — same key the PCI lookup table is indexed by — but it was only stored, never used for model resolution. Now `get_system_info()` runs `lookup_dell_model_from_pci(SystemID)` before falling back to the generation label, so 13G boxes resolve to their actual PowerEdge model directly from Redfish — no Proxmox PCI query, works even when the host OS is offline.
+
+### Improved
+- **Redfish per-call timeout reduced from 20s → 8s**, so an unreachable BMC fails fast instead of stalling the whole poll cycle. Combined with the existing 10-worker thread pool, a slow/dead BMC now caps at ~8s rather than 20s.
+- **"Refresh All" / "Poll" / changing the poll interval all now drive a continuous cache re-fetch** (every 1.5s for up to 20s) instead of two fixed checkpoints, so the UI updates as soon as each individual BMC poll finishes rather than waiting for the slowest one.
+
+## [2.2.56] - 2026-04-27 ⚙️ Configurable BMC poll + Dell OEM model fallback
+
+### Added
+- **BMC poll interval is now user-configurable.** New `BMC poll: [1/2/5/10 min]` selector in the Cluster Nodes header (admin only); default stays at 2 min. Persisted in `system_settings.bmc_poll_interval_minutes`. Backend exposes `reschedule_bmc_poll()` which `PATCH /api/v1/system/settings` calls live, so the new cadence takes effect without a backend restart and a fresh poll is queued immediately.
+
+### Fixed
+- **Server model showing `Dell PowerEdge (13G)` instead of the actual model on iDRAC 8 / 13G boxes (e.g. pve2).** Redfish returns blank `Model` on those boxes; we now read `Oem.Dell.DellSystem.SystemPID` from the System resource (the human-readable PowerEdge name iDRAC emits as an OEM extension) before falling back to the manager-generation label. Also extended the PCI lookup to cover host-level (`pve:`) entries, not just `pve_node:` ones, and log unknown Dell subsystem IDs at info-level so the lookup table can be extended for any model that's still missing.
+
+## [2.2.55] - 2026-04-27 ⚡ PVE OS shutdown/reboot + layout cleanup
+
+### Added
+- **Two-section power menu on every host + node card.** Top section runs through the **Proxmox OS** (`/api/v1/pve-node/{host}/nodes/{node}/status/{shutdown|reboot}` → `pvesh /nodes/{n}/status` `command=shutdown|reboot`) — works while the OS is alive but cannot turn a fully-off machine back on. Bottom section runs through the **iDRAC/BMC** (existing `/idrac/.../power/{action}`) — the only path that can power on a dead box, plus force-off / reset / power-cycle when the OS is unresponsive. When the host has no iDRAC configured, the bottom section is replaced with a hint pointing at Edit.
+- New backend endpoint `POST /api/v1/pve-node/{host_id}/nodes/{node}/status/{command}` (admin-only, accepts `shutdown` or `reboot`).
+
+### Fixed
+- **Proxmox Hosts page layout overflow.** Action button row now wraps cleanly on narrow cards; long version/model chips truncate with ellipsis instead of pushing content outside the card; node header wraps the model chip below the node name when there's no horizontal room.
+
+## [2.2.54] - 2026-04-27 ⚡ Power controls on host + node cards
+
+### Added
+- **Power dropdown on each Proxmox host card** (when host iDRAC is configured): Power On / Graceful Shutdown / Force Power Off / Graceful Restart / Force Reset / Power Cycle. Current power state shown as a badge on the trigger button.
+- **Same dropdown on each node card** in the Cluster Nodes section, when that node has its own iDRAC configured (uses `POST /idrac/node/{id}/power/{action}`).
+- Destructive actions (everything except Power On) prompt before executing. After any action, the BMC poll is kicked and the cache re-read so the state badge updates without needing another click.
+- Menu uses `<Teleport>` + auto flip-up so it isn't clipped by the card or container — same pattern as the VM more-actions fix.
+
+## [2.2.53] - 2026-04-27 🛠️ Poll Now triggers BMC refresh
+
+### Fixed
+- **"Poll" / "Refresh All" on Proxmox Hosts didn't pick up missing iDRAC-sourced data quickly.** Both buttons fetched the Proxmox node list but didn't kick the BMC poller, so server model / health / firmware fields stayed stale until the next scheduled BMC pass. Both now fire `POST /api/v1/idrac/poll` in parallel and re-read the cache at +2s and +8s (covers fast and slow iDRACs).
+
+## [2.2.52] - 2026-04-27 🛠️ VM dropdown clip fix + task progress/ETA polish
+
+### Fixed
+- **Virtual Machines page — "More actions" dropdown was clipped when the list was filtered.** `.table-container` has `overflow-x: auto`, which (per CSS spec) forces `overflow-y` to behave as `auto` too — so the absolutely-positioned `.more-menu` got cut off below the shrunken container. The three menu instances now render via `<Teleport to="body">` with fixed positioning computed from the trigger button's bounding rect, with auto flip-up when there isn't room below. Closes on scroll/resize.
+- **Floating task detail modal — "Started 1/21/1970" timestamp.** PVE/PBS-sourced tasks emit `started_at` as Unix seconds while depl0y-tracked tasks emit ISO strings; `new Date(seconds)` interpreted the number as milliseconds. New `toDate()` helper detects numeric epochs (< 1e12 → seconds, ≥ 1e12 → ms) and converts correctly. Same fix applied to `Tasks.vue`.
+- **Task progress jitter — bar moved backwards between polls.** `progress_for_external` fell back to a time-based estimate whenever the log parser returned `None`, so a transient parse miss could drop progress below the previously-cached value. Now keeps the last-known parsed value when a poll fails to produce a percentage.
+- **Interactive tasks no longer show a fake progress bar.** `vncshell` / `vncproxy` / `spiceshell` / `spiceproxy` / `termproxy` return `progress: null`; the bar hides instead of pretending to track an interactive session.
+- **Stale console sessions no longer linger in the floating task bar.** PVE leaves `vncshell` / `vncproxy` / `spiceshell` / `spiceproxy` / `termproxy` UPIDs in "running" state long after the user closes the console tab; `/api/v1/tasks/running` now filters those types out so they don't accumulate in the running list.
+
+### Added
+- **ETA + Elapsed in the floating task detail modal**, computed from progress rate. Durations now format as `Xd Yh Zm` / `Xh Ym` / `Xm Ys` / `Xs` everywhere (running list, detail KV, Tasks page).
+- **Server model chip on each Proxmox host card** (e.g. `🖥 Dell PowerEdge R730xd`) — visible without expanding the node list. Sourced from the BMC poll cache; falls back to the host-level entry, summarises as `Mixed (N models)` for clusters with non-identical hardware, and is hidden when no model has been collected yet.
+- **Per-node server model chip in the Cluster Nodes section** of the Proxmox Hosts page — same data source, on every node card next to the node name.
+
 ## [2.2.51] - 2026-04-27 🛠️ Floating tasks PBS-task fix + Proxmox Hosts shows server model
 
 ### Fixed

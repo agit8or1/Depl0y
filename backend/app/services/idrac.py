@@ -120,7 +120,7 @@ class RedfishClient:
         password: str,
         port: int = 443,
         bmc_type: str = "idrac",  # "idrac" or "ilo"
-        timeout: int = 20,
+        timeout: int = 15,
     ):
         self.base_url = f"https://{hostname}:{port}"
         self.username = username
@@ -171,6 +171,41 @@ class RedfishClient:
         manufacturer = (data.get("Manufacturer") or "").strip()
         # NOTE: SKU is the 7-char Dell Express Service Code (e.g. "CVPVS52"), not a model name.
         # Do NOT use it as a model fallback — it is misleading.
+
+        oem_dell = (data.get("Oem") or {}).get("Dell") or {}
+        dell_sys = oem_dell.get("DellSystem") or {}
+
+        # Dell Oem extension on the System resource carries the human-readable
+        # PowerEdge name in `Oem.Dell.DellSystem.SystemPID` (e.g. "PowerEdge R730xd")
+        # — this populates on 13G iDRAC 8 even when the standard Model field is blank.
+        if not model:
+            pid = dell_sys.get("SystemPID")
+            if pid:
+                pid = str(pid).strip()
+                if pid.lower().startswith("poweredge"):
+                    model = f"Dell {pid}"
+                elif pid[:1].lower() in ("r", "t", "m"):
+                    model = f"Dell PowerEdge {pid}"
+                else:
+                    model = pid
+
+        # Dell SystemID (e.g. 1575 → 0x0627 → "PowerEdge R730xd") matches the
+        # PCI subsystem device ID we already keep a lookup table for. This works
+        # even when the host OS is offline (PCI list unavailable) — Redfish on
+        # the BMC is the authoritative source.
+        if not model or model.startswith("Dell PowerEdge ("):
+            raw_sid = dell_sys.get("SystemID")
+            if raw_sid is not None:
+                try:
+                    hex_id = hex(int(raw_sid)) if not isinstance(raw_sid, str) else (
+                        raw_sid if raw_sid.startswith("0x") else hex(int(raw_sid, 16))
+                    )
+                    found = lookup_dell_model_from_pci(hex_id)
+                    if found:
+                        model = f"Dell {found}"
+                except Exception:
+                    pass
+
         # Try manager endpoint for manufacturer and generation hint
         if not model or not manufacturer:
             try:

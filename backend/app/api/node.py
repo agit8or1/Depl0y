@@ -86,6 +86,25 @@ def _pve(host: ProxmoxHost):
     return ProxmoxService(host).proxmox
 
 
+# Connection-error fragments raised by proxmoxer when a node is offline
+# (host powered off, NIC down, etc). When matched, we surface an empty
+# result rather than a 500 — the dashboard polls every node and a single
+# powered-off box should not break the request.
+_OFFLINE_FRAGMENTS = (
+    "no route to host",
+    "connection refused",
+    "timed out",
+    "name or service not known",
+    "unreachable",
+    "network is unreachable",
+)
+
+
+def _is_offline_error(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return any(s in msg for s in _OFFLINE_FRAGMENTS)
+
+
 # ── Field-level validation helpers ────────────────────────────────────────────
 
 def _validate_vm_create_fields(data: dict) -> None:
@@ -726,6 +745,8 @@ def node_status(host_id: int, node: str, db: Session = Depends(get_db),
         pve_cache.set(cache_key, result, ttl=20)
         return result
     except Exception as e:
+        if _is_offline_error(e):
+            return {"status": "offline", "error": str(e)}
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -769,6 +790,8 @@ def node_vms(host_id: int, node: str, db: Session = Depends(get_db),
         pve_cache.set(cache_key, result, ttl=15)
         return result
     except Exception as e:
+        if _is_offline_error(e):
+            return {"vms": [], "containers": [], "offline": True}
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -787,6 +810,9 @@ def node_tasks(host_id: int, node: str, limit: int = 50, start: int = 0,
     try:
         return _pve(host).nodes(node).tasks.get(**params)
     except Exception as e:
+        if _is_offline_error(e):
+            logger.debug("node_tasks: %s/%s offline (%s) — returning empty list", host_id, node, e)
+            return []
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -1116,6 +1142,8 @@ def list_containers(host_id: int, node: str, db: Session = Depends(get_db),
         pve_cache.set(cache_key, result, ttl=15)
         return result
     except Exception as e:
+        if _is_offline_error(e):
+            return []
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -2067,3 +2095,32 @@ def list_pci_mdev_types(host_id: int, node: str, pciid: str,
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Node power (Proxmox OS-level: shutdown / reboot) ─────────────────────────
+@router.post("/{host_id}/nodes/{node}/status/{command}")
+def node_power_command(
+    host_id: int,
+    node: str,
+    command: str,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_admin),
+):
+    """Run a Proxmox OS-level power command on a node.
+
+    Valid commands: `shutdown`, `reboot`. These go through `pvesh
+    /nodes/{node}/status` and trigger the OS to halt/reboot — distinct from
+    iDRAC/BMC-level power actions, which work even when the OS is unresponsive.
+    """
+    if command not in ("shutdown", "reboot"):
+        raise HTTPException(status_code=400, detail=f"Invalid command '{command}'")
+    host = _get_host(host_id, db)
+    try:
+        _pve(host).nodes(node).status.post(command=command)
+        logger.info(
+            "PVE node %s on host %s by %s",
+            command, host_id, current_user.username,
+        )
+        return {"status": "success", "command": command, "node": node}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Proxmox error: {e}")

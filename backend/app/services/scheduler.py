@@ -160,14 +160,23 @@ def run_bmc_poll():
     db = SessionLocal()
     try:
         servers = []
-        for h in db.query(ProxmoxHost).filter(ProxmoxHost.idrac_hostname.isnot(None)).all():
+        # `.isnot(None)` only excludes SQL NULL — empty strings sneak through.
+        # Filter both NULL and "" so VMs / placeholders aren't polled.
+        _has_idrac = lambda col: col.isnot(None) & (col != "")
+        for h in db.query(ProxmoxHost).filter(_has_idrac(ProxmoxHost.idrac_hostname)).all():
             servers.append(("pve", h.id, h))
-        for s in db.query(PBSServer).filter(PBSServer.idrac_hostname.isnot(None)).all():
+        for s in db.query(PBSServer).filter(_has_idrac(PBSServer.idrac_hostname)).all():
             servers.append(("pbs", s.id, s))
         for b in db.query(StandaloneBMC).filter(StandaloneBMC.is_active == True).all():
             servers.append(("standalone", b.id, b))
-        for n in db.query(ProxmoxNode).filter(ProxmoxNode.idrac_hostname.isnot(None)).all():
+        for n in db.query(ProxmoxNode).filter(_has_idrac(ProxmoxNode.idrac_hostname)).all():
             servers.append(("pve_node", n.id, n))
+
+        # Drop cache entries that no longer correspond to a configured BMC
+        # (e.g. PBS rows whose iDRAC was cleared because the box is a VM).
+        valid_keys = {f"{stype}:{sid}" for stype, sid, _ in servers}
+        for stale in [k for k in bmc_status_cache if k not in valid_keys]:
+            bmc_status_cache.pop(stale, None)
 
         # Expunge ORM objects so they're safe to pass into worker threads.
         # Each worker creates its own DB session for PCI-lookup queries.
@@ -286,13 +295,22 @@ def run_bmc_poll():
                 # ── PCI subsystem lookup for generic/blank Dell model ───────
                 # When Redfish returns blank or "Dell PowerEdge (NNG)" (13G/12G iDRAC),
                 # query the Proxmox PCI device list and match the Dell subsystem ID.
-                if stype == "pve_node" and (not model or model.startswith("Dell PowerEdge (")):
+                # Apply PCI lookup for both pve (host) and pve_node entries —
+                # depl0y can poll the cluster for either, and we want the same
+                # model-resolution fallback in both paths.
+                if stype in ("pve_node", "pve") and (not model or model.startswith("Dell PowerEdge (")):
                     _pci_db = SessionLocal()
                     try:
                         from proxmoxer import ProxmoxAPI
                         from app.core.security import decrypt_data as _dec
-                        node_name = getattr(obj, "node_name", None)
-                        host = _pci_db.query(ProxmoxHost).filter_by(id=obj.host_id).first()
+                        from app.models.database import ProxmoxNode
+                        if stype == "pve_node":
+                            node_name = getattr(obj, "node_name", None)
+                            host = _pci_db.query(ProxmoxHost).filter_by(id=obj.host_id).first()
+                        else:
+                            host = obj
+                            n = _pci_db.query(ProxmoxNode).filter_by(host_id=obj.id).order_by(ProxmoxNode.id).first()
+                            node_name = n.node_name if n else None
                         if node_name and host:
                             # Parse token user + name from api_token_id (e.g. "root@pam!depl0y")
                             _api_token_id = host.api_token_id or ""
@@ -313,9 +331,12 @@ def run_bmc_poll():
                                 verify_ssl=False,
                             )
                             pci_list = px.nodes(node_name).hardware.pci.get()
+                            dell_subsys_seen = []
                             for dev in pci_list:
                                 if dev.get("subsystem_vendor") == "0x1028":  # Dell
                                     sub_dev = dev.get("subsystem_device", "")
+                                    if sub_dev:
+                                        dell_subsys_seen.append(sub_dev)
                                     found = lookup_dell_model_from_pci(sub_dev)
                                     if found:
                                         model = found
@@ -325,10 +346,38 @@ def run_bmc_poll():
                                             except Exception:
                                                 pass
                                         break
-                    except Exception:
-                        pass  # PCI lookup is best-effort
+                            if (not model or model.startswith("Dell PowerEdge (")) and dell_subsys_seen:
+                                # We saw Dell PCI devices but none matched our table —
+                                # log the IDs so we can extend `_DELL_PCI_SUBSYS_MODEL`.
+                                logger.info(
+                                    "BMC %s: Dell PCI subsys IDs %s not in lookup; model stays as %r",
+                                    key, sorted(set(dell_subsys_seen)), model,
+                                )
+                    except Exception as exc:
+                        logger.debug("PCI model lookup failed for %s: %s", key, exc)
                     finally:
                         _pci_db.close()
+
+                # Manual model override — iDRAC 7 / older BMCs don't expose
+                # Model via Redfish at all. The admin can store an override in
+                # `system_settings` under the key `model_override:<key>` (e.g.
+                # `model_override:pve_node:1`), and we apply it as the highest-
+                # priority model source. Auto-detected value is preserved as
+                # `auto_model` so the UI can still show what Redfish reports.
+                auto_model = model
+                try:
+                    from app.models.database import SystemSettings
+                    _ov_db = SessionLocal()
+                    try:
+                        ov_row = _ov_db.query(SystemSettings).filter(
+                            SystemSettings.key == f"model_override:{key}"
+                        ).first()
+                        if ov_row and (ov_row.value or "").strip():
+                            model = ov_row.value.strip()
+                    finally:
+                        _ov_db.close()
+                except Exception as exc:
+                    logger.debug("model override lookup failed for %s: %s", key, exc)
 
                 # Preserve existing firmware_updates if already checked
                 prev = bmc_status_cache.get(key, {})
@@ -336,6 +385,7 @@ def run_bmc_poll():
                     "power_state": power_state,
                     "health": health,
                     "model": model,
+                    "auto_model": auto_model,
                     "serial_number": serial_number,
                     "idrac_fw_version": idrac_fw_version,
                     "bios_version": bios_version,
@@ -545,9 +595,10 @@ def start_scheduler(update_hours: int = 24, scan_hours: int = 24):
         max_instances=1,
         next_run_time=datetime.utcnow(),  # run immediately on startup
     )
+    bmc_minutes = _get_bmc_poll_minutes()
     _scheduler.add_job(
         run_bmc_poll,
-        IntervalTrigger(minutes=2),
+        IntervalTrigger(minutes=bmc_minutes),
         id="bmc_poll",
         max_instances=1,
         next_run_time=datetime.utcnow(),  # run immediately on startup
@@ -604,4 +655,47 @@ def reschedule(update_hours: int = 24, scan_hours: int = 24):
         max_instances=1,
     )
     logger.info(f"Rescheduled — update checks every {update_hours}h, security scans every {scan_hours}h")
-    # bmc_poll is always 2 minutes, no need to reschedule it
+
+
+# Allowed BMC poll intervals in minutes — keep in sync with the frontend selector.
+_BMC_POLL_ALLOWED_MIN = (1, 2, 5, 10)
+
+
+def _get_bmc_poll_minutes() -> int:
+    """Read the configured BMC poll interval from system_settings (default 2)."""
+    try:
+        from app.core.database import SessionLocal
+        from app.models.database import SystemSettings
+        db = SessionLocal()
+        try:
+            row = db.query(SystemSettings).filter(SystemSettings.key == "bmc_poll_interval_minutes").first()
+            if row and row.value:
+                v = int(row.value)
+                if v in _BMC_POLL_ALLOWED_MIN:
+                    return v
+        finally:
+            db.close()
+    except Exception as exc:
+        logger.debug("BMC poll interval lookup failed (using default): %s", exc)
+    return 2
+
+
+def reschedule_bmc_poll(minutes: int) -> None:
+    """Replace the BMC poll job with a new interval. Caller must ensure value
+    is in `_BMC_POLL_ALLOWED_MIN`."""
+    if not _started:
+        return
+    if minutes not in _BMC_POLL_ALLOWED_MIN:
+        raise ValueError(f"Invalid BMC poll interval {minutes} — must be one of {_BMC_POLL_ALLOWED_MIN}")
+    try:
+        _scheduler.remove_job("bmc_poll")
+    except Exception:
+        pass
+    _scheduler.add_job(
+        run_bmc_poll,
+        IntervalTrigger(minutes=minutes),
+        id="bmc_poll",
+        max_instances=1,
+        next_run_time=datetime.utcnow(),
+    )
+    logger.info("BMC poll rescheduled to every %d min", minutes)

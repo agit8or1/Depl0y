@@ -1,14 +1,14 @@
 """iDRAC / iLO out-of-band management API routes."""
-from fastapi import APIRouter, Depends, HTTPException, Path
+from fastapi import APIRouter, Depends, HTTPException, Path, Body
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, Dict
 from datetime import datetime
 
 from app.core.database import get_db
 from app.core.security import encrypt_data, decrypt_data
 from app.api.auth import get_current_user, require_admin, require_operator
-from app.models.database import ProxmoxHost, StandaloneBMC, User, ProxmoxNode
+from app.models.database import ProxmoxHost, StandaloneBMC, User, ProxmoxNode, SystemSettings
 from app.services.idrac import RedfishClient
 import logging
 
@@ -117,6 +117,45 @@ def trigger_bmc_poll(current_user: User = Depends(get_current_user)):
     from app.services.scheduler import run_bmc_poll
     threading.Thread(target=run_bmc_poll, daemon=True).start()
     return bmc_status_cache
+
+
+@router.put("/model-override/{cache_key:path}")
+def set_model_override(
+    cache_key: str,
+    body: Dict[str, str] = Body(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Set or clear the manual model override for a BMC cache entry.
+
+    `cache_key` is the BMC cache key, e.g. `pve_node:1` or `pve:3`. Pass
+    `{"model": "Dell PowerEdge R730xd"}` to set, or empty string / null to clear.
+    iDRAC 7 doesn't expose Model via Redfish, so this is the only way to label
+    those boxes correctly.
+    """
+    if ":" not in cache_key or cache_key.split(":", 1)[0] not in ("pve", "pve_node", "pbs", "standalone"):
+        raise HTTPException(status_code=400, detail="Invalid cache key")
+    new_model = (body.get("model") or "").strip() if isinstance(body, dict) else ""
+    settings_key = f"model_override:{cache_key}"
+    row = db.query(SystemSettings).filter(SystemSettings.key == settings_key).first()
+    if not new_model:
+        if row:
+            db.delete(row)
+            db.commit()
+        # Reflect change in live cache so UI updates without waiting for next poll
+        if cache_key in bmc_status_cache:
+            entry = bmc_status_cache[cache_key]
+            entry["model"] = entry.get("auto_model")
+        return {"status": "cleared"}
+    if row:
+        row.value = new_model
+    else:
+        row = SystemSettings(key=settings_key, value=new_model)
+        db.add(row)
+    db.commit()
+    if cache_key in bmc_status_cache:
+        bmc_status_cache[cache_key]["model"] = new_model
+    return {"status": "ok", "model": new_model}
 
 
 # ─────────────────────────────────────────────────────────────

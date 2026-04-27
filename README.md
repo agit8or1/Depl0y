@@ -19,61 +19,78 @@ Depl0y is a free, open-source web control panel for Proxmox VE. Manage VMs, clus
 
 ## Screenshots
 
-### Dashboard
-![Dashboard](screenshots/01-dashboard.png)
-*Customizable widget grid with drag-and-drop reordering — tiles stack asymmetrically (masonry layout)*
+> A guided tour at [depl0y.mspreboot.com](https://depl0y.mspreboot.com/) covers more screens than fit here.
+
+### Login
+![Login](screenshots/00-login.png)
 
 ### Proxmox Datacenters & Hosts
-![Proxmox Hosts](screenshots/02-proxmox-hosts.png)
-*Multi-datacenter view with node health, cluster status, join/unjoin cluster actions, and resource bars*
+![Proxmox Hosts](screenshots/03-proxmox-hosts.png)
+*Multi-datacenter view with node health, cluster join/unjoin, server-model chips, BMC poll selector, and ⚡ Power dropdown per host*
 
-### VM Management
-![VM Management](screenshots/03-vm-management.png)
-*Full VM and LXC container management — lifecycle, config, snapshots, migrate, clone, console*
+### VM List
+![VM List](screenshots/02-vm-list.png)
+*Filter, search, bulk-select, and per-row actions — start/stop/migrate/clone/snapshot/delete*
 
-### Cluster Overview
-![Cluster Overview](screenshots/04-cluster-overview.png)
-*Cluster-wide status, quorum, node health, HA resources, and replication jobs*
+### VM Detail
+![VM Detail](screenshots/05-vm-detail.png)
+*Per-VM lifecycle, config (CPU / RAM / disks / NICs), snapshots, firewall, console, and live charts*
 
-### Node Monitor
-![Node Monitor](screenshots/05-node-monitor.png)
-*Per-node RRD charts (CPU, RAM, network, disk I/O), task log, storage, and network configuration*
-
-### Backup Manager
-![Backup Manager](screenshots/06-backup-manager.png)
-*PBS datastore browsing, backup schedule CRUD, and manual backup triggers*
-
-### Storage
-![Storage](screenshots/07-storage.png)
-*Storage pools across all nodes with content browsing and ISO/cloud image management*
-
-### Firewall
-![Firewall](screenshots/08-firewall.png)
-*Cluster, node, and VM-level firewall rules with security groups and IPsets*
-
-### Replication
-![Replication](screenshots/09-replication.png)
-*Proxmox replication job management with force-sync and log viewer*
+### Create VM
+![Create VM](screenshots/06-create-vm.png)
+*Guided VM creation with cloud-init credentials, storage selection, and ISO/cloud-image picker*
 
 ### Federation Map
-![Federation Map](screenshots/10-federation-map.png)
-*Live OpenStreetMap showing all datacenters with online/offline pins*
+![Federation Map](screenshots/04-federation.png)
+*Live OpenStreetMap showing all datacenters as pins — green online, red offline*
+
+### Cluster Status
+![Cluster Status](screenshots/17-cluster-status.png)
+*Cluster-wide quorum, node membership, HA resources, and replication jobs*
+
+### HA Management
+![HA Management](screenshots/09-ha-management.png)
+*HA group + resource CRUD with quorum/state monitoring*
+
+### Backup
+![Backup](screenshots/09-backup.png)
+*PBS datastore browsing, backup schedule CRUD, and manual triggers*
+
+### Storage
+![Storage](screenshots/08-storage.png)
+*Storage pools across nodes with content browsing*
+
+### ISO & Cloud Images
+![Cloud Images](screenshots/08-cloud-images.png)
+*Upload ISOs, configure cloud-image templates, manage on disk*
 
 ### iDRAC / iLO Dashboard
-![iDRAC](screenshots/11-idrac-dashboard.png)
-*Hardware health, power, temperature, and fan monitoring for Dell iDRAC and HPE iLO via Redfish*
+![iDRAC Dashboard](screenshots/22-idrac-dashboard.png)
+*Hardware health, power, temperature, wattage for all BMC-equipped servers — Dell iDRAC + HPE iLO via Redfish*
+
+### iDRAC Server Detail
+![iDRAC Server Detail](screenshots/23-idrac-server-detail.png)
+*Per-server CPU / DIMM / storage / firmware / network / SEL inventory + power actions*
 
 ### Deploy LLM
-![Deploy LLM](screenshots/12-deploy-llm.png)
-*One-click LLM deployment — Ollama, llama.cpp, vLLM, LocalAI with optional GPU passthrough, Open WebUI, and ComfyUI*
+![Deploy LLM](screenshots/13-deploy-llm-home.png)
+*One-click LLM deployment — Ollama, llama.cpp, vLLM, LocalAI with optional GPU passthrough*
 
-### Users
-![Users](screenshots/13-users.png)
-*Role-based access control — Admin, Operator, Viewer — with 2FA/TOTP support*
+### Audit Log
+![Audit Log](screenshots/10-audit-log.png)
+*Every user action and system change recorded with filtering*
+
+### User Management
+![User Management](screenshots/16-user-management.png)
+*Role-based access — Admin, Operator, Viewer — with 2FA/TOTP*
 
 ### Settings
-![Settings](screenshots/14-settings.png)
-*SMTP, webhooks, cloud image setup, cluster SSH, HA enablement, and one-click system updates*
+![Settings](screenshots/11-settings-cloud-setup.png)
+*Cloud image setup, cluster SSH, HA enablement, integrations, and one-click system updates*
+
+### API Explorer
+![API Explorer](screenshots/15-api-explorer.png)
+*Browse and test the depl0y REST API directly from the panel*
 
 ---
 

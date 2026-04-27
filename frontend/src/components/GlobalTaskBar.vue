@@ -69,6 +69,7 @@
                 </div>
                 <div class="task-item-actions" @click.stop>
                   <button
+                    v-if="task.source !== 'pbs'"
                     class="task-btn task-btn-stop"
                     :disabled="stoppingTask[task.upid]"
                     @click="stopTask(task)"
@@ -210,6 +211,7 @@
                 View All Tasks
               </router-link>
               <button
+                v-if="detailTask.source !== 'pbs'"
                 class="btn btn-danger"
                 :disabled="stoppingTask[detailTask.upid]"
                 @click="stopTask(detailTask)"
@@ -303,10 +305,21 @@ export default {
       } catch { /* ignore */ }
     }
 
+    async function fetchLogLines(task) {
+      // PBS-sourced tasks have host_id=null and a server_id pointing at the PBS
+      // record — they need the PBS task log endpoint, not the PVE one. PBS
+      // returns a flat list of strings; PVE wraps in { lines: [...] }.
+      if (task.source === 'pbs' && task.server_id != null) {
+        const res = await api.pbsManagement.getTaskLog(task.server_id, task.upid)
+        return Array.isArray(res.data) ? res.data : (res.data?.lines || [])
+      }
+      const res = await api.tasks.getLog(task.host_id, task.node, task.upid)
+      return res.data?.lines || []
+    }
+
     async function fetchLogPreview(task) {
       try {
-        const res = await api.tasks.getLog(task.host_id, task.node, task.upid)
-        const lines = (res.data?.lines || []).filter(l => l.trim())
+        const lines = (await fetchLogLines(task)).filter(l => (l || '').trim())
         logPreviews.value = { ...logPreviews.value, [task.upid]: lines.slice(-2) }
       } catch { /* ignore */ }
     }
@@ -393,12 +406,8 @@ export default {
     async function refreshDetailLog() {
       if (!detailTask.value) return
       try {
-        const res = await api.tasks.getLog(
-          detailTask.value.host_id,
-          detailTask.value.node,
-          detailTask.value.upid
-        )
-        detailLog.value = (res.data?.lines || []).join('\n')
+        const lines = await fetchLogLines(detailTask.value)
+        detailLog.value = lines.join('\n')
       } catch {
         detailLog.value = 'Failed to load log'
       } finally {

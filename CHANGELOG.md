@@ -5,6 +5,15 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.51] - 2026-04-27 🛠️ Floating tasks PBS-task fix + Proxmox Hosts shows server model
+
+### Fixed
+- **Floating tasks panel was firing `GET /api/v1/tasks/null/localhost/.../log` for PBS tasks** and getting 422s in a tight loop. PBS-sourced tasks have `host_id: null` (correctly — they aren't on a Proxmox host) and a `server_id`, but `GlobalTaskBar.vue` was still routing them through the PVE `/tasks/{host_id}/...` path. Now routes by `task.source`: PBS tasks go through `/pbs-mgmt/{server_id}/tasks/{upid}/log` (which returns a flat `string[]`), PVE tasks keep the existing `{lines: [...]}` shape — handler normalises both.
+- The Stop button is hidden on PBS tasks in the floating panel and the detail modal (PBS doesn't expose a stop endpoint via depl0y; the button would have failed the same way the log fetch did).
+
+### Added
+- **Proxmox Hosts → server model column.** Each node row now shows the server model (e.g. `Dell PowerEdge R730xd`) next to the node name, sourced from the BMC poll cache (`pve_node:{id}` entries from `/api/v1/idrac/status`). Empty when the BMC poll hasn't run yet or the node has no iDRAC configured.
+
 ## [2.2.50] - 2026-04-22 🔐 Security hardening pass
 
 Comprehensive CVE + static-analysis scan across the codebase; everything critical or high-severity fixed in this release. No functional regressions expected — if something breaks, the most likely cause is a tighter input validator rejecting data the old code silently accepted.

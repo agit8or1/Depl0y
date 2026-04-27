@@ -226,6 +226,9 @@
                   class="inline-node-name">
                   {{ node.node_name }}
                 </router-link>
+                <span v-if="getNodeModel(node.id)" class="inline-node-model text-xs text-muted" :title="getNodeModel(node.id)">
+                  {{ getNodeModel(node.id) }}
+                </span>
                 <template v-if="getNodeStat(host.id, node.node_name)">
                   <span class="inline-node-stat">
                     CPU {{ cpuPct(getNodeStat(host.id, node.node_name).cpu) }}%
@@ -1881,6 +1884,22 @@ export default {
       return nodeStats.value[`${hostId}-${nodeName}`] ?? null
     }
 
+    // BMC status cache keyed by `pve_node:{node_id}` — populated by the backend
+    // BMC poller; we read it once on mount to surface server model on each row.
+    const bmcStatus = ref({})
+    const loadBmcStatus = async () => {
+      try {
+        const res = await api.idrac.getStatus()
+        bmcStatus.value = res.data || {}
+      } catch (e) {
+        // BMC poll may not have run yet — leave empty, model column will show '—'
+      }
+    }
+    const getNodeModel = (nodeId) => {
+      const entry = bmcStatus.value[`pve_node:${nodeId}`]
+      return entry?.model || null
+    }
+
     // CPU helpers
     const cpuPct = (cpu) => {
       if (cpu == null) return 0
@@ -2133,6 +2152,7 @@ export default {
         fetchAllVersions()
       })
       fetchFederationSummary()
+      loadBmcStatus()
     })
 
     return {
@@ -2201,6 +2221,7 @@ export default {
       formatUptime,
       formatGB,
       getNodeStat,
+      getNodeModel,
       getHostNodes,
       getFedSummary,
       getHostResourceSummary,
@@ -2661,6 +2682,13 @@ export default {
   font-size: 0.72rem;
   font-family: monospace;
   color: var(--text-primary);
+}
+
+.inline-node-model {
+  max-width: 12rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .inline-node-guests {

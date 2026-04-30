@@ -5,6 +5,13 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.64] - 2026-04-30 🌐 VM list: live IP + Details
+
+### Added
+- **IP Address column** on the Managed VMs tab (the All Proxmox VMs tab already had one but only regex-matched the description). Both tabs now read **real IPs** from the QEMU guest agent — first non-loopback IPv4 of the first interface, with `+N` suffix and full list on hover when there are multiple. Falls back to the description-regex behaviour when the agent is unreachable.
+- **Per-row Details button** on both tabs — opens the VM detail page directly. Clicking the VM name still works the same.
+- Client-side IP cache with 60 s TTL and parallel fetch (chunks of 8) to keep the list quick.
+
 ## [2.2.63] - 2026-04-27 🔗 Top-level Add Node button
 
 ### Added

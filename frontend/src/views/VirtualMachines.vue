@@ -95,6 +95,7 @@
                 <span class="sort-indicator" v-if="sortField === 'node'">{{ sortDirection === 'asc' ? '▲' : '▼' }}</span>
               </th>
               <th>Resources</th>
+              <th>IP Address</th>
               <th @click="sortBy('status')" class="sortable">
                 Status
                 <span class="sort-indicator" v-if="sortField === 'status'">{{ sortDirection === 'asc' ? '▲' : '▼' }}</span>
@@ -117,6 +118,7 @@
               <td class="text-sm">
                 {{ vm.cpus }} CPU / {{ formatBytes(vm.maxmem) }} RAM / {{ formatBytes(vm.maxdisk) }} Disk
               </td>
+              <td class="text-sm mono" :title="extractAllIPs(vm) || extractIP(vm)">{{ extractIP(vm) }}</td>
               <td>
                 <span :class="['badge', getStatusBadgeClass(vm.status)]">
                   {{ vm.status }}
@@ -124,6 +126,7 @@
               </td>
               <td @click.stop>
                 <div class="flex gap-1 vm-actions" style="align-items:center;">
+                  <button @click="navigateToVM(adaptManagedVm(vm))" class="btn btn-outline btn-sm" title="View details">Details</button>
                   <button v-if="vm.status === 'running'" @click="stopVM(vm.vmid, vm.node)" class="btn btn-warning btn-sm">Stop</button>
                   <button v-if="vm.status === 'running'" @click="restartVM(vm.vmid, vm.node)" class="btn btn-info btn-sm">Restart</button>
                   <button v-if="vm.status === 'stopped'" @click="startVM(vm.vmid, vm.node)" class="btn btn-primary btn-sm">Start</button>
@@ -474,6 +477,7 @@
               </td>
               <td @click.stop>
                 <div class="flex gap-1 vm-actions" style="align-items: center;">
+                  <button @click="navigateToVM(vm)" class="btn btn-outline btn-sm" title="View details">Details</button>
                   <button v-if="vm.status === 'running'" @click="allShutdownVM(vm)" class="btn btn-warning btn-sm" :disabled="vm._busy">Shutdown</button>
                   <button v-if="vm.status === 'running'" @click="allStopVM(vm)" class="btn btn-danger btn-sm" :disabled="vm._busy">Stop</button>
                   <button v-if="vm.status !== 'running' && vm.status !== 'suspended'" @click="allStartVM(vm)" class="btn btn-primary btn-sm" :disabled="vm._busy">Start</button>
@@ -1049,6 +1053,7 @@ export default {
           const response = await api.vms.list()
           vms.value = response.data
           sortVMs()
+          fetchAllVmIps(vms.value)
           lastErr = null
           break
         } catch (error) {
@@ -1375,6 +1380,7 @@ export default {
       allPartialFailedHosts.value = localFailedHosts
       allTimeoutWarning.value = timedOut
       allVMs.value = results
+      fetchAllVmIps(results)
     }
 
     const fetchAllProxmoxVMs = async (resetCountdown = false) => {
@@ -2060,12 +2066,80 @@ export default {
       }
     }
 
-    // ── IP extraction ───────────────────────────────────────────────────────
+    // ── IP discovery (via QEMU guest agent) ─────────────────────────────────
+    // Cache keyed by `${hostId}-${node}-${vmid}` → { ips: string[], fetchedAt: ms, error?: string }
+    const vmIpCache = ref({})
+    const VM_IP_TTL_MS = 60_000  // re-poll every minute
+    const _vmIpKey = (vm) => `${vm.hostId || vm.host_id || 1}-${vm.node}-${vm.vmid}`
+
+    const fetchVmIp = async (vm) => {
+      if (!vm || vm.status !== 'running') return
+      const key = _vmIpKey(vm)
+      const cached = vmIpCache.value[key]
+      if (cached && Date.now() - cached.fetchedAt < VM_IP_TTL_MS) return
+      // Mark fetching to dedupe parallel calls
+      vmIpCache.value = { ...vmIpCache.value, [key]: { ...(cached || {}), fetching: true } }
+      try {
+        const hostId = vm.hostId || vm.host_id || 1
+        const res = await api.pveVm.getGuestAgent(hostId, vm.node, vm.vmid)
+        const payload = res.data?.data || res.data || {}
+        const ifaces = payload.network_interfaces || []
+        // Flatten v4 IPs (strip prefix length, drop loopback) — show v6 only if no v4.
+        const v4 = []
+        const v6 = []
+        for (const i of ifaces) {
+          for (const ip of (i.ipv4 || [])) {
+            const bare = ip.split('/')[0]
+            if (bare && !bare.startsWith('127.') && !v4.includes(bare)) v4.push(bare)
+          }
+          for (const ip of (i.ipv6 || [])) {
+            const bare = ip.split('/')[0]
+            if (bare && !v6.includes(bare)) v6.push(bare)
+          }
+        }
+        const ips = v4.length ? v4 : v6
+        vmIpCache.value = { ...vmIpCache.value, [key]: { ips, fetchedAt: Date.now() } }
+      } catch (e) {
+        vmIpCache.value = { ...vmIpCache.value, [key]: { ips: [], fetchedAt: Date.now(), error: e.response?.data?.detail || 'agent unavailable' } }
+      }
+    }
+
+    // Fan out IP fetches for every running VM in a list (parallel, errors swallowed).
+    const fetchAllVmIps = (vms) => {
+      const running = (vms || []).filter(v => v.status === 'running')
+      // Cap concurrency by chunking — guest-agent calls hit Proxmox sequentially per host.
+      const CHUNK = 8
+      let i = 0
+      const next = async () => {
+        const slice = running.slice(i, i += CHUNK)
+        if (slice.length === 0) return
+        await Promise.allSettled(slice.map(fetchVmIp))
+        return next()
+      }
+      next()
+    }
+
     const extractIP = (vm) => {
-      // Try to find an IP-like string in description or name
-      const text = vm.description || vm.name || ''
-      const match = text.match(/\b(\d{1,3}\.){3}\d{1,3}\b/)
-      return match ? match[0] : '—'
+      if (!vm) return '—'
+      if (vm.status !== 'running') return '—'
+      const key = _vmIpKey(vm)
+      const entry = vmIpCache.value[key]
+      if (!entry) return '…'                  // not yet fetched
+      if (entry.fetching && !entry.ips) return '…'
+      const ips = entry.ips || []
+      if (ips.length === 0) {
+        // Fall back to any IP literal in the description (legacy behaviour)
+        const text = vm.description || ''
+        const m = text.match(/\b(\d{1,3}\.){3}\d{1,3}\b/)
+        return m ? m[0] : '—'
+      }
+      // Show first IP plus count when there are multiple
+      return ips.length > 1 ? `${ips[0]} +${ips.length - 1}` : ips[0]
+    }
+    const extractAllIPs = (vm) => {
+      const key = _vmIpKey(vm)
+      const ips = vmIpCache.value[key]?.ips || []
+      return ips.length ? ips.join(', ') : ''
     }
 
     // ── Uptime formatting ────────────────────────────────────────────────────
@@ -2158,7 +2232,7 @@ export default {
       savedFilterPresets, showSavePresetModal, newPresetName, savePreset, applyPreset, openSavePresetModal,
       visibleColumns, allColumns, showColMenu, groupByNode, saveColumnPrefs,
       showAdvFilter, advFilter, advFilterCount, clearAdvFilter, uniqueHosts, uniqueNodes,
-      formatBytes, getStatusBadgeClass, formatUptime, extractIP,
+      formatBytes, getStatusBadgeClass, formatUptime, extractIP, extractAllIPs,
       parseTags, tagColor, anyVmHasTags,
       activeTagFilters, allTagList, toggleTagFilter,
       showTagEditorModal, tagEditorVm, tagEditorTags, tagEditorInput, tagEditorSaving,

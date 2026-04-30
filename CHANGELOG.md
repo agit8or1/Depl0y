@@ -5,6 +5,11 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.65] - 2026-04-30 🛠️ Guest-agent endpoint 500-proofed
+
+### Fixed
+- `GET /pve-vm/{h}/{node}/{vmid}/guest-agent` returned 500 for VMs whose `get-fsinfo` / `get-users` reply contained a string entry where a dict was expected (`'str' object has no attribute 'get'`). Endpoint now skips non-dict entries in those list comprehensions and is wrapped in a final try/except so any future malformed sub-response also returns the standard `{available: false, data: null, error: ...}` shape instead of bubbling a 500. Console no longer logs an error per affected VM.
+
 ## [2.2.64] - 2026-04-30 🌐 VM list: live IP + Details
 
 ### Added

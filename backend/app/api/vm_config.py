@@ -228,6 +228,16 @@ def get_vm_guest_agent(host_id: int, node: str, vmid: int,
     render partial info when only some commands are supported by the
     guest-agent version.
     """
+    try:
+        return _build_guest_agent_response(host_id, node, vmid, db)
+    except Exception as exc:
+        # Contract is "never 500s" — log and return the standard unavailable
+        # shape so the UI can render `—` instead of throwing in console.
+        logger.warning("guest-agent assembly failed for %s/%s/%s: %s", host_id, node, vmid, exc)
+        return {"available": False, "data": None, "error": f"agent error: {exc}"}
+
+
+def _build_guest_agent_response(host_id: int, node: str, vmid: int, db: Session):
     host = _get_host(host_id, db)
     cache_key = f"pve:{host_id}:{node}/{vmid}/guest-agent"
     cached = pve_cache.get(cache_key)
@@ -305,6 +315,7 @@ def get_vm_guest_agent(host_id: int, node: str, vmid: int,
         "users": [
             {"user": u.get("user"), "login_time": u.get("login-time"), "domain": u.get("domain")}
             for u in (users_i or [])
+            if isinstance(u, dict)
         ],
         "filesystems": [
             {
@@ -315,6 +326,7 @@ def get_vm_guest_agent(host_id: int, node: str, vmid: int,
                 "used_bytes": f.get("used-bytes"),
             }
             for f in (fsinfo_i or [])
+            if isinstance(f, dict)
         ],
         "network_interfaces": ifaces,
         "agent_version": agent_info_i.get("version") if isinstance(agent_info_i, dict) else None,

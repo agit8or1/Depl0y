@@ -299,8 +299,48 @@ class AlertEngine:
         except Exception as exc:
             logger.debug(f"check_storage_usage error: {exc}")
 
+    # Task-type keywords that legitimately leave a VM in "stopped" state mid-flight.
+    # We must NOT flag a VM as "stopped unexpectedly" while any of these are running
+    # or completed in the recent past — they're user-initiated operations.
+    _LEGIT_STOP_TASK_KEYWORDS = (
+        "stop", "shutdown", "halt",
+        "reboot", "reset",
+        "migrate",                       # qmmigrate transiently shuts the VM
+        "backup", "vzdump",              # snapshot-mode backup may briefly suspend
+        "restore",
+        "snapshot", "rollback",          # qmsnapshot / qmrollback
+        "clone",
+        "template",                      # qmtemplate stops VM permanently — not "unexpected"
+        "destroy",
+    )
+
+    def _resolve_vm_stop_alert(self, db, rule_key: str):
+        """Ack any active vm_unexpected_stop alert when the VM is running again."""
+        try:
+            from app.models.alert_models import AlertEvent
+            now = datetime.utcnow()
+            active = db.query(AlertEvent).filter(
+                AlertEvent.rule_key == rule_key,
+                AlertEvent.acknowledged == False,
+            ).all()
+            if not active:
+                return
+            for ev in active:
+                ev.acknowledged = True
+                ev.acknowledged_at = now
+                ev.acknowledged_by = None  # auto-resolved by the engine
+            db.commit()
+            # Clear the cooldown so a future genuine stop fires again immediately.
+            self._alert_states.pop(rule_key, None)
+            logger.info("Auto-resolved %d alert(s) for %s — VM is running", len(active), rule_key)
+        except Exception as exc:
+            db.rollback()
+            logger.debug("auto-resolve %s failed: %s", rule_key, exc)
+
     def _check_vm_stopped_unexpectedly(self, db):
-        """Detect VMs that were running but now stopped with no user-initiated stop task in last 5 min."""
+        """Detect VMs that were running but now stopped with no user-initiated stop task in last 10 min.
+        Auto-resolves the alert when the VM is back to running.
+        """
         try:
             from app.models.database import ProxmoxHost
             from app.services.proxmox import ProxmoxService
@@ -318,23 +358,26 @@ class AlertEngine:
                             vms = svc.proxmox.nodes(node_name).qemu.get()
                         except Exception:
                             continue
-                        # Get recent tasks for this node
+                        # Recent + still-running tasks that touched a VM. We accept anything
+                        # in the last 10 minutes, plus all currently-running tasks regardless
+                        # of age (a 30-min migration shouldn't trigger this alert).
                         try:
-                            tasks = svc.proxmox.nodes(node_name).tasks.get(limit=50)
+                            tasks = svc.proxmox.nodes(node_name).tasks.get(limit=200)
                         except Exception:
                             tasks = []
 
-                        # Tasks started in the last 5 minutes that are stop/shutdown
-                        cutoff_ts = time.time() - 300
-                        recent_stop_vmids = set()
+                        cutoff_ts = time.time() - 600
+                        recent_op_vmids = set()
                         for t in tasks:
                             start_ts = t.get("starttime", 0)
+                            end_ts = t.get("endtime", 0)
                             task_type = (t.get("type") or "").lower()
                             vmid_str = str(t.get("id", ""))
-                            if start_ts >= cutoff_ts and any(
-                                kw in task_type for kw in ("stop", "shutdown", "halt")
+                            still_running = not end_ts
+                            if (still_running or start_ts >= cutoff_ts) and any(
+                                kw in task_type for kw in self._LEGIT_STOP_TASK_KEYWORDS
                             ):
-                                recent_stop_vmids.add(vmid_str)
+                                recent_op_vmids.add(vmid_str)
 
                         # Load muted VMs for this host
                         try:
@@ -356,14 +399,17 @@ class AlertEngine:
                             # Skip templates and cloud-init base images — they are intentionally stopped
                             if vm.get("template") == 1 or vm.get("template") is True:
                                 continue
-                            if status == "stopped" and vmid not in recent_stop_vmids and vmid not in muted_vmids:
-                                key = f"vm_unexpected_stop:{host.id}:{node_name}:{vmid}"
-                                # Only fire once per cooldown — don't spam for long-stopped VMs
+                            key = f"vm_unexpected_stop:{host.id}:{node_name}:{vmid}"
+                            if status == "running":
+                                # Auto-resolve any stale alert for a running VM.
+                                self._resolve_vm_stop_alert(db, key)
+                                continue
+                            if status == "stopped" and vmid not in recent_op_vmids and vmid not in muted_vmids:
                                 self._fire_builtin(
                                     db, key, "warning",
                                     f"VM stopped unexpectedly: {name}",
                                     f"VM '{name}' (VMID {vmid}) on {node_name} ({host.name}) "
-                                    f"is stopped with no matching stop task in the last 5 minutes.",
+                                    f"is stopped with no matching stop task in the last 10 minutes.",
                                     cooldown_minutes=1440,  # once per day max
                                 )
                 except Exception as host_exc:

@@ -5,6 +5,12 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.66] - 2026-05-01 🚨 vm_unexpected_stop: auto-resolve + wider task filter
+
+### Fixed
+- **`vm_unexpected_stop` alert lingered forever** even when the VM was already running again (no auto-resolve path). The engine now acks any active alert for a VM as soon as it observes `status="running"` on the next tick, and clears the cooldown so a future genuine stop will fire again immediately.
+- **Detector misclassified legitimate operations as "unexpected"** — the task-type keyword filter only matched `stop` / `shutdown` / `halt`. Reboots, migrations, snapshot/clone/backup/restore/template/destroy operations all transiently leave the VM in a stopped state without any of those keywords appearing. Filter widened to also match `reboot`, `reset`, `migrate`, `backup`, `vzdump`, `restore`, `snapshot`, `rollback`, `clone`, `template`, `destroy`. Time window widened from 5 → 10 minutes, and currently-running tasks of any age are also accepted (a 30-min migration shouldn't trigger this alert mid-flight).
+
 ## [2.2.65] - 2026-04-30 🛠️ Guest-agent endpoint 500-proofed
 
 ### Fixed

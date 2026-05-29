@@ -41,7 +41,12 @@
             </div>
             <select v-else v-model="selectedNode" class="form-control" @change="onNodeChange">
               <option value="">Select a node...</option>
-              <option v-for="n in nodes" :key="n.node_name" :value="n.node_name">{{ n.node_name }}</option>
+              <option
+                v-for="n in nodes"
+                :key="n.node_name"
+                :value="n.node_name"
+                :disabled="n.status && n.status !== 'online'"
+              >{{ n.node_name }}{{ n.status && n.status !== 'online' ? ` — ${n.status}` : '' }}</option>
             </select>
           </div>
         </div>

@@ -3,8 +3,11 @@ import { useToast } from 'vue-toastification'
 
 const toast = useToast()
 
-// Global request timeout: 30 seconds
-const REQUEST_TIMEOUT_MS = 30_000
+// Global request timeout: 60 seconds.
+// Many endpoints proxy through to Proxmox, which can be slow on busy clusters
+// or when reaching a host with degraded peers. 30s was tripping the toast for
+// otherwise-healthy calls.
+const REQUEST_TIMEOUT_MS = 60_000
 
 const api = axios.create({
   baseURL: '/api/v1',
@@ -89,7 +92,8 @@ api.interceptors.response.use(
 
     // Request timeout (ECONNABORTED or code === 'ECONNABORTED')
     if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
-      toast.error('Request timed out — the server is taking too long to respond')
+      const path = originalRequest?.url || ''
+      toast.error(`Request timed out${path ? ` (${path})` : ''} — the backend or a Proxmox host may be slow or unreachable`)
       return Promise.reject(error)
     }
 

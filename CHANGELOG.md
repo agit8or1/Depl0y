@@ -5,6 +5,38 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.71] - 2026-05-25 ⏱ PBS HTTP timeouts split (connect/read) so circuit breaker can actually catch
+
+### Fixed
+- **`/tasks/running` still hit the 60s axios timeout** even after 2.2.70's parallelization + budgets, because `PBSService` used a single `timeout=30` value for `requests` — meaning a TCP connect to a down PBS host blocked for 30s before raising. My 8s `as_completed` budget would `break` out of the loop, but `ThreadPoolExecutor`'s `with` block waits for *all* submitted futures to drain, so the response still stalled until the 30s connect completed. And `_PBS_UNHEALTHY` only got set inside the future's exception handler — i.e. also 30s later — so the next 5s poll cycle saw it as healthy and reproduced the same hang. Split `timeout` to `(connect=3s, read=27s)` across all PBSService `requests` calls (`_get_ticket`, `_get`, `_post`, `_delete`): the first failed call now wall-clocks at ~3s, the pool drains in ~3s, and the circuit breaker is set in time for the next poll to skip the dead host entirely.
+
+## [2.2.70] - 2026-05-25 🛠 Tasks-bar timeout + cloud-init regen fix
+
+### Fixed
+- **"Request timed out (/tasks/running)" red toast on every page.** The endpoint is hit every 5s by the global task bar and was iterating hosts → nodes sequentially, blocking ~30s per offline node (pve2/pve3) + ~30s per unreachable PBS server. Reworked to (a) skip nodes whose DB status isn't `online`, (b) run remaining `tasks.get(source="active")` calls in a `ThreadPoolExecutor` with a 12s wall-clock budget, (c) apply a 60s circuit breaker per PBS server after a failure (`_PBS_UNHEALTHY`) with an 8s budget on the PBS leg. Endpoint now responds in well under a second when peers are down.
+- **VM creation appeared to "succeed" but the VM came up with the template's stale cloud-init (wrong user/password).** After cloning, `set ide2={storage}:cloudinit` returned `500 disk image ... already exists` because the cloned template carried over the cloud-init qcow2. Replaced with detach (`unlink idlist=ide2 force=1`) → re-attach so a fresh drive is generated against the new cicustom snippet, with `cloudinit/update` API as a fallback. Any complete failure is now logged at ERROR level (was a silent WARNING) so a stale-credential VM is obvious in the logs.
+
+## [2.2.69] - 2026-05-25 🚑 DB pool exhaustion: pages hung waiting for connections
+
+### Fixed
+- **Pages stopped loading / showed "can't connect to Proxmox" toasts** because `sqlalchemy.exc.TimeoutError: QueuePool limit of size 5 overflow 10 reached, connection timed out` was hitting in production. Many endpoints hold a DB session for the full duration of a Proxmox API round-trip, so under the dashboard's concurrent fan-out (federation summary, alerts, resources, summary, nodes…) all 15 default slots filled within ~1s and subsequent requests waited 30s then failed at the ASGI layer (visible as `anyio.EndOfStream` in the logs). Engine config bumped to `pool_size=25, max_overflow=50, pool_timeout=10` — fast-fail and 75 max slots.
+- **`/proxmox/{host_id}/nodes` was making a live `cluster.status` call while holding the DB session** (the live-status overlay introduced in 2.2.67). Under concurrent load this contributed to the pool exhaustion above. Reverted to DB-only — the poller is what marks nodes offline, and to compensate for the staleness window the poll interval is dropped from 5min → 1min (`scheduler.py`). Offline detection now lands in the UI within ~60s of a node going down.
+
+## [2.2.68] - 2026-05-25 🛡️ GeoIP whitelist UX + SW cache busting in `npm run deploy`
+
+### Fixed
+- **`npm run deploy` was skipping the service-worker cache-busting step** that `deploy.sh` performs — so a deployed `sw.js` still claimed `CACHE_VERSION = 'v29'` and browsers kept serving stale chunk hashes (Security page chunk 404'd, pages required hard refresh). `npm run deploy` now stamps `dist/sw.js` with a build timestamp before the rsync, matching `deploy.sh`.
+- **GeoIP "Add Country" defaulted action to `block` even in whitelist mode**, where only `allow` rules matter — so naïvely adding a country in whitelist mode did nothing. The modal now defaults to the action that's actually enforced in the current mode (`allow` in whitelist, `block` in blacklist), the header / button labels reflect the mode, and a warning box flags the dangerous "whitelist enabled with zero allow rules" state (which silently does nothing — Proxmox stays open).
+- **GeoIP Mode description was vague** — the new copy says explicitly what each mode does ("block *everyone*; only countries listed below are allowed in").
+
+## [2.2.67] - 2026-05-25 🩹 Deploy UX: live PVE status, longer timeout, GeoIP layout
+
+### Fixed
+- **Powered-off Proxmox nodes were shown as "online" in the deploy wizards.** `get_node_resources` hardcoded `status="online"` and the poller only updated nodes whose per-node API call succeeded, so a downed peer kept its last-known status forever. The poller now consults `cluster.status` first (which still works while one node is down — peers report it), explicitly marks unreachable nodes `offline`, and the `/proxmox/{host_id}/nodes` endpoint overlays a fresh `cluster.status` check (cached 30s) so the UI doesn't wait 5 min for the next poll cycle.
+- **You could still click an offline node in `CreateVM`, `DeployLLM`, and `CreatePVEVM` wizards** — leading to a 30s hang on the downstream `loadStorage` / `loadNetwork` calls and a "Request timed out" toast. Offline cards are now grayed out, the dropdown disables them, and `selectNode` aborts with a warning toast.
+- **Red "Request timed out" toast boxes on otherwise-healthy slow calls.** Global axios timeout bumped 30s → 60s (many Proxmox-proxied endpoints legitimately take longer than 30s on busy clusters), and the toast now names the path so it's clear which call timed out.
+- **GeoIP tab layout misalignment.** `.section-body` had `padding: 0 1.5rem` on top of the already-padded `.card`, so settings rows sat further in than the rules table directly below them. Removed the redundant horizontal padding (also improves IP Access Control / Sessions tabs which share the pattern), added `flex-wrap` to setting rows so the Lookup input/button can wrap on narrow viewports, and made `.lookup-row` flex-based instead of a fixed 280px so it adapts on mobile.
+
 ## [2.2.66] - 2026-05-01 🚨 vm_unexpected_stop: auto-resolve + wider task filter
 
 ### Fixed

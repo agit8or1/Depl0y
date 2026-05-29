@@ -706,13 +706,19 @@ async def list_proxmox_nodes(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """List nodes for a Proxmox host"""
+    """List nodes for a Proxmox host.
+
+    Status comes from the 5-min background poller (see `poll_proxmox_resources`
+    in services/proxmox.py), which now correctly marks unreachable nodes
+    `offline` via `cluster.status`. We deliberately do NOT make a synchronous
+    Proxmox call here — holding the DB session through a network round-trip
+    exhausts the connection pool under concurrent dashboard load.
+    """
     host = db.query(ProxmoxHost).filter(ProxmoxHost.id == host_id).first()
     if not host:
         raise HTTPException(status_code=404, detail="Host not found")
 
-    nodes = db.query(ProxmoxNode).filter(ProxmoxNode.host_id == host_id).all()
-    return nodes
+    return db.query(ProxmoxNode).filter(ProxmoxNode.host_id == host_id).all()
 
 
 @router.get("/{host_id}/stats")

@@ -590,7 +590,7 @@ def start_scheduler(update_hours: int = 24, scan_hours: int = 24):
     )
     _scheduler.add_job(
         run_proxmox_node_poll,
-        IntervalTrigger(minutes=5),
+        IntervalTrigger(minutes=1),  # was 5min — too slow for offline detection
         id="proxmox_node_poll",
         max_instances=1,
         next_run_time=datetime.utcnow(),  # run immediately on startup

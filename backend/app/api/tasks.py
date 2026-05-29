@@ -20,6 +20,12 @@ _INTERACTIVE_TASK_TYPES = frozenset({
     "vncshell", "vncproxy", "spiceshell", "spiceproxy", "termproxy",
 })
 
+# Circuit breaker: maps PBS server id → time.monotonic() expiry. While the
+# value is in the future we skip polling that server (it failed recently).
+# This stops a single unreachable PBS host from blocking the 5s task-bar
+# poll on every page in the app.
+_PBS_UNHEALTHY: dict[int, float] = {}
+
 
 def _get_host(host_id: int, db: Session) -> ProxmoxHost:
     host = db.query(ProxmoxHost).filter(
@@ -39,93 +45,166 @@ def _pve(host: ProxmoxHost):
 
 @router.get("/running")
 def get_running_tasks(db: Session = Depends(get_db), current_user=Depends(get_current_user)):
-    """List all currently-running tasks: Depl0y-tracked + live poll from Proxmox."""
+    """List all currently-running tasks: Depl0y-tracked + live poll from Proxmox.
+
+    Performance notes (this endpoint is hit every 5s by the floating task bar
+    on every page, so it has to stay fast even when some nodes/PBS servers are
+    unreachable):
+      • Skip nodes whose DB status isn't 'online' — querying an offline node
+        blocks ~30s on a TCP connect and brings the whole call past the 60s
+        axios timeout.
+      • Run per-node `tasks.get(source="active")` calls in a ThreadPoolExecutor
+        with a short wall-clock budget; any node that exceeds it is dropped
+        from this tick (it'll be retried in 5s).
+      • Same circuit-breaker logic for PBS servers via `_PBS_UNHEALTHY`.
+    """
+    import time
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    from app.models.database import ProxmoxNode
+
     # Start with Depl0y in-memory tracked tasks
     tracked = task_tracker.get_running()
     tracked_upids = {t["upid"] for t in tracked}
 
-    # Also query Proxmox directly for any running tasks across all active hosts/nodes
-    pve_running = []
+    # ── PVE: parallel per-node tasks.get, skipping offline nodes ──────────────
+    node_targets: list[tuple[int, str]] = []  # (host_id, node_name)
+    host_index: dict[int, ProxmoxHost] = {}
     try:
         hosts = db.query(ProxmoxHost).filter(ProxmoxHost.is_active == True).all()
-        from app.models.database import ProxmoxNode
         for host in hosts:
-            try:
-                pve = _pve(host)
-                db_nodes = db.query(ProxmoxNode).filter(ProxmoxNode.host_id == host.id).all()
-                # Fall back to live Proxmox node query if DB has no records yet
-                if db_nodes:
-                    node_names = [n.node_name for n in db_nodes]
-                else:
-                    live = pve.nodes.get()
-                    node_names = [n.get("node") for n in live if n.get("node")]
-                for node_name in node_names:
-                    try:
-                        # source=active returns currently-running tasks only.
-                        # Without it, Proxmox returns historical (finished) tasks.
-                        node_tasks = pve.nodes(node_name).tasks.get(source="active")
-                        for t in node_tasks:
-                            if t.get("upid") in tracked_upids:
-                                continue
-                            # Skip interactive shell / console sessions — they
-                            # aren't background work and PVE leaves them in
-                            # "running" state long after the user disconnects.
-                            if t.get("type") in _INTERACTIVE_TASK_TYPES:
-                                continue
-                            pve_running.append({
-                                "upid": t.get("upid"),
-                                "host_id": host.id,
-                                "node": node_name,
-                                "task_type": t.get("type", "unknown"),
-                                "description": f"{t.get('type', 'Task')} on {node_name}"
-                                               + (f" (VM {t['id']})" if t.get("id") else ""),
-                                "status": "running",
-                                "vmid": t.get("id"),
-                                "started_at": t.get("starttime"),
-                                "source": "proxmox",
-                            })
-                            tracked_upids.add(t.get("upid"))
-                    except Exception:
-                        pass
-            except Exception:
-                pass
+            host_index[host.id] = host
+            db_nodes = (
+                db.query(ProxmoxNode)
+                .filter(
+                    ProxmoxNode.host_id == host.id,
+                    ProxmoxNode.status == "online",
+                )
+                .all()
+            )
+            if db_nodes:
+                for n in db_nodes:
+                    node_targets.append((host.id, n.node_name))
+            else:
+                # First-run / no poll yet — fall back to a single live nodes.get
+                # so the UI still shows tasks before the poller has run.
+                try:
+                    live = ProxmoxService(host).proxmox.nodes.get()
+                    for n in live:
+                        if n.get("status") == "online" and n.get("node"):
+                            node_targets.append((host.id, n["node"]))
+                except Exception:
+                    pass
     except Exception as exc:
-        logger.debug("get_running_tasks pve poll error: %s", exc)
+        logger.debug("get_running_tasks host enumeration error: %s", exc)
 
-    # Also poll every PBS server for its active tasks (sync / verify / prune /
-    # garbage-collection / backup). Without this, manually-fired PBS jobs
-    # return a UPID but never show up in the floating running-tasks UI.
+    def _fetch_node_tasks(host_id: int, node_name: str):
+        host = host_index.get(host_id)
+        if not host:
+            return host_id, node_name, []
+        try:
+            pve = ProxmoxService(host).proxmox
+            return host_id, node_name, pve.nodes(node_name).tasks.get(source="active") or []
+        except Exception as e:
+            logger.debug("tasks.get failed for %s/%s: %s", host_id, node_name, e)
+            return host_id, node_name, []
+
+    pve_running = []
+    if node_targets:
+        # Wall-clock budget: must finish well under the frontend's 60s timeout
+        # so the rest of the response (PBS + progress) still has time. 12s
+        # leaves plenty of headroom for the 5s poll cadence.
+        deadline = time.monotonic() + 12.0
+        with ThreadPoolExecutor(max_workers=min(len(node_targets), 16)) as pool:
+            futures = {
+                pool.submit(_fetch_node_tasks, hid, nn): (hid, nn)
+                for hid, nn in node_targets
+            }
+            for fut in as_completed(futures):
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    logger.warning("get_running_tasks: PVE budget exceeded, dropping unfinished nodes")
+                    break
+                try:
+                    host_id, node_name, node_tasks = fut.result(timeout=remaining)
+                except Exception:
+                    continue
+                for t in node_tasks:
+                    upid = t.get("upid")
+                    if not upid or upid in tracked_upids:
+                        continue
+                    if t.get("type") in _INTERACTIVE_TASK_TYPES:
+                        continue
+                    pve_running.append({
+                        "upid": upid,
+                        "host_id": host_id,
+                        "node": node_name,
+                        "task_type": t.get("type", "unknown"),
+                        "description": f"{t.get('type', 'Task')} on {node_name}"
+                                       + (f" (VM {t['id']})" if t.get("id") else ""),
+                        "status": "running",
+                        "vmid": t.get("id"),
+                        "started_at": t.get("starttime"),
+                        "source": "proxmox",
+                    })
+                    tracked_upids.add(upid)
+
+    # ── PBS: parallel poll with circuit breaker for unreachable servers ───────
     pbs_running = []
     try:
         from app.models.database import PBSServer
         from app.services.pbs import PBSService
-        for pbs in db.query(PBSServer).filter(PBSServer.is_active == True).all():
+
+        active_pbs = db.query(PBSServer).filter(PBSServer.is_active == True).all()
+        # Skip servers that failed recently (set by previous tick)
+        now = time.monotonic()
+        targets = [p for p in active_pbs if _PBS_UNHEALTHY.get(p.id, 0) < now]
+
+        def _fetch_pbs_tasks(pbs):
             try:
                 svc = PBSService(pbs)
-                # List running tasks — /nodes/localhost/tasks with running=1
-                tasks = svc._get("/nodes/localhost/tasks?running=1&limit=100") or []
-                for t in tasks:
-                    upid = t.get("upid")
-                    if not upid or upid in tracked_upids:
-                        continue
-                    ttype = t.get("worker_type") or t.get("type") or "unknown"
-                    worker_id = t.get("worker_id") or ""
-                    desc = f"{ttype} on {pbs.name}" + (f" ({worker_id})" if worker_id else "")
-                    pbs_running.append({
-                        "upid": upid,
-                        "host_id": None,
-                        "server_id": pbs.id,
-                        "pbs_name": pbs.name,
-                        "node": "localhost",
-                        "task_type": ttype,
-                        "description": desc,
-                        "status": "running",
-                        "started_at": t.get("starttime"),
-                        "source": "pbs",
-                    })
-                    tracked_upids.add(upid)
+                return pbs, svc._get("/nodes/localhost/tasks?running=1&limit=100") or []
             except Exception as e:
-                logger.debug("get_running_tasks pbs poll failed for %s: %s", pbs.name, e)
+                logger.debug("pbs tasks poll failed for %s: %s", pbs.name, e)
+                # Skip this server for the next 60s so the dashboard isn't
+                # blocked by an unreachable PBS host on every 5s poll.
+                _PBS_UNHEALTHY[pbs.id] = time.monotonic() + 60
+                return pbs, None
+
+        if targets:
+            deadline = time.monotonic() + 8.0
+            with ThreadPoolExecutor(max_workers=min(len(targets), 8)) as pool:
+                futures = {pool.submit(_fetch_pbs_tasks, p): p for p in targets}
+                for fut in as_completed(futures):
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        logger.warning("get_running_tasks: PBS budget exceeded")
+                        break
+                    try:
+                        pbs, tasks = fut.result(timeout=remaining)
+                    except Exception:
+                        continue
+                    if tasks is None:
+                        continue
+                    for t in tasks:
+                        upid = t.get("upid")
+                        if not upid or upid in tracked_upids:
+                            continue
+                        ttype = t.get("worker_type") or t.get("type") or "unknown"
+                        worker_id = t.get("worker_id") or ""
+                        desc = f"{ttype} on {pbs.name}" + (f" ({worker_id})" if worker_id else "")
+                        pbs_running.append({
+                            "upid": upid,
+                            "host_id": None,
+                            "server_id": pbs.id,
+                            "pbs_name": pbs.name,
+                            "node": "localhost",
+                            "task_type": ttype,
+                            "description": desc,
+                            "status": "running",
+                            "started_at": t.get("starttime"),
+                            "source": "pbs",
+                        })
+                        tracked_upids.add(upid)
     except Exception as exc:
         logger.debug("get_running_tasks pbs poll outer error: %s", exc)
 

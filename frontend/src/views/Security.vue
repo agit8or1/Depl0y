@@ -341,7 +341,9 @@
         <div class="card mb-2">
           <div class="card-header">
             <h3>GeoIP Country Filtering</h3>
-            <button @click="showGeoIPModal = true" class="btn btn-primary btn-sm">+ Add Country</button>
+            <button @click="openGeoIPModal" class="btn btn-primary btn-sm">
+              + {{ settings.geoip_mode === 'whitelist' ? 'Allow Country' : 'Block Country' }}
+            </button>
           </div>
 
           <div class="section-body">
@@ -360,14 +362,19 @@
               <div class="setting-info">
                 <span class="setting-label">Mode</span>
                 <span class="setting-desc">
-                  <strong>Blacklist</strong> blocks listed countries; all others allowed.
-                  <strong>Whitelist</strong> allows only listed countries; all others blocked.
+                  <strong>Blacklist</strong> — block only the countries listed below; everyone else gets in.
+                  <strong>Whitelist</strong> — block <em>everyone</em>; only countries listed below are allowed in.
                 </span>
               </div>
               <select v-model="settings.geoip_mode" class="form-control setting-input">
                 <option value="blacklist">Blacklist</option>
                 <option value="whitelist">Whitelist</option>
               </select>
+            </div>
+
+            <div v-if="settings.geoip_enabled && settings.geoip_mode === 'whitelist' && geoipRules.filter(r => r.is_active && r.action === 'allow').length === 0" class="info-box info-box-warn">
+              <strong>Whitelist mode is on but no countries are allowed.</strong>
+              For safety, the filter is doing nothing right now — add at least one allowed country before this takes effect, or you may lock yourself out.
             </div>
 
             <div class="section-footer">
@@ -981,7 +988,7 @@
     <div v-if="showGeoIPModal" class="modal-overlay" @click.self="showGeoIPModal = false">
       <div class="modal-content">
         <div class="modal-header">
-          <h3>Add Country Rule</h3>
+          <h3>{{ newGeoIP.action === 'allow' ? 'Allow Country' : 'Block Country' }}</h3>
           <button @click="showGeoIPModal = false" class="modal-close">×</button>
         </div>
         <form @submit.prevent="addGeoIPRule" class="modal-body">
@@ -1008,9 +1015,13 @@
           <div class="form-group">
             <label class="form-label">Action</label>
             <select v-model="newGeoIP.action" class="form-control">
-              <option value="block">Block</option>
-              <option value="allow">Allow</option>
+              <option value="block">Block — deny traffic from this country</option>
+              <option value="allow">Allow — permit traffic from this country</option>
             </select>
+            <small class="form-help">
+              In <strong>whitelist</strong> mode, only <em>allow</em> rules matter (everyone else is blocked).
+              In <strong>blacklist</strong> mode, only <em>block</em> rules matter (everyone else is allowed).
+            </small>
           </div>
           <div class="modal-footer">
             <button type="button" @click="showGeoIPModal = false" class="btn btn-outline">Cancel</button>
@@ -1547,6 +1558,16 @@ export default {
       await loadIPList()
     }
 
+    const _defaultGeoIPAction = () =>
+      settings.value.geoip_mode === 'whitelist' ? 'allow' : 'block'
+
+    const openGeoIPModal = () => {
+      newGeoIP.value = { country_code: '', country_name: '', action: _defaultGeoIPAction() }
+      countrySearch.value = ''
+      filteredCountries.value = []
+      showGeoIPModal.value = true
+    }
+
     const addGeoIPRule = async () => {
       savingGeoIP.value = true
       try {
@@ -1556,7 +1577,7 @@ export default {
         })
         toast.success('Rule added')
         showGeoIPModal.value = false
-        newGeoIP.value = { country_code: '', country_name: '', action: 'block' }
+        newGeoIP.value = { country_code: '', country_name: '', action: _defaultGeoIPAction() }
         countrySearch.value = ''
         filteredCountries.value = []
         await loadGeoIPRules()
@@ -1691,7 +1712,7 @@ export default {
       saveSettings, savePasswordPolicy,
       unlockAccount, quickBanIP,
       addIPEntry, deleteIPEntry, toggleIPEntry,
-      addGeoIPRule, deleteGeoIPRule, toggleGeoIPRule,
+      addGeoIPRule, deleteGeoIPRule, toggleGeoIPRule, openGeoIPModal,
       loadLockouts, loadFailedLogins, loadLoginHistory, loadUserList, load2faOverview,
       invalidateAllSessions, invalidateUserSessions,
       forceDisable2fa,
@@ -1754,9 +1775,13 @@ export default {
   line-height: 1.4;
 }
 
-/* Settings rows */
+/* Settings rows.
+ * The parent .card already provides horizontal padding (1.25rem). Adding more
+ * horizontal padding here pushed the setting rows further in than the table
+ * below them in the same card — making the GeoIP tab look misaligned.
+ */
 .section-body {
-  padding: 0 1.5rem;
+  padding: 0;
 }
 .setting-row {
   display: flex;
@@ -1765,6 +1790,7 @@ export default {
   gap: 2rem;
   padding: 1.1rem 0;
   border-bottom: 1px solid var(--border-color);
+  flex-wrap: wrap;
 }
 .setting-row:last-of-type {
   border-bottom: none;
@@ -1936,8 +1962,13 @@ export default {
   display: flex;
   gap: 0.5rem;
   align-items: center;
-  flex-shrink: 0;
-  width: 280px;
+  flex: 0 0 auto;
+  min-width: 240px;
+  max-width: 320px;
+}
+.lookup-row .form-control { flex: 1; min-width: 0; }
+@media (max-width: 640px) {
+  .lookup-row { width: 100%; max-width: none; }
 }
 .lookup-result {
   background: var(--background);
@@ -1992,6 +2023,12 @@ export default {
   font-size: 0.85rem;
   color: var(--text-secondary);
   line-height: 1.5;
+}
+.info-box-warn {
+  background: rgba(234, 179, 8, 0.08);
+  border-color: rgba(234, 179, 8, 0.45);
+  color: var(--text-primary);
+  margin: 0.75rem 0;
 }
 
 .btn-sm {

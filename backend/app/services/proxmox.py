@@ -103,6 +103,34 @@ class ProxmoxService:
             logger.error(f"Failed to get nodes: {e}")
             return []
 
+    def get_cluster_node_status(self) -> Dict[str, str]:
+        """Authoritative online/offline state per node.
+
+        Uses cluster.status (works even when one node is down — peers report it),
+        falls back to /nodes (standalone hosts). Returns {node_name: 'online'|'offline'}.
+        """
+        states: Dict[str, str] = {}
+        try:
+            items = self.proxmox.cluster.status.get()
+            for item in items:
+                if item.get("type") == "node":
+                    name = item.get("name")
+                    if name:
+                        states[name] = "online" if item.get("online") else "offline"
+        except Exception as e:
+            logger.warning(f"cluster.status unavailable for {self.host.name}: {e}")
+
+        if not states:
+            try:
+                for n in self.proxmox.nodes.get():
+                    name = n.get("node")
+                    if name:
+                        states[name] = "online" if n.get("status") == "online" else "offline"
+            except Exception as e:
+                logger.error(f"nodes.get failed for {self.host.name}: {e}")
+
+        return states
+
     def get_node_resources(self, node_name: str) -> Optional[Dict[str, Any]]:
         """Get resource information for a specific node"""
         try:
@@ -864,15 +892,66 @@ def poll_proxmox_resources(db: Session, host_id: int) -> bool:
 
         if not service.test_connection():
             logger.error(f"Cannot connect to Proxmox host {host.name}")
+            # Host itself is unreachable — mark all of its nodes offline so the
+            # UI doesn't show them as deployable targets.
+            existing = db.query(ProxmoxNode).filter(ProxmoxNode.host_id == host_id).all()
+            for node in existing:
+                node.status = "offline"
+                node.last_updated = datetime.utcnow()
+            db.commit()
             return False
+
+        # Authoritative online/offline per node (works when a peer is down)
+        cluster_status = service.get_cluster_node_status()
 
         # Get nodes and update database
         nodes = service.get_nodes()
         for node_data in nodes:
             node_name = node_data.get("node")
+
+            # Trust cluster.status over /nodes (which can lag for downed peers)
+            is_online = cluster_status.get(node_name)
+            if is_online is None:
+                # No cluster info — fall back to /nodes status
+                is_online = "online" if node_data.get("status") == "online" else "offline"
+
+            if is_online == "offline":
+                node = (
+                    db.query(ProxmoxNode)
+                    .filter(
+                        ProxmoxNode.host_id == host_id,
+                        ProxmoxNode.node_name == node_name,
+                    )
+                    .first()
+                )
+                if node:
+                    node.status = "offline"
+                    node.last_updated = datetime.utcnow()
+                else:
+                    db.add(ProxmoxNode(
+                        host_id=host_id,
+                        node_name=node_name,
+                        status="offline",
+                        last_updated=datetime.utcnow(),
+                    ))
+                continue
+
             resources = service.get_node_resources(node_name)
 
             if not resources:
+                # Node was listed as online but the per-node query failed —
+                # treat it as offline rather than leaving stale data.
+                node = (
+                    db.query(ProxmoxNode)
+                    .filter(
+                        ProxmoxNode.host_id == host_id,
+                        ProxmoxNode.node_name == node_name,
+                    )
+                    .first()
+                )
+                if node:
+                    node.status = "offline"
+                    node.last_updated = datetime.utcnow()
                 continue
 
             # Fetch VM and LXC counts for this node

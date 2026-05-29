@@ -67,13 +67,14 @@
                 <div
                   v-for="node in nodes"
                   :key="node.id"
-                  :class="['node-card', { 'selected': formData.node_id === node.id }]"
+                  :class="['node-card', { 'selected': formData.node_id === node.id, 'disabled': node.status !== 'online' }]"
+                  :title="node.status !== 'online' ? `${node.node_name} is ${node.status || 'unreachable'} — cannot deploy here` : ''"
                   @click="selectNode(node.id)"
                 >
                   <div class="node-header">
                     <h6>{{ node.node_name }}</h6>
                     <span :class="['badge', 'badge-sm', node.status === 'online' ? 'badge-success' : 'badge-danger']">
-                      {{ node.status }}
+                      {{ node.status || 'unknown' }}
                     </span>
                   </div>
                   <div class="node-resources">
@@ -1432,6 +1433,11 @@ export default {
     }
 
     const selectNode = async (nodeId) => {
+      const node = nodes.value.find(n => n.id === nodeId)
+      if (node && node.status !== 'online') {
+        toast.warning(`Cannot select ${node.node_name} — it is ${node.status || 'unreachable'}`)
+        return
+      }
       formData.value.node_id = nodeId
       selectedStorage.value = ''
       selectedBridge.value = ''
@@ -1924,6 +1930,8 @@ export default {
 .datacenter-card, .node-card { border: 2px solid var(--border-color); border-radius: 0.5rem; padding: 1rem; cursor: pointer; transition: all 0.2s; background: var(--background); }
 .datacenter-card:hover, .node-card:hover { border-color: var(--primary-color); box-shadow: 0 4px 6px rgba(0,0,0,0.1); transform: translateY(-2px); }
 .datacenter-card.selected, .node-card.selected { border-color: var(--primary-color); background: linear-gradient(135deg, rgba(37,99,235,0.08), rgba(147,51,234,0.08)); }
+.node-card.disabled { opacity: 0.55; cursor: not-allowed; filter: grayscale(0.4); }
+.node-card.disabled:hover { border-color: var(--border-color); box-shadow: none; transform: none; }
 .datacenter-card { display: flex; align-items: center; gap: 1rem; }
 .datacenter-icon { font-size: 2.5rem; flex-shrink: 0; }
 .datacenter-info h5 { margin: 0 0 0.25rem; font-size: 1.125rem; }

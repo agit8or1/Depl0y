@@ -1229,23 +1229,49 @@ runcmd:
             except Exception as e:
                 logger.warning(f"Could not create custom cloud-init snippet: {e}")
 
-            # IMPORTANT: Regenerate cloud-init drive after configuration
-            # This ensures the new cloud-init settings are applied
+            # IMPORTANT: Regenerate cloud-init drive after configuration so the
+            # new user/password/ssh-key/network-config actually land on the VM.
+            #
+            # The cloned template already has an ide2 cloud-init drive at
+            # /var/lib/vz/images/<vmid>/vm-<vmid>-cloudinit.qcow2, so a bare
+            # `set ide2={storage}:cloudinit` returns
+            # "500 Internal Server Error: disk image ... already exists".
+            # Fix: detach first (which deletes the qcow2), then re-attach
+            # (which recreates it with the newly-applied cicustom snippet).
+            # As a fallback we call the proper cloudinit/update API.
             logger.info(f"Regenerating cloud-init drive for VM {vmid}")
             try:
-                # Delete and recreate the cloud-init drive to apply new config
+                # 1) Detach the existing cloud-init drive
+                self._retry_with_lock_cleanup(
+                    lambda: proxmox.proxmox.nodes(node.node_name).qemu(vmid).unlink.put(
+                        idlist="ide2", force=1
+                    ),
+                    host=host, node=node, proxmox=proxmox, vmid=vmid,
+                )
+                time.sleep(0.5)
+                # 2) Re-attach — this generates a fresh cloud-init drive that
+                # picks up the cicustom snippet we just uploaded.
                 self._retry_with_lock_cleanup(
                     lambda: proxmox.proxmox.nodes(node.node_name).qemu(vmid).config.put(
                         ide2=f"{storage}:cloudinit"
                     ),
-                    host=host,
-                    node=node,
-                    proxmox=proxmox,
-                    vmid=vmid
+                    host=host, node=node, proxmox=proxmox, vmid=vmid,
                 )
                 time.sleep(1)
+                logger.info(f"Cloud-init drive regenerated for VM {vmid}")
             except Exception as e:
-                logger.warning(f"Failed to regenerate cloud-init drive: {e}")
+                logger.warning(f"Cloud-init drive detach/reattach failed for VM {vmid}: {e} — falling back to cloudinit/update API")
+                # Fallback: the official "regenerate" endpoint. It only updates
+                # the on-disk drive in place (works when the drive exists but
+                # not when it doesn't); detach/reattach above covers both.
+                try:
+                    proxmox.proxmox.nodes(node.node_name).qemu(vmid).cloudinit.put()
+                    logger.info(f"Cloud-init regenerated via cloudinit API for VM {vmid}")
+                except Exception as e2:
+                    logger.error(
+                        f"Cloud-init regeneration completely failed for VM {vmid}: {e2} — "
+                        f"VM will boot with the template's stale cloud-init (wrong user/password)"
+                    )
 
             # Step 3: Start the VM
             vm.status_message = "Starting VM..."

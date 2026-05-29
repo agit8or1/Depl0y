@@ -657,10 +657,16 @@
                 <div
                   v-for="node in nodes"
                   :key="node.id"
-                  :class="['node-card', { selected: form.node_id === node.id }]"
+                  :class="['node-card', { selected: form.node_id === node.id, offline: node.status && node.status !== 'online' }]"
+                  :title="node.status && node.status !== 'online' ? `${node.node_name} is ${node.status} — cannot deploy here` : ''"
                   @click="selectNode(node)"
                 >
-                  <span class="node-name">{{ node.node_name }}</span>
+                  <span class="node-name">
+                    {{ node.node_name }}
+                    <span :class="['node-status-pill', node.status === 'online' ? 'online' : 'offline']">
+                      {{ node.status || 'unknown' }}
+                    </span>
+                  </span>
                   <div class="node-stats">
                     <span>CPU {{ node.cpu_usage || 0 }}%</span>
                     <span>RAM {{ formatBytes(node.memory_used) }} / {{ formatBytes(node.memory_total) }}</span>
@@ -1229,10 +1235,16 @@
                 <div
                   v-for="node in nodes"
                   :key="node.id"
-                  :class="['node-card', { selected: form.node_id === node.id }]"
+                  :class="['node-card', { selected: form.node_id === node.id, offline: node.status && node.status !== 'online' }]"
+                  :title="node.status && node.status !== 'online' ? `${node.node_name} is ${node.status} — cannot deploy here` : ''"
                   @click="selectNode(node)"
                 >
-                  <span class="node-name">{{ node.node_name }}</span>
+                  <span class="node-name">
+                    {{ node.node_name }}
+                    <span :class="['node-status-pill', node.status === 'online' ? 'online' : 'offline']">
+                      {{ node.status || 'unknown' }}
+                    </span>
+                  </span>
                   <div class="node-stats">
                     <span>CPU {{ node.cpu_usage || 0 }}%</span>
                     <span>RAM {{ formatBytes(node.memory_used) }} / {{ formatBytes(node.memory_total) }}</span>
@@ -2224,6 +2236,10 @@ export default {
     }
 
     function selectNode(node) {
+      if (node.status && node.status !== 'online') {
+        toast.warning(`Cannot select ${node.node_name} — it is ${node.status}`)
+        return
+      }
       form.value.node_id = node.id
       loadStorage(node.id)
       if (form.value.gpu_enabled && form.value.gpu_type) loadGpuDevices()
@@ -2783,8 +2799,13 @@ export default {
 }
 .node-card:hover { border-color: #93c5fd; background: #f0f9ff; }
 .node-card.selected { border-color: #3b82f6; background: #eff6ff; }
+.node-card.offline { opacity: 0.55; cursor: not-allowed; filter: grayscale(0.4); }
+.node-card.offline:hover { border-color: #e5e7eb; background: #fafafa; }
 .node-name { display: block; font-weight: 600; font-size: 0.9rem; }
 .node-stats { display: flex; gap: 1rem; font-size: 0.78rem; color: #666; margin-top: 0.25rem; }
+.node-status-pill { display: inline-block; margin-left: 0.5rem; padding: 0.05rem 0.4rem; border-radius: 999px; font-size: 0.65rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+.node-status-pill.online { background: #d1fae5; color: #047857; }
+.node-status-pill.offline { background: #fee2e2; color: #b91c1c; }
 
 /* ── forms ──────────────────────────────────────────────── */
 .form-section-inner { margin-top: 1.25rem; }

@@ -1,12 +1,12 @@
 {
   "name": "depl0y-frontend",
-  "version": "2.2.66",
+  "version": "2.2.71",
   "description": "Depl0y Frontend - Vue.js deployment panel",
   "private": true,
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "deploy": "vite build && sudo rsync -a --delete dist/ /opt/depl0y/frontend/dist/ && sudo chown -R www-data:www-data /opt/depl0y/frontend/dist/",
+    "deploy": "vite build && BUILD_TS=$(date +%Y%m%d%H%M%S) && sed -i \"s/const CACHE_VERSION = '[^']*'/const CACHE_VERSION = 'v${BUILD_TS}'/\" dist/sw.js && sudo rsync -a --delete dist/ /opt/depl0y/frontend/dist/ && sudo chown -R www-data:www-data /opt/depl0y/frontend/dist/",
     "preview": "vite preview",
     "lint": "eslint . --ext .vue,.js,.jsx,.cjs,.mjs --fix --ignore-path .gitignore"
   },

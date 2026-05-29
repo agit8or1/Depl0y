@@ -85,7 +85,7 @@ class PBSService:
                 url,
                 data={"username": username, "password": password},
                 verify=self.verify_ssl,
-                timeout=30,
+                timeout=(3, 27),  # (connect, read) — fast-fail when host is down
             )
             resp.raise_for_status()
             data = (resp.json() or {}).get("data") or {}
@@ -102,7 +102,7 @@ class PBSService:
         """Perform a GET request against the PBS API and return the 'data' field."""
         url = f"{self.base_url}{path}"
         try:
-            response = self.session.get(url, params=params, timeout=30)
+            response = self.session.get(url, params=params, timeout=(3, 27))
             response.raise_for_status()
             return response.json().get("data")
         except requests.exceptions.SSLError as exc:
@@ -184,7 +184,7 @@ class PBSService:
         """Perform a POST request against the PBS API and return the 'data' field."""
         url = f"{self.base_url}{path}"
         try:
-            response = self.session.post(url, json=data or {}, timeout=30)
+            response = self.session.post(url, json=data or {}, timeout=(3, 27))
             response.raise_for_status()
             body = response.json()
             return body.get("data") if isinstance(body, dict) else body
@@ -208,7 +208,7 @@ class PBSService:
         """Perform a DELETE request against the PBS API and return the 'data' field."""
         url = f"{self.base_url}{path}"
         try:
-            response = self.session.delete(url, params=params, timeout=30)
+            response = self.session.delete(url, params=params, timeout=(3, 27))
             response.raise_for_status()
             try:
                 body = response.json()

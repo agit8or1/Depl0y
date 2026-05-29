@@ -3,13 +3,19 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from app.core.config import settings
 
-# Build engine kwargs — SQLite needs check_same_thread=False for background threads
-_engine_kwargs: dict = {"pool_pre_ping": True}
+# Build engine kwargs — SQLite needs check_same_thread=False for background threads.
+# Many endpoints hold a DB session while awaiting a slow Proxmox API call, so the
+# pool needs to be large enough to soak up concurrent dashboard requests without
+# timing out (default 5+10 was tripping QueuePool TimeoutError on busy pages).
+_engine_kwargs: dict = {
+    "pool_pre_ping": True,
+    "pool_size": 25,
+    "max_overflow": 50,
+    "pool_timeout": 10,
+    "pool_recycle": 1800,
+}
 if settings.DATABASE_URL.startswith("sqlite"):
     _engine_kwargs["connect_args"] = {"check_same_thread": False}
-else:
-    _engine_kwargs["pool_size"] = 10
-    _engine_kwargs["max_overflow"] = 20
 
 # Create database engine
 engine = create_engine(settings.DATABASE_URL, **_engine_kwargs)

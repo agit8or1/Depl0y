@@ -2070,17 +2070,41 @@ export default {
       }
     }
 
-    async function loadNodes(hostId) {
-      nodesLoading.value = true
-      nodes.value = []
+    // Nodes are re-polled every 10s while a host is selected so online/offline
+    // transitions reflect in the UI without a manual reload. Subsequent ticks
+    // update in place (no spinner, preserve clicked selection).
+    let nodesRefreshTimer = null
+    const NODES_REFRESH_MS = 10_000
+
+    async function refreshNodes(hostId, { showSpinner = false } = {}) {
+      if (!hostId) return
+      if (showSpinner) nodesLoading.value = true
       try {
         const res = await api.proxmox.listNodes(hostId)
-        nodes.value = res.data
+        const byId = new Map(nodes.value.map(n => [n.id, n]))
+        nodes.value = (res.data || []).map(n => ({ ...(byId.get(n.id) || {}), ...n }))
       } catch (e) {
-        toast.error('Failed to load nodes')
+        if (showSpinner) toast.error('Failed to load nodes')
       } finally {
-        nodesLoading.value = false
+        if (showSpinner) nodesLoading.value = false
       }
+    }
+
+    function stopNodesAutoRefresh() {
+      if (nodesRefreshTimer) { clearInterval(nodesRefreshTimer); nodesRefreshTimer = null }
+    }
+
+    function startNodesAutoRefresh(hostId) {
+      stopNodesAutoRefresh()
+      nodesRefreshTimer = setInterval(() => {
+        if (document.visibilityState !== 'hidden') refreshNodes(hostId)
+      }, NODES_REFRESH_MS)
+    }
+
+    async function loadNodes(hostId) {
+      nodes.value = []
+      await refreshNodes(hostId, { showSpinner: true })
+      startNodesAutoRefresh(hostId)
     }
 
     async function loadGpuDevices() {
@@ -2285,7 +2309,10 @@ export default {
       return 1
     }
 
-    onUnmounted(() => { if (progressInterval) clearInterval(progressInterval) })
+    onUnmounted(() => {
+      if (progressInterval) clearInterval(progressInterval)
+      stopNodesAutoRefresh()
+    })
 
     // ── deploy ────────────────────────────────────────────────────
     async function deployLLM() {

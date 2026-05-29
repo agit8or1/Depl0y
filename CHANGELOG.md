@@ -5,6 +5,11 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.72] - 2026-05-29 🔁 Deploy wizards auto-refresh node status
+
+### Fixed
+- **Node online/offline badges didn't refresh in the Deploy / CreateVM / DeployLLM / CreatePVEVM wizards.** Each page called `api.proxmox.listNodes(hostId)` once on host-select and never again — so if a node powered on or off, the wizard kept showing the stale state until the user manually navigated away and back. Backend detection itself was fine (poller runs every 60s and writes the correct `status` to `proxmox_nodes`). Added a 10s auto-refresh while a host is selected (skipped when the tab is hidden, cleared on unmount), merging in place so an already-clicked node card stays selected across refreshes.
+
 ## [2.2.71] - 2026-05-25 ⏱ PBS HTTP timeouts split (connect/read) so circuit breaker can actually catch
 
 ### Fixed

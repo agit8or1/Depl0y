@@ -469,17 +469,38 @@ export default {
       this.isos = []
       this.bridge = ''
 
+      this._stopNodesAutoRefresh()
       if (!this.selectedHostId) return
 
-      this.loadingNodes = true
+      await this._refreshNodes(this.selectedHostId, true)
+      this._startNodesAutoRefresh(this.selectedHostId)
+    },
+
+    // Nodes are repolled every 10s while a host is selected so the dropdown
+    // reflects online/offline transitions without a manual reload.
+    async _refreshNodes(hostId, showSpinner = false) {
+      if (!hostId) return
+      if (showSpinner) this.loadingNodes = true
       try {
-        const res = await api.proxmox.listNodes(this.selectedHostId)
+        const res = await api.proxmox.listNodes(hostId)
         this.nodes = res.data || []
       } catch (e) {
-        console.error('Failed to load nodes:', e)
+        if (showSpinner) console.error('Failed to load nodes:', e)
       } finally {
-        this.loadingNodes = false
+        if (showSpinner) this.loadingNodes = false
       }
+    },
+    _stopNodesAutoRefresh() {
+      if (this._nodesRefreshTimer) {
+        clearInterval(this._nodesRefreshTimer)
+        this._nodesRefreshTimer = null
+      }
+    },
+    _startNodesAutoRefresh(hostId) {
+      this._stopNodesAutoRefresh()
+      this._nodesRefreshTimer = setInterval(() => {
+        if (document.visibilityState !== 'hidden') this._refreshNodes(hostId)
+      }, 10_000)
     },
 
     async onNodeChange() {
@@ -652,6 +673,10 @@ export default {
   mounted() {
     this.loadHosts()
     api.cloudImages.list().then(r => { this.cloudImages = r.data || [] }).catch(() => {})
+  },
+
+  beforeUnmount() {
+    this._stopNodesAutoRefresh()
   },
 }
 </script>

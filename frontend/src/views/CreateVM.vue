@@ -1018,7 +1018,7 @@
 </template>
 
 <script>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/services/api'
 import { useToast } from 'vue-toastification'
@@ -1410,6 +1410,43 @@ export default {
       } catch (e) { console.error(e) }
     }
 
+    // Nodes are polled every 10s while a host is selected so the badges
+    // reflect online/offline transitions without the user having to reload
+    // the page. The first call shows a spinner; subsequent refreshes update
+    // in place and preserve any node the user has already clicked.
+    let nodesRefreshTimer = null
+    const NODES_REFRESH_MS = 10_000
+
+    const refreshNodes = async (hostId, { showSpinner = false } = {}) => {
+      if (!hostId) return
+      if (showSpinner) loadingNodes.value = true
+      try {
+        const r = await api.proxmox.listNodes(hostId)
+        // Merge by id so we don't blow away cached fields the request didn't
+        // return (and so the v-for keys are stable across refreshes).
+        const byId = new Map(nodes.value.map(n => [n.id, n]))
+        nodes.value = (r.data || []).map(n => ({ ...(byId.get(n.id) || {}), ...n }))
+      } catch (e) {
+        if (showSpinner) toast.error('Failed to load nodes')
+      } finally {
+        if (showSpinner) loadingNodes.value = false
+      }
+    }
+
+    const stopNodesAutoRefresh = () => {
+      if (nodesRefreshTimer) {
+        clearInterval(nodesRefreshTimer)
+        nodesRefreshTimer = null
+      }
+    }
+
+    const startNodesAutoRefresh = (hostId) => {
+      stopNodesAutoRefresh()
+      nodesRefreshTimer = setInterval(() => {
+        if (document.visibilityState !== 'hidden') refreshNodes(hostId)
+      }, NODES_REFRESH_MS)
+    }
+
     const selectDatacenter = async (hostId) => {
       selectedHostId.value = hostId
       formData.value.proxmox_host_id = hostId
@@ -1421,16 +1458,11 @@ export default {
       selectedBridge.value = ''
       vmIdStatus.value = ''
 
-      loadingNodes.value = true
-      try {
-        const r = await api.proxmox.listNodes(hostId)
-        nodes.value = r.data
-      } catch (e) {
-        toast.error('Failed to load nodes')
-      } finally {
-        loadingNodes.value = false
-      }
+      await refreshNodes(hostId, { showSpinner: true })
+      startNodesAutoRefresh(hostId)
     }
+
+    onUnmounted(stopNodesAutoRefresh)
 
     const selectNode = async (nodeId) => {
       const node = nodes.value.find(n => n.id === nodeId)

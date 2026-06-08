@@ -5,6 +5,11 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.74] - 2026-06-08 🧹 Sidebar: flatten subgroups (one click, not two)
+
+### Changed
+- **Removed the click-to-expand subgroup layer** introduced in 2.2.73. Two levels of collapse (section header + subgroup header, both interactive, both with their own persisted state, subgroups auto-opening on active routes) was confusing. Every item is now reachable in a single click from its parent section — related items are still grouped visually via thin horizontal dividers (`.nav-divider`), but the dividers are decorative, not interactive. Net result: same four sections, same items, no hidden second tier.
+
 ## [2.2.73] - 2026-06-08 🧹 Sidebar cleanup: 6 sections → 4, grouped subnav, slimmer footer
 
 ### Changed

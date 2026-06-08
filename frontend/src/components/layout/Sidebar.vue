@@ -26,37 +26,24 @@
         @keydown.enter.prevent="toggleSection('overview')"
         @keydown.space.prevent="toggleSection('overview')"
       >
-        <span class="nav-section-label-text">{{ t('nav.section.overview') }}</span>
+        <span class="nav-section-label-text">Overview</span>
         <span class="nav-section-arrow" :class="{ 'arrow-collapsed': collapsed.overview }">›</span>
       </div>
       <div v-show="!collapsed.overview" class="nav-section-items">
         <NavItem :to="'/'" :icon="'📊'" :label="t('nav.dashboard')" :badge="unreadNotifications || null" @click="handleNavClick" />
-        <NavItem :to="'/datacenter'" :icon="'🏢'" :label="t('nav.datacenter')" @click="handleNavClick" />
-        <NavItem :to="'/cluster'" :icon="'🌐'" :label="t('nav.cluster')" @click="handleNavClick" />
-        <NavItem :to="'/tasks'" :icon="'📋'" :label="t('nav.tasklog')" @click="handleNavClick" />
-        <NavItem v-if="isAdmin" :to="'/federation'" :icon="'🌍'" :label="t('nav.federation')" @click="handleNavClick" />
-      </div>
+        <NavItem :to="'/deploy'" :icon="'🚀'" :label="'Deploy'" @click="handleNavClick" />
 
-      <!-- ── Compute ── -->
-      <div
-        class="nav-section-header"
-        :class="{ 'nav-section-header--active': activeSectionKey === 'compute' }"
-        @click="toggleSection('compute')"
-        :aria-expanded="!collapsed.compute"
-        role="button"
-        tabindex="0"
-        @keydown.enter.prevent="toggleSection('compute')"
-        @keydown.space.prevent="toggleSection('compute')"
-      >
-        <span class="nav-section-label-text">{{ t('nav.section.compute') }}</span>
-        <span class="nav-section-arrow" :class="{ 'arrow-collapsed': collapsed.compute }">›</span>
-      </div>
-      <div v-show="!collapsed.compute" class="nav-section-items">
+        <!-- Datacenter group: Datacenter / Cluster / Federation -->
+        <NavSubgroup label="Datacenter" icon="🏢" :sub-key="'g_datacenter'" :sub-open="subOpen" :toggle="toggleSub" :paths="['/datacenter','/cluster','/federation']">
+          <NavItem :to="'/datacenter'" :icon="'🏢'" :label="t('nav.datacenter')" @click="handleNavClick" />
+          <NavItem :to="'/cluster'" :icon="'🌐'" :label="t('nav.cluster')" @click="handleNavClick" />
+          <NavItem v-if="isAdmin" :to="'/federation'" :icon="'🌍'" :label="t('nav.federation')" @click="handleNavClick" />
+        </NavSubgroup>
+
         <NavItem :to="'/vms'" :icon="'🖥️'" :label="t('nav.vms')" @click="handleNavClick" />
         <NavItem v-if="isOperator" :to="'/containers'" :icon="'📦'" :label="t('nav.containers')" @click="handleNavClick" />
-        <NavItem :to="'/templates'" :icon="'📄'" :label="t('nav.templates')" @click="handleNavClick" />
-        <NavItem v-if="isOperator" :to="'/vm-groups'" :icon="'🗃️'" :label="'Groups'" @click="handleNavClick" />
         <NavItem v-if="isOperator" :to="'/bulk-ops'" :icon="'⚡'" :label="t('nav.bulk_ops')" @click="handleNavClick" />
+        <NavItem v-if="isOperator" :to="'/vm-groups'" :icon="'🗃️'" :label="'Groups'" @click="handleNavClick" />
       </div>
 
       <!-- ── Infrastructure ── -->
@@ -70,19 +57,28 @@
         @keydown.enter.prevent="toggleSection('infrastructure')"
         @keydown.space.prevent="toggleSection('infrastructure')"
       >
-        <span class="nav-section-label-text">{{ t('nav.section.infrastructure') }}</span>
+        <span class="nav-section-label-text">Infrastructure</span>
         <span class="nav-section-arrow" :class="{ 'arrow-collapsed': collapsed.infrastructure }">›</span>
       </div>
       <div v-show="!collapsed.infrastructure" class="nav-section-items">
-        <NavItem :to="'/proxmox'" :icon="'🌐'" :label="t('nav.proxmox_hosts')" @click="handleNavClick" />
-        <NavItem v-if="isOperator" :to="'/node-monitor'" :icon="'📡'" :label="'Nodes'" @click="handleNavClick" />
-        <NavItem :to="'/topology'" :icon="'🗺️'" :label="'Topology'" @click="handleNavClick" />
+        <NavSubgroup label="Proxmox" icon="🌐" :sub-key="'g_proxmox'" :sub-open="subOpen" :toggle="toggleSub" :paths="['/proxmox','/node-monitor','/topology']">
+          <NavItem :to="'/proxmox'" :icon="'🌐'" :label="t('nav.proxmox_hosts')" @click="handleNavClick" />
+          <NavItem v-if="isOperator" :to="'/node-monitor'" :icon="'📡'" :label="'Nodes'" @click="handleNavClick" />
+          <NavItem :to="'/topology'" :icon="'🗺️'" :label="'Topology'" @click="handleNavClick" />
+        </NavSubgroup>
+
+        <NavSubgroup label="Networking" icon="🔌" :sub-key="'g_networking'" :sub-open="subOpen" :toggle="toggleSub" :paths="['/network','/sdn','/firewall-manager']">
+          <NavItem v-if="isOperator" :to="'/network'" :icon="'🔌'" :label="t('nav.network')" @click="handleNavClick" />
+          <NavItem v-if="isAdmin" :to="'/sdn'" :icon="'🕸️'" :label="t('nav.sdn')" @click="handleNavClick" />
+          <NavItem v-if="isOperator" :to="'/firewall-manager'" :icon="'🛡️'" :label="t('nav.firewall')" @click="handleNavClick" />
+        </NavSubgroup>
+
+        <NavSubgroup v-if="isOperator" label="HA & Replication" icon="🔄" :sub-key="'g_ha'" :sub-open="subOpen" :toggle="toggleSub" :paths="['/ha-management','/replication']">
+          <NavItem v-if="isAdmin" :to="'/ha-management'" :icon="'🔄'" :label="'HA'" @click="handleNavClick" />
+          <NavItem v-if="isOperator" :to="'/replication'" :icon="'🔁'" :label="t('nav.replication')" @click="handleNavClick" />
+        </NavSubgroup>
+
         <NavItem v-if="isOperator" :to="'/idrac'" :icon="'🖧'" :label="t('nav.idrac')" @click="handleNavClick" />
-        <NavItem v-if="isAdmin" :to="'/ha-management'" :icon="'🔄'" :label="'HA'" @click="handleNavClick" />
-        <NavItem v-if="isOperator" :to="'/replication'" :icon="'🔁'" :label="t('nav.replication')" @click="handleNavClick" />
-        <NavItem v-if="isOperator" :to="'/network'" :icon="'🔌'" :label="t('nav.network')" @click="handleNavClick" />
-        <NavItem v-if="isAdmin" :to="'/sdn'" :icon="'🕸️'" :label="t('nav.sdn')" @click="handleNavClick" />
-        <NavItem v-if="isOperator" :to="'/firewall-manager'" :icon="'🛡️'" :label="t('nav.firewall')" @click="handleNavClick" />
       </div>
 
       <!-- ── Storage ── -->
@@ -100,11 +96,18 @@
         <span class="nav-section-arrow" :class="{ 'arrow-collapsed': collapsed.storage }">›</span>
       </div>
       <div v-show="!collapsed.storage" class="nav-section-items">
+        <NavSubgroup label="Backup" icon="💾" :sub-key="'g_backup'" :sub-open="subOpen" :toggle="toggleSub" :paths="['/backup','/snapshots','/pbs-management']">
+          <NavItem :to="'/backup'" :icon="'💾'" :label="t('nav.backup')" @click="handleNavClick" />
+          <NavItem :to="'/snapshots'" :icon="'📷'" :label="t('nav.snapshots')" @click="handleNavClick" />
+          <NavItem v-if="isAdmin" :to="'/pbs-management'" :icon="'💽'" :label="'PBS Servers'" @click="handleNavClick" />
+        </NavSubgroup>
+
+        <NavSubgroup label="Images & Templates" icon="💿" :sub-key="'g_images'" :sub-open="subOpen" :toggle="toggleSub" :paths="['/images','/iso-images','/cloud-images','/templates']">
+          <NavItem :to="'/images'" :icon="'💿'" :label="t('nav.images')" @click="handleNavClick" />
+          <NavItem :to="'/templates'" :icon="'📄'" :label="t('nav.templates')" @click="handleNavClick" />
+        </NavSubgroup>
+
         <NavItem v-if="isAdmin" :to="'/storage-management'" :icon="'🗄️'" :label="'Storage Servers'" @click="handleNavClick" />
-        <NavItem v-if="isAdmin" :to="'/pbs-management'" :icon="'💽'" :label="'PBS Servers'" @click="handleNavClick" />
-        <NavItem :to="'/backup'" :icon="'💾'" :label="t('nav.backup')" @click="handleNavClick" />
-        <NavItem :to="'/snapshots'" :icon="'📷'" :label="t('nav.snapshots')" @click="handleNavClick" />
-        <NavItem :to="'/images'" :icon="'💿'" :label="t('nav.images')" @click="handleNavClick" />
         <NavItem v-if="isAdmin" :to="'/ceph'" :icon="'🪨'" :label="t('nav.ceph')" @click="handleNavClick" />
         <NavItem v-if="isAdmin" :to="'/pools'" :icon="'🗂️'" :label="t('nav.resource_pools')" @click="handleNavClick" />
       </div>
@@ -121,73 +124,61 @@
           @keydown.enter.prevent="toggleSection('admin')"
           @keydown.space.prevent="toggleSection('admin')"
         >
-          <span class="nav-section-label-text">{{ t('nav.section.admin') }}</span>
+          <span class="nav-section-label-text">Admin</span>
           <span class="nav-section-arrow" :class="{ 'arrow-collapsed': collapsed.admin }">›</span>
         </div>
         <div v-show="!collapsed.admin" class="nav-section-items">
-          <NavItem :to="'/alerts'" :icon="'🚨'" :label="'Alerts'" @click="handleNavClick" />
-          <NavItem :to="'/ai-reports'" :icon="'📊'" :label="'Reports'" @click="handleNavClick" />
-          <NavItem :to="'/updates'" :icon="'⬆️'" :label="'Updates'" @click="handleNavClick" />
+          <NavSubgroup label="Alerts & Reports" icon="🚨" :sub-key="'g_alerts'" :sub-open="subOpen" :toggle="toggleSub" :paths="['/alerts','/ai-reports','/analysis']">
+            <NavItem :to="'/alerts'" :icon="'🚨'" :label="'Alerts'" @click="handleNavClick" />
+            <NavItem :to="'/ai-reports'" :icon="'📊'" :label="'AI Reports'" @click="handleNavClick" />
+            <NavItem :to="'/analysis'" :icon="'🔬'" :label="t('nav.analysis')" @click="handleNavClick" />
+          </NavSubgroup>
+
           <NavItem :to="'/security'" :icon="'🔒'" :label="t('nav.security')" @click="handleNavClick" />
           <NavItem v-if="linuxAgentEnabled" :to="'/linux-vms'" :icon="'🛡️'" :label="'Linux Security'" @click="handleNavClick" />
-          <NavItem :to="'/users'" :icon="'👥'" :label="t('nav.users')" @click="handleNavClick" />
-          <NavItem :to="'/system-health'" :icon="'💚'" :label="'Health'" @click="handleNavClick" />
-          <NavItem :to="'/time-sync'" :icon="'🕒'" :label="'Time Sync'" @click="handleNavClick" />
 
-          <!-- Less-frequently-used tools — collapsed by default -->
-          <div class="nav-subsection-header" @click="moreAdmin = !moreAdmin" role="button" tabindex="0" @keydown.enter.prevent="moreAdmin = !moreAdmin" @keydown.space.prevent="moreAdmin = !moreAdmin">
-            <span class="nav-subsection-label">More</span>
-            <span class="nav-section-arrow" :class="{ 'arrow-collapsed': !moreAdmin }">›</span>
-          </div>
-          <template v-if="moreAdmin">
+          <NavSubgroup label="Users" icon="👥" :sub-key="'g_users'" :sub-open="subOpen" :toggle="toggleSub" :paths="['/users','/pve-users']">
+            <NavItem :to="'/users'" :icon="'👥'" :label="t('nav.users')" @click="handleNavClick" />
+            <NavItem :to="'/pve-users'" :icon="'👤'" :label="t('nav.pve_users')" @click="handleNavClick" />
+          </NavSubgroup>
+
+          <NavSubgroup label="Activity" icon="📋" :sub-key="'g_activity'" :sub-open="subOpen" :toggle="toggleSub" :paths="['/tasks','/audit-log','/system-logs','/notifications']">
+            <NavItem :to="'/tasks'" :icon="'📋'" :label="t('nav.tasklog')" @click="handleNavClick" />
             <NavItem :to="'/audit-log'" :icon="'🔍'" :label="t('nav.audit_log')" @click="handleNavClick" />
             <NavItem :to="'/system-logs'" :icon="'📜'" :label="t('nav.system_logs')" @click="handleNavClick" />
             <NavItem :to="'/notifications'" :icon="'🔔'" :label="t('nav.notifications')" @click="handleNavClick" />
-            <NavItem :to="'/pve-users'" :icon="'👤'" :label="t('nav.pve_users')" @click="handleNavClick" />
+          </NavSubgroup>
+
+          <NavSubgroup label="System" icon="⚙️" :sub-key="'g_system'" :sub-open="subOpen" :toggle="toggleSub" :paths="['/updates','/system-health','/time-sync','/integrations','/api-explorer','/settings']">
+            <NavItem :to="'/updates'" :icon="'⬆️'" :label="'Updates'" @click="handleNavClick" />
+            <NavItem :to="'/system-health'" :icon="'💚'" :label="'Health'" @click="handleNavClick" />
+            <NavItem :to="'/time-sync'" :icon="'🕒'" :label="'Time Sync'" @click="handleNavClick" />
             <NavItem :to="'/integrations'" :icon="'🔗'" :label="t('nav.integrations')" @click="handleNavClick" />
             <NavItem :to="'/api-explorer'" :icon="'⚡'" :label="t('nav.api_explorer')" @click="handleNavClick" />
-            <NavItem :to="'/analysis'" :icon="'🔬'" :label="t('nav.analysis')" @click="handleNavClick" />
-          </template>
+            <NavItem :to="'/settings'" :icon="'⚙️'" :label="t('nav.settings')" @click="handleNavClick" />
+          </NavSubgroup>
         </div>
       </template>
-
-      <!-- ── Account ── -->
-      <div
-        class="nav-section-header"
-        :class="{ 'nav-section-header--active': activeSectionKey === 'account' }"
-        @click="toggleSection('account')"
-        :aria-expanded="!collapsed.account"
-        role="button"
-        tabindex="0"
-        @keydown.enter.prevent="toggleSection('account')"
-        @keydown.space.prevent="toggleSection('account')"
-      >
-        <span class="nav-section-label-text">{{ t('nav.section.account') }}</span>
-        <span class="nav-section-arrow" :class="{ 'arrow-collapsed': collapsed.account }">›</span>
-      </div>
-      <div v-show="!collapsed.account" class="nav-section-items">
-        <NavItem :to="'/about'" :icon="'ℹ️'" :label="t('nav.about')" @click="handleNavClick" />
-        <NavItem :to="'/documentation'" :icon="'📖'" :label="t('nav.documentation')" @click="handleNavClick" />
-        <NavItem :to="'/profile'" :icon="'👤'" :label="t('nav.my_profile')" @click="handleNavClick" />
-        <NavItem :to="'/settings'" :icon="'⚙️'" :label="t('nav.settings')" @click="handleNavClick" />
-        <NavItem :to="'/support'" :icon="'❤️'" :label="t('nav.support')" :extra-class="'nav-item-heart'" @click="handleNavClick" />
-        <a href="https://github.com/agit8or1/Depl0y/issues" target="_blank" rel="noopener noreferrer" class="nav-item">
-          <span class="icon">🐛</span>
-          <span class="nav-item-label">{{ t('nav.report_bug') }}</span>
-        </a>
-      </div>
 
     </nav>
 
     <div class="sidebar-footer">
-      <p class="version">v{{ appVersion }}</p>
-      <p class="copyright">Open Source</p>
+      <div class="footer-links">
+        <router-link to="/about" class="footer-link" @click="handleNavClick">{{ t('nav.about') }}</router-link>
+        <span class="footer-sep">·</span>
+        <router-link to="/documentation" class="footer-link" @click="handleNavClick">{{ t('nav.documentation') }}</router-link>
+        <span class="footer-sep">·</span>
+        <router-link to="/support" class="footer-link footer-link-heart" @click="handleNavClick">{{ t('nav.support') }}</router-link>
+        <span class="footer-sep">·</span>
+        <a href="https://github.com/agit8or1/Depl0y/issues" target="_blank" rel="noopener noreferrer" class="footer-link">{{ t('nav.report_bug') }}</a>
+      </div>
+      <p class="version">v{{ appVersion }} · Open Source</p>
     </div>
   </aside>
 </template>
 
 <script>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, h } from 'vue'
 import { useAuthStore } from '@/store/auth'
 import { useRoute, useRouter } from 'vue-router'
 import api from '@/services/api'
@@ -195,20 +186,68 @@ import { useI18n } from '@/i18n/index.js'
 import NavItem from './NavItem.vue'
 
 const COLLAPSED_KEY = 'sidebar_collapsed_sections'
+const SUBGROUP_KEY = 'sidebar_open_subgroups'
 
-// Maps route paths to which section they belong
+// Maps route paths to which section they belong (drives the section-active tint).
 const SECTION_ROUTES = {
-  overview: ['/', '/federation', '/datacenter', '/cluster', '/tasks'],
-  compute: ['/containers', '/create-lxc', '/create-pve-vm', '/deploy', '/import-vm', '/llm-deploy', '/templates', '/vms', '/vm-management', '/vm-groups', '/bulk-ops', '/vm-search'],
-  infrastructure: ['/ha-management', '/replication', '/idrac', '/network', '/sdn', '/firewall-manager', '/node-monitor', '/proxmox', '/topology'],
-  storage: ['/backup', '/snapshots', '/pbs-management', '/storage-management', '/images', '/ceph', '/pools'],
-  admin: ['/audit-log', '/linux-vms', '/security', '/alerts', '/analysis', '/ai-reports', '/notifications', '/system-health', '/system-logs', '/updates', '/users', '/pve-users', '/integrations', '/time-sync', '/api-explorer'],
-  account: ['/about', '/documentation', '/profile', '/settings', '/support'],
+  overview: ['/', '/deploy', '/create-vm', '/create-lxc', '/create-pve-vm', '/import-vm', '/llm-deploy',
+             '/datacenter', '/cluster', '/federation',
+             '/vms', '/vm-management', '/vm-search', '/containers', '/bulk-ops', '/vm-groups'],
+  infrastructure: ['/proxmox', '/node-monitor', '/topology',
+                   '/network', '/sdn', '/firewall-manager',
+                   '/ha-management', '/replication',
+                   '/idrac'],
+  storage: ['/backup', '/snapshots', '/pbs-management',
+            '/images', '/iso-images', '/cloud-images', '/templates',
+            '/storage-management', '/ceph', '/pools'],
+  admin: ['/alerts', '/ai-reports', '/analysis',
+          '/security', '/linux-vms',
+          '/users', '/pve-users',
+          '/tasks', '/audit-log', '/system-logs', '/notifications',
+          '/updates', '/system-health', '/time-sync', '/integrations', '/api-explorer', '/settings'],
+}
+
+// Inline subgroup: renders a clickable header (icon + label + arrow) plus the
+// child <NavItem>s when expanded. Auto-opens when the current route matches
+// one of `paths`. State is persisted to localStorage via the parent.
+const NavSubgroup = {
+  name: 'NavSubgroup',
+  props: {
+    label: { type: String, required: true },
+    icon: { type: String, default: '' },
+    subKey: { type: String, required: true },
+    subOpen: { type: Object, required: true },
+    toggle: { type: Function, required: true },
+    paths: { type: Array, default: () => [] },
+  },
+  setup(props, { slots }) {
+    const route = useRoute()
+    const isActive = computed(() =>
+      props.paths.some(p => route.path === p || route.path.startsWith(p + '/'))
+    )
+    const isOpen = computed(() => !!props.subOpen[props.subKey] || isActive.value)
+    return () => [
+      h('div', {
+        class: ['nav-subgroup-header', isActive.value && 'nav-subgroup-header--active'],
+        role: 'button',
+        tabindex: 0,
+        onClick: () => props.toggle(props.subKey),
+        onKeydown: (e) => {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); props.toggle(props.subKey) }
+        },
+      }, [
+        h('span', { class: 'icon' }, props.icon),
+        h('span', { class: 'nav-item-label' }, props.label),
+        h('span', { class: ['nav-section-arrow', !isOpen.value && 'arrow-collapsed'] }, '›'),
+      ]),
+      isOpen.value ? h('div', { class: 'nav-subgroup-items' }, slots.default && slots.default()) : null,
+    ]
+  },
 }
 
 export default {
   name: 'Sidebar',
-  components: { NavItem },
+  components: { NavItem, NavSubgroup },
   props: {
     isOpen: {
       type: Boolean,
@@ -226,17 +265,30 @@ export default {
     const appVersion = ref('1.8.0')
     const linuxAgentEnabled = ref(false)
     const unreadNotifications = ref(0)
-    const moreAdmin = ref(false)
 
     // ── Collapsed sections (persisted) ──────────────────────────────────────
     const collapsed = reactive({
       overview: false,
-      compute: false,
       infrastructure: false,
       storage: false,
       admin: false,
-      account: false,
     })
+
+    // ── Subgroups (persisted) ───────────────────────────────────────────────
+    // A subgroup is "open" when the user has clicked it open. The active-route
+    // detection in NavSubgroup overrides this when a child route is active.
+    const subOpen = reactive({})
+    try {
+      const stored = localStorage.getItem(SUBGROUP_KEY)
+      if (stored) Object.assign(subOpen, JSON.parse(stored))
+    } catch (e) {}
+
+    const toggleSub = (key) => {
+      subOpen[key] = !subOpen[key]
+      try {
+        localStorage.setItem(SUBGROUP_KEY, JSON.stringify(subOpen))
+      } catch (e) {}
+    }
 
     const loadCollapsed = () => {
       try {
@@ -342,10 +394,11 @@ export default {
       appVersion,
       linuxAgentEnabled,
       unreadNotifications,
-      moreAdmin,
       handleNavClick,
       collapsed,
       toggleSection,
+      subOpen,
+      toggleSub,
       activeSectionKey,
       onNavKeydown,
     }
@@ -478,21 +531,39 @@ export default {
   overflow: hidden;
 }
 
-.nav-subsection-header {
+/* ── Inline subgroup (looks like a nav-item but expands children) ── */
+.nav-subgroup-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 0.4rem 1.5rem 0.3rem 2.25rem;
+  padding: 0.65rem 1.5rem;
+  color: #d1d9e6;
+  gap: 0.65rem;
   cursor: pointer;
   user-select: none;
-  opacity: 0.65;
+  outline: none;
+  transition: background 0.15s, color 0.15s;
 }
-.nav-subsection-header:hover { background: rgba(255, 255, 255, 0.04); opacity: 1; }
-.nav-subsection-label {
-  font-size: 0.68rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  color: #7a8fa8;
+.nav-subgroup-header:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #ffffff;
+}
+.nav-subgroup-header:focus-visible {
+  outline: 2px solid rgba(59, 130, 246, 0.6);
+  outline-offset: -2px;
+}
+/* Highlight subgroup label when one of its children is the active route */
+.nav-subgroup-header--active {
+  color: #93c5fd;
+}
+.nav-subgroup-items {
+  padding-left: 1.1rem;
+  border-left: 1px solid rgba(255, 255, 255, 0.06);
+  margin: 0.1rem 0 0.25rem 1.6rem;
+}
+.nav-subgroup-items .nav-item {
+  padding-top: 0.45rem;
+  padding-bottom: 0.45rem;
+  font-size: 0.83rem;
 }
 
 /* ── Nav items ── */
@@ -568,17 +639,29 @@ export default {
 
 /* ── Footer ── */
 .sidebar-footer {
-  padding: 1rem 1.5rem;
+  padding: 0.75rem 1.5rem;
   border-top: 1px solid rgba(255, 255, 255, 0.12);
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   color: #8a9ab8;
   flex-shrink: 0;
 }
-
-.version,
-.copyright {
-  margin: 0.25rem 0;
+.footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.4rem;
+  align-items: center;
+  margin-bottom: 0.35rem;
 }
+.footer-link {
+  color: #8a9ab8;
+  text-decoration: none;
+  transition: color 0.15s;
+}
+.footer-link:hover { color: #d1d9e6; }
+.footer-link-heart { color: #f9b8b8; }
+.footer-link-heart:hover { color: #fca5a5; }
+.footer-sep { color: rgba(255, 255, 255, 0.18); }
+.version { margin: 0; opacity: 0.7; }
 
 @media (max-width: 768px) {
   .sidebar {

@@ -5,6 +5,14 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.73] - 2026-06-08 🧹 Sidebar cleanup: 6 sections → 4, grouped subnav, slimmer footer
+
+### Changed
+- **Sidebar consolidated**. The old layout had six sections (Overview / Compute / Infrastructure / Storage / Admin / Account) with 40+ top-level entries, including redundant or related pages sitting at the same level (Datacenter/Cluster/Federation, Hosts/Nodes/Topology, Network/SDN/Firewall, Tasks/Audit/Logs/Notifications, etc.). Collapsed to four sections — Overview, Infrastructure, Storage, Admin — with related pages grouped under inline collapsible subgroups (Datacenter, Proxmox, Networking, HA & Replication, Backup, Images & Templates, Alerts & Reports, Users, Activity, System). Subgroups auto-expand when the current route matches one of their children; otherwise their open/closed state is persisted to localStorage.
+- **Deploy lifted to the top of Overview** — the wizard hub is the most frequently used jumping-off point and was previously not in the sidebar at all (only reachable via Dashboard tiles).
+- **About / Docs / Support / Bug Report moved to a compact footer link strip** below the version line. They were eating a full Account section for items most users open once.
+- **Profile dropped from the sidebar** (already reachable from the header user-info link). Settings moved into Admin → System alongside Integrations/API Explorer/Updates/Health/Time Sync.
+
 ## [2.2.72] - 2026-05-29 🔁 Deploy wizards auto-refresh node status
 
 ### Fixed

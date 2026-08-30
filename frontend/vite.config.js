@@ -10,13 +10,14 @@ export default defineConfig({
     chunkSizeWarningLimit: 1000,
     rollupOptions: {
       output: {
-        manualChunks: {
-          // Vue core
-          'vendor-vue': ['vue', 'vue-router', 'pinia'],
-          // HTTP / utilities
-          'vendor-axios': ['axios'],
-          // Toast notifications
-          'vendor-toast': ['vue-toastification'],
+        // Vite 8 bundles with Rolldown, which only accepts the function form
+        // of manualChunks — the object form throws "manualChunks is not a
+        // function" at build time. Same three chunks as before.
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return
+          if (/[\\/]node_modules[\\/](vue|vue-router|pinia)[\\/]/.test(id)) return 'vendor-vue'
+          if (/[\\/]node_modules[\\/]axios[\\/]/.test(id)) return 'vendor-axios'
+          if (/[\\/]node_modules[\\/]vue-toastification[\\/]/.test(id)) return 'vendor-toast'
         }
       }
     }

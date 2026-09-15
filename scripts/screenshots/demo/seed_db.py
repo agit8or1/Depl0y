@@ -1,5 +1,7 @@
 """Seed the demo database: admin user, version marker, synthetic audit history."""
+import json
 import os
+import pathlib
 import sys
 from datetime import datetime, timedelta
 
@@ -26,7 +28,12 @@ if not user:
     db.commit()
     db.refresh(user)
 
-for k, v in [("app_version", os.environ.get("DEMO_VERSION", "2.2.74")),
+# Derive the demo version from the repo rather than hardcoding it, so the
+# version in the sidebar of every screenshot tracks the real release.
+_pkg = pathlib.Path(os.environ.get("DEMO_REPO", "/home/administrator/depl0y")) / "frontend/package.json"
+_version = json.loads(_pkg.read_text())["version"]
+
+for k, v in [("app_version", os.environ.get("DEMO_VERSION", _version)),
              ("bmc_poll_interval_minutes", "5")]:
     row = db.query(SystemSettings).filter(SystemSettings.key == k).first()
     if row:

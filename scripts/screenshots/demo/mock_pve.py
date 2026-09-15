@@ -602,10 +602,20 @@ def h_dc_storage(dc, m, q):
 
 
 def h_ha_manager_status(dc, m, q):
+    """Shape matters here: app/api/ha.py does wrapper.get("manager_status"),
+    so this must be a dict. Returning a list made the backend log
+    "'list' object has no attribute 'get'" and the HA page degrade."""
     if not dc["cluster"]:
-        return []
-    return [{"id": "master", "type": "master", "node": dc["nodes"][0],
-             "status": "active", "timestamp": int(time.time())}]
+        return {}
+    return {
+        "manager_status": {
+            "node_status": {n: "online" for n in dc["nodes"]},
+            "master_node": dc["nodes"][0],
+            "timestamp": int(time.time()),
+        },
+        "quorum": {"quorate": "1", "node": dc["nodes"][0],
+                   "nodes": len(dc["nodes"]), "total_votes": len(dc["nodes"])},
+    }
 
 
 ROUTES = [

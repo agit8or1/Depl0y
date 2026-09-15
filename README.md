@@ -1,302 +1,239 @@
-# Depl0y
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/github/wordmark-dark.svg">
+    <img src="docs/images/github/wordmark-light.svg" alt="Depl0y" width="330">
+  </picture>
+</p>
 
-**Proxmox VE Management Panel — Infrastructure at your fingertips**
+<p align="center"><b>Proxmox infrastructure and server hardware management in one dashboard.</b></p>
 
-🌐 **Website:** [depl0y.mspreboot.com](https://depl0y.mspreboot.com/)
+<p align="center">
+Depl0y puts every Proxmox cluster and standalone host you run into a single view, alongside the iDRAC and iLO data for the machines underneath them.
+It is a self-hosted panel that sits next to the Proxmox web interface rather than replacing it.
+</p>
 
-![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)
-![Vue.js](https://img.shields.io/badge/vue.js-3.x-green.svg)
-[![Version](https://img.shields.io/badge/version-2.2.74-brightgreen.svg)](https://github.com/agit8or1/Depl0y/releases)
-[![Website](https://img.shields.io/badge/website-depl0y.mspreboot.com-blue.svg)](https://depl0y.mspreboot.com/)
-[![GitHub Stars](https://img.shields.io/github/stars/agit8or1/Depl0y?style=social)](https://github.com/agit8or1/Depl0y/stargazers)
+<p align="center">
+  <a href="https://github.com/agit8or1/Depl0y/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/agit8or1/Depl0y?label=release&color=3b82f6"></a>
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/agit8or1/Depl0y?color=3b82f6"></a>
+  <img alt="Backend: FastAPI" src="https://img.shields.io/badge/backend-FastAPI-009688">
+  <img alt="Frontend: Vue 3" src="https://img.shields.io/badge/frontend-Vue%203-42b883">
+  <img alt="Hardware: Redfish, iDRAC, iLO" src="https://img.shields.io/badge/hardware-Redfish%20%C2%B7%20iDRAC%20%C2%B7%20iLO-0b5fff">
+</p>
 
-⭐ If Depl0y saves you time, give it a star — it helps others find the project!
+<p align="center">
+  <a href="docs/QUICKSTART.md">Quick start</a> ·
+  <a href="docs/SCREENSHOTS.md">Screenshots</a> ·
+  <a href="docs/FEATURES.md">Features</a> ·
+  <a href="docs/ARCHITECTURE.md">Architecture</a> ·
+  <a href="https://github.com/agit8or1/Depl0y/releases">Releases</a>
+</p>
 
-Depl0y is a free, open-source web control panel for Proxmox VE. Manage VMs, clusters, nodes, storage, backups, networking, firewall, HA, and physical hardware from a single dark-mode interface.
+<p align="center">
+  <a href="docs/images/github/01-infrastructure-overview.png">
+    <img src="docs/images/github/01-infrastructure-overview.png" width="900"
+         alt="Depl0y dashboard showing 50 VMs, 44 running, 8 containers, 288 CPU cores, 2.1 TB RAM and 909 GB storage in use across three registered Proxmox sites, with a storage warning on east-02, per-node CPU and RAM cards, live network throughput per node, and a feed of recent Proxmox tasks.">
+  </a>
+</p>
 
----
-
-## Screenshots
-
-> A guided tour at [depl0y.mspreboot.com](https://depl0y.mspreboot.com/) covers more screens than fit here.
-
-### Login
-![Login](screenshots/00-login.png)
-
-### Proxmox Datacenters & Hosts
-![Proxmox Hosts](screenshots/03-proxmox-hosts.png)
-*Multi-datacenter view with node health, cluster join/unjoin, server-model chips, BMC poll selector, and ⚡ Power dropdown per host*
-
-### VM List
-![VM List](screenshots/02-vm-list.png)
-*Filter, search, bulk-select, and per-row actions — start/stop/migrate/clone/snapshot/delete*
-
-### VM Detail
-![VM Detail](screenshots/05-vm-detail.png)
-*Per-VM lifecycle, config (CPU / RAM / disks / NICs), snapshots, firewall, console, and live charts*
-
-### Create VM
-![Create VM](screenshots/06-create-vm.png)
-*Guided VM creation with cloud-init credentials, storage selection, and ISO/cloud-image picker*
-
-### Federation Map
-![Federation Map](screenshots/04-federation.png)
-*Live OpenStreetMap showing all datacenters as pins — green online, red offline*
-
-### Cluster Status
-![Cluster Status](screenshots/17-cluster-status.png)
-*Cluster-wide quorum, node membership, HA resources, and replication jobs*
-
-### HA Management
-![HA Management](screenshots/09-ha-management.png)
-*HA group + resource CRUD with quorum/state monitoring*
-
-### Backup
-![Backup](screenshots/09-backup.png)
-*PBS datastore browsing, backup schedule CRUD, and manual triggers*
-
-### Storage
-![Storage](screenshots/08-storage.png)
-*Storage pools across nodes with content browsing*
-
-### ISO & Cloud Images
-![Cloud Images](screenshots/08-cloud-images.png)
-*Upload ISOs, configure cloud-image templates, manage on disk*
-
-### iDRAC / iLO Dashboard
-![iDRAC Dashboard](screenshots/22-idrac-dashboard.png)
-*Hardware health, power, temperature, wattage for all BMC-equipped servers — Dell iDRAC + HPE iLO via Redfish*
-
-### iDRAC Server Detail
-![iDRAC Server Detail](screenshots/23-idrac-server-detail.png)
-*Per-server CPU / DIMM / storage / firmware / network / SEL inventory + power actions*
-
-### Deploy LLM
-![Deploy LLM](screenshots/13-deploy-llm-home.png)
-*One-click LLM deployment — Ollama, llama.cpp, vLLM, LocalAI with optional GPU passthrough*
-
-### Audit Log
-![Audit Log](screenshots/10-audit-log.png)
-*Every user action and system change recorded with filtering*
-
-### User Management
-![User Management](screenshots/16-user-management.png)
-*Role-based access — Admin, Operator, Viewer — with 2FA/TOTP*
-
-### Settings
-![Settings](screenshots/11-settings-cloud-setup.png)
-*Cloud image setup, cluster SSH, HA enablement, integrations, and one-click system updates*
-
-### API Explorer
-![API Explorer](screenshots/15-api-explorer.png)
-*Browse and test the depl0y REST API directly from the panel*
+<p align="center"><sub>One dashboard over three registered sites — two clusters and a standalone lab host.</sub></p>
 
 ---
 
-## Features
+## What it is for
 
-### 🖥️ Full Proxmox VE Management
-- **VMs** — start/stop/reboot/suspend/resume, config editing (CPU, RAM, disks, NICs), snapshots, clone, migrate, firewall, VNC console, QEMU serial terminal
-- **LXC Containers** — lifecycle, config editing, snapshots, terminal (xterm.js)
-- **Nodes** — RRD metrics charts, VM + LXC list, storage browser, network config, task log, node terminal, **OS-level shutdown / reboot** via `pvesh`
-- **Cluster** — status, node list, HA groups and resources, quorum monitoring
-- **Cluster Join / Unjoin** — join any node to a cluster (fingerprint auto-fetched), remove nodes from cluster
-- **Replication** — job CRUD, force-sync, log viewer
-- **Node Evacuation** — migrate all VMs off a node to other online nodes
-- **Firewall** — cluster, node, and VM-level rules; security groups; IPsets
-- **Backup** — schedule CRUD, manual trigger, PBS datastore browsing
-- **Storage** — pool management, content browsing, ISO and cloud image management
-- **Networking** — bridge/bond/VLAN config with apply-pending support
-- **Offline-tolerant** — host/node endpoints (`status`, `vms`, `lxc`, `tasks`) return clean empty payloads when a node is powered off so the dashboard doesn't blow up
+**Running more than one Proxmox environment.** The Proxmox web interface is
+scoped to the cluster you log into. Depl0y registers each cluster or standalone
+host as its own endpoint, with its own credentials, and puts the totals, node
+health and guest inventory for all of them on one page — useful when you have a
+production cluster, a DR site and a lab, or when you look after several
+customers' clusters.
 
-### 📊 Dashboard
-- **Widget grid** — drag-and-drop reordering with masonry (asymmetric column) layout
-- **10+ widgets** — CPU, RAM, storage, network traffic, disk I/O, VM status, alerts, activity feed, quick actions
-- **Clickable tiles** — every widget links to its management view
-- **Per-widget refresh** — each widget auto-refreshes independently
+**Seeing the hardware, not just the hypervisor.** Depl0y polls Dell iDRAC and
+HPE iLO over Redfish and shows health, power state, draw in watts, inlet
+temperature, DIMM and drive inventory and firmware versions next to the VMs
+running on that machine. Power actions run either through the Proxmox OS or
+through the BMC — and the BMC path is the only one that can turn a machine back
+on after it has been powered off.
 
-### 🗺️ Federation & Multi-Datacenter
-- **Multi-host** — add and manage multiple Proxmox VE hosts with API token or password auth
-- **Live Map** — OpenStreetMap/Leaflet with datacenter pins (blue = online, red = offline)
-- **Federated Summary** — aggregate VM/node/storage stats across all registered hosts
-- **Federated Dashboard** — cross-datacenter VM/node overview in one view
-
-### 🖧 iDRAC / iLO Out-of-Band Management
-- **Redfish Dashboard** — unified health, power, temperature, wattage for all BMC-equipped servers
-- **Two-section Power menu** — surface a **⚡ Power** dropdown on every host card, node card, and on the iDRAC management page. Top section runs through the **Proxmox OS** (graceful shutdown / reboot via `pvesh`), bottom section runs through **iDRAC/BMC** (Power On / Force Off / Graceful Off / Reset / Power Cycle / PXE) — the only path that can power on a fully-off machine
-- **Server model auto-detection** — Redfish `Model` → Dell `SystemPID` → Dell `SystemID` → PCI subsystem lookup → manager generation tag, in that order. Resolves PowerEdge model names directly from the BMC even on 13G boxes where the standard `Model` field is blank
-- **Manual model override** — pencil-edit on the host/node model chip; persists to `system_settings` and applies to the live cache instantly. Required for older (iDRAC 7) BMCs that don't expose model metadata at all
-- **Configurable poll interval** — 1 / 2 / 5 / 10 minutes, persisted globally; backend live-reschedules the job and queues an immediate poll on change
-- **Continuous post-poll refresh** — Refresh All / Poll Now drives a 1.5 s cache re-fetch loop for ~20 s, so per-server model/health/power-state updates appear as soon as each individual BMC responds (rather than waiting for the slowest)
-- **Hardware Inventory** — CPUs, DIMMs, storage controllers & drives, firmware, NICs, SEL
-- **Daily firmware-update check** — Dell catalog XML parsed daily; BIOS / iDRAC available-version chips with direct support links
-- **Multi-vendor** — Dell iDRAC (iDRAC 7 / 8 / 9 / 14G+) and HPE iLO via Redfish v1; SSH-based hardware reporting for hosts without Redfish
-
-### 🤖 LLM Deployment
-- **Simple + Advanced modes** — 4 questions to deploy, or full control over engine/model/GPU/OS/storage
-- **4 Engines** — Ollama, llama.cpp (GGUF), vLLM (OpenAI-compatible), LocalAI (Docker)
-- **15+ Models** — Llama 3.x, Mistral, Phi-4, Gemma, Qwen, DeepSeek, Code Llama, and more
-- **GPU Passthrough** — NVIDIA (CUDA) and AMD (ROCm) with automatic driver install
-- **Add-ons** — Open WebUI, ComfyUI (Stable Diffusion), AI auto-tuning, RAG, conversation logging
-
-### 📥 VM Import
-- **File upload** — OVA, OVF, VMDK, VHD, VHDX, QCOW2, RAW via drag & drop
-- **VMware direct** — connect to ESXi or vCenter, browse and pull VMs over the network
-- **Auto-parse** — OVF descriptors extracted for name, CPU, RAM, disk, OS type
-- **Disk conversion** — VMDK/VHD/VHDX → qcow2 via qemu-img automatically
-
-### ⚡ Cloud Image Deployment
-- **30-second deployments** — Ubuntu, Debian, Rocky, AlmaLinux (after one-time template setup)
-- **Cloud-Init** — hostname, user, SSH key, static IP, DNS, package injection
-
-### 🔐 Security & Access Control
-- **Role-based** — Admin, Operator, Viewer with route-level enforcement
-- **2FA / TOTP** — authenticator app support with QR code setup
-- **Encrypted storage** — all passwords and API tokens encrypted at rest (Fernet)
-- **Audit log** — every user action and system change recorded
-- **Rate limiting** — 100 req/min globally with security headers
-
-### 🔄 VM Update Management
-- **One-click updates** — check and install updates on any managed Linux VM via SSH
-- **Real-time streaming** — live terminal output as apt/dnf runs
-- **Auto-scheduled checks** — configurable interval (6h–7d) for automatic checks
+**Giving a team a narrower door into Proxmox.** Depl0y has its own accounts with
+Admin / Operator / Viewer roles, TOTP, per-endpoint scoping and an audit log, so
+day-to-day operators get a login here instead of Proxmox root credentials.
+Depl0y itself still connects to Proxmox with a privileged token — it narrows who
+touches the hypervisor, it does not reduce what Depl0y can do.
 
 ---
 
-## Quick Start
+## A look around
 
-### One-Line Installation
+**Every environment side by side** — cluster or standalone, PVE version, detected
+server model and live utilisation for each registered site.
+
+<a href="docs/images/github/02-datacenters.png"><img src="docs/images/github/02-datacenters.png" width="900" alt="Datacenters page with three cards: east-prod (3 nodes, 25 VMs, 5 LXC, PVE 8.4.1, mixed PowerEdge models), west-prod (2 nodes, 12 VMs, 2 LXC, PowerEdge R640) and a standalone Bristol lab on a ProLiant DL380 Gen10, each with CPU, RAM and disk usage bars and a connection latency badge."></a>
+
+**The hardware underneath** — Redfish health, power draw, inlet temperature and
+model for every BMC-equipped server, with a DIMM fault surfaced on east-03.
+
+<a href="docs/images/github/03-hardware-redfish.png"><img src="docs/images/github/03-hardware-redfish.png" width="900" alt="iDRAC and iLO management page: tiles reading 6 total, 6 online, 5 healthy, 1 warning and 2008 W total draw; health and power-state donut charts; a bar chart of maximum temperature per server; and a table of six servers listing power state, health, temperature, watts, model and last poll time."></a>
+
+**Per-guest detail** — live gauges, an hour of history, and the configuration,
+snapshot, firewall and console tabs behind them.
+
+<a href="docs/images/github/04-vm-detail.png"><img src="docs/images/github/04-vm-detail.png" width="900" alt="VM detail page for db-prod-01 on node east-01: running for 20 days, CPU gauge at 21.6 percent, memory at 55 percent of 64 GB, network I/O at 11.2 MB/s in and 3.2 MB/s out, disk I/O sparklines, and CPU and memory charts covering the last hour."></a>
+
+**Deploying somewhere specific** — choose the site, then the node, with its
+current load in front of you.
+
+<a href="docs/images/github/05-deploy-vm.png"><img src="docs/images/github/05-deploy-vm.png" width="900" alt="Create Virtual Machine wizard on the General step: three datacenter cards with DC-East selected, node cards for east-01, east-02 and east-03 showing core counts and live CPU load with east-03 selected, and the VM identity fields filled in with the name billing-api-03."></a>
+
+More screens in the [screenshot tour](docs/SCREENSHOTS.md).
+
+---
+
+## Depl0y and the Proxmox web interface
+
+Depl0y talks to the standard Proxmox API. It is an additional console, not a
+replacement — the two are meant to be used together.
+
+| | Proxmox web interface | Depl0y |
+|---|---|---|
+| Guest lifecycle, config, snapshots, console on one cluster | Yes — the authoritative tool | Yes |
+| Several clusters or sites in one view | One cluster per login | All registered endpoints on one page |
+| iDRAC / iLO health, power draw, temperature, firmware inventory | Not part of the Proxmox UI | Built in, over Redfish |
+| Powering on a host that is fully off | Reach the BMC separately | BMC power actions in the same UI |
+| Cluster creation, storage configuration, PVE upgrades, repositories | Yes — do it here | Not covered; use Proxmox |
+| Accounts for the panel itself | PVE realms and ACLs | Own Admin / Operator / Viewer roles, TOTP, audit log |
+| Guided cloud-image, VM-import and LLM deployment wizards | Not applicable | Included |
+
+If you only run one cluster and never touch the BMCs, the Proxmox web interface
+is likely all you need.
+
+---
+
+## Quick start
+
+On a small Ubuntu or Debian VM of its own — not on a Proxmox node:
 
 ```bash
-curl -fsSL http://deploy.agit8or.net/downloads/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/agit8or1/Depl0y/main/install.sh -o install.sh
+less install.sh          # read it before running it
+sudo bash install.sh
 ```
 
-Installs all dependencies, configures nginx, and creates a systemd service — ready in ~30 seconds.
+The installer sets up Python, Node.js, nginx and SQLite, generates
+`SECRET_KEY` and `ENCRYPTION_KEY` into `/etc/depl0y/config.env`, installs the
+`depl0y-backend` systemd unit and configures nginx.
 
-### Post-Installation
+Then open `http://<server-ip>/` and sign in with `admin` / `admin`.
+**Change that password immediately** and enable TOTP.
 
-1. Open `http://your-server-ip` — default credentials: `admin` / `admin` (**change immediately**)
-2. Enable 2FA — Settings → User Profile → Enable TOTP
-3. Add a Proxmox host — Proxmox Hosts → Add Datacenter → test connection
-4. Deploy or import a VM
+### Connect a Proxmox endpoint
 
-### Updating
+Create an API token in Proxmox (Datacenter → Permissions → API Tokens) with
+**privilege separation unchecked**, then in Depl0y go to **Proxmox Hosts → Add
+Datacenter** and enter the hostname, port `8006`, the token's owner (e.g.
+`root@pam`), the token ID and its secret. Leave *Verify SSL* off for the default
+self-signed Proxmox certificate. Repeat for every cluster you want in the
+dashboard.
+
+Full walkthrough, including BMC setup: **[docs/QUICKSTART.md](docs/QUICKSTART.md)**.
+
+### Requirements
+
+| | |
+|---|---|
+| Depl0y host | Ubuntu or Debian, 2 vCPU / 2 GB RAM / 20 GB disk |
+| Network | `8006` to the Proxmox API, `443` to each BMC, `22` to nodes for import and terminal features |
+| Outbound | `github.com` for in-app updates, `downloads.dell.com` for the optional Dell firmware check |
+| Browser | outbound access to `cdn.jsdelivr.net` for the noVNC console and to OpenStreetMap for the map view; everything else works without it |
+
+---
+
+## Also included
+
+Once the infrastructure side is set up, Depl0y can also build guests for you:
+
+- **Cloud images** — Ubuntu 20.04/22.04/24.04 LTS, Debian 11/12 and Rocky Linux
+  8/9, with cloud-init for hostname, user, SSH key, static IP and packages.
+- **VM import** — upload OVA, OVF, VMDK, VHD, VHDX, QCOW2 or RAW, or pull VMs
+  straight from an ESXi host or vCenter; disks are converted with `qemu-img`.
+- **LLM deployment** — a wizard that builds an inference VM running Ollama,
+  llama.cpp, vLLM or LocalAI, with optional NVIDIA or AMD GPU passthrough and
+  Open WebUI.
+
+Details in the [feature reference](docs/FEATURES.md).
+
+---
+
+## Supported versions
+
+Depl0y uses the standard Proxmox VE API v2 (`/api2/json`) and does not gate on a
+Proxmox version string. It is developed and exercised against **Proxmox VE 8.x**;
+other releases are not routinely tested. BMC support covers **Dell iDRAC 7, 8
+and 9** and **HPE iLO** through Redfish v1, with an SSH fallback for hosts whose
+BMC does not answer Redfish.
+
+## Known limitations
+
+- The installer supports **Ubuntu and Debian only** and refuses other
+  distributions. A `docker-compose.yml` exists in the tree but the installer is
+  the supported path.
+- Depl0y is exercised with a Proxmox token that has **privilege separation
+  disabled**, so it carries the owner's full rights. `pvesh`-backed actions
+  (OS-level power, node terminal, cluster join) effectively need `root@pam`. A
+  least-privilege Proxmox role has not been validated.
+- VM import, inter-node SSH setup and the node terminal need **SSH access to the
+  Proxmox nodes**.
+- The firmware **version check is Dell-only** — HPE firmware is inventoried but
+  not compared against a catalog.
+- Depl0y stores its own state in **SQLite on a single host**; there is no
+  clustering or HA for the panel itself.
+- The noVNC console and the map view need outbound browser access, so the panel
+  is not fully air-gapped.
+
+## Upgrades and backups
+
+**Upgrade** in the panel: **Settings → System Updates → Check for updates →
+Install**. It reads the latest GitHub release, downloads the bundle and runs the
+installer. Re-running `install.sh` by hand does the same thing and preserves the
+existing `ENCRYPTION_KEY`.
+
+**Back up** before upgrading:
 
 ```bash
-cd /opt/depl0y && git pull origin main && sudo bash deploy.sh
+sudo systemctl stop depl0y-backend
+sudo tar czf depl0y-backup-$(date +%F).tar.gz \
+    /etc/depl0y/config.env \
+    /var/lib/depl0y/db/depl0y.db
+sudo systemctl start depl0y-backend
 ```
 
-Or: **Settings → System Updates → Check for Updates → Install**
+`config.env` holds `ENCRYPTION_KEY`. Without it the Proxmox and BMC credentials
+in the database cannot be decrypted, so back up both files together and keep
+them somewhere the database alone is not enough to open.
+
+## Support
+
+- Questions and bugs — [GitHub Issues](https://github.com/agit8or1/Depl0y/issues)
+  (there is also a **Report Bug** form in the panel).
+- Security reports — see [SECURITY.md](SECURITY.md); please do not open a public
+  issue for a vulnerability.
+- Contributing — [CONTRIBUTING.md](CONTRIBUTING.md). For anything large, open an
+  issue first.
+
+## Documentation
+
+| | |
+|---|---|
+| [Quick start](docs/QUICKSTART.md) | install, requirements, connecting Proxmox and BMCs, troubleshooting |
+| [Feature reference](docs/FEATURES.md) | the full catalogue |
+| [Screenshots](docs/SCREENSHOTS.md) | annotated tour |
+| [Architecture](docs/ARCHITECTURE.md) | internals, background jobs, state on disk, running from source |
+| [Proxmox API tokens](PROXMOX_API_TOKENS.md) | token creation in detail |
+| [Changelog](CHANGELOG.md) | release history |
 
 ---
 
-## Configuration
-
-### Environment Variables (`/etc/depl0y/config.env`)
-
-```bash
-SECRET_KEY=your_jwt_secret_key_minimum_32_chars
-ENCRYPTION_KEY=your_fernet_encryption_key
-DATABASE_URL=sqlite:////var/lib/depl0y/db/depl0y.db
-DEBUG=false
-LOG_LEVEL=INFO
-```
-
-### Storage Locations
-
-| Path | Contents |
-|------|----------|
-| `/var/lib/depl0y/db/depl0y.db` | SQLite database |
-| `/var/lib/depl0y/isos` | ISO images |
-| `/var/lib/depl0y/cloud-images` | Cloud image templates |
-| `/var/lib/depl0y/ssh_keys` | SSH key pairs |
-| `/var/log/depl0y/` | Application logs |
-| `/tmp/depl0y-imports/` | Temporary VM import working directory |
-
----
-
-## Architecture
-
-```
-┌─────────────────────────────────────┐
-│         Frontend (Vue.js 3)         │
-│   SPA · Axios · Chart.js · Leaflet  │
-│   Dark Mode · Widget Grid · xterm   │
-└──────────────┬──────────────────────┘
-               │ HTTP REST (/api/v1)
-┌──────────────▼──────────────────────┐
-│       Backend (FastAPI + Python)     │
-│  Auth · VMs · Cluster · Import      │
-│  LLM · HA · Backup · iDRAC · Alerts │
-└──────┬──────────────┬───────────────┘
-       │              │
-┌──────▼──────┐ ┌────▼────────────────┐
-│   SQLite DB  │ │   Proxmox VE API    │
-│  (users/VMs/ │ │  nodes/qemu/cluster │
-│  settings)   │ │  + Redfish / SSH    │
-└─────────────┘ └─────────────────────┘
-```
-
-**Key dependencies:** proxmoxer, pyVmomi, paramiko, SQLAlchemy, Pydantic, APScheduler, python-jose, Leaflet
-
----
-
-## API Documentation
-
-- **Swagger UI:** `http://your-server/api/v1/docs`
-- **ReDoc:** `http://your-server/api/v1/redoc`
-- **In-App API Explorer:** Sidebar → API Explorer
-
----
-
-## Development
-
-```bash
-# Backend
-cd backend && python3 -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload
-
-# Frontend
-cd frontend && npm install && npm run dev
-
-# Production build + deploy
-sudo bash /opt/depl0y/deploy.sh
-```
-
----
-
-## Troubleshooting
-
-**Cannot connect to Proxmox host**
-- Verify credentials and network connectivity
-- Disable `verify_ssl` for self-signed certificates
-- Ensure Proxmox API port (8006) is reachable
-
-**VM import fails**
-- Ensure `local` storage exists with enough space on the target node
-- SSH must be configured between Depl0y server and Proxmox host (Settings → SSH Setup)
-
-**Cluster join fails**
-- Ensure the root@pam password is correct for the cluster master node
-- The fingerprint is auto-fetched — if it fails, fetch it manually: `pvecm status` on the master
-
-**Backend logs**
-```bash
-sudo journalctl -u depl0y-backend -f
-```
-
-For more help: [GitHub Issues](https://github.com/agit8or1/Depl0y/issues)
-
----
-
-## Contributing
-
-Pull requests welcome. For major changes, open an issue first to discuss what you'd like to change.
-
----
-
-## License
-
-MIT — see [LICENSE](LICENSE) for details.
+<p align="center">
+  <sub>MIT licensed — see <a href="LICENSE">LICENSE</a>.</sub><br>
+  <sub>🐺 Supervised by Phil the Husky.</sub>
+</p>

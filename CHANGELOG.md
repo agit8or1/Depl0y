@@ -5,6 +5,21 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.75] - 2026-09-15 📖 GitHub presentation: rebuilt README, docs split, synthetic screenshots
+
+### Changed
+- **README rewritten around what Depl0y is for**, not around a feature dump. Leads with "Proxmox infrastructure and server hardware management in one dashboard", an SVG wordmark, five accurate badges, and a nav strip to Quick start / Screenshots / Features / Architecture / Releases. Three use cases (multi-environment operation, hardware visibility via iDRAC/iLO, giving a team a narrower door into Proxmox), a hero screenshot plus four captioned supporting shots, and a factual "Depl0y and the Proxmox web interface" comparison table that says plainly what Proxmox should still be used for.
+- **Exhaustive feature catalogue and implementation detail moved out of the README** into `docs/FEATURES.md` and `docs/ARCHITECTURE.md`. Install, requirements, permissions, BMC setup and troubleshooting moved into `docs/QUICKSTART.md`.
+- **Install instructions now point at the in-repo installer over HTTPS** (`raw.githubusercontent.com/agit8or1/Depl0y/main/install.sh`) instead of the copy hosted at `deploy.agit8or.net/downloads/install.sh`, which is still at installer version 1.1.5 while the repository is at 1.3.7.
+- **Dead project-website links removed.** `depl0y.mspreboot.com` does not resolve in public DNS; the repository "Website" field should be cleared or repointed (see `docs/github-about.md`).
+- **Upgrade guidance corrected.** The old `cd /opt/depl0y && git pull && sudo bash deploy.sh` instructions do not work for installed users — `/opt/depl0y` is not a git checkout and `deploy.sh` is hardcoded to the maintainer's development path. The documented paths are now Settings → System Updates (which pulls the latest GitHub release) or re-running `install.sh`, plus an explicit backup procedure covering `config.env` *and* the database.
+
+### Added
+- `docs/images/github/` — seven 1920×1080 screenshots captured from the real frontend against an isolated demo instance: synthetic Proxmox and Redfish fixtures served on loopback inside a private network namespace, using `example.net` host names and RFC 5737 documentation addresses. No real infrastructure was reachable during capture and no guest or host was started, stopped or migrated.
+- `docs/images/github/wordmark-{light,dark}.svg` — theme-aware wordmark.
+- `docs/SCREENSHOTS.md` — annotated tour with alt text on every image.
+- `docs/github-about.md` — repository description, website and topic list for the GitHub About panel.
+
 ## [2.2.74] - 2026-06-08 🧹 Sidebar: flatten subgroups (one click, not two)
 
 ### Changed

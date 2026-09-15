@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="360" height="72" viewBox="0 0 360 72" role="img" aria-label="Depl0y">
+  <title>Depl0y</title>
+  <g fill="none" stroke="#0f172a" stroke-width="3" stroke-linecap="round">
+    <rect x="8" y="12" width="48" height="18" rx="4"/>
+    <rect x="8" y="40" width="48" height="18" rx="4"/>
+    <line x1="18" y1="21" x2="30" y2="21"/>
+    <line x1="18" y1="49" x2="30" y2="49"/>
+  </g>
+  <circle cx="47" cy="21" r="3.2" fill="#2563eb" stroke="none"/>
+  <circle cx="47" cy="49" r="3.2" fill="#2563eb" stroke="none"/>
+  <text x="76" y="38" font-family="Segoe UI, Helvetica Neue, Helvetica, Arial, sans-serif"
+        font-size="34" font-weight="700" letter-spacing="-1" fill="#0f172a">Depl<tspan fill="#2563eb">0</tspan>y</text>
+  <text x="78" y="56" font-family="Segoe UI, Helvetica Neue, Helvetica, Arial, sans-serif"
+        font-size="11.5" letter-spacing="1.6" fill="#475569">PROXMOX + HARDWARE CONTROL</text>
+</svg>

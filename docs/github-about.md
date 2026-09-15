@@ -73,9 +73,16 @@ there is room for them again if wanted (GitHub allows 20).
 
 ## Social preview image
 
-Use **`docs/images/github/social-preview.png`** — already cropped to GitHub's
-recommended 1280×640 (2:1) from the real dashboard screenshot, and well under
-the 1 MB limit.
+Use **`docs/images/github/social-preview.png`** — 1280×640 (2:1), GitHub's
+recommended size, and well under the 1 MB limit.
+
+It is cropped from `infrastructure-dashboard-dark.png` rather than captured
+separately, so regenerate it whenever the gallery is regenerated — otherwise
+the card keeps showing an older build:
+
+```bash
+python3 scripts/screenshots/build_social_preview.py
+```
 
 There is no API for this field: the GraphQL schema exposes `openGraphImageUrl`
 and `usesCustomOpenGraphImage` as read-only, and no mutation sets them. It has
@@ -100,6 +107,9 @@ gh api graphql -f query='{ repository(owner:"agit8or1", name:"Depl0y")
 - [x] Website cleared until a real project site resolves — applied 2026-09-15
 - [x] Topics set to the list above — applied 2026-09-15
 - [ ] Social preview uploaded — **manual only** (no API); the correctly sized
-      image is committed at `docs/images/github/social-preview.png`
+      image is committed at `docs/images/github/social-preview.png`.
+      Regenerated 2026-09-15 from the v2.2.76 dashboard capture; the previous
+      file predated the header layout fix and showed the overlapping search
+      controls, so do not upload a copy taken before that date.
 - [x] Walkthrough video attached to the v2.2.75 release and linked from the
       README — applied 2026-09-15

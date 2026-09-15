@@ -145,11 +145,14 @@ SHOTS = [
          alt="Create Virtual Machine wizard in dark theme on the Storage step, offering "
              "storage pool selection, disk size and disk options for the new guest."),
     dict(slug="deploy-llm-light", route="/llm-deploy", theme="light", dwell=9,
-         section=WORKFLOWS, title="Deploy an inference VM",
-         caption="Stand up an Ollama, llama.cpp, vLLM or LocalAI guest from a guided "
-                 "wizard, with optional GPU passthrough.",
-         alt="LLM deployment wizard in light theme presenting inference engine choices "
-             "and deployment modes."),
+         section=WORKFLOWS, title="Run an open-source LLM as a VM",
+         caption="Pick an open-weight model from the catalogue and Depl0y builds the "
+                 "guest to run it — sized by what the model actually needs.",
+         alt="Deploy LLM page in light theme showing the model catalogue: Llama 3.2, "
+             "Qwen 2.5, Phi-3.5 Mini and Gemma 2 as cards giving each model's parameter "
+             "count, download size, context length and VRAM requirement, with filters "
+             "by category and by size, and Model Catalog, Deploy New and Deployed "
+             "Instances tabs across the top."),
     dict(slug="import-vm-dark", route="/import-vm", theme="dark", dwell=8,
          section=WORKFLOWS, title="Import an existing VM",
          caption="Bring in an OVA, OVF, VMDK, VHD or QCOW2 image, or pull a VM straight "

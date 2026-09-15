@@ -118,11 +118,18 @@ parsed for name, CPU, RAM, disk and OS type; VMDK/VHD/VHDX disks are converted
 to qcow2 with `qemu-img`.
 
 **LLM deployment**
-A guided wizard that builds an inference VM. Engines: Ollama, llama.cpp (GGUF),
-vLLM (OpenAI-compatible) and LocalAI, plus Stable Diffusion (ComfyUI). Optional
-NVIDIA (CUDA) or AMD (ROCm) GPU passthrough with driver installation, and add-ons
-such as Open WebUI. Simple mode asks four questions; advanced mode exposes the
-full engine / model / GPU / OS / storage matrix.
+Runs an open-source LLM as a self-hosted VM. Start from the model catalogue —
+open-weight models such as Llama 3.2 (1B/3B/8B), Qwen 2.5 (0.5B–7B, including
+the Coder variants), Gemma 2 and Phi-3.5 Mini — each listed with its parameter
+count, download size, context length and VRAM requirement, filterable by
+category (chat, code, vision, reasoning, embedding) and by size. Depl0y then
+builds the guest and installs the serving stack around the chosen model.
+
+Engines: Ollama, llama.cpp (GGUF), vLLM (OpenAI-compatible) and LocalAI, plus
+Stable Diffusion (ComfyUI). Optional NVIDIA (CUDA) or AMD (ROCm) GPU passthrough
+with driver installation, and add-ons such as Open WebUI. Simple mode asks four
+questions; advanced mode exposes the full engine / model / GPU / OS / storage
+matrix. Deployed instances are tracked on their own tab.
 
 ---
 

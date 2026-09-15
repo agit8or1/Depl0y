@@ -176,8 +176,11 @@ Full walkthrough, including BMC setup: **[docs/QUICKSTART.md](docs/QUICKSTART.md
   8/9, with cloud-init for hostname, user, SSH key, static IP and packages.
 - **VM import** — upload OVA, OVF, VMDK, VHD, VHDX, QCOW2 or RAW, or pull VMs
   straight from an ESXi host or vCenter; disks are converted with `qemu-img`.
-- **LLM deployment** — a wizard that builds an inference VM running Ollama,
-  llama.cpp, vLLM or LocalAI, with optional NVIDIA or AMD GPU passthrough.
+- **LLM deployment** — run an open-source model as a VM. Pick from a catalogue
+  of open-weight models (Llama 3.2, Qwen 2.5, Gemma 2, Phi-3.5 and others) and
+  Depl0y builds the guest, installs the serving stack — Ollama, llama.cpp, vLLM
+  or LocalAI — and sizes it for the model, with optional NVIDIA or AMD GPU
+  passthrough.
 
 Details in the [feature reference](docs/FEATURES.md).
 

@@ -109,13 +109,13 @@ installation.
 ## Publishing the video
 
 The MP4s are deliberately **not** committed — they are attached to a GitHub
-release instead. The current set lives on **v2.2.74**:
+release instead. The current set lives on **v2.2.75**:
 
 ```
-https://github.com/agit8or1/Depl0y/releases/download/v2.2.74/depl0y-walkthrough.mp4
-https://github.com/agit8or1/Depl0y/releases/download/v2.2.74/depl0y-highlight.mp4
-https://github.com/agit8or1/Depl0y/releases/download/v2.2.74/depl0y-poster.png
-https://github.com/agit8or1/Depl0y/releases/download/v2.2.74/depl0y-walkthrough.vtt
+https://github.com/agit8or1/Depl0y/releases/download/v2.2.75/depl0y-walkthrough.mp4
+https://github.com/agit8or1/Depl0y/releases/download/v2.2.75/depl0y-highlight.mp4
+https://github.com/agit8or1/Depl0y/releases/download/v2.2.75/depl0y-poster.png
+https://github.com/agit8or1/Depl0y/releases/download/v2.2.75/depl0y-walkthrough.vtt
 ```
 
 To publish a rebuilt set against a future release:

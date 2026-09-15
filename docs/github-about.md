@@ -101,5 +101,5 @@ gh api graphql -f query='{ repository(owner:"agit8or1", name:"Depl0y")
 - [x] Topics set to the list above — applied 2026-09-15
 - [ ] Social preview uploaded — **manual only** (no API); the correctly sized
       image is committed at `docs/images/github/social-preview.png`
-- [x] Walkthrough video attached to the v2.2.74 release and linked from the
+- [x] Walkthrough video attached to the v2.2.75 release and linked from the
       README — applied 2026-09-15

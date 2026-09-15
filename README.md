@@ -23,7 +23,7 @@ It is a self-hosted panel that sits next to the Proxmox web interface rather tha
 <p align="center">
   <a href="docs/QUICKSTART.md">Quick start</a> ·
   <a href="docs/SCREENSHOTS.md">Screenshots</a> ·
-  <a href="https://github.com/agit8or1/Depl0y/releases/download/v2.2.74/depl0y-walkthrough.mp4">Watch walkthrough</a> ·
+  <a href="https://github.com/agit8or1/Depl0y/releases/download/v2.2.75/depl0y-walkthrough.mp4">Watch walkthrough</a> ·
   <a href="docs/FEATURES.md">Documentation</a> ·
   <a href="https://github.com/agit8or1/Depl0y/releases">Releases</a> ·
   <a href="https://mspreboot.com">MSPReboot</a>
@@ -39,16 +39,16 @@ It is a self-hosted panel that sits next to the Proxmox web interface rather tha
 <p align="center"><sub>One dashboard over three registered sites — two clusters and a standalone lab host.</sub></p>
 
 <p align="center">
-  <a href="https://github.com/agit8or1/Depl0y/releases/download/v2.2.74/depl0y-walkthrough.mp4">
+  <a href="https://github.com/agit8or1/Depl0y/releases/download/v2.2.75/depl0y-walkthrough.mp4">
     <img src="docs/images/github/video-poster.png" width="640"
          alt="Video poster frame showing the Depl0y dashboard, linking to the walkthrough recording.">
   </a>
 </p>
 
 <p align="center">
-  ▶ <b><a href="https://github.com/agit8or1/Depl0y/releases/download/v2.2.74/depl0y-walkthrough.mp4">Watch the 3½-minute walkthrough</a></b>
-  · <a href="https://github.com/agit8or1/Depl0y/releases/download/v2.2.74/depl0y-highlight.mp4">55-second highlight</a>
-  · <a href="https://github.com/agit8or1/Depl0y/releases/download/v2.2.74/depl0y-walkthrough.vtt">captions</a><br>
+  ▶ <b><a href="https://github.com/agit8or1/Depl0y/releases/download/v2.2.75/depl0y-walkthrough.mp4">Watch the 3½-minute walkthrough</a></b>
+  · <a href="https://github.com/agit8or1/Depl0y/releases/download/v2.2.75/depl0y-highlight.mp4">55-second highlight</a>
+  · <a href="https://github.com/agit8or1/Depl0y/releases/download/v2.2.75/depl0y-walkthrough.vtt">captions</a><br>
   <sub>A real screen recording against the isolated demo instance — captions on screen, no narration audio.</sub>
 </p>
 

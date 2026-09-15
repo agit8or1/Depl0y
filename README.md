@@ -144,6 +144,10 @@ bundle from `deploy.agit8or.net`, so that host must be reachable.
 Then open `http://<server-ip>/` and sign in with `admin` / `admin`.
 **Change that password immediately** and enable TOTP.
 
+> **Would rather not run it yourself?** MSPReboot offers managed hosting and
+> commercial support for Depl0y — see [mspreboot.com](https://mspreboot.com).
+> Self-hosting stays free and MIT licensed either way.
+
 ### Connect a Proxmox endpoint
 
 Create an API token in Proxmox (Datacenter → Permissions → API Tokens) with

@@ -23,15 +23,15 @@ It is a self-hosted panel that sits next to the Proxmox web interface rather tha
 <p align="center">
   <a href="docs/QUICKSTART.md">Quick start</a> ·
   <a href="docs/SCREENSHOTS.md">Screenshots</a> ·
-  <a href="docs/FEATURES.md">Features</a> ·
-  <a href="docs/ARCHITECTURE.md">Architecture</a> ·
-  <a href="https://github.com/agit8or1/Depl0y/releases">Releases</a>
+  <a href="docs/FEATURES.md">Documentation</a> ·
+  <a href="https://github.com/agit8or1/Depl0y/releases">Releases</a> ·
+  <a href="https://mspreboot.com">MSPReboot</a>
 </p>
 
 <p align="center">
-  <a href="docs/images/github/01-infrastructure-overview.png">
-    <img src="docs/images/github/01-infrastructure-overview.png" width="900"
-         alt="Depl0y dashboard showing 50 VMs, 44 running, 8 containers, 288 CPU cores, 2.1 TB RAM and 909 GB storage in use across three registered Proxmox sites, with a storage warning on east-02, per-node CPU and RAM cards, live network throughput per node, and a feed of recent Proxmox tasks.">
+  <a href="docs/images/github/infrastructure-dashboard-dark.png">
+    <img src="docs/images/github/infrastructure-dashboard-dark.png" width="900"
+         alt="Depl0y dashboard showing 50 VMs, 44 running, 8 containers, 288 CPU cores, 2.1 TB RAM and 909 GB storage across three registered Proxmox sites, with a storage warning on east-02, per-node status cards, live network throughput per node and a feed of recent Proxmox tasks.">
   </a>
 </p>
 
@@ -39,53 +39,56 @@ It is a self-hosted panel that sits next to the Proxmox web interface rather tha
 
 ---
 
-## What it is for
+## Why Depl0y
 
-**Running more than one Proxmox environment.** The Proxmox web interface is
-scoped to the cluster you log into. Depl0y registers each cluster or standalone
-host as its own endpoint, with its own credentials, and puts the totals, node
-health and guest inventory for all of them on one page — useful when you have a
-production cluster, a DR site and a lab, or when you look after several
-customers' clusters.
+**One view over every Proxmox environment.** The Proxmox web interface is scoped
+to the cluster you log into. Depl0y registers each cluster or standalone host as
+its own endpoint, with its own credentials, and puts the totals, node health and
+guest inventory for all of them on one page.
 
-**Seeing the hardware, not just the hypervisor.** Depl0y polls Dell iDRAC and
-HPE iLO over Redfish and shows health, power state, draw in watts, inlet
-temperature, DIMM and drive inventory and firmware versions next to the VMs
-running on that machine. Power actions run either through the Proxmox OS or
-through the BMC — and the BMC path is the only one that can turn a machine back
-on after it has been powered off.
+**The hardware, not just the hypervisor.** Depl0y polls Dell iDRAC and HPE iLO
+over Redfish and shows health, power draw, temperature, DIMM and drive inventory
+and firmware versions next to the VMs running on that machine — including the
+BMC power path, the only one that can turn a machine back on once it is off.
 
-**Giving a team a narrower door into Proxmox.** Depl0y has its own accounts with
-Admin / Operator / Viewer roles, TOTP, per-endpoint scoping and an audit log, so
-day-to-day operators get a login here instead of Proxmox root credentials.
-Depl0y itself still connects to Proxmox with a privileged token — it narrows who
-touches the hypervisor, it does not reduce what Depl0y can do.
+**A narrower door into Proxmox.** Depl0y has its own accounts with Admin /
+Operator / Viewer roles, TOTP and an audit log, so operators get a login here
+instead of Proxmox root credentials. Depl0y itself still connects with a
+privileged token; it narrows who touches the hypervisor, not what Depl0y can do.
 
 ---
 
-## A look around
+## See it in action
 
-**Every environment side by side** — cluster or standalone, PVE version, detected
-server model and live utilisation for each registered site.
+**Know what the hardware is doing.** Redfish health, draw and temperature for
+every BMC-equipped server, then one machine in full detail.
 
-<a href="docs/images/github/02-datacenters.png"><img src="docs/images/github/02-datacenters.png" width="900" alt="Datacenters page with three cards: east-prod (3 nodes, 25 VMs, 5 LXC, PVE 8.4.1, mixed PowerEdge models), west-prod (2 nodes, 12 VMs, 2 LXC, PowerEdge R640) and a standalone Bristol lab on a ProLiant DL380 Gen10, each with CPU, RAM and disk usage bars and a connection latency badge."></a>
+<a href="docs/images/github/hardware-health-dark.png"><img src="docs/images/github/hardware-health-dark.png" width="900" alt="iDRAC and iLO management page in dark theme with tiles reading 6 total, 6 online, 5 healthy, 1 warning and 2008 W total draw, health and power donut charts, a per-server temperature bar chart, and a six-row table of servers with power state, health, temperature, watts and model."></a>
 
-**The hardware underneath** — Redfish health, power draw, inlet temperature and
-model for every BMC-equipped server, with a DIMM fault surfaced on east-03.
+<a href="docs/images/github/hardware-inventory-light.png"><img src="docs/images/github/hardware-inventory-light.png" width="900" alt="Expanded hardware detail for east-01 in light theme showing Dell PowerEdge R750, service tag, BIOS version, 512 GB memory and dual Xeon Gold CPUs, with temperature bars, a fan speed chart and a power usage donut reading 418 W of 1100 W."></a>
 
-<a href="docs/images/github/03-hardware-redfish.png"><img src="docs/images/github/03-hardware-redfish.png" width="900" alt="iDRAC and iLO management page: tiles reading 6 total, 6 online, 5 healthy, 1 warning and 2008 W total draw; health and power-state donut charts; a bar chart of maximum temperature per server; and a table of six servers listing power state, health, temperature, watts, model and last poll time."></a>
+**Follow performance down to a single guest.** Live gauges and an hour of
+history, drawn from the node's own RRD data.
 
-**Per-guest detail** — live gauges, an hour of history, and the configuration,
-snapshot, firewall and console tabs behind them.
+<a href="docs/images/github/vm-metrics-dark.png"><img src="docs/images/github/vm-metrics-dark.png" width="900" alt="VM detail page for db-prod-01 in dark theme: running 20 days, CPU gauge at 21 percent, memory at 55 percent of 64 GB, network I/O at 11.2 MB/s in and 3.2 MB/s out, and CPU and memory charts over the last hour."></a>
 
-<a href="docs/images/github/04-vm-detail.png"><img src="docs/images/github/04-vm-detail.png" width="900" alt="VM detail page for db-prod-01 on node east-01: running for 20 days, CPU gauge at 21.6 percent, memory at 55 percent of 64 GB, network I/O at 11.2 MB/s in and 3.2 MB/s out, disk I/O sparklines, and CPU and memory charts covering the last hour."></a>
+**See how the estate fits together.** Every site, node, guest, bridge and BMC as
+one graph.
 
-**Deploying somewhere specific** — choose the site, then the node, with its
-current load in front of you.
+<a href="docs/images/github/topology-dark.png"><img src="docs/images/github/topology-dark.png" width="900" alt="Topology view in dark theme drawing 91 nodes and 160 edges connecting Proxmox hosts, nodes, running and stopped VMs, LXC containers, storage pools, network bridges and BMCs, with a filter panel and legend."></a>
 
-<a href="docs/images/github/05-deploy-vm.png"><img src="docs/images/github/05-deploy-vm.png" width="900" alt="Create Virtual Machine wizard on the General step: three datacenter cards with DC-East selected, node cards for east-01, east-02 and east-03 showing core counts and live CPU load with east-03 selected, and the VM identity fields filled in with the name billing-api-03."></a>
+**Compare environments side by side.**
 
-More screens in the [screenshot tour](docs/SCREENSHOTS.md).
+<a href="docs/images/github/datacenters-dark.png"><img src="docs/images/github/datacenters-dark.png" width="900" alt="Datacenters page in dark theme with three cards — east-prod with three nodes, west-prod with two nodes and a standalone Bristol lab host — each showing PVE version, detected server model, guest counts and CPU, RAM and disk usage bars."></a>
+
+**Then get the day-to-day work done.** Find any guest across every site, and
+place a new one deliberately.
+
+<a href="docs/images/github/vm-inventory-light.png"><img src="docs/images/github/vm-inventory-light.png" width="900" alt="Virtual machines list in light theme showing 45 guests with VMID, name, node, allocated resources, guest-agent IP address, status and Details, Stop, Restart and Console actions."></a>
+
+<a href="docs/images/github/create-vm-light.png"><img src="docs/images/github/create-vm-light.png" width="900" alt="Create Virtual Machine wizard in light theme on the General step, with DC-East selected, node cards for east-01 to east-03 showing core counts and live CPU load, and the VM identity fields filled in."></a>
+
+**📸 [Browse the full gallery — 24 views, light and dark](docs/SCREENSHOTS.md)**
 
 ---
 
@@ -102,7 +105,6 @@ replacement — the two are meant to be used together.
 | Powering on a host that is fully off | Reach the BMC separately | BMC power actions in the same UI |
 | Cluster creation, storage configuration, PVE upgrades, repositories | Yes — do it here | Not covered; use Proxmox |
 | Accounts for the panel itself | PVE realms and ACLs | Own Admin / Operator / Viewer roles, TOTP, audit log |
-| Guided cloud-image, VM-import and LLM deployment wizards | Not applicable | Included |
 
 If you only run one cluster and never touch the BMCs, the Proxmox web interface
 is likely all you need.
@@ -119,9 +121,10 @@ less install.sh          # read it before running it
 sudo bash install.sh
 ```
 
-The installer sets up Python, Node.js, nginx and SQLite, generates
-`SECRET_KEY` and `ENCRYPTION_KEY` into `/etc/depl0y/config.env`, installs the
-`depl0y-backend` systemd unit and configures nginx.
+The installer sets up Python, Node.js, nginx and SQLite, generates `SECRET_KEY`
+and `ENCRYPTION_KEY` into `/etc/depl0y/config.env`, installs the
+`depl0y-backend` systemd unit and configures nginx. It downloads the application
+bundle from `deploy.agit8or.net`, so that host must be reachable.
 
 Then open `http://<server-ip>/` and sign in with `admin` / `admin`.
 **Change that password immediately** and enable TOTP.
@@ -144,27 +147,24 @@ Full walkthrough, including BMC setup: **[docs/QUICKSTART.md](docs/QUICKSTART.md
 | Depl0y host | Ubuntu or Debian, 2 vCPU / 2 GB RAM / 20 GB disk |
 | Network | `8006` to the Proxmox API, `443` to each BMC, `22` to nodes for import and terminal features |
 | Outbound | `github.com` for in-app updates, `downloads.dell.com` for the optional Dell firmware check |
-| Browser | outbound access to `cdn.jsdelivr.net` for the noVNC console and to OpenStreetMap for the map view; everything else works without it |
+| Browser | outbound access to `cdn.jsdelivr.net` for the noVNC console and to OpenStreetMap for the map view |
 
 ---
 
 ## Also included
-
-Once the infrastructure side is set up, Depl0y can also build guests for you:
 
 - **Cloud images** — Ubuntu 20.04/22.04/24.04 LTS, Debian 11/12 and Rocky Linux
   8/9, with cloud-init for hostname, user, SSH key, static IP and packages.
 - **VM import** — upload OVA, OVF, VMDK, VHD, VHDX, QCOW2 or RAW, or pull VMs
   straight from an ESXi host or vCenter; disks are converted with `qemu-img`.
 - **LLM deployment** — a wizard that builds an inference VM running Ollama,
-  llama.cpp, vLLM or LocalAI, with optional NVIDIA or AMD GPU passthrough and
-  Open WebUI.
+  llama.cpp, vLLM or LocalAI, with optional NVIDIA or AMD GPU passthrough.
 
 Details in the [feature reference](docs/FEATURES.md).
 
 ---
 
-## Supported versions
+## Compatibility
 
 Depl0y uses the standard Proxmox VE API v2 (`/api2/json`) and does not gate on a
 Proxmox version string. It is developed and exercised against **Proxmox VE 8.x**;
@@ -174,9 +174,8 @@ BMC does not answer Redfish.
 
 ## Known limitations
 
-- The installer supports **Ubuntu and Debian only** and refuses other
-  distributions. A `docker-compose.yml` exists in the tree but the installer is
-  the supported path.
+- The installer supports **Ubuntu and Debian only**. A `docker-compose.yml`
+  exists in the tree but the installer is the supported path.
 - Depl0y is exercised with a Proxmox token that has **privilege separation
   disabled**, so it carries the owner's full rights. `pvesh`-backed actions
   (OS-level power, node terminal, cluster join) effectively need `root@pam`. A
@@ -190,12 +189,20 @@ BMC does not answer Redfish.
 - The noVNC console and the map view need outbound browser access, so the panel
   is not fully air-gapped.
 
+## Security
+
+- Proxmox passwords, API token secrets and BMC passwords are stored
+  Fernet-encrypted; the key lives in `/etc/depl0y/config.env`.
+- Accounts support TOTP with backup codes, and every action is written to the
+  audit log.
+- Report vulnerabilities privately — see [SECURITY.md](SECURITY.md). Please do
+  not open a public issue for a security problem.
+
 ## Upgrades and backups
 
 **Upgrade** in the panel: **Settings → System Updates → Check for updates →
-Install**. It reads the latest GitHub release, downloads the bundle and runs the
-installer. Re-running `install.sh` by hand does the same thing and preserves the
-existing `ENCRYPTION_KEY`.
+Install**, which reads the latest GitHub release. Re-running `install.sh`
+does the same and preserves the existing `ENCRYPTION_KEY`.
 
 **Back up** before upgrading:
 
@@ -207,16 +214,13 @@ sudo tar czf depl0y-backup-$(date +%F).tar.gz \
 sudo systemctl start depl0y-backend
 ```
 
-`config.env` holds `ENCRYPTION_KEY`. Without it the Proxmox and BMC credentials
-in the database cannot be decrypted, so back up both files together and keep
-them somewhere the database alone is not enough to open.
+`config.env` holds `ENCRYPTION_KEY`. Without it the stored Proxmox and BMC
+credentials cannot be decrypted, so back up both files together.
 
 ## Support
 
 - Questions and bugs — [GitHub Issues](https://github.com/agit8or1/Depl0y/issues)
   (there is also a **Report Bug** form in the panel).
-- Security reports — see [SECURITY.md](SECURITY.md); please do not open a public
-  issue for a vulnerability.
 - Contributing — [CONTRIBUTING.md](CONTRIBUTING.md). For anything large, open an
   issue first.
 
@@ -226,14 +230,28 @@ them somewhere the database alone is not enough to open.
 |---|---|
 | [Quick start](docs/QUICKSTART.md) | install, requirements, connecting Proxmox and BMCs, troubleshooting |
 | [Feature reference](docs/FEATURES.md) | the full catalogue |
-| [Screenshots](docs/SCREENSHOTS.md) | annotated tour |
+| [Screenshot gallery](docs/SCREENSHOTS.md) | 24 views, light and dark |
 | [Architecture](docs/ARCHITECTURE.md) | internals, background jobs, state on disk, running from source |
 | [Proxmox API tokens](PROXMOX_API_TOKENS.md) | token creation in detail |
+| [Capture tooling](scripts/screenshots/README.md) | regenerate the screenshots and video |
 | [Changelog](CHANGELOG.md) | release history |
+
+---
+
+## More tools from MSPReboot
+
+Depl0y is built and maintained alongside other operations tooling at
+**[mspreboot.com](https://mspreboot.com)**, an MSP consulting practice focused on
+operations, profitability and growth.
+
+Depl0y itself is independent, open source and MIT licensed. Using it does not
+involve any commercial relationship, and no paid support or service-level
+commitment is offered here.
 
 ---
 
 <p align="center">
   <sub>MIT licensed — see <a href="LICENSE">LICENSE</a>.</sub><br>
+  <sub>Not affiliated with or endorsed by Proxmox Server Solutions GmbH, Dell or HPE.</sub><br>
   <sub>🐺 Supervised by Phil the Husky.</sub>
 </p>

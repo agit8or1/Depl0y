@@ -73,9 +73,24 @@ there is room for them again if wanted (GitHub allows 20).
 
 ## Social preview image
 
-Settings → General → Social preview. Use
-`docs/images/github/infrastructure-dashboard-dark.png` — 1920×1080, which crops
-cleanly to GitHub's 1280×640 card.
+Use **`docs/images/github/social-preview.png`** — already cropped to GitHub's
+recommended 1280×640 (2:1) from the real dashboard screenshot, and well under
+the 1 MB limit.
+
+There is no API for this field: the GraphQL schema exposes `openGraphImageUrl`
+and `usesCustomOpenGraphImage` as read-only, and no mutation sets them. It has
+to be uploaded through the web UI:
+
+**Settings → General → Social preview → Edit → Upload an image…**
+
+Verify afterwards with:
+
+```bash
+gh api graphql -f query='{ repository(owner:"agit8or1", name:"Depl0y")
+  { usesCustomOpenGraphImage openGraphImageUrl } }'
+```
+
+`usesCustomOpenGraphImage` should flip from `false` to `true`.
 
 ---
 
@@ -84,6 +99,7 @@ cleanly to GitHub's 1280×640 card.
 - [x] Description replaced with the text above — applied 2026-09-15
 - [x] Website cleared until a real project site resolves — applied 2026-09-15
 - [x] Topics set to the list above — applied 2026-09-15
-- [ ] Social preview uploaded — **manual only**, GitHub exposes no API for it
-- [ ] Walkthrough video attached to a GitHub release, and the README video
-      section enabled (see `scripts/screenshots/README.md`)
+- [ ] Social preview uploaded — **manual only** (no API); the correctly sized
+      image is committed at `docs/images/github/social-preview.png`
+- [x] Walkthrough video attached to the v2.2.74 release and linked from the
+      README — applied 2026-09-15

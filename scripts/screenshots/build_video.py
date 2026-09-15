@@ -161,9 +161,14 @@ for p in parts + [listfile]:
     os.remove(p)
 
 # ── poster ────────────────────────────────────────────────────────────────
-poster_at = by_label.get("dashboard", 12) + 4
-run(["ffmpeg", "-y", "-loglevel", "error", "-ss", f"{poster_at:.2f}", "-i", full,
-     "-frames:v", "1", os.path.join(OUT, "depl0y-poster.png")])
+# Pull the poster from the RAW recording, not the finished MP4: the latter has
+# captions burned in, and a caption frozen across a thumbnail looks like a
+# defect wherever the poster is shown on its own.
+raw_by_label = {b["label"]: b["t"] for b in beats}
+poster_at = raw_by_label.get("dashboard", 12) + 4
+run(["ffmpeg", "-y", "-loglevel", "error", "-ss", f"{poster_at:.2f}", "-i", webm,
+     "-frames:v", "1", "-vf", "scale=1920:1080:flags=lanczos",
+     os.path.join(OUT, "depl0y-poster.png")])
 
 # ── narration script ──────────────────────────────────────────────────────
 with open(os.path.join(OUT, "narration-script.md"), "w") as f:

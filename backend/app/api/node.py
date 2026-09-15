@@ -479,7 +479,19 @@ def ha_status(host_id: int, db: Session = Depends(get_db), current_user=Depends(
         quorum = wrapper.get("quorum") or {}
         node_status = inner.get("node_status") or {}
         online = sum(1 for s in node_status.values() if s == "online")
+        # PVE reports per-node state but no single manager state, so derive one
+        # the same way /api/v1/ha/status does. The UI reads `status` (and keys
+        # off `type`) to render the "HA Manager" badge and the event timeline;
+        # without them the badge stayed empty on a perfectly healthy cluster.
+        if inner.get("master_node") and online > 0:
+            manager_state = "active"
+        elif online > 0:
+            manager_state = "no-master"
+        else:
+            manager_state = "inactive"
         return {
+            "type": "manager",
+            "status": manager_state,
             "master_node": inner.get("master_node"),
             "node_status": node_status,
             "service_status": inner.get("service_status") or {},

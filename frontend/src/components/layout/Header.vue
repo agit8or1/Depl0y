@@ -161,12 +161,17 @@ export default {
 }
 
 .header-right {
-  flex: 1;
+  /* Size to content. With `flex: 1` this shared the free space equally with
+     .header-left, which left it narrower than its own buttons; `justify-content:
+     flex-end` then overflowed them out of the *left* edge, so the command
+     palette button landed on top of the search field's "Ctrl K" hint. The page
+     title truncates with an ellipsis, so .header-left is the right place for
+     the slack to go. */
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 1.25rem;
-  min-width: 0;
 }
 
 .user-info {

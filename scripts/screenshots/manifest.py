@@ -211,11 +211,13 @@ SHOTS = [
          alt="Security page in light theme showing login activity, failed attempt "
              "handling and access control settings."),
     dict(slug="api-explorer-dark", route="/api-explorer", theme="dark", dwell=9,
+         action="api_explorer_endpoint",
          section=ACCESS, title="API explorer",
          caption="Browse and exercise the REST API that every screen in Depl0y is built "
                  "on.",
-         alt="API explorer in dark theme listing Depl0y REST endpoints grouped by area "
-             "with methods and paths, ready to execute."),
+         alt="API explorer in dark theme with the endpoint list filtered to the Proxmox "
+             "routes and GET /api/v1/proxmox/{host_id}/nodes selected, showing its "
+             "description, path parameter table and a panel for sending the request."),
 ]
 
 

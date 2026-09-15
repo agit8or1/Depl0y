@@ -5,6 +5,17 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.76] - 2026-09-15 🩹 Header layout fix, screenshot regeneration
+
+### Fixed
+- **Command palette button overlapped the global search field's "Ctrl K" hint**, garbling the header on every screen between roughly 1100px and 1500px wide. `.header-right` was `flex: 1`, so it split the free space evenly with `.header-left` and ended up narrower than its own buttons; `justify-content: flex-end` then overflowed them out of its *left* edge and the button landed on top of the hint. It now sizes to its content (`flex: 0 0 auto`) and the slack goes to `.header-left`, whose page title already truncates with an ellipsis. Found while reviewing the published screenshot gallery — the collision is visible in all 27 images shipped with 2.2.75.
+- **HA page's "HA Manager" badge never populated.** `GET /pve-node/{id}/cluster/ha/status` returned a flattened object with `master_node`, `node_status` and `quorate`, but `HAManagement.vue` looks for an entry carrying `type === 'manager'` or a `status` key — so on a perfectly healthy cluster the badge simply did not render and the event timeline showed a placeholder. The endpoint now also returns `type` and a derived `status` (`active` / `no-master` / `inactive`), using the same derivation as `GET /api/v1/ha/status`. Additive only; no existing field changed.
+
+### Changed
+- **Screenshot gallery regenerated** against this release. The 2.2.75 images were captured while the demo mock server was still running pre-fix code, so the high availability view showed a red "Status unavailable" badge that does not reflect the product. Fixed by restarting the fixture stack after editing the mocks.
+- **API explorer screenshot now has an endpoint selected.** It previously photographed with an empty detail pane, which read as a broken panel rather than the page's initial state.
+- **`scripts/screenshots/capture.py`** gained an `api_explorer_endpoint` action; `demo/mock_pve.py`'s `h_ha_manager_status` returns the dict shape `app/api/ha.py` and `app/api/node.py` unwrap, instead of a list.
+
 ## [2.2.75] - 2026-09-15 📖 GitHub presentation, screenshot gallery, walkthrough video
 
 ### Fixed

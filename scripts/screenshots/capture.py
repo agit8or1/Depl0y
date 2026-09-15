@@ -183,6 +183,26 @@ def backup_schedules(page):
     time.sleep(6)
 
 
+def api_explorer_endpoint(page):
+    """Select an endpoint so the detail pane is not blank.
+
+    The API Explorer opens with the endpoint list populated and the right-hand
+    pane empty, which photographs as a dead panel. Filter to something with
+    path parameters and a description, then pick the first GET — nothing is
+    executed, the pane just renders the endpoint it describes.
+    """
+    page.get_by_placeholder("Search endpoints...").fill("proxmox")
+    time.sleep(2)
+    # Prefer an endpoint with a path parameter — the detail pane then shows the
+    # parameter table as well as the path, description and request panel.
+    item = page.locator(".endpoint-item", has_text="/proxmox/:host_id/nodes").first
+    if item.count() == 0:
+        item = page.locator(".endpoint-item", has_text="/proxmox/").filter(
+            has=page.locator(".badge-get")).first
+    item.click(timeout=20000)
+    time.sleep(4)
+
+
 def open_appearance(page):
     page.locator("button.stab", has_text="Appearance").first.click(timeout=20000)
     time.sleep(2.5)
@@ -197,6 +217,7 @@ ACTIONS = {
     "all_proxmox_tasks": all_proxmox_tasks,
     "select_first_host": select_first_host,
     "backup_schedules": backup_schedules,
+    "api_explorer_endpoint": api_explorer_endpoint,
 }
 
 

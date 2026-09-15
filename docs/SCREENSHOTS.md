@@ -250,7 +250,7 @@ Review sign-in activity, lockouts and the access rules protecting the panel. · 
 
 **🌙 Dark** · `/api-explorer`
 
-[![API explorer in dark theme listing Depl0y REST endpoints grouped by area with methods and paths, ready to execute.](images/github/api-explorer-dark.png)](images/github/api-explorer-dark.png)
+[![API explorer in dark theme with the endpoint list filtered to the Proxmox routes and GET /api/v1/proxmox/{host_id}/nodes selected, showing its description, path parameter table and a panel for sending the request.](images/github/api-explorer-dark.png)](images/github/api-explorer-dark.png)
 
 Browse and exercise the REST API that every screen in Depl0y is built on. · [Full size](images/github/api-explorer-dark.png)
 

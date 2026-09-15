@@ -93,6 +93,15 @@ SHOTS = [
                  "on them.",
          alt="Topology view in dark theme drawing registered sites, their nodes and the "
              "guests attached to each node as a connected graph."),
+    dict(slug="storage-pools-light", route="/storage-management", theme="light",
+         dwell=8, action="select_first_host",
+         section=MANAGEMENT, title="Storage pools",
+         caption="Review every pool defined on a datacenter — type, which nodes see "
+                 "it, what content it accepts and whether it is shared.",
+         alt="Storage management page in light theme with DC-East selected, listing "
+             "four pools — local (dir), local-lvm (lvmthin), ceph-nvme (rbd) and "
+             "pbs-east (pbs) — with the nodes each is available on, content-type "
+             "chips, and shared and enabled status."),
     dict(slug="task-history-dark", route="/tasks", theme="dark", dwell=9,
          action="all_proxmox_tasks",
          section=INSIGHTS, title="Task history",
@@ -154,6 +163,21 @@ SHOTS = [
                  "view.",
          alt="High availability management page in dark theme listing HA groups and the "
              "guests assigned to them with their current state."),
+    dict(slug="networking-light", route="/network", theme="light", dwell=8,
+         action="select_first_host",
+         section=MANAGEMENT, title="Networking",
+         caption="Inspect the bridges, bonds and VLANs on a node, with pending changes "
+                 "surfaced before they apply.",
+         alt="Network management page in light theme with a host and node selected, "
+             "listing bridges, bonds and physical interfaces with addresses, ports and "
+             "active state."),
+    dict(slug="backups-light", route="/backup", theme="light", dwell=8,
+         action="backup_schedules",
+         section=MANAGEMENT, title="Backups",
+         caption="Review backup schedules for a datacenter and trigger a run without "
+                 "switching tools.",
+         alt="Backup page in light theme with a host selected, showing backup schedules "
+             "with target storage, mode and retention alongside manual run controls."),
     dict(slug="cloud-images-dark", route="/cloud-images", theme="dark", dwell=8,
          section=MANAGEMENT, title="Cloud images",
          caption="Keep Ubuntu, Debian and Rocky cloud-init templates ready for "

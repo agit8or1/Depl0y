@@ -103,7 +103,7 @@ place a new one deliberately.
 
 <a href="docs/images/github/create-vm-light.png"><img src="docs/images/github/create-vm-light.png" width="900" alt="Create Virtual Machine wizard in light theme on the General step, with DC-East selected, node cards for east-01 to east-03 showing core counts and live CPU load, and the VM identity fields filled in."></a>
 
-**📸 [Browse the full gallery — 24 views, light and dark](docs/SCREENSHOTS.md)**
+**📸 [Browse the full gallery — 27 views, light and dark](docs/SCREENSHOTS.md)**
 
 ---
 
@@ -245,7 +245,7 @@ credentials cannot be decrypted, so back up both files together.
 |---|---|
 | [Quick start](docs/QUICKSTART.md) | install, requirements, connecting Proxmox and BMCs, troubleshooting |
 | [Feature reference](docs/FEATURES.md) | the full catalogue |
-| [Screenshot gallery](docs/SCREENSHOTS.md) | 24 views, light and dark |
+| [Screenshot gallery](docs/SCREENSHOTS.md) | 27 views, light and dark |
 | [Architecture](docs/ARCHITECTURE.md) | internals, background jobs, state on disk, running from source |
 | [Proxmox API tokens](PROXMOX_API_TOKENS.md) | token creation in detail |
 | [Capture tooling](scripts/screenshots/README.md) | regenerate the screenshots and video |

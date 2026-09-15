@@ -1,6 +1,6 @@
 # Screenshot gallery
 
-24 views of Depl0y — 13 dark, 11 light — captured at 1440×1000 at 2× from the running application.
+27 views of Depl0y — 13 dark, 14 light — captured at 1440×1000 at 2× from the running application.
 
 [← Back to the README](../README.md) · [▶ Watch the walkthrough](https://github.com/agit8or1/Depl0y/releases/download/v2.2.74/depl0y-walkthrough.mp4)
 
@@ -169,6 +169,14 @@ Bring in an OVA, OVF, VMDK, VHD or QCOW2 image, or pull a VM straight from ESXi 
 
 ## Management and configuration
 
+### Storage pools
+
+**☀️ Light** · `/storage-management`
+
+[![Storage management page in light theme with DC-East selected, listing four pools — local (dir), local-lvm (lvmthin), ceph-nvme (rbd) and pbs-east (pbs) — with the nodes each is available on, content-type chips, and shared and enabled status.](images/github/storage-pools-light.png)](images/github/storage-pools-light.png)
+
+Review every pool defined on a datacenter — type, which nodes see it, what content it accepts and whether it is shared. · [Full size](images/github/storage-pools-light.png)
+
 ### High availability
 
 **🌙 Dark** · `/ha-management`
@@ -176,6 +184,22 @@ Bring in an OVA, OVF, VMDK, VHD or QCOW2 image, or pull a VM straight from ESXi 
 [![High availability management page in dark theme listing HA groups and the guests assigned to them with their current state.](images/github/ha-management-dark.png)](images/github/ha-management-dark.png)
 
 Manage HA groups and the resources assigned to them, with quorum in view. · [Full size](images/github/ha-management-dark.png)
+
+### Networking
+
+**☀️ Light** · `/network`
+
+[![Network management page in light theme with a host and node selected, listing bridges, bonds and physical interfaces with addresses, ports and active state.](images/github/networking-light.png)](images/github/networking-light.png)
+
+Inspect the bridges, bonds and VLANs on a node, with pending changes surfaced before they apply. · [Full size](images/github/networking-light.png)
+
+### Backups
+
+**☀️ Light** · `/backup`
+
+[![Backup page in light theme with a host selected, showing backup schedules with target storage, mode and retention alongside manual run controls.](images/github/backups-light.png)](images/github/backups-light.png)
+
+Review backup schedules for a datacenter and trigger a run without switching tools. · [Full size](images/github/backups-light.png)
 
 ### Cloud images
 

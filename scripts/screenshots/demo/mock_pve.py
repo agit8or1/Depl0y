@@ -571,6 +571,43 @@ def h_agent_info(dc, m, q):
          "guest-get-timezone", "guest-ping", "guest-exec")]}}
 
 
+
+def h_dc_storage(dc, m, q):
+    """Datacenter-level storage config (/api2/json/storage).
+
+    The Storage Management page loads this before it will enable its node
+    picker, so without it the page sits on its placeholder.
+    """
+    out = []
+    for sname, stype, content, total, pct, shared in dc["storages"]:
+        entry = {
+            "storage": sname, "type": stype, "content": content,
+            "shared": shared, "digest": "8f1c0b7d2e",
+            "nodes": "" if shared else ",".join(dc["nodes"]),
+        }
+        if stype == "dir":
+            entry["path"] = "/var/lib/vz"
+        elif stype == "lvmthin":
+            entry.update(vgname="pve", thinpool="data")
+        elif stype == "rbd":
+            entry.update(pool="vm-nvme", monhost="203.0.113.11 203.0.113.12")
+        elif stype == "nfs":
+            entry.update(server="198.51.100.9", export="/export/pve")
+        elif stype == "zfspool":
+            entry["pool"] = "rpool/data"
+        elif stype == "pbs":
+            entry.update(server="203.0.113.19", datastore="pbs-east")
+        out.append(entry)
+    return out
+
+
+def h_ha_manager_status(dc, m, q):
+    if not dc["cluster"]:
+        return []
+    return [{"id": "master", "type": "master", "node": dc["nodes"][0],
+             "status": "active", "timestamp": int(time.time())}]
+
+
 ROUTES = [
     (r"^version$", h_version),
     (r"^nodes$", h_nodes),
@@ -583,6 +620,8 @@ ROUTES = [
     (r"^cluster/ha/resources$", h_ha_resources),
     (r"^cluster/ha/status/current$", h_ha_status),
     (r"^cluster/replication$", h_replication),
+    (r"^storage$", h_dc_storage),
+    (r"^cluster/ha/status/manager_status$", h_ha_manager_status),
     (r"^pools$", h_pools),
     (r"^access/users$", h_access_users),
     (r"^access/roles$", h_access_roles),

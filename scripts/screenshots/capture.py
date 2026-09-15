@@ -123,19 +123,53 @@ def all_proxmox_tasks(page):
 
 
 def select_first_host(page):
-    """Pages scoped to one endpoint open with an empty host picker; choose the
-    first real option so the screenshot shows data instead of a prompt."""
+    """Fill the scoping selects at the top of a page.
+
+    Storage and Networking gate their content behind a host picker and then a
+    node picker, where the node select stays disabled (and empty) until the
+    host change handler has loaded the node list. Choosing only the first
+    select leaves the page on its "select a host" placeholder, so walk the
+    chain: pick a host, wait for the next select to populate, pick a node.
+    Pages with a single picker (Backup) simply stop after the first.
+    """
+    def options(idx):
+        return page.evaluate(
+            """(i) => {
+                const s = document.querySelectorAll('select')[i];
+                if (!s || s.disabled) return null;
+                return Array.from(s.options).map(o => o.value).filter(v => v !== '');
+            }""", idx)
+
     try:
-        sel = page.locator("select").first
-        sel.wait_for(timeout=8000)
-        values = page.evaluate(
-            "() => Array.from(document.querySelector('select').options)"
-            ".map(o => o.value).filter(v => v)")
-        if values:
-            sel.select_option(values[0])
-            time.sleep(9)
+        page.locator("select").first.wait_for(timeout=10000)
     except Exception as e:
-        print("    select_first_host: no picker -", repr(e)[:80], flush=True)
+        print("    select chain: no picker -", repr(e)[:80], flush=True)
+        return
+
+    for idx in range(2):                      # host, then node
+        vals = None
+        for _ in range(16):                   # up to ~16 s for the list to load
+            vals = options(idx)
+            if vals:
+                break
+            time.sleep(1)
+        if not vals:
+            if idx == 0:
+                print("    select chain: nothing selectable", flush=True)
+            break
+        page.locator("select").nth(idx).select_option(vals[0])
+        print(f"    select[{idx}] = {vals[0]}", flush=True)
+        time.sleep(6)
+
+    # let the content that the selection triggered finish loading
+    time.sleep(5)
+
+
+def backup_schedules(page):
+    """Backup opens on the PBS Servers tab; the vzdump schedules are next door."""
+    select_first_host(page)
+    page.get_by_text("Schedules", exact=True).first.click(timeout=20000)
+    time.sleep(6)
 
 
 def open_appearance(page):
@@ -151,6 +185,7 @@ ACTIONS = {
     "open_appearance": open_appearance,
     "all_proxmox_tasks": all_proxmox_tasks,
     "select_first_host": select_first_host,
+    "backup_schedules": backup_schedules,
 }
 
 

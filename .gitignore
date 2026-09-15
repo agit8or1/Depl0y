@@ -38,8 +38,7 @@ yarn-error.log*
 dist-ssr/
 *.local
 
-# Allow frontend/dist for pre-built frontend
-!frontend/dist/
+# frontend/dist is a build artifact (untracked since v2.2.71)
 
 # IDE
 .vscode/
@@ -103,3 +102,16 @@ htmlcov/
 
 # Alembic
 alembic/versions/__pycache__/
+
+# Screenshot / video capture working files (see scripts/screenshots/README.md)
+/tmp-shots/
+scripts/screenshots/demo/state/
+*.webm
+depl0y-walkthrough.mp4
+depl0y-highlight.mp4
+
+# Editor backups and stray local databases
+*.vue.backup
+*.bak
+*~
+test.db

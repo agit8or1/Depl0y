@@ -378,6 +378,10 @@ export default {
   font-weight: 700;
   margin: 0;
   letter-spacing: -1px;
+  /* The sidebar is dark in every theme, but the global `h1` rule paints
+     headings with --text-primary, which flips dark in the light theme and
+     made the wordmark unreadable. Pin it to the sidebar's own foreground. */
+  color: #fff;
 }
 
 .logo-zero {

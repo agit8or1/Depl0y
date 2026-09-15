@@ -5,20 +5,34 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.2.75] - 2026-09-15 📖 GitHub presentation: rebuilt README, docs split, synthetic screenshots
+## [2.2.75] - 2026-09-15 📖 GitHub presentation, screenshot gallery, walkthrough video
+
+### Fixed
+- **Sidebar wordmark was unreadable in the light theme.** The global `h1` rule paints headings with `--text-primary`, which overrides the colour inherited from `.sidebar`. The sidebar keeps a dark gradient in every theme, so in light mode "Depl0y" rendered dark-on-dark. Pinned `.logo` to the sidebar's own foreground colour, as `.tagline` already was. Found while capturing the light-theme documentation screenshots.
+- **npm advisories resolved** — vite 5 → 8 and @vitejs/plugin-vue 4 → 6, clearing the last outstanding advisories (replaces the stale June audit PR).
 
 ### Changed
-- **README rewritten around what Depl0y is for**, not around a feature dump. Leads with "Proxmox infrastructure and server hardware management in one dashboard", an SVG wordmark, five accurate badges, and a nav strip to Quick start / Screenshots / Features / Architecture / Releases. Three use cases (multi-environment operation, hardware visibility via iDRAC/iLO, giving a team a narrower door into Proxmox), a hero screenshot plus four captioned supporting shots, and a factual "Depl0y and the Proxmox web interface" comparison table that says plainly what Proxmox should still be used for.
-- **Exhaustive feature catalogue and implementation detail moved out of the README** into `docs/FEATURES.md` and `docs/ARCHITECTURE.md`. Install, requirements, permissions, BMC setup and troubleshooting moved into `docs/QUICKSTART.md`.
-- **Install instructions now point at the in-repo installer over HTTPS** (`raw.githubusercontent.com/agit8or1/Depl0y/main/install.sh`) instead of the copy hosted at `deploy.agit8or.net/downloads/install.sh`, which is still at installer version 1.1.5 while the repository is at 1.3.7.
-- **Dead project-website links removed.** `depl0y.mspreboot.com` does not resolve in public DNS; the repository "Website" field should be cleared or repointed (see `docs/github-about.md`).
-- **Upgrade guidance corrected.** The old `cd /opt/depl0y && git pull && sudo bash deploy.sh` instructions do not work for installed users — `/opt/depl0y` is not a git checkout and `deploy.sh` is hardcoded to the maintainer's development path. The documented paths are now Settings → System Updates (which pulls the latest GitHub release) or re-running `install.sh`, plus an explicit backup procedure covering `config.env` *and* the database.
+- **README rewritten around what Depl0y is for**, not a feature dump. Theme-aware SVG wordmark, five accurate badges, a hero screenshot, three benefits, a "See it in action" tour of seven images grouped by outcome, and a factual comparison with the Proxmox web interface that says plainly what Proxmox should still be used for.
+- **Exhaustive feature catalogue and implementation detail moved out of the README** into `docs/FEATURES.md` and `docs/ARCHITECTURE.md`; install, permissions and BMC setup into `docs/QUICKSTART.md`. `docs/INSTALLATION.md` became a pointer — it documented a Docker Compose/MariaDB deployment that contradicts what `install.sh` produces.
+- **Install instructions now point at the in-repo installer over HTTPS** (`raw.githubusercontent.com/agit8or1/Depl0y/main/install.sh`). The copy hosted at `deploy.agit8or.net/downloads/install.sh` is still installer version 1.1.5 while the repository is at 1.3.7.
+- **Dead project-website links removed.** `depl0y.mspreboot.com` does not resolve in public DNS.
+- **Upgrade guidance corrected.** `cd /opt/depl0y && git pull && sudo bash deploy.sh` never worked for installed users — `/opt/depl0y` is not a git checkout and `deploy.sh` is hardcoded to a development path. Documented paths are now Settings → System Updates (which reads the latest GitHub release) or re-running `install.sh`, plus a backup procedure covering `config.env` *and* the database.
+- **Cloud image list corrected** (Ubuntu 20.04/22.04/24.04, Debian 11/12, Rocky 8/9 — no AlmaLinux) and the noVNC CDN dependency documented.
+- **MSPReboot section now states that managed hosting and commercial support are available**, replacing wording that said no paid support existed. Self-hosting remains free and MIT licensed; pricing, tiers and response times are deliberately left to mspreboot.com.
 
 ### Added
-- `docs/images/github/` — seven 1920×1080 screenshots captured from the real frontend against an isolated demo instance: synthetic Proxmox and Redfish fixtures served on loopback inside a private network namespace, using `example.net` host names and RFC 5737 documentation addresses. No real infrastructure was reachable during capture and no guest or host was started, stopped or migrated.
-- `docs/images/github/wordmark-{light,dark}.svg` — theme-aware wordmark.
-- `docs/SCREENSHOTS.md` — annotated tour with alt text on every image.
-- `docs/github-about.md` — repository description, website and topic list for the GitHub About panel.
+- **`docs/SCREENSHOTS.md` — a 27-view screenshot gallery**, 13 dark and 14 light, captured at 1440×1000 @2× from the running application with the panel's own Settings → Appearance selector rather than injected CSS. Table of contents, five workflow sections, and per image a heading, theme label, route, caption, alt text and full-size link. Generated from the capture manifest so captions cannot drift.
+- **Walkthrough video** attached to the v2.2.74 release: a 3½-minute 1080p30 H.264 recording with burned-in captions, a 55-second highlight cut, a poster frame and SRT/VTT caption files. Linked from the README via a clickable poster, since GitHub renders neither `<video>` nor iframes in Markdown.
+- **`scripts/screenshots/` — reusable capture tooling.** `manifest.py` records route, theme, dwell, section, caption and alt text per capture; `capture.py` drives them; `build_gallery.py` regenerates the gallery; `record_walkthrough.py` and `build_video.py` produce the video deliverables. `demo/` holds an isolated fixture stack: synthetic Proxmox and Redfish responses on loopback inside a private network namespace, `example.net` names and RFC 5737 documentation addresses. Both mock servers refuse every mutating verb with HTTP 403, so a capture run cannot act on infrastructure; every run reported `off-box requests attempted: 0`. No credentials are stored — the demo password and encryption key are supplied per run and apply only to a throwaway database outside the repository.
+- **`docs/github-about.md`** — repository description, website guidance and topic list for the GitHub About panel, with the applied state recorded.
+- **`docs/images/github/social-preview.png`** — 1280×640 crop for GitHub's social card (upload is web-UI only; no API exists for that field).
+
+### Removed
+- **`screenshots/` (54 PNGs + README)** — captured from v1.6.0 in the light theme, no longer representative, unreferenced once the new gallery landed, and `22-idrac-dashboard.png` leaked real host names through an incompletely redacted chart.
+- **`docs/USER_GUIDE.md`** — zero inbound references, described an interface that no longer exists.
+- **`frontend/src/views/CreateVM.vue.backup`** — editor backup, unreferenced and not compiled.
+- `.gitignore`: dropped the `!frontend/dist/` negation so the build artifact stays ignored, and added capture working files, editor backups and stray databases.
+- Deliberately kept: `INSTALL.md`, `DEPLOYMENT.md`, `CLOUD_IMAGES_*.md`, `PROXMOX_API_TOKENS.md` and `docs/CLOUD_IMAGES_INDEX.md` are named by `DOCS_FILES` in `backend/app/api/docs.py` and served by the in-app Documentation viewer and its PDF export.
 
 ## [2.2.74] - 2026-06-08 🧹 Sidebar: flatten subgroups (one click, not two)
 

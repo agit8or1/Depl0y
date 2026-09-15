@@ -1,0 +1,66 @@
+# gitleaks configuration for Depl0y.
+#
+# Run a scan with:
+#     gitleaks dir .            # working tree
+#     gitleaks git .            # full history
+#
+# The allowlist below covers matches confirmed by inspection to be false
+# positives. Everything here was checked against the actual file contents —
+# nothing is suppressed because it was merely inconvenient.
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "curl-auth-header"
+description = "Authorization header in a curl example"
+regex = '''(?i)curl(.*?)-H\s+["']Authorization:\s*(Bearer|Token)\s+[^"'\s]{8,}'''
+keywords = ["curl", "authorization"]
+
+  [rules.allowlist]
+  description = "Documentation examples use placeholder or interpolated tokens."
+  regexTarget = "line"
+  regexes = [
+    '''(?i)(YOUR_TOKEN|YOUR_API_KEY|<token[^>]*>|REPLACE_ME|xxx+)''',
+    # Template interpolation in the API explorer and docs pages: the value is
+    # substituted at runtime from the caller's own session, e.g. ${token}.
+    '''\$\{[A-Za-z_][A-Za-z0-9_.]*\}''',
+  ]
+
+[[rules]]
+id = "depl0y-fernet-key"
+description = "Fernet key assigned to ENCRYPTION_KEY / SECRET_KEY (Depl0y config.env shape)"
+regex = '''(?i)(ENCRYPTION_KEY|SECRET_KEY)\s*[:=]\s*["']?[A-Za-z0-9_\-]{43}=["']?'''
+keywords = ["encryption_key", "secret_key"]
+
+  [rules.allowlist]
+  description = "Generated per run in the capture rig and in installer examples."
+  regexTarget = "line"
+  regexes = [
+    '''(?i)(Fernet\.generate_key|\$\(|\$\{|<[a-z ]+>|change[_-]?me|your[_-]|example)''',
+  ]
+
+[allowlist]
+description = "Project-wide false positives"
+
+paths = [
+  # npm integrity hashes are base64 and trip the generic key and Fernet-shaped
+  # patterns. They are content digests, not credentials.
+  '''frontend/package-lock\.json$''',
+  '''(^|/)package-lock\.json$''',
+  # Built frontend bundles inline the documentation examples above. dist/ is
+  # gitignored now, but older commits contain it.
+  '''frontend/dist/''',
+]
+
+regexTarget = "line"
+regexes = [
+  # localStorage / sessionStorage key NAMES, e.g.
+  #   const COL_PREFS_KEY = 'depl0y_vm_col_prefs'
+  # The generic-api-key rule fires on the "_KEY" identifier suffix. The value is
+  # a browser storage key, visible to anyone with devtools, not a credential.
+  '''(?i)_KEY\s*=\s*["']depl0y[._-][a-z0-9._-]+["']''',
+  # RFC 2606 / RFC 5737 documentation hosts and addresses used by the demo
+  # fixtures and the docs.
+  '''example\.(com|net|org)''',
+]

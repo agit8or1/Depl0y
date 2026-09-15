@@ -39,6 +39,16 @@ There is no test suite and no CI, so each step was validated by running the full
 
 ## [Unreleased]
 
+### Security
+- **Secret-scanned the working tree and all 294 commits of history.** No credential is present in either. Every gitleaks finding (15 in the tree, 21 across history) was inspected and is a false positive: `YOUR_TOKEN` placeholders in documentation and API-explorer examples, npm integrity hashes in `package-lock.json`, and browser storage key *names* such as `COL_PREFS_KEY = 'depl0y_vm_col_prefs'`. A targeted pass for the shapes that matter to this project — GitHub PATs, Proxmox API tokens, Fernet keys, SSH private keys, AWS and Slack credentials — also found nothing, in the tree or in history.
+- **GitHub secret scanning and push protection enabled** on the repository, alongside the Dependabot alerts turned on in 2.2.78.
+- **Added `.gitleaks.toml`** so local scans come back actionable instead of noisy. It allowlists only matches confirmed by inspection, and adds a `depl0y-fernet-key` rule for the `ENCRYPTION_KEY` shape this project actually uses in `config.env`. Verified in both directions: the repository scans clean, and planted canary secrets — a GitHub PAT, an AWS key and a Fernet `ENCRYPTION_KEY` — are still caught.
+
+### Fixed
+- **`SECURITY.md` led with a superseded emergency.** The policy opened with a 🚨 URGENT banner for a v1.3.8 critical RCE from December 2025 — five minor versions ago — so anyone arriving today read it as an active incident. Its "Immediate Update Instructions" were `cd /opt/depl0y && git pull`, which never worked because `/opt/depl0y` is not a git checkout; that guidance was removed from the README in 2.2.75 but survived here. The supported-versions table listed only 1.1.x–1.3.8 and said nothing about the 2.x line actually shipping.
+  The policy now opens with how to report a vulnerability — the reason GitHub surfaces this file, previously buried 120 lines down — followed by disclosure policy, a corrected supported-versions table, and the v1.3.8 material kept as a historical advisory rather than a live alarm.
+- **Added a "Scanning this repository" section** to `SECURITY.md` covering gitleaks, `pip-audit` and `npm audit`.
+
 ### Changed
 - **`LLM_DEPLOY_GUIDE.md` moved to `docs/LLM_DEPLOY_GUIDE.md`** and linked from the README documentation table and the feature reference. It documents a shipping feature but sat unreferenced at the repository root. Added a "Choosing a model" section covering the Model Catalog tab, which post-dated the guide, and corrected "four open-source inference engines" above a five-row table that included Stable Diffusion (an image generator, not an LLM engine).
 

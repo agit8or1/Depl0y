@@ -1,124 +1,5 @@
 # Security Policy
 
-## 🚨 URGENT: Critical Security Update v1.3.8
-
-**Release Date**: December 20, 2025
-**Severity**: CRITICAL
-**CVSS Score**: 9.8
-**Status**: FIXED in v1.3.8
-
-### Overview
-
-Multiple **Remote Code Execution (RCE)** vulnerabilities have been identified and fixed in Depl0y v1.3.8. These vulnerabilities could allow attackers to execute arbitrary commands on the server through unsanitized input in various API endpoints.
-
-**⚠️ ALL USERS MUST UPDATE IMMEDIATELY TO v1.3.8 OR LATER ⚠️**
-
-### Fixed Vulnerabilities (v1.3.8)
-
-#### 1. Command Injection in Setup API (CRITICAL)
-- **Component**: `backend/app/api/setup.py`
-- **CVSS**: 9.8 (Critical)
-- **Description**: Unsanitized hostname and node name inputs passed directly to shell commands via `subprocess.run(..., shell=True)`, allowing arbitrary command execution.
-- **Attack Vector**: Network, potentially unauthenticated during setup phase
-- **Fixed in**: Commit 3786c83
-- **Mitigation Applied**:
-  - Added regex validation for hostnames and node names (`^[a-zA-Z0-9._-]+$`)
-  - Replaced all `shell=True` calls with safe argument lists
-  - Implemented `shlex.quote()` for proper shell escaping
-
-#### 2. Command Injection in System Updates API (CRITICAL)
-- **Component**: `backend/app/api/system_updates.py`
-- **CVSS**: 9.8 (Critical)
-- **Description**: Unsafe subprocess execution with `shell=True` in update package creation and installer execution.
-- **Attack Vector**: Network, requires admin authentication
-- **Fixed in**: Commit 3786c83
-- **Mitigation Applied**:
-  - Replaced `shell=True` with safe argument-based subprocess calls
-  - Added path validation with regex for installer paths
-
-#### 3. Sensitive Data Exposure in Logs (HIGH)
-- **Component**: `backend/app/api/vms.py`
-- **CVSS**: 7.5 (High)
-- **Description**: VM creation endpoint logs passwords and SSH keys in plaintext, exposing credentials in log files.
-- **Attack Vector**: Local, requires log file access
-- **Fixed in**: Commit 3786c83
-- **Mitigation Applied**:
-  - Redact passwords and SSH keys from all log output
-  - Implemented password encryption before database storage
-
-#### 4. Weak Cryptographic Key (HIGH)
-- **Component**: `backend/app/core/config.py`
-- **CVSS**: 7.5 (High)
-- **Description**: Default weak SECRET_KEY used for JWT token signing if environment variable not set.
-- **Attack Vector**: Network, allows JWT forgery
-- **Fixed in**: Commit 3786c83
-- **Mitigation Applied**:
-  - Auto-generate cryptographically strong 64-byte random SECRET_KEY using `secrets.token_urlsafe(64)`
-
-#### 5. Multiple Command Injection Vectors in Deployment Service (CRITICAL)
-- **Component**: `backend/app/services/deployment.py`
-- **CVSS**: 9.8 (Critical)
-- **Description**: Multiple unsanitized inputs (hostname, node names, VMIDs, IP addresses) passed to SSH commands via `shell=True`.
-- **Attack Vector**: Network, requires authenticated API access
-- **Fixed in**: Commit 3786c83
-- **Mitigation Applied**:
-  - Comprehensive input validation for all parameters
-  - Replaced all `shell=True` subprocess calls with safe argument lists
-  - Added timeout protection on all subprocess calls
-
-### Immediate Update Instructions
-
-```bash
-# Navigate to installation directory
-cd /opt/depl0y
-
-# Pull latest security fixes
-git pull origin main
-
-# Verify you're on v1.3.8 or later
-git describe --tags
-
-# Should output: v1.3.8 or later
-
-# Restart backend service
-sudo systemctl restart depl0y-backend
-
-# Verify service is running
-sudo systemctl status depl0y-backend
-```
-
-### Security Improvements in v1.3.8
-
-- ✅ **Input Validation**: Strict regex validation on all user-provided inputs
-- ✅ **No Shell Injection**: All `shell=True` subprocess calls eliminated
-- ✅ **Proper Escaping**: `shlex.quote()` used for all dynamic shell parameters
-- ✅ **Secrets Management**: Strong cryptographic key generation
-- ✅ **Sensitive Data Protection**: Credentials redacted from logs and encrypted in database
-- ✅ **Timeout Protection**: All subprocess calls have timeout limits
-
-### References
-
-- [OWASP Command Injection](https://owasp.org/www-community/attacks/Command_Injection)
-- [CWE-78: OS Command Injection](https://cwe.mitre.org/data/definitions/78.html)
-- Commit: https://github.com/agit8or1/Depl0y/commit/3786c83
-
----
-
-## Supported Versions
-
-We release patches for security vulnerabilities for the following versions:
-
-| Version | Supported          | Security Status          |
-| ------- | ------------------ | ------------------------ |
-| 1.3.8+  | :white_check_mark: | Secure                   |
-| 1.3.7   | :warning:          | **CRITICAL RCE - UPDATE IMMEDIATELY** |
-| 1.3.6   | :warning:          | **CRITICAL RCE - UPDATE IMMEDIATELY** |
-| 1.2.x   | :x:                | **CRITICAL RCE - UPDATE IMMEDIATELY** |
-| 1.1.x   | :x:                | **CRITICAL RCE - UPDATE IMMEDIATELY** |
-| < 1.1   | :x:                | **CRITICAL RCE - UPDATE IMMEDIATELY** |
-
-**⚠️ All versions prior to 1.3.8 contain critical RCE vulnerabilities and must be upgraded immediately.**
-
 ## Reporting a Vulnerability
 
 **Please do not report security vulnerabilities through public GitHub issues.**
@@ -145,6 +26,18 @@ When we receive a security bug report, we will:
 2. Audit code to find any similar problems
 3. Prepare fixes for all supported releases
 4. Release patched versions as soon as possible
+
+## Supported Versions
+
+We release patches for security vulnerabilities for the following versions:
+
+| Version | Supported | Notes |
+| ------- | --------- | ----- |
+| 2.2.x   | :white_check_mark: | Current release line. Security fixes land here. |
+| 2.0.x – 2.1.x | :warning: | Not maintained. Upgrade to the latest 2.2.x. |
+| 1.x     | :x:       | End of life. Contains fixed critical RCEs — see [Historical advisories](#historical-advisories). |
+
+Always run the [latest release](https://github.com/agit8or1/Depl0y/releases/latest).
 
 ## Security Best Practices
 
@@ -199,6 +92,28 @@ When deploying Depl0y in production:
 - Review release notes before applying updates
 - Subscribe to release notifications on GitHub
 
+## Scanning this repository
+
+Secret scanning and Dependabot alerts are enabled on GitHub, with push
+protection on. To run the same checks locally before opening a pull request:
+
+```bash
+# Secrets, in the working tree and in full history.
+# .gitleaks.toml allowlists confirmed false positives — documentation
+# placeholders, npm integrity hashes and browser storage key names.
+gitleaks dir . --config .gitleaks.toml
+gitleaks git . --config .gitleaks.toml
+
+# Known vulnerabilities in the pinned Python dependencies.
+pip-audit -r backend/requirements.txt
+
+# Frontend dependencies.
+cd frontend && npm audit
+```
+
+Both scans are expected to come back clean apart from advisories recorded in
+the changelog as having no published upstream fix.
+
 ## Known Security Considerations
 
 ### Credential Storage
@@ -222,6 +137,28 @@ When deploying Depl0y in production:
 
 Subscribe to releases on GitHub to receive notifications about security updates:
 https://github.com/agit8or1/Depl0y/releases
+
+---
+
+## Historical advisories
+
+### v1.3.8 — December 2025 — critical RCE (fixed)
+
+Multiple remote code execution paths were fixed in v1.3.8: command injection in
+the setup and system-update APIs and in the deployment service, plus sensitive
+data exposure in logs and a weak cryptographic key. All were resolved by
+eliminating `shell=True`, applying `shlex.quote()` to dynamic parameters,
+validating input with strict patterns, adding subprocess timeouts, and
+generating strong keys. Fixing commit:
+[`3786c83`](https://github.com/agit8or1/Depl0y/commit/3786c83).
+
+This is retained for the record. The 1.x line is end of life — if you are still
+running it, upgrade to the current 2.2.x release rather than following the
+1.3.8-era instructions, which assumed `/opt/depl0y` was a git checkout. It is
+not; see the README's upgrade section.
+
+- [OWASP Command Injection](https://owasp.org/www-community/attacks/Command_Injection)
+- [CWE-78: OS Command Injection](https://cwe.mitre.org/data/definitions/78.html)
 
 ## Comments on this Policy
 

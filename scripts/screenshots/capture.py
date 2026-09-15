@@ -74,14 +74,25 @@ def set_theme(page, theme):
 # ── optional per-shot interactions ────────────────────────────────────────
 
 def wait_for_io(page):
-    """The overview I/O tiles diff two polls; the backend caches VM status for
-    10 s while the page polls every 5 s, so every other sample is identical.
-    Wait for a poll that lands on a fresh reading."""
-    for _ in range(8):
-        txt = page.evaluate("() => (document.body.innerText.match(/In: [^\\n]*/) || [''])[0]")
-        if txt and "0 B/s" not in txt:
-            return
-        time.sleep(5.2)
+    """Wait for the overview I/O tiles to show a non-zero rate.
+
+    The tiles diff the last two status samples. The backend caches VM status
+    for 10 s while the page polls every 5 s, so every other sample repeats and
+    the computed rate is 0. Wait for a fresh pair, then confirm the reading is
+    still non-zero — otherwise a poll firing between here and the screenshot
+    puts a 0 B/s tile in the published image.
+    """
+    def reading():
+        return page.evaluate(
+            "() => (document.body.innerText.match(/In: [^\\n]*/) || [''])[0]")
+
+    for _ in range(12):
+        if "0 B/s" not in (reading() or "0 B/s"):
+            time.sleep(1.2)
+            if "0 B/s" not in (reading() or "0 B/s"):
+                return                      # stable, safe to capture
+            continue
+        time.sleep(2.5)
 
 
 def expand_bmc(page):

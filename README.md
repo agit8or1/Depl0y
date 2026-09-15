@@ -85,7 +85,7 @@ every BMC-equipped server, then one machine in full detail.
 **Follow performance down to a single guest.** Live gauges and an hour of
 history, drawn from the node's own RRD data.
 
-<a href="docs/images/github/vm-metrics-dark.png"><img src="docs/images/github/vm-metrics-dark.png" width="900" alt="VM detail page for db-prod-01 in dark theme: running 20 days, CPU gauge at 21 percent, memory at 55 percent of 64 GB, network I/O at 11.2 MB/s in and 3.2 MB/s out, and CPU and memory charts over the last hour."></a>
+<a href="docs/images/github/vm-metrics-dark.png"><img src="docs/images/github/vm-metrics-dark.png" width="900" alt="VM detail page for db-prod-01 in dark theme: running 20 days, CPU gauge at 21 percent, memory at 55 percent of 64 GB, network and disk I/O sparklines, and CPU and memory charts over the last hour."></a>
 
 **See how the estate fits together.** Every site, node, guest, bridge and BMC as
 one graph.

@@ -63,8 +63,8 @@ SHOTS = [
          caption="Watch a guest's CPU, memory and I/O live, with an hour of history "
                  "behind it.",
          alt="VM detail page for db-prod-01 in dark theme: running 20 days, CPU gauge at "
-             "21 percent, memory 55 percent of 64 GB, network and disk I/O sparklines "
-             "with throughput in MB/s, and CPU and memory line charts over the last hour."),
+             "21 percent, memory 55 percent of 64 GB, network and disk I/O sparklines, "
+             "and CPU and memory line charts over the last hour."),
     dict(slug="node-metrics-light", route="/proxmox/1/nodes/east-01", theme="light",
          dwell=12, section=INSIGHTS, title="Node metrics",
          caption="Track a hypervisor's CPU, memory, network and disk trends from the "

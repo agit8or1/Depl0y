@@ -59,7 +59,7 @@ Check quorum, node membership and HA state for a cluster at a glance. · [Full s
 
 **🌙 Dark** · `/proxmox/1/nodes/east-01/vms/103`
 
-[![VM detail page for db-prod-01 in dark theme: running 20 days, CPU gauge at 21 percent, memory 55 percent of 64 GB, network and disk I/O sparklines with throughput in MB/s, and CPU and memory line charts over the last hour.](images/github/vm-metrics-dark.png)](images/github/vm-metrics-dark.png)
+[![VM detail page for db-prod-01 in dark theme: running 20 days, CPU gauge at 21 percent, memory 55 percent of 64 GB, network and disk I/O sparklines, and CPU and memory line charts over the last hour.](images/github/vm-metrics-dark.png)](images/github/vm-metrics-dark.png)
 
 Watch a guest's CPU, memory and I/O live, with an hour of history behind it. · [Full size](images/github/vm-metrics-dark.png)
 

@@ -105,3 +105,29 @@ No credential is stored in this directory. `DEMO_ADMIN_PASSWORD` and
 `DEMO_ENCRYPTION_KEY` are supplied per run through the environment and apply
 only to the throwaway database. Do not point these scripts at a real Depl0y
 installation.
+
+## Publishing the video
+
+The MP4s are deliberately **not** committed. Build them locally, then attach
+them to a GitHub release:
+
+```bash
+gh release upload v2.2.75 \
+  /path/to/depl0y-walkthrough.mp4 \
+  /path/to/depl0y-highlight.mp4 \
+  /path/to/depl0y-walkthrough.vtt
+```
+
+Once the assets exist, add the poster to `docs/images/github/` and put this in
+the README under the hero image — GitHub does not render `<video>` or iframes,
+so a clickable poster plus a plain link is the working pattern:
+
+```markdown
+[![Watch the Depl0y walkthrough](docs/images/github/video-poster.png)](https://github.com/agit8or1/Depl0y/releases/download/v2.2.75/depl0y-walkthrough.mp4)
+
+▶ **[Watch the 3½-minute walkthrough](https://github.com/agit8or1/Depl0y/releases/download/v2.2.75/depl0y-walkthrough.mp4)**
+· [55-second highlight](https://github.com/agit8or1/Depl0y/releases/download/v2.2.75/depl0y-highlight.mp4)
+```
+
+Do not add those links before the assets exist — a broken video link is worse
+than none.

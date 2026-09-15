@@ -73,15 +73,64 @@ style = ("FontName=DejaVu Sans,FontSize=19,PrimaryColour=&H00FFFFFF,"
          "BackColour=&HB0000000,BorderStyle=4,Outline=0,Shadow=0,"
          "MarginV=42,Alignment=2")
 
+# Beats whose on-screen state is not worth publishing (empty pickers, dead
+# air). Their segments are cut out and the captions are re-timed around them.
+CUT_LABELS = {"storage"}
+
+cuts = []
+for i, b in enumerate(beats):
+    if b["label"] in CUT_LABELS:
+        end = beats[i + 1]["t"] if i + 1 < len(beats) else duration
+        cuts.append((b["t"], end))
+
+if cuts:
+    keep, cursor = [], 0.0
+    for a, b_ in cuts:
+        if a > cursor:
+            keep.append((cursor, a))
+        cursor = b_
+    if cursor < duration:
+        keep.append((cursor, duration))
+    select = "+".join(f"between(t,{a:.2f},{b_:.2f})" for a, b_ in keep)
+    trim_vf = f"select='{select}',setpts=N/FRAME_RATE/TB,"
+    removed = sum(b_ - a for a, b_ in cuts)
+
+    def shift(t):
+        """Map an original timestamp onto the trimmed timeline."""
+        out = 0.0
+        for a, b_ in keep:
+            if t >= b_:
+                out += b_ - a
+            elif t >= a:
+                return out + (t - a)
+        return out
+
+    cues = [(shift(a), shift(b_), text) for a, b_, text in cues
+            if not any(a >= ca and a < cb for ca, cb in cuts)]
+    cues = [(a, b_, t) for a, b_, t in cues if b_ > a + 0.5]
+    duration -= removed
+    # rewrite the caption files against the trimmed timeline
+    with open(os.path.join(OUT, "depl0y-walkthrough.srt"), "w") as f:
+        for i, (a, b_, text) in enumerate(cues, 1):
+            f.write(f"{i}\n{ts(a)} --> {ts(b_)}\n{text}\n\n")
+    with open(os.path.join(OUT, "depl0y-walkthrough.vtt"), "w") as f:
+        f.write("WEBVTT\n\n")
+        for a, b_, text in cues:
+            f.write(f"{ts(a, False)} --> {ts(b_, False)}\n{text}\n\n")
+    print(f"  cut {removed:.1f}s ({len(cuts)} segment(s))")
+else:
+    trim_vf = ""
+
 # ── full walkthrough ──────────────────────────────────────────────────────
 full = os.path.join(OUT, "depl0y-walkthrough.mp4")
 run(["ffmpeg", "-y", "-loglevel", "error", "-i", webm,
-     "-vf", f"fps=30,scale=1920:1080:flags=lanczos,subtitles={srt}:force_style='{style}'",
+     "-vf", f"{trim_vf}fps=30,scale=1920:1080:flags=lanczos,"
+            f"subtitles={srt}:force_style='{style}'",
      "-c:v", "libx264", "-preset", "slow", "-crf", "23", "-pix_fmt", "yuv420p",
      "-movflags", "+faststart", "-an", full])
 
 # ── highlight cut ─────────────────────────────────────────────────────────
-by_label = {b["label"]: b["t"] for b in beats}
+by_label = {b["label"]: (shift(b["t"]) if cuts else b["t"]) for b in beats}
 
 
 def seg(label, length, fallback=0.0):

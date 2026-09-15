@@ -252,6 +252,7 @@ credentials cannot be decrypted, so back up both files together.
 |---|---|
 | [Quick start](docs/QUICKSTART.md) | install, requirements, connecting Proxmox and BMCs, troubleshooting |
 | [Feature reference](docs/FEATURES.md) | the full catalogue |
+| [Deploy LLM guide](docs/LLM_DEPLOY_GUIDE.md) | running an open-source model as a VM, end to end |
 | [Screenshot gallery](docs/SCREENSHOTS.md) | 27 views, light and dark |
 | [Architecture](docs/ARCHITECTURE.md) | internals, background jobs, state on disk, running from source |
 | [Proxmox API tokens](PROXMOX_API_TOKENS.md) | token creation in detail |

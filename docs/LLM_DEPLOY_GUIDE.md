@@ -6,7 +6,7 @@ Deploy a fully self-hosted AI inference server on your own Proxmox infrastructur
 
 ## What Is It?
 
-**Deploy LLM** provisions a complete VM running one of four open-source inference engines:
+**Deploy LLM** provisions a complete VM running an open-source model. Pick the serving engine:
 
 | Engine | Best For | API | GPU |
 |--------|----------|-----|-----|
@@ -15,6 +15,23 @@ Deploy a fully self-hosted AI inference server on your own Proxmox infrastructur
 | **vLLM** | OpenAI-compatible production API | OpenAI format (port 8000) | Required (NVIDIA) |
 | **LocalAI** | Drop-in OpenAI API replacement | OpenAI format (port 8080) | Optional |
 | **Stable Diffusion (ComfyUI)** | AI image generation | ComfyUI web UI (port 8188) | Optional (strongly recommended) |
+
+---
+
+## Choosing a model
+
+The **Model Catalog** tab lists the open-weight models Depl0y can deploy, grouped
+by category — Chat / General, Code, Vision, Reasoning and Embedding — and
+filterable by download size (<2 GB, 2–8 GB, >8 GB). Each card gives the model's
+parameter count, download size, context length and VRAM requirement, so you can
+size the guest before committing to it. Llama 3.2 (1B/3B/8B), Qwen 2.5 (0.5B–7B
+including the Coder variants), Gemma 2, Phi-3.5 Mini, Mistral 7B and DeepSeek
+Coder are all in the catalogue.
+
+Selecting a model carries you into **Deploy New** with it pre-filled. Simple mode
+(below) skips the catalogue and picks a model for you from the use case and
+quality tier you choose. **Deployed Instances** tracks what you have already
+stood up.
 
 ---
 

@@ -5,6 +5,14 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **`LLM_DEPLOY_GUIDE.md` moved to `docs/LLM_DEPLOY_GUIDE.md`** and linked from the README documentation table and the feature reference. It documents a shipping feature but sat unreferenced at the repository root. Added a "Choosing a model" section covering the Model Catalog tab, which post-dated the guide, and corrected "four open-source inference engines" above a five-row table that included Stable Diffusion (an image generator, not an LLM engine).
+
+### Removed
+- **Five superseded v1.3.8 security documents** — `SECURITY_AUDIT_REPORT.md`, `SECURITY_FIXES_APPLIED.md`, `SECURITY_SUMMARY.md`, `FINAL_SECURITY_REPORT.md` and `RELEASE_v1.3.8.md`. All five dated from a single day in February 2026 and overlapped heavily; they formed a closed cluster citing only each other, with nothing in the README, `docs/`, the code or the installers referencing them. `SECURITY.md` — the actual security policy, linked from the README — is unaffected.
+
 ## [2.2.76] - 2026-09-15 🩹 Header layout fix, screenshot regeneration
 
 ### Fixed

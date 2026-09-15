@@ -131,6 +131,8 @@ with driver installation, and add-ons such as Open WebUI. Simple mode asks four
 questions; advanced mode exposes the full engine / model / GPU / OS / storage
 matrix. Deployed instances are tracked on their own tab.
 
+Full walkthrough: [Deploy LLM guide](LLM_DEPLOY_GUIDE.md).
+
 ---
 
 ## Access control and auditing

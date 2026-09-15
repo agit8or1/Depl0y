@@ -74,8 +74,13 @@ crops cleanly to GitHub's 1280×640 card.
 
 ## Checklist for a maintainer
 
-- [ ] Description replaced with the text above
-- [ ] Website cleared (or repointed) until a real project site resolves
-- [ ] Topics set to the list above
-- [ ] Social preview uploaded
-- [ ] `v2.2.74` release notes reference the new README sections if useful
+- [x] Description replaced with the text above — applied 2026-09-15
+- [x] Website cleared until a real project site resolves — applied 2026-09-15
+- [x] Topics set to the list above — applied 2026-09-15
+- [ ] Social preview uploaded — **manual only**, GitHub exposes no API for it
+      (Settings → General → Social preview → upload
+      `docs/images/github/01-infrastructure-overview.png`)
+
+Two topics from the previous set were dropped as part of this change:
+`cloud-init` and `dashboard`. Both are defensible; the list above has room for
+them (GitHub allows 20) if you want them back.

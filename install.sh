@@ -2,13 +2,16 @@
 #
 # Depl0y - Automated VM Deployment Panel Installer
 # Complete automated installation - no manual steps required!
-# One-line install: curl -fsSL http://deploy.agit8or.net/downloads/install.sh | sudo bash
+# Install: curl -fsSL https://raw.githubusercontent.com/agit8or1/Depl0y/main/install.sh -o install.sh
+#          less install.sh   # read it before running it as root
+#          sudo bash install.sh
 #
 
 set -e
 
-# Installer version for tracking
-INSTALLER_VERSION="1.1.0"
+# Installer version for tracking. This is the single source of truth — the
+# banner below renders it, so there is no second copy to forget to bump.
+INSTALLER_VERSION="1.3.7"
 INSTALLER_BUILD="$(date +%Y%m%d%H%M%S)"
 
 echo "╔══════════════════════════════════════════════════════════╗"
@@ -22,7 +25,7 @@ echo "║   ╚═════╝ ╚══════╝╚═╝     ╚═�
 echo "║                                                          ║"
 echo "║       Automated VM Deployment Panel for Proxmox VE      ║"
 echo "║              https://deploy.agit8or.net                 ║"
-echo "║                    Version 1.3.7                        ║"
+printf "\xe2\x95\x91%*s%*s\xe2\x95\x91\n" $(( (57 + ${#INSTALLER_VERSION} + 8) / 2 )) "Version $INSTALLER_VERSION" $(( (57 - ${#INSTALLER_VERSION} - 8 + 1) / 2 )) ""
 echo "║                                                          ║"
 echo "╚══════════════════════════════════════════════════════════╝"
 echo ""
@@ -242,7 +245,7 @@ cd /tmp
 rm -f depl0y-latest.tar.gz
 # Add cache-busting timestamp to ensure fresh download
 CACHE_BUST=$(date +%s)
-curl -fsSL "http://deploy.agit8or.net/api/v1/system-updates/download?v=${CACHE_BUST}" -o depl0y-latest.tar.gz
+curl -fsSL "https://deploy.agit8or.net/api/v1/system-updates/download?v=${CACHE_BUST}" -o depl0y-latest.tar.gz
 
 echo "📦 Extracting Depl0y..."
 rm -rf /tmp/depl0y-install

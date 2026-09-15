@@ -233,7 +233,7 @@ const SECTIONS = [
 
       <h3>Installation</h3>
       <p>Run on a fresh Ubuntu or Debian server:</p>
-      ${codeBlock('curl -fsSL http://deploy.agit8or.net/downloads/install.sh | sudo bash')}
+      ${codeBlock('curl -fsSL https://raw.githubusercontent.com/agit8or1/Depl0y/main/install.sh -o install.sh\nless install.sh          # read it before running it\nsudo bash install.sh')}
       <p>The installer:</p>
       <ol>
         <li>Installs Python 3, Node.js, nginx, and system dependencies</li>

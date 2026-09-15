@@ -298,7 +298,7 @@ If this is your main update server (`deploy.agit8or.net`):
 1. **Ensure the installer is accessible**
    ```bash
    # The installer should be served by nginx
-   curl http://deploy.agit8or.net/install.sh
+   curl https://deploy.agit8or.net/install.sh
    ```
 
 2. **Update the backend config if needed**
@@ -308,17 +308,17 @@ If this is your main update server (`deploy.agit8or.net`):
 
    Verify:
    ```python
-   UPDATE_SERVER = "http://deploy.agit8or.net"
+   UPDATE_SERVER = "https://deploy.agit8or.net"
    ```
 
 3. **Test the update endpoints**
    ```bash
    # Version info
-   curl http://deploy.agit8or.net/api/v1/system-updates/version
+   curl https://deploy.agit8or.net/api/v1/system-updates/version
 
    # Download package (requires auth)
    curl -H "Authorization: Bearer YOUR_TOKEN" \
-        http://deploy.agit8or.net/api/v1/system-updates/download \
+        https://deploy.agit8or.net/api/v1/system-updates/download \
         -o test-package.tar.gz
    ```
 
@@ -327,10 +327,10 @@ If this is your main update server (`deploy.agit8or.net`):
 When a client checks for updates (Settings → System Updates):
 
 1. Client calls `/api/v1/system-updates/check`
-2. Backend queries main server at `http://deploy.agit8or.net/api/v1/system-updates/version`
+2. Backend queries main server at `https://deploy.agit8or.net/api/v1/system-updates/version`
 3. Compares versions
 4. If update available, shows "Install Update" button
-5. When clicked, downloads from `http://deploy.agit8or.net/api/v1/system-updates/download`
+5. When clicked, downloads from `https://deploy.agit8or.net/api/v1/system-updates/download`
 6. Extracts, builds, deploys, and restarts
 
 ---

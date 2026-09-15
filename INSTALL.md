@@ -5,10 +5,17 @@
 Install Depl0y with a single command:
 
 ```bash
-curl -fsSL http://deploy.agit8or.net/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/agit8or1/Depl0y/main/install.sh -o install.sh
+less install.sh          # read it before running it
+sudo bash install.sh
 ```
 
-That's it! The installer will:
+The installer is fetched from the repository rather than piped straight into
+`sudo bash`, so you can read what will run as root before it runs. The copy at
+`https://deploy.agit8or.net/downloads/install.sh` is the same script, but the
+repository is the authoritative source.
+
+The installer will:
 - Install all dependencies (Python, Node.js, nginx, etc.)
 - Create the depl0y system user
 - Download and install the latest version from deploy.agit8or.net
@@ -87,7 +94,7 @@ Depl0y includes an automatic update system:
 ## Source Server
 
 The main Depl0y server is hosted at:
-- **URL:** http://deploy.agit8or.net
+- **URL:** https://deploy.agit8or.net
 - **Purpose:** Source for installations and updates
 - **Updates:** All instances pull updates from this server
 
@@ -154,7 +161,7 @@ sudo systemctl restart nginx
 
 ## Support
 
-- **Documentation:** http://deploy.agit8or.net/docs
+- **Documentation:** https://deploy.agit8or.net/docs
 - **Issues:** Report bugs and request features on GitHub
 - **Updates:** Automatic updates from deploy.agit8or.net
 

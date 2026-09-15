@@ -5,6 +5,16 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.77] - 2026-09-15 🔒 HTTPS everywhere for the project host
+
+### Fixed
+- **The installer downloaded its payload over plain HTTP.** `install.sh` fetched `depl0y-latest.tar.gz` from `http://deploy.agit8or.net/api/v1/system-updates/download` — an unauthenticated channel, unpacked and installed as root. Now HTTPS, which the host has served with a valid certificate all along.
+- **Install documentation told users to pipe plain HTTP into `sudo bash`.** `INSTALL.md` (served live in-app by `app/api/docs.py`) and the in-app Documentation page both led with `curl -fsSL http://deploy.agit8or.net/install.sh | sudo bash`. Both now fetch the installer from the repository over HTTPS to a file, with a `less` step before running it as root — matching the README, which was corrected in 2.2.75 while these two copies were missed.
+- **Nine plain-`http://` references to the project host** upgraded to HTTPS across `install.sh`, `uninstall.sh`, `INSTALL.md`, `DEPLOYMENT.md` and `Documentation.vue`. `DEPLOYMENT.md` also quoted `UPDATE_SERVER = "http://…"`, which no longer matched `app/api/system_updates.py`.
+
+### Changed
+- **`INSTALLER_VERSION` is the single source of truth for the installer version.** It was set to `1.1.0`, never read, and shadowed by a hand-edited `Version 1.3.7` string in the banner — two version numbers, one of them dead. The banner now renders the variable and stays aligned for any version length.
+
 ## [Unreleased]
 
 ### Changed

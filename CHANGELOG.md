@@ -5,6 +5,28 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.78] - 2026-09-15 🔐 Dependency security update
+
+`pip-audit` reported 18 known vulnerabilities across 7 Python dependencies. Dependabot alerts were disabled on the repository and there is no CI, so none of this had surfaced. **16 of the 18 are now fixed**; the remaining two have no published fix.
+
+### Security
+- **`python-multipart` 0.0.26 → 0.0.31** — four advisories in form and multipart parsing. `PYSEC-2026-3040` is the significant one here: `parse_form()` did not validate `Content-Length` before using it to bound its read of the request body, so a negative value turned a bounded read into an unbounded one. Depl0y accepts ISO and OVA/VMDK uploads with nginx set to `client_max_body_size 10G`, so this sat directly on a reachable path.
+- **`starlette` 0.49.1 → 1.3.1** — five advisories, including unvalidated Host-header URL reconstruction and `request.form()` silently ignoring `max_fields` and `max_part_size` for urlencoded bodies. Required **`fastapi` 0.121.3 → 0.141.1**: every fix is in starlette 1.x and the old FastAPI pinned `starlette<0.51.0`, so the fix was unreachable until FastAPI dropped its upper bound.
+- **`pyasn1` → 0.6.4** (now pinned explicitly) — four DoS advisories in the BER/DER decoder: unbounded recursion on nested structures, quadratic OID parsing, unbounded long-form tag accumulation. Reached through `python-jose` and `rsa`, i.e. the JWT path. Required **`python-jose` 3.4.0 → 3.5.0**, which relaxes its `pyasn1<0.5.0` cap.
+- **`weasyprint` 68.0 → 70.0** — `url_fetcher`, the documented mechanism for blocking `file://` and internal hosts when rendering untrusted input, was bypassable by two write paths.
+- **`pytest` 8.3.5 → 9.0.3** (dev only), which required **`pytest-asyncio` 0.26.0 → 1.4.0** to lift its `pytest<9` cap.
+
+### Known, unfixed
+- **`paramiko` 3.5.1** — `rsakey.py` allows SHA-1 (`PYSEC-2026-2858`). No fixed release exists as of this version. Used for the SSH fallback to Proxmox nodes and BMCs.
+- **`ecdsa` 0.19.2** — Minerva timing attack on P-256 (`PYSEC-2026-1325`). No fixed release. Transitive via `python-jose`.
+
+### Changed
+- **Dependabot alerts and automated security fixes enabled** on the repository, so the next round of advisories arrives on its own.
+- **`scripts/screenshots/demo/inner.sh` accepts `DEMO_VENV`**, so the capture rig can be pointed at a candidate dependency set instead of the installed backend's virtualenv. That is how these upgrades were verified.
+
+### Verification
+There is no test suite and no CI, so each step was validated by running the full capture rig against a throwaway virtualenv built from the new pins: real backend, real REST API, JWT login, host registration, BMC credential attach, and 27 distinct pages driven in a browser. Both runs completed 27/27 with no application errors. `pip check` reports no broken requirements.
+
 ## [2.2.77] - 2026-09-15 🔒 HTTPS everywhere for the project host
 
 ### Fixed

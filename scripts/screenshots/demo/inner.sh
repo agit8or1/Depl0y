@@ -8,7 +8,9 @@ set -euo pipefail
 DEMO="$(cd "$(dirname "$0")" && pwd)"
 STATE="${DEMO_STATE:-/tmp/depl0y-demo-state}"
 REPO="${DEMO_REPO:-$(cd "$DEMO/../../.." && pwd)}"
-VENV=/opt/depl0y/backend/venv/bin
+# Defaults to the installed backend's virtualenv. Override with DEMO_VENV to run
+# the rig against a candidate dependency set without touching the live install.
+VENV="${DEMO_VENV:-/opt/depl0y/backend/venv}/bin"
 
 mkdir -p "$STATE"/{db,isos,cloud-images,logs,run}
 

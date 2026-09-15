@@ -259,9 +259,12 @@ Depl0y is built and maintained alongside other operations tooling at
 **[mspreboot.com](https://mspreboot.com)**, an MSP consulting practice focused on
 operations, profitability and growth.
 
-Depl0y itself is independent, open source and MIT licensed. Using it does not
-involve any commercial relationship, and no paid support or service-level
-commitment is offered here.
+Depl0y is MIT licensed and free to self-host — nothing here requires an
+engagement, and the project stays open source.
+
+If you would rather not run it yourself, **MSPReboot offers managed hosting and
+commercial support for Depl0y**. Get in touch through
+[mspreboot.com](https://mspreboot.com) for scope and pricing.
 
 ---
 

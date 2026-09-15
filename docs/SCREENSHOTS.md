@@ -2,7 +2,7 @@
 
 24 views of Depl0y — 13 dark, 11 light — captured at 1440×1000 at 2× from the running application.
 
-[← Back to the README](../README.md)
+[← Back to the README](../README.md) · [▶ Watch the walkthrough](https://github.com/agit8or1/Depl0y/releases/download/v2.2.74/depl0y-walkthrough.mp4)
 
 > **Demo data.** Every screenshot comes from an isolated demo instance whose Proxmox and Redfish responses are synthetic fixtures served on loopback inside a private network namespace. Host names use the reserved `example.net` domain and addresses come from the RFC 5737 documentation ranges (`203.0.113.0/24`, `198.51.100.0/24`, `192.0.2.0/24`). No real infrastructure was reachable during capture, and nothing was started, stopped, migrated or deleted to stage a picture. Regenerate them with [`scripts/screenshots/`](../scripts/screenshots/README.md).
 

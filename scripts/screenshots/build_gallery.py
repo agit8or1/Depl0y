@@ -35,7 +35,8 @@ lines = [
     f"{VIEWPORT['width']}×{VIEWPORT['height']} at {DEVICE_SCALE_FACTOR}× from the "
     "running application.",
     "",
-    "[← Back to the README](../README.md)",
+    "[← Back to the README](../README.md) · "
+    "[▶ Watch the walkthrough](https://github.com/agit8or1/Depl0y/releases/download/v2.2.74/depl0y-walkthrough.mp4)",
     "",
     "> **Demo data.** Every screenshot comes from an isolated demo instance whose "
     "Proxmox and Redfish responses are synthetic fixtures served on loopback inside "

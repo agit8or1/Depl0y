@@ -108,26 +108,32 @@ installation.
 
 ## Publishing the video
 
-The MP4s are deliberately **not** committed. Build them locally, then attach
-them to a GitHub release:
+The MP4s are deliberately **not** committed — they are attached to a GitHub
+release instead. The current set lives on **v2.2.74**:
+
+```
+https://github.com/agit8or1/Depl0y/releases/download/v2.2.74/depl0y-walkthrough.mp4
+https://github.com/agit8or1/Depl0y/releases/download/v2.2.74/depl0y-highlight.mp4
+https://github.com/agit8or1/Depl0y/releases/download/v2.2.74/depl0y-poster.png
+https://github.com/agit8or1/Depl0y/releases/download/v2.2.74/depl0y-walkthrough.vtt
+```
+
+To publish a rebuilt set against a future release:
 
 ```bash
-gh release upload v2.2.75 \
-  /path/to/depl0y-walkthrough.mp4 \
-  /path/to/depl0y-highlight.mp4 \
-  /path/to/depl0y-walkthrough.vtt
+gh release upload vX.Y.Z \
+  depl0y-walkthrough.mp4 depl0y-highlight.mp4 \
+  depl0y-poster.png depl0y-walkthrough.vtt
 ```
 
-Once the assets exist, add the poster to `docs/images/github/` and put this in
-the README under the hero image — GitHub does not render `<video>` or iframes,
-so a clickable poster plus a plain link is the working pattern:
+Then update the release URLs in `README.md` and in `build_gallery.py` (the
+gallery header link is generated, so editing `docs/SCREENSHOTS.md` by hand is
+overwritten on the next build).
 
-```markdown
-[![Watch the Depl0y walkthrough](docs/images/github/video-poster.png)](https://github.com/agit8or1/Depl0y/releases/download/v2.2.75/depl0y-walkthrough.mp4)
+GitHub does not render `<video>` elements or iframes in Markdown, so the README
+uses a clickable poster image plus a plain link. Only the poster is committed
+(`docs/images/github/video-poster.png`); the video itself never enters Git
+history.
 
-▶ **[Watch the 3½-minute walkthrough](https://github.com/agit8or1/Depl0y/releases/download/v2.2.75/depl0y-walkthrough.mp4)**
-· [55-second highlight](https://github.com/agit8or1/Depl0y/releases/download/v2.2.75/depl0y-highlight.mp4)
-```
-
-Do not add those links before the assets exist — a broken video link is worse
-than none.
+Note that the in-app updater only treats assets ending in `.tar.gz` as update
+packages (`github_updates.py`), so media assets on a release are ignored by it.

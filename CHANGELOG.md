@@ -5,6 +5,30 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.79] - 2026-09-18 🩺 BMC poll resilience
+
+iDRAC tiles for several hosts were blank. The root cause was a stored BMC credential
+mismatch (an OS password had been saved as the iDRAC password), but the resulting run of
+401s exposed two poller defects that turned a transient failure into a permanently empty
+tile.
+
+### Fixed
+
+- **A single slow BMC no longer blanks its tile.** `run_bmc_poll`'s error handler
+  overwrote the cache entry with `power_state/health/model = None`. Older iDRACs
+  (iDRAC 7 especially) intermittently miss the 15s connect timeout under load, so one
+  bad cycle wiped a known-good reading for the next two minutes. The handler now
+  preserves the last good values and marks the entry `stale: true`, alongside a new
+  `last_success` timestamp so the UI can show how old the surviving data is.
+- **Redfish reads retry before giving up.** `client.get_system_info()` — the call that
+  gates every other Redfish field — now runs through `_retry_bmc()` (3 attempts, 2s
+  apart) instead of failing on the first miss.
+- **`idrac_use_ssh` is now honored.** `try_ssh` was computed as
+  `bool(idrac_hostname) and has_ssh_creds`, ignoring the flag entirely, so clearing it
+  in the UI had no effect. BMC-only addresses were attempting an OS SSH login every
+  cycle, burning a connect timeout each and filling the log with
+  `OS SSH failed for ...: Authentication failed`.
+
 ## [2.2.78] - 2026-09-15 🔐 Dependency security update
 
 `pip-audit` reported 18 known vulnerabilities across 7 Python dependencies. Dependabot alerts were disabled on the repository and there is no CI, so none of this had surfaced. **16 of the 18 are now fixed**; the remaining two have no published fix.

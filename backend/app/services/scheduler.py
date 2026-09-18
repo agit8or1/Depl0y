@@ -1,6 +1,7 @@
 """Background scheduler for automated VM checks"""
 import json
 import logging
+import time
 from datetime import datetime
 
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -13,6 +14,25 @@ _started = False
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
+
+# Older BMCs (iDRAC 7 especially) intermittently drop a connect under load, so
+# a single miss is not evidence the box is down. Retry before believing it.
+_BMC_ATTEMPTS = 3
+_BMC_RETRY_DELAY = 2
+
+
+def _retry_bmc(fn, attempts=_BMC_ATTEMPTS, delay=_BMC_RETRY_DELAY):
+    """Call `fn`, retrying transient BMC failures. Re-raises the last error."""
+    last = None
+    for attempt in range(attempts):
+        try:
+            return fn()
+        except Exception as e:
+            last = e
+            if attempt + 1 < attempts:
+                time.sleep(delay)
+    raise last
+
 
 def _get_setting(db, key, default=None):
     from app.models import SystemSettings
@@ -209,7 +229,10 @@ def run_bmc_poll():
                 # supports fills in its piece. Results are merged, never
                 # exclusive.
                 try_redfish = bool(obj.idrac_hostname)
-                try_ssh = bool(obj.idrac_hostname) and has_ssh_creds
+                # `idrac_use_ssh` is the admin's statement that this address
+                # serves an OS shell. BMC-only addresses never will, and each
+                # attempt burns a connect timeout out of the poll cycle.
+                try_ssh = bool(obj.idrac_hostname) and has_ssh_creds and bool(use_ssh)
 
                 # ── Try Redfish (HTTPS) ────────────────────────────────────
                 if try_redfish:
@@ -221,7 +244,7 @@ def run_bmc_poll():
                             port=obj.idrac_port or 443,
                             bmc_type=obj.idrac_type or "idrac",
                         )
-                        rf_info = client.get_system_info()
+                        rf_info = _retry_bmc(client.get_system_info)
                         power_state = rf_info.get("power_state")
                         # Prefer component-level current health over the SEL-aware
                         # rollup so stale event-log entries don't keep us at Warning
@@ -391,6 +414,8 @@ def run_bmc_poll():
                     "bios_version": bios_version,
                     "dell_system_id": dell_system_id or prev.get("dell_system_id"),
                     "last_polled": datetime.utcnow().isoformat(),
+                    "last_success": datetime.utcnow().isoformat(),
+                    "stale": False,
                     "error": None,
                     "max_temp_c": max_temp_c,
                     "consumed_watts": consumed_watts,
@@ -398,11 +423,19 @@ def run_bmc_poll():
                     "health_reasons": health_reasons,
                 }
             except Exception as e:
+                # Keep the last good reading and mark it stale rather than
+                # blanking the tile — a flaky BMC that misses one cycle is
+                # not the same as a server with no data. `last_success`
+                # tells the UI how old the surviving values are.
+                prev = bmc_status_cache.get(key, {})
                 bmc_status_cache[key] = {
-                    "power_state": None,
-                    "health": None,
-                    "model": None,
+                    **prev,
+                    "power_state": prev.get("power_state"),
+                    "health": prev.get("health"),
+                    "model": prev.get("model"),
                     "last_polled": datetime.utcnow().isoformat(),
+                    "last_success": prev.get("last_success"),
+                    "stale": True,
                     "error": str(e),
                 }
 

@@ -10,7 +10,7 @@ from app.models import (
     OSType,
 )
 from app.services.proxmox import ProxmoxService
-from app.services.cloudinit import CloudInitService
+from app.services.cloudinit import CloudInitService, SSH_PASSWORD_AUTH_RUNCMD
 from app.core.security import encrypt_data, decrypt_data
 import logging
 import re
@@ -1117,6 +1117,14 @@ class DeploymentService:
                                 _write_files_section += f"\n    encoding: {wf['encoding']}"
                             _write_files_section += f"\n    content: {wf['content']}"
 
+                # Enable SSH password auth in a way that survives the
+                # /etc/ssh/sshd_config.d/ drop-ins shipped by Ubuntu 22.04/24.04
+                # cloud images (see cloudinit.SSH_PASSWORD_AUTH_RUNCMD).
+                _ssh_auth_runcmd_str = ""
+                for _c in SSH_PASSWORD_AUTH_RUNCMD:
+                    _escaped = _c.replace("\\", "\\\\").replace('"', '\\"')
+                    _ssh_auth_runcmd_str += f'\n  - "{_escaped}"'
+
                 user_data = f"""#cloud-config
 users:
   - name: {vm.username}
@@ -1139,12 +1147,8 @@ packages:
 runcmd:
   - systemctl enable qemu-guest-agent
   - systemctl start qemu-guest-agent
-  - systemctl enable ssh
-  - systemctl start ssh
-  - sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
-  - sed -i 's/^#*PubkeyAuthentication.*/PubkeyAuthentication yes/' /etc/ssh/sshd_config
-  - sed -i 's/^#*PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
-  - systemctl restart ssh || systemctl restart sshd{_extra_runcmd_str}{_write_files_section}
+  - systemctl enable ssh 2>/dev/null || systemctl enable sshd 2>/dev/null || true
+  - systemctl start ssh 2>/dev/null || systemctl start sshd 2>/dev/null || true{_ssh_auth_runcmd_str}{_extra_runcmd_str}{_write_files_section}
 """
 
                 # Create temporary file

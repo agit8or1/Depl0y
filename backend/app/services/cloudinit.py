@@ -6,6 +6,46 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+# ---------------------------------------------------------------------------
+# SSH password-authentication enablement
+#
+# Ubuntu 22.04/24.04 (and Debian 12) cloud images ship
+# /etc/ssh/sshd_config.d/60-cloudimg-settings.conf containing
+# "PasswordAuthentication no".  /etc/ssh/sshd_config has its
+# "Include /etc/ssh/sshd_config.d/*.conf" line at the TOP of the file and sshd
+# uses first-directive-wins, so the drop-in always beats anything written into
+# the main config.  Editing /etc/ssh/sshd_config alone (what depl0y used to do)
+# therefore has no effect on Ubuntu 24.04 and password logins stay disabled.
+#
+# Fix: strip the auth directives from every drop-in, then write our own drop-in
+# that sorts first (00-), and only then touch the main config as a belt-and-
+# braces fallback for images without an Include line.
+#
+# Keep these strings free of "{" / "}" - deployment.py interpolates them into an
+# f-string.
+# ---------------------------------------------------------------------------
+SSH_AUTH_DROPIN = "/etc/ssh/sshd_config.d/00-depl0y-ssh.conf"
+
+SSH_PASSWORD_AUTH_RUNCMD = [
+    # 1. Remove conflicting directives from every shipped drop-in
+    #    (60-cloudimg-settings.conf, 50-cloud-init.conf, vendor files, ...).
+    "sed -ri '/^[[:space:]]*#?[[:space:]]*(PasswordAuthentication|PermitRootLogin|KbdInteractiveAuthentication|ChallengeResponseAuthentication)[[:space:]]/d' /etc/ssh/sshd_config.d/*.conf 2>/dev/null || true",
+    # 2. Our own drop-in, sorted first so it wins under first-match-wins.
+    "mkdir -p /etc/ssh/sshd_config.d",
+    "printf 'PasswordAuthentication yes\\nPubkeyAuthentication yes\\nPermitRootLogin yes\\nKbdInteractiveAuthentication no\\n' > " + SSH_AUTH_DROPIN,
+    "chmod 644 " + SSH_AUTH_DROPIN,
+    # 3. Fallback for images whose sshd_config has no Include line.
+    "sed -ri 's/^[[:space:]]*#?[[:space:]]*PasswordAuthentication[[:space:]].*/PasswordAuthentication yes/' /etc/ssh/sshd_config",
+    "sed -ri 's/^[[:space:]]*#?[[:space:]]*PubkeyAuthentication[[:space:]].*/PubkeyAuthentication yes/' /etc/ssh/sshd_config",
+    "sed -ri 's/^[[:space:]]*#?[[:space:]]*PermitRootLogin[[:space:]].*/PermitRootLogin yes/' /etc/ssh/sshd_config",
+    "grep -q '^PasswordAuthentication yes' /etc/ssh/sshd_config || echo 'PasswordAuthentication yes' >> /etc/ssh/sshd_config",
+    # 4. Reload.  Ubuntu 24.04 is socket-activated (ssh.socket), older releases
+    #    use ssh.service; RHEL-likes call it sshd.  Validate before restarting so
+    #    a bad edit cannot leave the VM without SSH at all.
+    "sshd -t && (systemctl restart ssh.socket 2>/dev/null; systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null) || true",
+]
+
+
 class CloudInitService:
     """Service for generating cloud-init configurations"""
 
@@ -43,7 +83,7 @@ class CloudInitService:
             "timezone": timezone,
             "users": [],
             "ssh_pwauth": True if password else False,
-            "disable_root": True,
+            "disable_root": False if password else True,
             "package_update": True,
             "package_upgrade": True,
             "packages": packages or [],
@@ -90,9 +130,13 @@ class CloudInitService:
 
         # Ensure SSH is enabled
         config["runcmd"].extend([
-            "systemctl enable ssh",
-            "systemctl start ssh",
+            "systemctl enable ssh 2>/dev/null || systemctl enable sshd 2>/dev/null || true",
+            "systemctl start ssh 2>/dev/null || systemctl start sshd 2>/dev/null || true",
         ])
+
+        # Make password logins actually work on Ubuntu 22.04/24.04 cloud images
+        if password:
+            config["runcmd"].extend(SSH_PASSWORD_AUTH_RUNCMD)
 
         # Generate YAML with cloud-config header
         user_data = "#cloud-config\n" + yaml.dump(

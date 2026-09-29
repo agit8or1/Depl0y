@@ -5,6 +5,38 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.80] - 2026-09-29 🔑 SSH password auth on Ubuntu 24.04
+
+New Ubuntu 24.04 VMs came up with password logins refused, despite cloud-init being
+told `ssh_pwauth: true`.
+
+### Fixed
+
+- **Password SSH now actually works on Ubuntu 22.04/24.04 and Debian 12 cloud images.**
+  Those images ship `/etc/ssh/sshd_config.d/60-cloudimg-settings.conf` containing
+  `PasswordAuthentication no`. `/etc/ssh/sshd_config` has its
+  `Include /etc/ssh/sshd_config.d/*.conf` line at the *top* of the file, and sshd takes
+  the **first** occurrence of a directive — so the drop-in always beat the main config.
+  cloud-init's `ssh_pwauth` handling and depl0y's own `sed` both edited only
+  `/etc/ssh/sshd_config`, so neither had any effect and the VM stayed key-only.
+
+  The generated user-data now strips `PasswordAuthentication`, `PermitRootLogin`,
+  `KbdInteractiveAuthentication` and `ChallengeResponseAuthentication` from every shipped
+  drop-in, writes its own `/etc/ssh/sshd_config.d/00-depl0y-ssh.conf` (sorted first, so it
+  wins), and only then falls back to editing the main config for images that have no
+  `Include` line.
+
+### Changed
+
+- The sshd reload is now gated on `sshd -t`, so a bad edit can no longer leave a freshly
+  deployed VM with no SSH at all. It restarts `ssh.socket` as well as `ssh`/`sshd`, since
+  Ubuntu 24.04 is socket-activated.
+- `systemctl enable/start ssh` falls back to `sshd` for RHEL-family images instead of
+  failing the runcmd step.
+- The SSH-enablement commands live in one place,
+  `app.services.cloudinit.SSH_PASSWORD_AUTH_RUNCMD`, shared by `CloudInitService` and the
+  `cicustom` snippet built in `deployment.py`, which had drifted apart.
+
 ## [2.2.79] - 2026-09-18 🩺 BMC poll resilience
 
 iDRAC tiles for several hosts were blank. The root cause was a stored BMC credential

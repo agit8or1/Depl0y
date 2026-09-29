@@ -5,6 +5,20 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.82] - 2026-09-29 📦 deploy.sh reconciles the venv
+
+### Fixed
+
+- **`deploy.sh` now installs `requirements.txt` into the live venv.** It copied code
+  and restarted the service but never touched dependencies, which is how the venv
+  came to sit 7 packages behind — carrying committed-but-uninstalled security fixes
+  (see 2.2.81). The step runs `pip install -r requirements.txt` followed by
+  `pip check`, and is keyed off a `sha256` stamp at
+  `venv/.requirements.sha256` so an unchanged `requirements.txt` costs nothing.
+  `set -e` means a failed install or a broken dependency tree aborts the deploy
+  *before* the service is restarted, rather than restarting onto a bad venv. The
+  script also fails loudly if the venv is missing instead of silently skipping.
+
 ## [2.2.81] - 2026-09-29 🔒 Validation handler leaked credentials and 500'd
 
 Found while redeploying `/opt` from the repo and verifying the backend against

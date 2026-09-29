@@ -38,6 +38,34 @@ sudo cp -r /home/administrator/depl0y/backend/* /opt/depl0y/backend/
 sudo chown -R depl0y:depl0y /opt/depl0y/backend
 sudo chmod -R 755 /opt/depl0y/backend
 
+# ── Backend dependencies ──────────────────────────────────────────────────────
+# The live venv once drifted 7 packages behind requirements.txt, including
+# committed security fixes (fastapi/starlette/python-jose) that were never
+# actually installed -- this script copied code and restarted but never
+# reconciled dependencies. Do it on every deploy, but only pay the cost when
+# requirements.txt actually changed, keyed off its hash.
+VENV=/opt/depl0y/backend/venv
+REQ=/opt/depl0y/backend/requirements.txt
+STAMP="$VENV/.requirements.sha256"
+
+if [ ! -x "$VENV/bin/pip" ]; then
+    echo "❌ No virtualenv at $VENV — cannot install dependencies." >&2
+    exit 1
+fi
+
+REQ_HASH=$(sha256sum "$REQ" | awk '{print $1}')
+if [ "$(sudo cat "$STAMP" 2>/dev/null)" = "$REQ_HASH" ]; then
+    echo "📦 Dependencies already match requirements.txt — skipping."
+else
+    echo "📦 Installing backend dependencies..."
+    # requirements.txt pins with ==, so a plain install corrects drift in either
+    # direction; no --upgrade needed.
+    sudo -u depl0y "$VENV/bin/pip" install --no-input -r "$REQ"
+    sudo -u depl0y "$VENV/bin/pip" check
+    echo "$REQ_HASH" | sudo -u depl0y tee "$STAMP" > /dev/null
+    echo "✅ Dependencies installed and consistent."
+fi
+
 # ── Services ──────────────────────────────────────────────────────────────────
 echo "🔄 Restarting services..."
 sudo systemctl restart depl0y-backend

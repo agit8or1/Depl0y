@@ -5,6 +5,42 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.81] - 2026-09-29 🔒 Validation handler leaked credentials and 500'd
+
+Found while redeploying `/opt` from the repo and verifying the backend against
+starlette 1.x. Both bugs are pre-existing — confirmed by A/B'ing the old and new
+dependency sets side by side — not fallout from the upgrade.
+
+### Fixed
+
+- **A malformed request body returned 500 instead of 422.** The
+  `RequestValidationError` handler stringified `ctx.error` but not `input`, which
+  pydantic sets to the raw request body as `bytes` when the body cannot be parsed at
+  all (e.g. a form-encoded POST to a JSON endpoint). `JSONResponse` then raised
+  `TypeError: Object of type bytes is not JSON serializable` *inside the error
+  handler*, so the client got a 500. `input` is now dropped and `ctx` values are
+  stringified.
+
+### Security
+
+- **The validation handler no longer logs or echoes request bodies.** It called
+  `logger.error(f"Request body: {body.decode()}")` and returned pydantic's `input`
+  field to the caller. On `/auth/login` that is the plaintext password, so every
+  malformed login attempt wrote live credentials to journald and reflected them in
+  the 422 response. It now logs only the method, path, content-type and
+  content-length; the 422 keeps `loc`/`msg`/`type`, which is what makes it
+  actionable. The log line also uses `request.url.path` rather than `request.url`,
+  so query strings are no longer captured either.
+
+### Operations
+
+- **The live venv was 7 packages behind `requirements.txt`**, including the
+  fastapi/starlette/python-jose bumps from 304ed13 — those security fixes had been
+  committed but never installed. `/opt/depl0y` is now redeployed from the repo and
+  the venv matches `requirements.txt` (`pip check` clean). Verified on
+  starlette 1.3.1: startup hooks still fire, the scheduler runs, and all 96
+  parameterless GET endpoints return 200/401/422 with zero 5xx.
+
 ## [2.2.80] - 2026-09-29 🔑 SSH password auth on Ubuntu 24.04
 
 New Ubuntu 24.04 VMs came up with password logins refused, despite cloud-init being

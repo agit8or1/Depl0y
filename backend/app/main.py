@@ -229,26 +229,42 @@ async def audit_middleware(request: Request, call_next):
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     """Log validation errors and return a JSON-serialisable 422.
 
-    Pydantic-v2 errors may carry a raw Exception under ``ctx.error`` which
-    ``JSONResponse`` can't serialise — stringify it before handing the list
-    to the response encoder."""
-    errors = exc.errors()
+    Two things have to be scrubbed before these errors can be handed to
+    ``JSONResponse`` or the log:
+
+    * Pydantic-v2 errors may carry a raw ``Exception`` under ``ctx.error``, and
+      the ``input`` field is the raw request body as ``bytes`` whenever the body
+      could not be parsed at all (e.g. a form-encoded POST to a JSON endpoint).
+      Neither is JSON-serialisable, so the handler itself used to raise
+      ``TypeError: Object of type bytes is not JSON serializable`` and the
+      client got a 500 instead of a 422.
+
+    * ``input`` echoes whatever the caller submitted. On endpoints like
+      /auth/login that is the plaintext password, so it must not be returned to
+      the client or written to the log. We drop ``input`` entirely and keep
+      ``loc``/``msg``/``type``, which is what makes a 422 actionable anyway.
+    """
     safe_errors = []
-    for e in errors:
+    for e in exc.errors():
         e = dict(e)
+        # Never echo caller-supplied values back or into the log.
+        e.pop("input", None)
         ctx = e.get("ctx")
-        if isinstance(ctx, dict) and "error" in ctx:
-            ctx = dict(ctx)
-            ctx["error"] = str(ctx["error"])
-            e["ctx"] = ctx
+        if isinstance(ctx, dict):
+            e["ctx"] = {k: str(v) for k, v in ctx.items()}
+        # Belt and braces: loc may hold non-str keys, everything else is scalar.
+        e["loc"] = [str(part) for part in e.get("loc", ())]
         safe_errors.append(e)
-    logger.error(f"Validation error on {request.method} {request.url}")
+
+    logger.error(f"Validation error on {request.method} {request.url.path}")
     logger.error(f"Validation errors: {safe_errors}")
-    try:
-        body = await request.body()
-        logger.error(f"Request body: {body.decode()}")
-    except Exception:
-        pass
+    # Deliberately NOT logging the request body: it carries credentials on the
+    # auth and host-registration endpoints. Content-Type plus the field paths
+    # above are enough to diagnose a malformed request.
+    logger.error(
+        f"Request content-type: {request.headers.get('content-type', '(none)')}, "
+        f"content-length: {request.headers.get('content-length', '(none)')}"
+    )
     return JSONResponse(status_code=422, content={"detail": safe_errors})
 
 

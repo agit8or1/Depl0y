@@ -19,6 +19,7 @@
         <span class="cmd-palette-btn-label">Search</span>
         <kbd class="cmd-palette-kbd">⌘K</kbd>
       </button>
+      <HelpUsGrowButton />
       <NotificationBell />
       <router-link to="/profile" class="user-info user-info-link">
         <span class="username">{{ username }}</span>
@@ -38,12 +39,14 @@ import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/store/auth'
 import GlobalSearch from '@/components/layout/GlobalSearch.vue'
 import NotificationBell from '@/components/layout/NotificationBell.vue'
+import HelpUsGrowButton from '@/components/layout/HelpUsGrowButton.vue'
 
 export default {
   name: 'Header',
   components: {
     GlobalSearch,
-    NotificationBell
+    NotificationBell,
+    HelpUsGrowButton
   },
   emits: ['toggle-sidebar'],
   setup() {
@@ -171,7 +174,9 @@ export default {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 1.25rem;
+  /* Was 1.25rem. The Help Us Grow button is an extra item in this row, so the
+     gap is tightened to keep every control fully visible without clipping. */
+  gap: 0.85rem;
 }
 
 .user-info {

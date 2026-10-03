@@ -5,6 +5,60 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.83] - 2026-10-03 ❤️ Help Us Grow
+
+A reusable "Help Us Grow" call to action: a heart button in the header that opens
+a support modal built around sharing.
+
+### Added
+
+- **"Help Us Grow" header button** with a gentle two-beat heartbeat and a soft red
+  glow. The animation is scoped to the heart glyph alone, so the button never
+  changes size and cannot shift its neighbours. Below 1100px the label drops and
+  the heart stands alone, keeping its accessible name via `aria-label`/`title`.
+  The heartbeat is wrapped in `prefers-reduced-motion: no-preference`; under
+  reduced motion the static glow remains and nothing animates.
+- **`HelpUsGrowModal`** — share, other projects, GitHub, sponsor and business
+  sections, in that order, with sharing first and above the fold. Keyboard
+  accessible: focus moves in on open, Tab/Shift+Tab are trapped, Escape and the
+  backdrop close it, and focus returns to the trigger. Scroll is locked while open
+  and released on close.
+- **`frontend/src/config/projects.js`** — one place for project names, URLs and
+  share copy, deliberately free of app-specific imports so it can be reused across
+  sibling apps. The Sponsor section is driven by `SPONSOR_URL` and is omitted
+  entirely (with the remaining steps renumbered) when it is null.
+- **`frontend/src/utils/share.js`** — native share sheet with per-network
+  fallbacks for LinkedIn, Facebook, X and email. No new dependencies; nothing is
+  posted on the user's behalf, every path opens a composer the user submits.
+
+### Fixed
+
+- **`copyToClipboard` reported success when a copy had failed.** It ignored
+  `document.execCommand`'s boolean result and always resolved `true`, so a blocked
+  copy still showed "Copied". It now returns a real success boolean and the new
+  modal only shows "Link copied!" / "Message copied!" on a genuine success,
+  offering a selectable textarea to copy from manually otherwise. Existing callers
+  ignore the return value and are unaffected.
+
+### Changed
+
+- `.header-right` gap tightened from 1.25rem to 0.85rem to absorb the extra
+  control without crowding; verified free of clipping and overlap at 1440, 1200,
+  1100, 900 and 390px.
+- The modal backdrop deliberately omits `backdrop-filter`, unlike the smaller
+  shortcuts and error-boundary modals. Blurring the full dashboard stretched a
+  declared 200ms dismissal to ~880ms of starved frames; without it the modal
+  closes in ~300ms. A smaller radius, `will-change: opacity` and `contain: paint`
+  were each measured and none helped — only dropping the blur did. The scrim is
+  darkened to 0.72 to compensate.
+
+### Notes
+
+- Share links use `https://github.com/agit8or1/Depl0y` as the canonical public URL.
+  The dashboard URL is never shared, and `depl0y.mspreboot.com` remains unused
+  because it does not resolve (see docs/github-about.md).
+- MSPZero is listed by name and URL only — no description has been confirmed for it.
+
 ## [2.2.82] - 2026-09-29 📦 deploy.sh reconciles the venv
 
 ### Fixed

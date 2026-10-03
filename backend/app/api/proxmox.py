@@ -18,7 +18,9 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+from app.api.host_permissions import authorize_host_request
+
+router = APIRouter(dependencies=[Depends(authorize_host_request)])
 
 
 _TOKEN_FORMAT_RE = re.compile(r'^[^@]+@[^!]+![^\s]+$')  # user@realm!tokenname

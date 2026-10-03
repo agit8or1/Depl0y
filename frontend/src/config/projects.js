@@ -44,8 +44,8 @@ export const GITHUB_PROFILE_URL = 'https://github.com/agit8or1'
 
 // ── Other projects to cross-promote ─────────────────────────────────────────
 //
-// MSP Reboot and MSP Zero lead the list deliberately. The four tools after them
-// are the rest of the MSP Zero stack (Depl0y is the fifth and is omitted here
+// MSP Reboot and MSPZero lead the list deliberately. The four tools after them
+// are the rest of the MSPZero stack (Depl0y is the fifth and is omitted here
 // because it is the current project).
 export const OTHER_PROJECTS = [
   {
@@ -57,13 +57,13 @@ export const OTHER_PROJECTS = [
       'consulting focused on operations, profitability and growth. https://mspreboot.com',
   },
   {
-    name: 'MSP Zero',
+    name: 'MSPZero',
     url: 'https://mspzero.com',
     description:
       'Free, open-source tools for MSP documentation, firewalls, infrastructure, ' +
       'backups and remote support. Use one, several or all five.',
     shareMessage:
-      'MSP Zero is a set of five free, open-source, MIT-licensed tools for MSPs — ' +
+      'MSPZero is a set of five free, open-source, MIT-licensed tools for MSPs — ' +
       'documentation, firewalls, infrastructure, backups and remote support. ' +
       'Use one, several or all five: https://mspzero.com',
   },

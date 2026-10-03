@@ -5,6 +5,14 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.85] - 2026-10-03 ✏️ MSPZero spelling
+
+### Fixed
+
+- **MSPZero is spelled as one word** in the "Help Us Grow" project list and its
+  share message. 2.2.84 used "MSP Zero", matching the site's `og:site_name` and
+  body copy, but the owner confirms the brand is MSPZero.
+
 ## [2.2.84] - 2026-10-03 🔗 Help Us Grow: real project data
 
 Filled in the "Help Us Grow" project list from each project's own public page

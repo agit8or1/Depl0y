@@ -23,7 +23,9 @@ from app.models import (
 from app.services.llm_cloudinit import LLMCloudInitService
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+from app.api.host_permissions import authorize_host_request
+
+router = APIRouter(dependencies=[Depends(authorize_host_request)])
 
 # ---------------------------------------------------------------------------
 # Catalog

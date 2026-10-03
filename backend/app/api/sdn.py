@@ -11,7 +11,9 @@ from app.services.proxmox import ProxmoxService
 import logging
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/sdn", tags=["SDN"])
+from app.api.host_permissions import authorize_host_request
+
+router = APIRouter(prefix="/sdn", tags=["SDN"], dependencies=[Depends(authorize_host_request)])
 
 
 # ── Pydantic models ────────────────────────────────────────────────────────────

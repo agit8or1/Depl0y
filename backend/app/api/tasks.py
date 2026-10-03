@@ -11,7 +11,9 @@ from app.services.task_tracker import task_tracker
 import logging
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+from app.api.host_permissions import authorize_host_request
+
+router = APIRouter(dependencies=[Depends(authorize_host_request)])
 
 # Interactive console / shell sessions that surface in PVE's task list but
 # don't represent meaningful "background work". They linger until the user

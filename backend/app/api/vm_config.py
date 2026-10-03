@@ -12,7 +12,9 @@ from app.core.cache import pve_cache
 import logging
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+from app.api.host_permissions import authorize_host_request
+
+router = APIRouter(dependencies=[Depends(authorize_host_request)])
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────

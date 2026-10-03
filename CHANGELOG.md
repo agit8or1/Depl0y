@@ -5,6 +5,33 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.84] - 2026-10-03 🔗 Help Us Grow: real project data
+
+Filled in the "Help Us Grow" project list from each project's own public page
+(all verified HTTP 200 on 2026-10-03) instead of leaving placeholders.
+
+### Added
+
+- **The rest of the MSP Zero stack** in "Discover & share our other projects":
+  clientst0r, OPNMGR, St0r and rem0te, each with the description from its own
+  product page and a confirmed `mspzero.com/tools/<name>` URL. Depl0y is the
+  fifth tool in that stack and is omitted from the list because it is the
+  current project. MSP Reboot and MSP Zero still lead the list.
+
+### Changed
+
+- **MSP Zero now carries its real description** — "Free, open-source tools for
+  MSP documentation, firewalls, infrastructure, backups and remote support. Use
+  one, several or all five." It previously rendered with no description because
+  none had been confirmed. The free/open-source/MIT wording is the project's own
+  claim about itself, taken from mspzero.com.
+- **The canonical share URL for Depl0y is now `https://mspzero.com/tools/depl0y`**
+  rather than the GitHub repo. That page is Depl0y's public product page and
+  reads better when shared with someone non-technical; the repo is still used for
+  "Star This Project". The shared description is now the product page's own:
+  "every Proxmox cluster, and the hardware underneath it, on one page —
+  self-hosted and MIT licensed."
+
 ## [2.2.83] - 2026-10-03 ❤️ Help Us Grow
 
 A reusable "Help Us Grow" call to action: a heart button in the header that opens

@@ -5,6 +5,20 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.86] - 2026-10-10 🛡️ OSS Scanner build files
+
+### Added
+
+- **`.oss-scanner/Dockerfile`** builds the backend (Python 3.12 venv from
+  `backend/requirements.txt`) and the frontend (Node 22, `npm ci && npm run build`)
+  so Anthropic's free OSS Scanner can audit Depl0y offline. It ends with a smoke test
+  that imports the FastAPI app.
+- **`.oss-scanner/threat_model.md`** describes Depl0y's trust levels, untrusted input
+  entry points, the components that matter most, and how we rate severity, for the
+  scanner to read before it starts.
+
+No application code changed.
+
 ## [2.2.85] - 2026-10-03 ✏️ MSPZero spelling
 
 ### Fixed

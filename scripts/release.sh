@@ -48,6 +48,9 @@ if [ "$DRY_RUN" = false ]; then
 fi
 
 OUT=$(mktemp -d)
+# Remove the build directory however the script ends (a failure, Ctrl-C, or success).
+# --dry-run turns this off before exiting, to leave the assets for inspection.
+trap 'rm -rf "$OUT"' EXIT
 TREE="$OUT/tree"
 mkdir -p "$TREE"
 echo "📦 Exporting HEAD..."
@@ -65,13 +68,15 @@ rm -rf "$TREE"
 echo "   $(cat "$OUT/SHA256SUMS")"
 
 if [ "$DRY_RUN" = true ]; then
+    trap - EXIT
     echo "✅ Dry run: assets are in $OUT (not signed)"
     exit 0
 fi
 
 echo "🔏 Signing SHA256SUMS (enter the release key password)..."
 minisign -S -s "$SECRET_KEY_FILE" -m "$OUT/SHA256SUMS" -x "$OUT/SHA256SUMS.minisig" \
-    -c "Depl0y $TAG" -t "depl0y $TAG" || die "signing failed"
+    -c "Depl0y $TAG" -t "depl0y $TAG" \
+    || die "signing failed (wrong password?). Nothing was tagged or published; run this again."
 SIG_OUT=$(minisign -V -P "$PUBKEY" -m "$OUT/SHA256SUMS" -x "$OUT/SHA256SUMS.minisig" 2>&1) \
     || die "the signature does not verify against minisign.pub (wrong secret key?)"
 [ "$(sed -n 's/^Trusted comment: //p' <<<"$SIG_OUT")" = "depl0y $TAG" ] || die "unexpected trusted comment"
@@ -86,5 +91,4 @@ git tag -a "$TAG" -m "Depl0y $VERSION"
 git push -q origin "$TAG"
 gh release create "$TAG" "$OUT/depl0y.tar.gz" "$OUT/SHA256SUMS" "$OUT/SHA256SUMS.minisig" \
     --title "Depl0y $VERSION" --notes-file "$OUT/notes.md" --latest
-rm -rf "$OUT"
 echo "✅ Released $TAG"

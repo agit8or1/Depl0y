@@ -5,6 +5,17 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.94] - 2026-10-10 🧹 release.sh fixes
+
+### Fixed
+
+- `scripts/release.sh` is executable, so `scripts/release.sh` works without `bash`.
+- `scripts/release.sh` removes its temporary build directory however it ends (a failed
+  step, a wrong signing password, Ctrl-C), instead of leaving the package in `/tmp`.
+  `--dry-run` still keeps the assets for inspection.
+- A failed signing step now says that nothing was tagged or published and that it is
+  safe to run again.
+
 ## [2.2.93] - 2026-10-10 🔏 Signed releases
 
 ### Security

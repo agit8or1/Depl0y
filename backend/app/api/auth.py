@@ -237,6 +237,23 @@ class UserResponse(BaseModel):
         from_attributes = True
 
 
+def get_access_token_user(token: str, db: Session) -> Optional[User]:
+    """Only access tokens authorize API calls; refresh tokens have their own gate."""
+    payload = decode_token(token)
+    if not payload or payload.get("type") != "access":
+        return None
+    username = payload.get("sub")
+    if not isinstance(username, str) or not username:
+        return None
+    user = db.query(User).filter(User.username == username).first()
+    if user is None or not user.is_active:
+        return None
+    version = payload.get("tv", 0)
+    if type(version) is not int or version != (getattr(user, "token_version", 0) or 0):
+        return None
+    return user
+
+
 # Dependency to get current user
 async def get_current_user(
     request: Request,
@@ -310,27 +327,9 @@ async def get_current_user(
     if not token:
         raise credentials_exception
 
-    payload = decode_token(token)
-    if payload is None:
-        raise credentials_exception
-
-    username: str = payload.get("sub")
-    if username is None:
-        raise credentials_exception
-
-    user = db.query(User).filter(User.username == username).first()
+    user = get_access_token_user(token, db)
     if user is None:
         raise credentials_exception
-
-    if not user.is_active:
-        raise HTTPException(status_code=400, detail="Inactive user")
-
-    # Check token_version for session invalidation
-    token_version = payload.get("tv", 0)
-    user_token_version = getattr(user, "token_version", 0) or 0
-    if token_version < user_token_version:
-        raise credentials_exception
-
     return user
 
 

@@ -8,7 +8,9 @@ from app.services.proxmox import ProxmoxService
 import logging
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+from app.api.host_permissions import authorize_host_request
+
+router = APIRouter(dependencies=[Depends(authorize_host_request)])
 
 
 def _get_host(host_id: int, db: Session) -> ProxmoxHost:

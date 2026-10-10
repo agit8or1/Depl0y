@@ -14,7 +14,9 @@ import re
 import time as _time
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+from app.api.host_permissions import authorize_host_request
+
+router = APIRouter(dependencies=[Depends(authorize_host_request)])
 
 # ── Disk I/O rate tracking (backend-side, survives between requests) ──────────
 _disk_io_prev: dict = {}   # host_id -> {vmKey: {read, write, time}}

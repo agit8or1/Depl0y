@@ -24,7 +24,8 @@ from app.core.database import SessionLocal, get_db
 from app.core.security import decode_token, decrypt_data
 from app.models import ProxmoxHost, User
 from app.services.proxmox import ProxmoxService
-from app.api.auth import get_current_user
+from app.api.auth import get_current_user, get_access_token_user
+from app.api.host_permissions import require_host_access
 
 logger = logging.getLogger(__name__)
 
@@ -55,8 +56,10 @@ release-cursor=shift+f12
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _make_ssl_context() -> ssl.SSLContext:
-    """Return an SSL context that skips verification (Proxmox self-signed certs)."""
+def _make_ssl_context(verify_ssl: bool) -> ssl.SSLContext:
+    """Honor the host TLS policy; administrators may trust a private CA."""
+    if verify_ssl:
+        return ssl.create_default_context()
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
@@ -68,19 +71,8 @@ def _get_db() -> Session:
 
 
 async def _authenticate(token: Optional[str], db: Session) -> Optional[User]:
-    """Validate JWT token and return the User, or None on failure."""
-    if not token:
-        return None
-    payload = decode_token(token)
-    if payload is None:
-        return None
-    username: Optional[str] = payload.get("sub")
-    if not username:
-        return None
-    user = db.query(User).filter(User.username == username).first()
-    if not user or not user.is_active:
-        return None
-    return user
+    """Use the same access-token and revocation policy as HTTP requests."""
+    return get_access_token_user(token, db) if token else None
 
 
 def _get_host_or_none(db: Session, host_id: int) -> Optional[ProxmoxHost]:
@@ -199,6 +191,7 @@ def get_vm_vnc_ticket(
     Request a VNC ticket for a QEMU VM from Proxmox and return it so the
     frontend can display metadata (port, ticket) before opening the WebSocket.
     """
+    require_host_access(db, current_user, host_id, "manage")
     host = _get_host_or_none(db, host_id)
     if host is None or not host.is_active:
         raise HTTPException(status_code=404, detail="Proxmox host not found")
@@ -226,6 +219,7 @@ def get_lxc_ticket(
     """
     Request a terminal ticket for an LXC container from Proxmox.
     """
+    require_host_access(db, current_user, host_id, "manage")
     host = _get_host_or_none(db, host_id)
     if host is None or not host.is_active:
         raise HTTPException(status_code=404, detail="Proxmox host not found")
@@ -261,6 +255,7 @@ def get_vm_spice(
     virt-viewer compatible .vv file, and returns it as plain text
     (the frontend downloads it directly).
     """
+    require_host_access(db, current_user, host_id, "manage")
     host = _get_host_or_none(db, host_id)
     if host is None or not host.is_active:
         raise HTTPException(status_code=404, detail="Proxmox host not found")
@@ -329,6 +324,12 @@ async def vm_vnc_proxy(
             await websocket.close(code=4401, reason="Unauthorized")
             return
 
+        try:
+            require_host_access(db, user, host_id, "manage")
+        except HTTPException:
+            await websocket.close(code=4403, reason="Host permission required")
+            return
+
         host = _get_host_or_none(db, host_id)
         if host is None or not host.is_active:
             await websocket.close(code=4404, reason="Proxmox host not found")
@@ -367,7 +368,7 @@ async def vm_vnc_proxy(
             vnc_ticket[:20],
             list(auth_headers.keys()),
         )
-        ssl_ctx = _make_ssl_context()
+        ssl_ctx = _make_ssl_context(host.verify_ssl)
 
         # Log browser WebSocket headers for diagnosing proxy chain issues
         ws_headers = dict(websocket.scope.get("headers", []))
@@ -451,6 +452,12 @@ async def lxc_terminal_proxy(
             await websocket.close(code=4401, reason="Unauthorized")
             return
 
+        try:
+            require_host_access(db, user, host_id, "manage")
+        except HTTPException:
+            await websocket.close(code=4403, reason="Host permission required")
+            return
+
         host = _get_host_or_none(db, host_id)
         if host is None or not host.is_active:
             await websocket.close(code=4404, reason="Proxmox host not found")
@@ -474,7 +481,7 @@ async def lxc_terminal_proxy(
             f"/lxc/{vmid}/vncwebsocket?port={port}&vncticket={encoded_ticket}"
         )
         auth_headers = _build_auth_header(host)
-        ssl_ctx = _make_ssl_context()
+        ssl_ctx = _make_ssl_context(host.verify_ssl)
 
         try:
             async with websockets.connect(
@@ -527,6 +534,12 @@ async def node_terminal_proxy(
             await websocket.close(code=4401, reason="Unauthorized")
             return
 
+        try:
+            require_host_access(db, user, host_id, "admin")
+        except HTTPException:
+            await websocket.close(code=4403, reason="Host permission required")
+            return
+
         host = _get_host_or_none(db, host_id)
         if host is None or not host.is_active:
             await websocket.close(code=4404, reason="Proxmox host not found")
@@ -550,7 +563,7 @@ async def node_terminal_proxy(
             f"/vncwebsocket?port={port}&vncticket={encoded_ticket}"
         )
         auth_headers = _build_auth_header(host)
-        ssl_ctx = _make_ssl_context()
+        ssl_ctx = _make_ssl_context(host.verify_ssl)
 
         try:
             async with websockets.connect(

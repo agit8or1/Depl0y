@@ -138,8 +138,9 @@ sudo bash install.sh
 
 The installer sets up Python, Node.js, nginx and SQLite, generates `SECRET_KEY`
 and `ENCRYPTION_KEY` into `/etc/depl0y/config.env`, installs the
-`depl0y-backend` systemd unit and configures nginx. It downloads the application
-bundle from `deploy.agit8or.net`, so that host must be reachable.
+`depl0y-backend` systemd unit and configures nginx. It downloads the latest
+[GitHub release](https://github.com/agit8or1/Depl0y/releases) (`depl0y.tar.gz`) and
+checks it against the release's `SHA256SUMS`, so github.com must be reachable.
 
 Then open `http://<server-ip>/` and sign in with `admin` / `admin`.
 **Change that password immediately** and enable TOTP.

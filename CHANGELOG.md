@@ -5,6 +5,26 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.92] - 2026-10-10 🧰 Installer prompt and docs
+
+### Fixed
+
+- **`install.sh`'s "reset the admin password?" prompt read from stdin.** When the
+  script was piped (`curl … | sudo bash`), it read the script's own next line instead
+  of the user's answer, so typing YES was silently ignored. In unattended runs it made
+  the upgrade exit at the prompt. It now reads the answer from the terminal, and skips
+  the reset when there is none.
+- **`uninstall.sh` pointed at old copies on deploy.agit8or.net** for reinstalling and
+  for its own non-interactive instructions. It now points at the scripts in this
+  repository, downloaded and read before running.
+
+### Docs
+
+- README, `INSTALL.md` and `DEPLOYMENT.md` described installs and updates coming from
+  deploy.agit8or.net. They now describe the GitHub release flow from 2.2.90: where
+  packages come from, how the updater installs and rolls back, `scripts/release.sh`,
+  and the backup location `/var/backups/depl0y/`.
+
 ## [2.2.91] - 2026-10-10 🔐 Keys out of the world-readable service file
 
 ### Security

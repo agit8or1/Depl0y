@@ -18,7 +18,7 @@ repository is the authoritative source.
 The installer will:
 - Install all dependencies (Python, Node.js, nginx, etc.)
 - Create the depl0y system user
-- Download and install the latest version from deploy.agit8or.net
+- Download the latest GitHub release and check it against the release's `SHA256SUMS`
 - Configure the backend service
 - Configure nginx as reverse proxy
 - Set up proper permissions
@@ -86,17 +86,21 @@ Depl0y includes an automatic update system:
    - Click "🔍 Check for Updates"
 
 2. **Install Updates**
-   - If an update is available, click "⬇️ Install Update"
-   - The system will download from deploy.agit8or.net
-   - Service restarts automatically
-   - Page reloads after update completes
+   - If an update is available, click "⬇️ Install Update" (admins only)
+   - The root-owned updater `/usr/local/sbin/depl0y-update` downloads the latest
+     GitHub release, checks its `SHA256SUMS`, backs up the current version to
+     `/var/backups/depl0y/`, installs it and restarts the backend
+   - If the backend does not come back healthy, the previous version is restored
+   - Progress is shown in the page and logged to `/var/log/depl0y-update/update.log`
 
-## Source Server
+Installs made with an `install.sh` older than 2.2.90 may not be able to update from
+the UI. Re-run the current `install.sh`; it keeps your database and keys.
 
-The main Depl0y server is hosted at:
-- **URL:** https://deploy.agit8or.net
-- **Purpose:** Source for installations and updates
-- **Updates:** All instances pull updates from this server
+## Where releases come from
+
+Installs and updates use the [GitHub releases](https://github.com/agit8or1/Depl0y/releases)
+of this repository: each has `depl0y.tar.gz` (source plus the built frontend) and
+`SHA256SUMS`.
 
 ## Troubleshooting
 
@@ -163,7 +167,7 @@ sudo systemctl restart nginx
 
 - **Documentation:** https://deploy.agit8or.net/docs
 - **Issues:** Report bugs and request features on GitHub
-- **Updates:** Automatic updates from deploy.agit8or.net
+- **Updates:** [GitHub releases](https://github.com/agit8or1/Depl0y/releases), installed from Settings → System Updates
 
 ---
 

@@ -219,119 +219,50 @@ sudo systemctl status depl0y-backend
 
 ## Creating a Release
 
-### 1. Update Version Number
+Installs and in-app updates only see versions that are published as GitHub
+releases, so every version that should reach users goes through these steps.
 
-Edit the version in the backend config:
-
-```bash
-nano /home/administrator/depl0y/backend/app/core/config.py
-```
-
-Change:
-```python
-APP_VERSION: str = "1.1.0"  # Update this
-```
-
-### 2. Update Release Notes
-
-Edit the system updates endpoint:
-
-```bash
-nano /home/administrator/depl0y/backend/app/api/system_updates.py
-```
-
-Update the `release_notes` in the `/version` endpoint:
-```python
-"release_notes": f"""
-Depl0y {settings.APP_VERSION} Release Notes:
-
-✨ New Features:
-- Feature 1
-- Feature 2
-
-🔧 Improvements:
-- Improvement 1
-- Improvement 2
-
-🐛 Bug Fixes:
-- Fix 1
-- Fix 2
-"""
-```
-
-### 3. Deploy to Production
-
-```bash
-/home/administrator/depl0y/deploy.sh
-```
-
-### 4. Test Update Endpoint
-
-```bash
-curl http://localhost/api/v1/system-updates/version
-```
-
-Verify the version and release notes are correct.
+1. **Bump the version** in `backend/app/core/config.py` (`return "X.Y.Z"`) and
+   `frontend/package.json`, and add a `## [X.Y.Z]` entry at the top of `CHANGELOG.md`.
+2. **Commit and push** to `main`.
+3. **Publish the release:**
+   ```bash
+   scripts/release.sh            # or --dry-run to build the assets without publishing
+   ```
+   It refuses to run with uncommitted changes or if `main` is not pushed. It builds
+   `depl0y.tar.gz` (the tree at `HEAD` plus a pre-built `frontend/dist`), writes
+   `SHA256SUMS`, tags `vX.Y.Z`, and creates the GitHub release with the CHANGELOG
+   entry as notes. Needs an authenticated `gh`.
+4. **Update this server** from Settings → System Updates (or
+   `sudo -u depl0y sudo /usr/local/sbin/depl0y-update apply`).
+5. If `install.sh` or `uninstall.sh` changed, copy them from the release to
+   `/opt/depl0y/static/downloads/`, which nginx serves at
+   `https://deploy.agit8or.net/install.sh` and `/downloads/`.
 
 ---
 
 ## Update Distribution
 
-Depl0y uses a **pull-based update system** where client instances pull updates from the main server (`deploy.agit8or.net`).
+Every install updates itself from the GitHub releases of this repository.
 
-### How Updates Work
+1. **Check:** `GET /api/v1/system-updates/check` compares the running version with
+   the latest GitHub release.
+2. **Apply:** `POST /api/v1/system-updates/apply` (admin only) runs
+   `sudo /usr/local/sbin/depl0y-update apply`. That is the only command the `depl0y`
+   user may run as root for updates (`scripts/sudoers.depl0y`); it takes no paths or
+   versions from the backend.
+3. **The updater** (`scripts/depl0y-update`, installed root-owned) runs in its own
+   systemd unit so the backend restart does not kill it. It downloads the latest
+   release's `depl0y.tar.gz` and `SHA256SUMS`, verifies the checksum, refuses
+   downgrades, backs up the current version, installs as the user that owns each
+   directory, restarts the backend and checks `/health`. If the backend does not come
+   back, it restores the backup. It also refreshes the nginx config, the sudoers file
+   and itself from the release.
+4. **Progress** is written to `/var/log/depl0y-update/update.log` (readable by
+   `depl0y`), which the UI shows through `GET /api/v1/system-updates/log`.
 
-1. **Main Server** (deploy.agit8or.net)
-   - Serves version information via `/api/v1/system-updates/version`
-   - Provides update packages via `/api/v1/system-updates/download`
-   - Hosts the installer via `/install.sh`
-
-2. **Client Instances**
-   - Check for updates by querying main server
-   - Compare local version with latest version
-   - Download and apply updates if available
-
-### Making Main Server the Update Source
-
-If this is your main update server (`deploy.agit8or.net`):
-
-1. **Ensure the installer is accessible**
-   ```bash
-   # The installer should be served by nginx
-   curl https://deploy.agit8or.net/install.sh
-   ```
-
-2. **Update the backend config if needed**
-   ```bash
-   nano /home/administrator/depl0y/backend/app/api/system_updates.py
-   ```
-
-   Verify:
-   ```python
-   UPDATE_SERVER = "https://deploy.agit8or.net"
-   ```
-
-3. **Test the update endpoints**
-   ```bash
-   # Version info
-   curl https://deploy.agit8or.net/api/v1/system-updates/version
-
-   # Download package (requires auth)
-   curl -H "Authorization: Bearer YOUR_TOKEN" \
-        https://deploy.agit8or.net/api/v1/system-updates/download \
-        -o test-package.tar.gz
-   ```
-
-### Client Update Process
-
-When a client checks for updates (Settings → System Updates):
-
-1. Client calls `/api/v1/system-updates/check`
-2. Backend queries main server at `https://deploy.agit8or.net/api/v1/system-updates/version`
-3. Compares versions
-4. If update available, shows "Install Update" button
-5. When clicked, downloads from `https://deploy.agit8or.net/api/v1/system-updates/download`
-6. Extracts, builds, deploys, and restarts
+`GET /api/v1/system-updates/download` on this server only redirects to the latest
+release asset, for copies of `install.sh` older than 2.2.90.
 
 ---
 
@@ -339,10 +270,12 @@ When a client checks for updates (Settings → System Updates):
 
 ### Automatic Backups
 
-The update system creates automatic backups at:
+Before installing, the updater backs up the backend (without the virtualenv) and
+`frontend/dist` to:
 ```
-/opt/depl0y-backups/backup-YYYYMMDD-HHMMSS/
+/var/backups/depl0y/<previous-version>-YYYYMMDD-HHMMSS/{backend,dist}
 ```
+A failed update restores it automatically.
 
 ### Manual Rollback
 
@@ -351,46 +284,35 @@ The update system creates automatic backups at:
    sudo systemctl stop depl0y-backend
    ```
 
-2. **Restore from backup**
+2. **Restore from backup** (as the owning users, like the updater does)
    ```bash
-   # Find latest backup
-   ls -la /opt/depl0y-backups/
-
-   # Restore backend
-   sudo cp -r /opt/depl0y-backups/backup-YYYYMMDD-HHMMSS/backend/* /opt/depl0y/backend/
-
-   # Restore frontend (if backed up)
-   sudo cp -r /opt/depl0y-backups/backup-YYYYMMDD-HHMMSS/frontend/* /opt/depl0y/frontend/
+   ls -la /var/backups/depl0y/
+   B=/var/backups/depl0y/<previous-version>-YYYYMMDD-HHMMSS
+   sudo -u depl0y rsync -a "$B/backend/" /opt/depl0y/backend/
+   sudo -u depl0y /opt/depl0y/backend/venv/bin/pip install -r /opt/depl0y/backend/requirements.txt
+   sudo -u "$(stat -c %U /opt/depl0y/frontend/dist)" rsync -a --delete "$B/dist/" /opt/depl0y/frontend/dist/
    ```
 
-3. **Fix permissions**
-   ```bash
-   sudo chown -R depl0y:depl0y /opt/depl0y/backend
-   sudo chown -R www-data:www-data /opt/depl0y/frontend/dist
-   ```
-
-4. **Restart service**
+3. **Restart service**
    ```bash
    sudo systemctl start depl0y-backend
    sudo systemctl status depl0y-backend
    ```
 
+4. **Record the version** so the next update compares against it
+   ```bash
+   grep -o 'return "[0-9.]*"' /opt/depl0y/backend/app/core/config.py
+   echo X.Y.Z | sudo tee /var/lib/depl0y-update/installed
+   ```
+
 ### Manual Backup Before Changes
 
 ```bash
-# Create backup directory
-BACKUP_DIR="/opt/depl0y-backups/manual-$(date +%Y%m%d-%H%M%S)"
+BACKUP_DIR="/var/backups/depl0y/manual-$(date +%Y%m%d-%H%M%S)"
 sudo mkdir -p "$BACKUP_DIR"
-
-# Backup backend
-sudo cp -r /opt/depl0y/backend "$BACKUP_DIR/"
-
-# Backup frontend
-sudo cp -r /opt/depl0y/frontend "$BACKUP_DIR/"
-
-# Backup database
-sudo cp -r /var/lib/depl0y/db "$BACKUP_DIR/"
-
+sudo cp -a /opt/depl0y/backend "$BACKUP_DIR/"
+sudo cp -a /opt/depl0y/frontend/dist "$BACKUP_DIR/"
+sudo cp -a /var/lib/depl0y/db "$BACKUP_DIR/"
 echo "Backup created at $BACKUP_DIR"
 ```
 
@@ -526,12 +448,12 @@ df -h /var/lib/depl0y
 
 ### Clean Up Old Backups
 ```bash
-# List backups
-ls -lah /opt/depl0y-backups/
+# List backups (made by the updater before each update)
+sudo ls -lah /var/backups/depl0y/
 
 # Remove old backups (keep last 5)
-cd /opt/depl0y-backups/
-ls -t | tail -n +6 | xargs sudo rm -rf
+sudo find /var/backups/depl0y -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' \
+    | sort -rn | tail -n +6 | cut -d' ' -f2- | xargs -r sudo rm -rf
 ```
 
 ---

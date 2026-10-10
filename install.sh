@@ -62,7 +62,12 @@ if [ -d "/opt/depl0y" ] && [ -f "/etc/systemd/system/depl0y-backend.service" ]; 
     echo "   and disable 2FA for the admin account."
     echo ""
     echo -n "   Type YES (all caps) to reset password, or press Enter to skip: "
-    read -r RESET_CONFIRM
+    # Read from the terminal, not stdin: with `curl ... | sudo bash` stdin is this
+    # script, and in unattended runs there is nothing to read. No terminal: skip.
+    if ! read -r RESET_CONFIRM 2>/dev/null < /dev/tty; then
+        RESET_CONFIRM=""
+        echo "(no terminal)"
+    fi
     echo ""
 
     if [ "$RESET_CONFIRM" = "YES" ]; then

@@ -1,6 +1,6 @@
 {
   "name": "depl0y-frontend",
-  "version": "2.2.91",
+  "version": "2.2.92",
   "description": "Depl0y Frontend - Vue.js deployment panel",
   "private": true,
   "scripts": {

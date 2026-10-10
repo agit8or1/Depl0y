@@ -5,6 +5,22 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.87] - 2026-10-10 🔒 Sudoers and VM agent hardening
+
+### Security
+
+- **Removed two root sudoers rules from `install.sh`.** `depl0y` could run
+  `/bin/bash /tmp/depl0y-update-install.sh` as root, and `/tmp` is world-writable, so
+  anything able to write that file (or any code running as `depl0y`) got root. It also
+  could run `/opt/depl0y/scripts/update-wrapper.sh *` as root, which runs whatever path
+  it is given with `bash`. Nothing in Depl0y uses either rule any more, so both are gone
+  and the unused `scripts/update-wrapper.sh` is deleted. Existing installs keep the old
+  rules until `/etc/sudoers.d/depl0y` is edited by hand.
+- **The VM agent no longer runs commands through a shell.** The agent script served by
+  `/api/v1/vm-agent/install.sh` now calls `subprocess.run` with argument lists and does
+  the old `tail`/`grep`/`cut` filtering in Python. Output is unchanged. Agent version is
+  now 1.0.1; already-installed agents keep the old script until reinstalled.
+
 ## [2.2.86] - 2026-10-10 🛡️ OSS Scanner build files
 
 ### Added

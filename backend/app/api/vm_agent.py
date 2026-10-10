@@ -214,17 +214,29 @@ AGENT_TOKEN = os.environ.get("AGENT_TOKEN", "{token}")
 REPORT_URL = f"{{DEPL0Y_HOST}}/api/v1/vm-agent/report"
 
 
-def run(cmd):
+# Run a command as an argument list (no shell). Returns stdout, or None if it failed.
+def run(argv):
     try:
-        r = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=120)
-        return r.stdout.strip()
-    except Exception as e:
-        return f"ERROR: {{e}}"
+        r = subprocess.run(argv, capture_output=True, text=True, timeout=120)
+    except Exception:
+        return None
+    return r.stdout.strip() if r.returncode == 0 else None
+
+
+def os_pretty_name():
+    try:
+        with open("/etc/os-release") as f:
+            for line in f:
+                if line.startswith("PRETTY_NAME="):
+                    return line.split("=", 1)[1].strip().strip('"')
+    except OSError:
+        pass
+    return ""
 
 
 def scan_os_updates():
-    out = run("apt list --upgradable 2>/dev/null | tail -n +2")
-    pkgs = [l for l in out.splitlines() if l.strip()]
+    out = run(["apt", "list", "--upgradable"]) or ""
+    pkgs = [l for l in out.splitlines() if l.strip() and not l.startswith("Listing")]
     return {{
         "scan_type": "os_updates", "status": "completed",
         "result_json": json.dumps({{"count": len(pkgs), "packages": pkgs[:50]}}),
@@ -234,9 +246,10 @@ def scan_os_updates():
 
 
 def scan_security():
+    ports = run(["ss", "-tlnp"]) or ""
     checks = {{
-        "open_ports": run("ss -tlnp 2>/dev/null | tail -n +2"),
-        "failed_logins": run("lastb -n 10 2>/dev/null || echo N/A"),
+        "open_ports": "\\n".join(ports.splitlines()[1:]),
+        "failed_logins": run(["lastb", "-n", "10"]) or "N/A",
     }}
     return {{
         "scan_type": "security", "status": "completed",
@@ -247,7 +260,7 @@ def scan_security():
 
 
 def scan_dependencies():
-    out = run("pip3 list --outdated --format=json 2>/dev/null || echo '[]'")
+    out = run(["pip3", "list", "--outdated", "--format=json"]) or "[]"
     return {{
         "scan_type": "dependencies", "status": "completed",
         "result_json": out,
@@ -258,9 +271,9 @@ def scan_dependencies():
 
 def report(scans):
     data = {{
-        "hostname": run("hostname"),
-        "os_info": run("cat /etc/os-release 2>/dev/null | grep PRETTY_NAME | cut -d= -f2 | tr -d '\"'"),
-        "agent_version": "1.0.0",
+        "hostname": run(["hostname"]) or "",
+        "os_info": os_pretty_name(),
+        "agent_version": "1.0.1",
         "scans": scans,
     }}
     body = json.dumps(data).encode()

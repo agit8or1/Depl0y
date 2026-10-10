@@ -496,8 +496,6 @@ depl0y ALL=(depl0y) NOPASSWD: /usr/bin/ssh-copy-id *
 depl0y ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart depl0y-backend
 depl0y ALL=(ALL) NOPASSWD: /bin/systemctl restart depl0y-backend
 depl0y ALL=(ALL) NOPASSWD: /usr/bin/systemctl status depl0y-backend
-depl0y ALL=(ALL) NOPASSWD: /bin/bash /tmp/depl0y-update-install.sh
-depl0y ALL=(ALL) NOPASSWD: /opt/depl0y/scripts/update-wrapper.sh *
 depl0y ALL=(ALL) NOPASSWD: /usr/bin/journalctl -u depl0y-backend *
 SUDOEOF
 

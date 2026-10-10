@@ -5,6 +5,18 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.88] - 2026-10-10 🔒 No local shell for cloud template SSH
+
+### Security
+
+- **Cloud image template creation no longer runs commands through a local shell.**
+  `_create_cloud_template_automated` built four `ssh … '<script>'` command lines and ran
+  them with `subprocess.run(..., shell=True)`. The remote script is now passed to `ssh` as
+  a single argument instead. Every value in those scripts was already checked against a
+  strict pattern, so this is defense in depth, not a fix for a known injection. The
+  commands sent to Proxmox are byte-for-byte the same as before. No `shell=True` calls
+  are left in `backend/app`.
+
 ## [2.2.87] - 2026-10-10 🔒 Sudoers and VM agent hardening
 
 ### Security

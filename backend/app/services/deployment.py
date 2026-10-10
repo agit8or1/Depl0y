@@ -1347,6 +1347,8 @@ runcmd:
         # SSH to cluster host and execute commands that target the specific node
         # Use pvesh or qm commands directly on cluster host with node parameter
         ssh_host = f"root@{hostname}"
+        # Remote scripts are passed to ssh as a single argument, so no local shell is involved.
+        ssh_cmd = ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "BatchMode=yes", ssh_host]
         logger.info(f"SSH target: {ssh_host}, will create template on node: {target_node}")
 
         # Step 1: Create VM (delete first if it exists but isn't a template)
@@ -1357,22 +1359,20 @@ runcmd:
 
         # Check if VM exists - if it's already a template, we're done
         # Use pvesh to check if template exists on the target node
-        check_template = f"ssh -o StrictHostKeyChecking=no -o BatchMode=yes {ssh_host} 'pvesh get /nodes/{target_node}/qemu/{template_vmid}/status/current >/dev/null 2>&1 && pvesh get /nodes/{target_node}/qemu/{template_vmid}/config | grep -q \"^template: 1\"'"
-        check_result = subprocess.run(check_template, shell=True, capture_output=True)
+        check_template = f'pvesh get /nodes/{target_node}/qemu/{template_vmid}/status/current >/dev/null 2>&1 && pvesh get /nodes/{target_node}/qemu/{template_vmid}/config | grep -q "^template: 1"'
+        check_result = subprocess.run(ssh_cmd + [check_template], capture_output=True)
         if check_result.returncode == 0:
             logger.info(f"Template {template_vmid} already exists on {target_node}, skipping creation")
             return
 
         # Delete if VM exists but isn't a template
         cleanup_script = f"""
-ssh -o StrictHostKeyChecking=no -o BatchMode=yes {ssh_host} '
 if pvesh get /nodes/{target_node}/qemu/{template_vmid}/status/current >/dev/null 2>&1; then
   echo VM {template_vmid} exists but is not a template, deleting...
   pvesh delete /nodes/{target_node}/qemu/{template_vmid} --purge=1 || true
 fi
-'
 """
-        subprocess.run(cleanup_script, shell=True, capture_output=True)
+        subprocess.run(ssh_cmd + [cleanup_script], capture_output=True)
 
         # Create new VM on specific node using pvesh
         # Sanitize cloud image name to be DNS-compliant
@@ -1383,7 +1383,6 @@ fi
         logger.info(f"Sanitized cloud image name: '{cloud_image.name}' -> '{safe_name}'")
 
         create_vm_script = f"""
-ssh -o StrictHostKeyChecking=no -o BatchMode=yes {ssh_host} '
 pvesh create /nodes/{target_node}/qemu \\
   -vmid {template_vmid} \\
   -name {safe_name} \\
@@ -1394,9 +1393,8 @@ pvesh create /nodes/{target_node}/qemu \\
   -ostype l26 \\
   -scsihw virtio-scsi-pci \\
   -agent enabled=1
-'
 """
-        result = subprocess.run(create_vm_script, shell=True, capture_output=True)
+        result = subprocess.run(ssh_cmd + [create_vm_script], capture_output=True)
         if result.returncode != 0:
             raise Exception(f"Failed to create VM on {target_node}: {result.stderr.decode()}")
 
@@ -1442,7 +1440,6 @@ pvesh create /nodes/{target_node}/qemu \\
 
         # Use node IP for SSH instead of hostname
         import_script = f"""
-ssh -o StrictHostKeyChecking=no -o BatchMode=yes {ssh_host} '
 set -e  # Exit on any error
 
 # Copy image file to target node
@@ -1463,7 +1460,7 @@ echo "Current VM config after import:"
 echo "$CONFIG"
 
 # Extract the unused0 disk path - it should be in format: storage:vm-VMID-disk-0
-DISK_PATH=$(ssh -o StrictHostKeyChecking=no root@{node_ip} "qm config {template_vmid} | grep unused0 | awk '"'"'{{print \\$2}}'"'"'")
+DISK_PATH=$(ssh -o StrictHostKeyChecking=no root@{node_ip} "qm config {template_vmid} | grep unused0 | awk '{{print \\$2}}'")
 echo "Detected disk path from unused0: [$DISK_PATH]"
 
 if [ -z "$DISK_PATH" ]; then
@@ -1512,9 +1509,8 @@ echo "Converting VM to template..."
 pvesh create /nodes/{target_node}/qemu/{template_vmid}/template
 
 echo "✓ Template {template_vmid} creation complete!"
-'
 """
-        result = subprocess.run(import_script, shell=True, capture_output=True, timeout=300, text=True)
+        result = subprocess.run(ssh_cmd + [import_script], capture_output=True, timeout=300, text=True)
 
         # Log the full output for debugging
         if result.stdout:

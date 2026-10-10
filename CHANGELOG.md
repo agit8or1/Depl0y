@@ -5,6 +5,24 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.93] - 2026-10-10 🔏 Signed releases
+
+### Security
+
+- **Releases are signed with minisign.** Each release now has `SHA256SUMS.minisig`, a
+  signature of `SHA256SUMS` made with the Depl0y release key (public key in
+  `minisign.pub` and [SECURITY.md](SECURITY.md#verifying-releases)). Its trusted
+  comment names the release (`depl0y vX.Y.Z`).
+- **The in-app updater refuses releases that are not signed by that key**, or whose
+  signature was made for a different version. The key is built into the root-owned
+  updater, so a compromised GitHub account or release page is not enough to push code
+  to Depl0y servers. The updater installs `minisign` if it is missing. This takes effect
+  from the update after this one: this release is installed by the previous updater.
+- **`install.sh` checks the signature too** before installing, and installs `minisign`.
+- `scripts/release.sh` signs `SHA256SUMS` (asking for the key password), checks the
+  signature and that `install.sh` and the updater carry the key in `minisign.pub`, and
+  uploads the signature with the release.
+
 ## [2.2.92] - 2026-10-10 🧰 Installer prompt and docs
 
 ### Fixed

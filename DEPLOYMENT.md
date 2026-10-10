@@ -225,14 +225,25 @@ releases, so every version that should reach users goes through these steps.
 1. **Bump the version** in `backend/app/core/config.py` (`return "X.Y.Z"`) and
    `frontend/package.json`, and add a `## [X.Y.Z]` entry at the top of `CHANGELOG.md`.
 2. **Commit and push** to `main`.
-3. **Publish the release:**
+3. **Sign and publish the release**, from your own terminal (it asks for the signing
+   key's password):
    ```bash
-   scripts/release.sh            # or --dry-run to build the assets without publishing
+   scripts/release.sh            # or --dry-run to build the assets without signing or publishing
    ```
-   It refuses to run with uncommitted changes or if `main` is not pushed. It builds
-   `depl0y.tar.gz` (the tree at `HEAD` plus a pre-built `frontend/dist`), writes
-   `SHA256SUMS`, tags `vX.Y.Z`, and creates the GitHub release with the CHANGELOG
-   entry as notes. Needs an authenticated `gh`.
+   It refuses to run with uncommitted changes, if `main` is not pushed, or if the key in
+   `minisign.pub` differs from the copies in `install.sh` and `scripts/depl0y-update`.
+   It builds `depl0y.tar.gz` (the tree at `HEAD` plus a pre-built `frontend/dist`),
+   writes `SHA256SUMS`, signs it with the minisign key at `~/.minisign/depl0y.key`
+   (override with `DEPL0Y_MINISIGN_KEY`) and trusted comment `depl0y vX.Y.Z`, checks the
+   signature against `minisign.pub`, tags `vX.Y.Z`, and creates the GitHub release with
+   the three assets and the CHANGELOG entry as notes. Needs `minisign` and an
+   authenticated `gh`.
+
+   Installs refuse releases that are not signed by this key, so **keep an offline backup
+   of `~/.minisign/depl0y.key` and its password**. Without it no further release can be
+   installed by existing servers until each one is updated by hand. To change the key,
+   put the new public key in `minisign.pub`, `install.sh` and `scripts/depl0y-update`
+   and publish that release signed with the *old* key; later releases use the new one.
 4. **Update this server** from Settings → System Updates (or
    `sudo -u depl0y sudo /usr/local/sbin/depl0y-update apply`).
 5. If `install.sh` or `uninstall.sh` changed, copy them from the release to
@@ -253,8 +264,9 @@ Every install updates itself from the GitHub releases of this repository.
    versions from the backend.
 3. **The updater** (`scripts/depl0y-update`, installed root-owned) runs in its own
    systemd unit so the backend restart does not kill it. It downloads the latest
-   release's `depl0y.tar.gz` and `SHA256SUMS`, verifies the checksum, refuses
-   downgrades, backs up the current version, installs as the user that owns each
+   release's `depl0y.tar.gz`, `SHA256SUMS` and `SHA256SUMS.minisig`, checks the minisign
+   signature against the release key built into it (and that it was made for this
+   version), verifies the checksum, refuses downgrades, backs up the current version, installs as the user that owns each
    directory, restarts the backend and checks `/health`. If the backend does not come
    back, it restores the backup. It also refreshes the nginx config, the sudoers file
    and itself from the release.

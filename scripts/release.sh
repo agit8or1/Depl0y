@@ -5,10 +5,15 @@
 #     scripts/release.sh --dry-run  build the assets only and print where they are
 #
 # Release assets (installers and the in-app updater rely on these exact names):
-#   depl0y.tar.gz  the source tree at HEAD plus a pre-built frontend/dist
-#   SHA256SUMS     its sha256, checked by install.sh and /usr/local/sbin/depl0y-update
+#   depl0y.tar.gz        the source tree at HEAD plus a pre-built frontend/dist
+#   SHA256SUMS           its sha256, checked by install.sh and /usr/local/sbin/depl0y-update
+#   SHA256SUMS.minisig   minisign signature of SHA256SUMS, trusted comment "depl0y vX.Y.Z"
 #
-# Needs git, npm and an authenticated gh (gh auth login).
+# Signing uses the secret key at $DEPL0Y_MINISIGN_KEY (default ~/.minisign/depl0y.key)
+# and asks for its password. The matching public key is minisign.pub; install.sh and
+# scripts/depl0y-update carry copies of it, and this script refuses to release if they differ.
+#
+# Needs git, npm, minisign and an authenticated gh (gh auth login).
 set -euo pipefail
 
 DRY_RUN=false
@@ -23,6 +28,13 @@ PKG_VERSION=$(python3 -c 'import json; print(json.load(open("frontend/package.js
 [ "$VERSION" = "$PKG_VERSION" ] || die "config.py says $VERSION but frontend/package.json says $PKG_VERSION"
 TAG="v$VERSION"
 
+PUBKEY=$(sed -n 2p minisign.pub)
+[[ "$PUBKEY" =~ ^RW[A-Za-z0-9+/]{54}$ ]] || die "minisign.pub does not hold a minisign public key"
+for f in scripts/depl0y-update install.sh; do
+    grep -qxF "MINISIGN_PUBKEY=\"$PUBKEY\"" "$f" || die "$f does not carry the key in minisign.pub"
+done
+SECRET_KEY_FILE="${DEPL0Y_MINISIGN_KEY:-$HOME/.minisign/depl0y.key}"
+
 if [ "$DRY_RUN" = false ]; then
     git diff --quiet && git diff --cached --quiet || die "uncommitted changes; commit first"
     [ "$(git rev-parse --abbrev-ref HEAD)" = main ] || die "not on main"
@@ -30,6 +42,9 @@ if [ "$DRY_RUN" = false ]; then
     [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ] || die "HEAD is not origin/main; push first"
     git rev-parse -q --verify "refs/tags/$TAG" >/dev/null && die "tag $TAG already exists"
     gh auth status >/dev/null 2>&1 || die "gh is not logged in"
+    command -v minisign >/dev/null || die "minisign is not installed (sudo apt-get install minisign)"
+    [ -f "$SECRET_KEY_FILE" ] || die "no signing key at $SECRET_KEY_FILE (set DEPL0Y_MINISIGN_KEY)"
+    [ -t 0 ] || die "run this from a terminal: signing asks for the key's password"
 fi
 
 OUT=$(mktemp -d)
@@ -50,9 +65,17 @@ rm -rf "$TREE"
 echo "   $(cat "$OUT/SHA256SUMS")"
 
 if [ "$DRY_RUN" = true ]; then
-    echo "✅ Dry run: assets are in $OUT"
+    echo "✅ Dry run: assets are in $OUT (not signed)"
     exit 0
 fi
+
+echo "🔏 Signing SHA256SUMS (enter the release key password)..."
+minisign -S -s "$SECRET_KEY_FILE" -m "$OUT/SHA256SUMS" -x "$OUT/SHA256SUMS.minisig" \
+    -c "Depl0y $TAG" -t "depl0y $TAG" || die "signing failed"
+SIG_OUT=$(minisign -V -P "$PUBKEY" -m "$OUT/SHA256SUMS" -x "$OUT/SHA256SUMS.minisig" 2>&1) \
+    || die "the signature does not verify against minisign.pub (wrong secret key?)"
+[ "$(sed -n 's/^Trusted comment: //p' <<<"$SIG_OUT")" = "depl0y $TAG" ] || die "unexpected trusted comment"
+echo "✓ Signature verifies against minisign.pub"
 
 # Release notes: this version's CHANGELOG section.
 awk -v v="## [$VERSION]" 'index($0, v) == 1 {p = 1; next} p && /^## \[/ {exit} p' CHANGELOG.md > "$OUT/notes.md"
@@ -61,7 +84,7 @@ awk -v v="## [$VERSION]" 'index($0, v) == 1 {p = 1; next} p && /^## \[/ {exit} p
 echo "🏷  Tagging $TAG and publishing..."
 git tag -a "$TAG" -m "Depl0y $VERSION"
 git push -q origin "$TAG"
-gh release create "$TAG" "$OUT/depl0y.tar.gz" "$OUT/SHA256SUMS" \
+gh release create "$TAG" "$OUT/depl0y.tar.gz" "$OUT/SHA256SUMS" "$OUT/SHA256SUMS.minisig" \
     --title "Depl0y $VERSION" --notes-file "$OUT/notes.md" --latest
 rm -rf "$OUT"
 echo "✅ Released $TAG"

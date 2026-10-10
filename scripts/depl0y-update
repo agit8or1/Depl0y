@@ -6,7 +6,8 @@
 # and nothing else as root (see scripts/sudoers.depl0y).
 #
 # It takes no paths or versions from the caller. It installs the latest GitHub release
-# of Depl0y, verified against the release's SHA256SUMS, and refuses downgrades.
+# of Depl0y after checking the release's minisign signature on SHA256SUMS (made with the
+# key below) and the archive's sha256, and refuses downgrades.
 #
 # Privilege rules this script follows:
 #   - root only writes to root-owned locations (/usr/local/sbin, /etc/sudoers.d,
@@ -20,6 +21,10 @@ export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export LC_ALL=C
 
 REPO="agit8or1/Depl0y"
+# Release signing key (minisign). Same key as minisign.pub in the repository; releases
+# without a valid signature from it are refused. Rotating it takes a release signed
+# with the old key that ships an updater carrying the new one.
+MINISIGN_PUBKEY="RWSr/WW0BJrhEcOJU3TiPs935jc6Qqy7yjLeuu5l+jaG0jlZ0CaHHRjH"
 ASSET="depl0y.tar.gz"
 INSTALL_DIR=/opt/depl0y
 SVC_USER=depl0y
@@ -116,9 +121,25 @@ log "⬆️  Updating $CUR → $NEW"
 
 # ── Download and verify ───────────────────────────────────────────────────────
 BASE="https://github.com/$REPO/releases/download/$TAG"
-log "📥 Downloading $ASSET and SHA256SUMS..."
+log "📥 Downloading $ASSET, SHA256SUMS and its signature..."
 curl -fsSL --max-time 300 -o "$WORK/$ASSET" "$BASE/$ASSET" || die "download failed: $BASE/$ASSET"
 curl -fsSL --max-time 30 -o "$WORK/SHA256SUMS" "$BASE/SHA256SUMS" || die "download failed: $BASE/SHA256SUMS"
+curl -fsSL --max-time 30 -o "$WORK/SHA256SUMS.minisig" "$BASE/SHA256SUMS.minisig" \
+    || die "release $TAG has no SHA256SUMS.minisig (unsigned); refusing to install it"
+
+if ! command -v minisign >/dev/null 2>&1; then
+    log "📦 Installing minisign to check the release signature..."
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq minisign >/dev/null 2>&1 \
+        || die "minisign is not installed and could not be installed (apt-get install minisign)"
+fi
+if ! sigout=$(minisign -V -P "$MINISIGN_PUBKEY" -m "$WORK/SHA256SUMS" -x "$WORK/SHA256SUMS.minisig" 2>&1); then
+    die "SHA256SUMS for $TAG is not signed by the Depl0y release key; refusing"
+fi
+# The trusted comment is covered by the signature; it names the release it was made for,
+# so a genuine signature from another release cannot be replayed under this tag.
+signed_for=$(sed -n 's/^Trusted comment: //p' <<<"$sigout")
+[ "$signed_for" = "depl0y $TAG" ] || die "signature is for \"$signed_for\", not \"depl0y $TAG\"; refusing"
+log "✅ Signature verified (depl0y $TAG)"
 expected=$(awk -v f="$ASSET" '$2 == f || $2 == "*" f {print $1}' "$WORK/SHA256SUMS")
 [[ "$expected" =~ ^[0-9a-f]{64}$ ]] || die "SHA256SUMS has no entry for $ASSET"
 actual=$(sha256sum "$WORK/$ASSET" | awk '{print $1}')

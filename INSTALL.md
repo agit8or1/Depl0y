@@ -18,7 +18,7 @@ repository is the authoritative source.
 The installer will:
 - Install all dependencies (Python, Node.js, nginx, etc.)
 - Create the depl0y system user
-- Download the latest GitHub release and check it against the release's `SHA256SUMS`
+- Download the latest GitHub release and check its minisign signature and `SHA256SUMS`
 - Configure the backend service
 - Configure nginx as reverse proxy
 - Set up proper permissions
@@ -88,7 +88,7 @@ Depl0y includes an automatic update system:
 2. **Install Updates**
    - If an update is available, click "⬇️ Install Update" (admins only)
    - The root-owned updater `/usr/local/sbin/depl0y-update` downloads the latest
-     GitHub release, checks its `SHA256SUMS`, backs up the current version to
+     GitHub release, checks its minisign signature and `SHA256SUMS`, backs up the current version to
      `/var/backups/depl0y/`, installs it and restarts the backend
    - If the backend does not come back healthy, the previous version is restored
    - Progress is shown in the page and logged to `/var/log/depl0y-update/update.log`

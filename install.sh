@@ -13,6 +13,8 @@ set -e
 # banner below renders it, so there is no second copy to forget to bump.
 INSTALLER_VERSION="latest"
 ENV_FILE=/etc/depl0y/config.env
+# Release signing key (minisign); same as minisign.pub in the repository.
+MINISIGN_PUBKEY="RWSr/WW0BJrhEcOJU3TiPs935jc6Qqy7yjLeuu5l+jaG0jlZ0CaHHRjH"
 INSTALLER_BUILD="$(date +%Y%m%d%H%M%S)"
 
 echo "╔══════════════════════════════════════════════════════════╗"
@@ -178,6 +180,7 @@ apt-get install -y -qq \
     openssh-client \
     at \
     ca-certificates \
+    minisign \
     gnupg \
     lsb-release \
     libpango-1.0-0 \
@@ -258,10 +261,26 @@ fi
 echo ""
 echo "⬇️  Downloading the latest Depl0y release from GitHub..."
 cd /tmp
-rm -f depl0y-latest.tar.gz depl0y-SHA256SUMS
+rm -f depl0y-latest.tar.gz depl0y-SHA256SUMS depl0y-SHA256SUMS.minisig
 RELEASE_BASE="https://github.com/agit8or1/Depl0y/releases/latest/download"
 curl -fsSL "$RELEASE_BASE/depl0y.tar.gz" -o depl0y-latest.tar.gz
 curl -fsSL "$RELEASE_BASE/SHA256SUMS" -o depl0y-SHA256SUMS
+if ! curl -fsSL "$RELEASE_BASE/SHA256SUMS.minisig" -o depl0y-SHA256SUMS.minisig; then
+    echo "❌ The latest release is not signed (no SHA256SUMS.minisig); aborting." >&2
+    exit 1
+fi
+if ! SIG_OUT=$(minisign -V -P "$MINISIGN_PUBKEY" -m depl0y-SHA256SUMS -x depl0y-SHA256SUMS.minisig 2>&1); then
+    echo "❌ SHA256SUMS is not signed by the Depl0y release key; aborting." >&2
+    exit 1
+fi
+# The signed trusted comment names the release ("depl0y vX.Y.Z"); checked against the
+# extracted version below.
+SIGNED_FOR=$(sed -n 's/^Trusted comment: depl0y v\([0-9]\+\.[0-9]\+\.[0-9]\+\)$/\1/p' <<<"$SIG_OUT")
+if [ -z "$SIGNED_FOR" ]; then
+    echo "❌ Unexpected signature comment on SHA256SUMS; aborting." >&2
+    exit 1
+fi
+echo "✓ Signature verified (depl0y v$SIGNED_FOR)"
 EXPECTED_SHA=$(awk '$2 == "depl0y.tar.gz" {print $1}' depl0y-SHA256SUMS)
 ACTUAL_SHA=$(sha256sum depl0y-latest.tar.gz | awk '{print $1}')
 if [ -z "$EXPECTED_SHA" ] || [ "$EXPECTED_SHA" != "$ACTUAL_SHA" ]; then
@@ -276,7 +295,11 @@ mkdir -p /tmp/depl0y-install
 cd /tmp/depl0y-install
 tar -xzf /tmp/depl0y-latest.tar.gz
 DEPL0Y_VERSION=$(grep -o 'return "[0-9]\+\.[0-9]\+\.[0-9]\+"' /tmp/depl0y-install/backend/app/core/config.py | grep -o '[0-9.]\+' | head -1)
-echo "✓ Depl0y ${DEPL0Y_VERSION:-unknown version}"
+if [ "$DEPL0Y_VERSION" != "$SIGNED_FOR" ]; then
+    echo "❌ The package is version ${DEPL0Y_VERSION:-unknown}, but the signature is for $SIGNED_FOR; aborting." >&2
+    exit 1
+fi
+echo "✓ Depl0y ${DEPL0Y_VERSION}"
 
 # Install backend
 echo ""

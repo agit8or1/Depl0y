@@ -138,6 +138,31 @@ the changelog as having no published upstream fix.
 Subscribe to releases on GitHub to receive notifications about security updates:
 https://github.com/agit8or1/Depl0y/releases
 
+## Verifying releases
+
+From 2.2.93 every release is signed with [minisign](https://jedisct1.github.io/minisign/).
+Each release has three assets: `depl0y.tar.gz`, `SHA256SUMS` and `SHA256SUMS.minisig`.
+`install.sh` and the in-app updater check the signature against the release key below
+before using the checksum, and refuse unsigned releases. The signature's trusted comment
+names the release (`depl0y vX.Y.Z`), so a signature cannot be reused for another version.
+
+Release public key (also in [`minisign.pub`](minisign.pub)):
+
+```
+RWSr/WW0BJrhEcOJU3TiPs935jc6Qqy7yjLeuu5l+jaG0jlZ0CaHHRjH
+```
+
+To check a release by hand:
+
+```bash
+V=vX.Y.Z
+for f in depl0y.tar.gz SHA256SUMS SHA256SUMS.minisig; do
+  curl -fsSLO "https://github.com/agit8or1/Depl0y/releases/download/$V/$f"
+done
+minisign -V -P RWSr/WW0BJrhEcOJU3TiPs935jc6Qqy7yjLeuu5l+jaG0jlZ0CaHHRjH -m SHA256SUMS   # expect: Trusted comment: depl0y $V
+sha256sum -c SHA256SUMS
+```
+
 ---
 
 ## Historical advisories

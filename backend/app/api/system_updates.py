@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import Optional, List
-from app.api.auth import get_current_user
+from app.api.auth import get_current_user, require_admin
 from app.core.config import settings
 from app.services.github_updates import GitHubUpdateService
 import logging
@@ -202,7 +202,7 @@ def get_update_log(current_user=Depends(get_current_user)):
 
 
 @router.post("/apply")
-def apply_update(current_user=Depends(get_current_user)):
+def apply_update(current_user=Depends(require_admin)):
     """Apply update by downloading from GitHub and running the installer"""
     try:
         # Get latest release from GitHub

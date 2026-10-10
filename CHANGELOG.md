@@ -5,6 +5,15 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.89] - 2026-10-10 🔒 Self-update is admin-only
+
+### Security
+
+- **`POST /api/v1/system-updates/apply` now requires the admin role.** Any signed-in
+  user, including viewers, could start a self-update, which downloads a release and runs
+  its upgrade script on the Depl0y host. Viewers and operators now get 403 "Admin
+  privileges required". Checking for updates and reading the update log are unchanged.
+
 ## [2.2.88] - 2026-10-10 🔒 No local shell for cloud template SSH
 
 ### Security

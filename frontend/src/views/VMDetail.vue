@@ -41,6 +41,12 @@
             :to="`/migrate/${hostId}/${node}/${vmid}?type=qemu`"
             class="btn btn-outline btn-sm"
           >Migrate</router-link>
+          <router-link
+            v-if="authStore.isAdmin"
+            :to="{ path: '/ha-wizard', query: { hostId, node, vmid, type: 'qemu' } }"
+            class="btn btn-outline btn-sm"
+            title="Restart this VM on another node automatically if its node fails"
+          >Failover</router-link>
           <button @click="doConvertToTemplate" class="btn btn-outline btn-sm" :disabled="actioning">To Template</button>
           <button @click="showDeleteConfirm = true" class="btn btn-danger btn-sm" :disabled="actioning">Delete</button>
           <button @click="openQuickSnapshotModal" class="btn btn-outline btn-sm" :disabled="actioning" title="Quick Snapshot">📸</button>
@@ -3403,6 +3409,7 @@ import {
 } from 'chart.js'
 import PCIPassthrough from '@/components/PCIPassthrough.vue'
 import api from '@/services/api'
+import { useAuthStore } from '@/store/auth'
 import { useToast } from 'vue-toastification'
 import { parseProxmoxDisk, parseProxmoxNIC, formatBytes, formatUptime, cpuPercent } from '@/utils/proxmox'
 import { copyToClipboard } from '@/utils/clipboard'
@@ -3520,6 +3527,7 @@ const NIC_KEYS = ['net0','net1','net2','net3','net4','net5','net6','net7']
 const POSSIBLE_CDROM_KEYS = ['ide0','ide1','ide2','ide3','sata0','sata1','sata2','sata3']
 
 const route = useRoute()
+const authStore = useAuthStore()
 const router = useRouter()
 const toast = useToast()
 

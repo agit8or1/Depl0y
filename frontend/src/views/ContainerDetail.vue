@@ -29,6 +29,12 @@
           :to="`/migrate/${hostId}/${node}/${vmid}?type=lxc`"
           class="btn btn-outline btn-sm"
         >Migrate</router-link>
+        <router-link
+          v-if="authStore.isAdmin"
+          :to="{ path: '/ha-wizard', query: { hostId, node, vmid, type: 'lxc' } }"
+          class="btn btn-outline btn-sm"
+          title="Restart this container on another node automatically if its node fails"
+        >Failover</router-link>
         <button @click="deleteContainer" class="btn btn-danger btn-sm" :disabled="actioning">Delete</button>
       </div>
     </div>
@@ -1045,12 +1051,14 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useToast } from 'vue-toastification'
 import api from '@/services/api'
+import { useAuthStore } from '@/store/auth'
 import { formatBytes, formatUptime } from '@/utils/proxmox'
 import { detectOs } from '@/utils/osIcons'
 import TaskProgressModal from '@/components/TaskProgressModal.vue'
 import PerformanceCharts from '@/components/PerformanceCharts.vue'
 
 const route = useRoute()
+const authStore = useAuthStore()
 const router = useRouter()
 const toast = useToast()
 

@@ -5,6 +5,43 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.95] - 2026-10-10 🛟 Failover wizard
+
+### Added
+
+- **Failover wizard** (HA → Failover Wizard, or **Failover** on a VM or container
+  page; admins only). Makes one guest restart on another node automatically if its
+  node fails, using Proxmox's own HA manager, so failover keeps working when Depl0y
+  is down. There is nothing to tune:
+  - every guest is listed as Protected, Ready, Needs disk move, or with the reason
+    it cannot fail over;
+  - readiness checks cover cluster votes (3 nodes, or 2 and a QDevice), quorum, the
+    HA service on each node, disk storage, attached ISOs, unused disks and
+    passthrough devices;
+  - shared storage (Ceph, NFS, iSCSI) gives failover without data loss; ZFS on two
+    nodes gets a replication job every 2 minutes, and HA is enabled only after the
+    first copy. Node-local LVM and directory storage cannot fail over; if the node
+    has shared or ZFS storage, the wizard offers to move the disks there first;
+  - the setup is fixed: one restart then one relocation, the current node preferred
+    and the node with the most free memory as failover node, failback on, strict
+    placement with replication, local ISOs ejected, cluster HA shutdown policy
+    `migrate` if none is set;
+  - the protection can be removed again from the same wizard.
+  Proxmox VE 9 gets an HA node-affinity rule; Proxmox VE 8 an equivalent HA group.
+- `backend/tests/test_ha_failover.py`: tests for the wizard's decisions and the
+  exact Proxmox calls it makes.
+
+### Removed
+
+- The unused `HAWizard.vue` component. Nothing opened it, and it was built on the
+  legacy `/ha/*` endpoints, which always act on the first registered host.
+
+### Docs
+
+- Feature reference, README, in-app documentation and the screenshot gallery (three
+  new views) cover the wizard. The in-app HA page no longer lists PBS as storage for
+  running guests.
+
 ## [2.2.94] - 2026-10-10 🧹 release.sh fixes
 
 ### Fixed

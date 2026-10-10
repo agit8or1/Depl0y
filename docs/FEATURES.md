@@ -30,6 +30,30 @@ Job create / edit / delete, force-sync, and log viewer.
 **Node evacuation**
 Migrate every VM off a node onto the remaining online nodes.
 
+**Failover wizard**
+Makes one VM or container restart on another node automatically if its node
+fails, using Proxmox's own HA manager (so failover keeps working when Depl0y is
+down). There is nothing to tune; the wizard:
+
+- lists every guest as *Protected*, *Ready*, *Needs disk move* or the reason it
+  cannot fail over;
+- checks cluster votes (3 nodes, or 2 and a QDevice) and quorum, the HA service
+  on each node, where every disk lives, attached ISOs, unused disks and
+  passthrough devices;
+- chooses the mode from the storage: **shared storage** (Ceph, NFS, iSCSI; no
+  data loss) or **ZFS replication** every 2 minutes (up to about 2 minutes of
+  changes lost). Node-local LVM and directory storage cannot fail over; if the
+  node has shared or ZFS storage the wizard offers to move the disks there
+  first;
+- applies a fixed setup: HA resource with one restart then one relocation,
+  preferring the current node and failing over to the node with the most free
+  memory, failback on, strict placement with replication, local ISOs ejected,
+  and the cluster HA shutdown policy set to `migrate` if none is set. With
+  replication, HA is enabled only after the first copy has finished;
+- can remove the protection again, including the replication job it created.
+
+Proxmox VE 9 gets an HA node-affinity rule; Proxmox VE 8 an equivalent HA group.
+
 **Firewall**
 Cluster-, node- and VM-level rules, security groups and IPsets.
 

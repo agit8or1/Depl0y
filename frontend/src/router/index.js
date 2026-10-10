@@ -255,6 +255,12 @@ const router = createRouter({
       meta: { requiresAuth: true, requiresAdmin: true }
     },
     {
+      path: '/ha-wizard',
+      name: 'HAFailoverWizard',
+      component: () => import('@/views/HAFailoverWizard.vue'),
+      meta: { requiresAuth: true, requiresAdmin: true }
+    },
+    {
       path: '/users',
       name: 'Users',
       component: () => import('@/views/Users.vue'),

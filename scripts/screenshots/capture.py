@@ -203,6 +203,12 @@ def api_explorer_endpoint(page):
     time.sleep(4)
 
 
+def failover_review_plan(page):
+    """The wizard opens on the readiness step; the plan is one click further."""
+    page.get_by_role("button", name="Review plan").first.click(timeout=20000)
+    time.sleep(2)
+
+
 def open_appearance(page):
     page.locator("button.stab", has_text="Appearance").first.click(timeout=20000)
     time.sleep(2.5)
@@ -218,6 +224,7 @@ ACTIONS = {
     "select_first_host": select_first_host,
     "backup_schedules": backup_schedules,
     "api_explorer_endpoint": api_explorer_endpoint,
+    "failover_review_plan": failover_review_plan,
 }
 
 

@@ -473,15 +473,23 @@ const SECTIONS = [
     icon: '&#128736;&#65039;',
     title: 'High Availability',
     html: `
-      <p>Proxmox HA allows VMs and containers to automatically restart on another node in the cluster if the current node fails. Depl0y provides a full management interface for HA resources and groups.</p>
+      <p>Proxmox HA allows VMs and containers to automatically restart on another node in the cluster if the current node fails. Depl0y provides a full management interface for HA resources and groups, and a <strong>Failover Wizard</strong> that sets up one guest at a time with fixed, best-practice settings.</p>
 
       <h3>Prerequisites</h3>
       <ul>
-        <li>Proxmox cluster with at least <strong>3 nodes</strong> (for quorum)</li>
-        <li>Shared storage accessible from all nodes (Ceph, NFS, iSCSI, or PBS)</li>
+        <li>Proxmox cluster with at least <strong>3 votes</strong>: 3 nodes, or 2 nodes and a QDevice</li>
+        <li>The guest's disks on storage another node can use: <strong>shared storage</strong> (Ceph, NFS, iSCSI) or <strong>ZFS</strong> on both nodes with storage replication. Node-local LVM and directory storage cannot fail over. (PBS holds backups, not running disks.)</li>
         <li>Corosync cluster network configured between nodes</li>
-        <li>All VMs/CTs you want to protect must reside on shared storage</li>
+        <li>No passthrough devices (PCI, USB, host disks) on the guest: they only exist on one node</li>
       </ul>
+
+      <h3>Failover Wizard</h3>
+      <p>Open <strong>HA → Failover Wizard</strong>, or the <strong>Failover</strong> button on a VM or container page (admins only). The wizard has no options to tune: it checks the guest, picks the setup, shows exactly what it will change, and applies it.</p>
+      ${step(1, 'Choose a guest', '<p>Every guest is listed with its status: <em>Protected</em>, <em>Ready</em> (shared storage or ZFS replication), <em>Needs disk move</em>, or the reason it cannot fail over.</p>')}
+      ${step(2, 'Readiness', '<p>Cluster votes and quorum, the HA service on each node, where each disk lives, attached ISOs, unused disks and passthrough devices. If the disks are on node-local storage and the node has shared or ZFS storage, the wizard offers to move them there first (VM disks move while the VM runs; containers must be stopped).</p>')}
+      ${step(3, 'Plan', '<p>The fixed setup: HA resource that restarts once and then relocates once, preferring the current node with the node that has the most free memory as the failover node, moving back when the node returns. With ZFS, a replication job every 2 minutes (up to about 2 minutes of changes can be lost) and a strict placement so the guest only runs where its disks are. The cluster HA shutdown policy is set to <code>migrate</code> if none is set. Local ISOs are ejected.</p>')}
+      ${step(4, 'Apply', '<p>Progress is shown step by step. With replication, HA is only enabled after the first copy has finished. A protected guest can be taken out of HA again from the same wizard.</p>')}
+      ${infoBox('<strong>Proxmox VE 9</strong> uses HA rules (node affinity); on <strong>Proxmox VE 8</strong> the wizard creates an equivalent HA group instead. Failover is done by Proxmox itself, so it keeps working when Depl0y is down.')}
 
       ${warnBox('<strong>Two-node clusters:</strong> A two-node cluster loses quorum if one node goes down, preventing HA from automatically restarting VMs. Use a third "witness" node or external corosync quorum device (QDevice) to solve this.')}
 

@@ -103,7 +103,13 @@ place a new one deliberately.
 
 <a href="docs/images/github/create-vm-light.png"><img src="docs/images/github/create-vm-light.png" width="900" alt="Create Virtual Machine wizard in light theme on the General step, with DC-East selected, node cards for east-01 to east-03 showing core counts and live CPU load, and the VM identity fields filled in."></a>
 
-**📸 [Browse the full gallery — 27 views, light and dark](docs/SCREENSHOTS.md)**
+**Keep a guest running when its node fails.** The failover wizard checks where
+each guest's disks live and whether the cluster can fence a dead node, then
+applies one fixed, best-practice HA setup and shows exactly what it will change.
+
+<a href="docs/images/github/failover-wizard-plan-dark.png"><img src="docs/images/github/failover-wizard-plan-dark.png" width="900" alt="Failover wizard plan step in dark theme for VM 206 build-agent-01 on west-01: ZFS replication every 2 minutes, failing over to west-02 only, one restart then one relocation, automatic failback and migrate-on-shutdown, followed by the five changes the wizard will make and a note on how Proxmox fences a failed node."></a>
+
+**📸 [Browse the full gallery — 30 views, light and dark](docs/SCREENSHOTS.md)**
 
 ---
 
@@ -118,6 +124,7 @@ replacement — the two are meant to be used together.
 | Several clusters or sites in one view | One cluster per login | All registered endpoints on one page |
 | iDRAC / iLO health, power draw, temperature, firmware inventory | Not part of the Proxmox UI | Built in, over Redfish |
 | Powering on a host that is fully off | Reach the BMC separately | BMC power actions in the same UI |
+| Making a guest fail over to another node | Set up HA resources, rules or groups and replication yourself | Failover wizard: checks storage, quorum and passthrough, then applies a fixed setup |
 | Cluster creation, storage configuration, PVE upgrades, repositories | Yes — do it here | Not covered; use Proxmox |
 | Accounts for the panel itself | PVE realms and ACLs | Own Admin / Operator / Viewer roles, TOTP, audit log |
 
@@ -174,6 +181,10 @@ Full walkthrough, including BMC setup: **[docs/QUICKSTART.md](docs/QUICKSTART.md
 
 ## Also included
 
+- **Failover wizard** — make a VM or container restart on another node if its
+  node fails. Shared storage or ZFS replication is chosen automatically, guests
+  on node-local storage are explained (with a disk move offered where possible),
+  and the protection can be removed again from the same place.
 - **Cloud images** — Ubuntu 20.04/22.04/24.04 LTS, Debian 11/12 and Rocky Linux
   8/9, with cloud-init for hostname, user, SSH key, static IP and packages.
 - **VM import** — upload OVA, OVF, VMDK, VHD, VHDX, QCOW2 or RAW, or pull VMs
@@ -192,7 +203,8 @@ Details in the [feature reference](docs/FEATURES.md).
 
 Depl0y uses the standard Proxmox VE API v2 (`/api2/json`) and does not gate on a
 Proxmox version string. It is developed and exercised against **Proxmox VE 8.x**;
-other releases are not routinely tested. BMC support covers **Dell iDRAC 7, 8
+other releases are not routinely tested. The failover wizard supports both
+Proxmox VE 9 (HA rules) and 8 (HA groups). BMC support covers **Dell iDRAC 7, 8
 and 9** and **HPE iLO** through Redfish v1, with an SSH fallback for hosts whose
 BMC does not answer Redfish.
 

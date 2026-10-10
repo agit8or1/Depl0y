@@ -42,6 +42,10 @@ A compromise of Depl0y therefore usually means compromise of every hypervisor it
   generated shell script — notably `services/deployment.py`, `api/vm_agent.py`,
   `api/system_updates.py`, `api/setup.py`, `api/ha.py`, `api/system.py`, `api/logs.py`,
   `services/ssh_hw.py`, `services/vm_import_service.py`, `services/llm_cloudinit.py`.
+- Failover wizard (`api/ha_wizard.py`, `services/ha_failover.py`, admin only): it moves
+  disks, creates replication jobs and HA resources/rules/groups, and changes the cluster
+  HA option. A non-admin reaching it, or input that makes it act on a different guest,
+  storage or node than planned, is in scope.
 - WebSocket console proxies (`api/console.py`): token handling in query strings, authorization of
   `host_id`/`node`/`vmid`, and relaying to Proxmox with stored credentials.
 - Path handling for uploads, ISO/cloud-image storage, log viewing, and import working directories.

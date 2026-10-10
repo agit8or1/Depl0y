@@ -324,12 +324,26 @@ def h_vm_status(dc, m, q):
     }
 
 
+# Guests whose disks are not on the site's shared storage, so the failover wizard has
+# every case to show: node-local LVM (needs a disk move) and ZFS (replication).
+_LOCAL_LVM = {108, 119, 126, 127, 128}
+_LOCAL_ZFS = {206, 207}
+
+
+def _guest_store(dc, vmid):
+    if int(vmid) in _LOCAL_LVM:
+        return "local-lvm"
+    if int(vmid) in _LOCAL_ZFS:
+        return "local-zfs"
+    return "ceph-nvme" if dc["key"] == "east" else ("nfs-west" if dc["key"] == "west" else "local-zfs")
+
+
 def h_vm_config(dc, m, q):
     g = F.find_guest(m["node"], m["vmid"])
     if not g:
         return {}
     win = g["ostype"].startswith("win")
-    store = "ceph-nvme" if dc["key"] == "east" else ("nfs-west" if dc["key"] == "west" else "local-zfs")
+    store = _guest_store(dc, g["vmid"])
     disk_gb = g["maxdisk"] // F.GiB
     cfg = {
         "name": g["name"],
@@ -408,6 +422,34 @@ def h_vm_firewall_rules(dc, m, q):
 def h_vm_firewall_options(dc, m, q):
     return {"enable": 1, "policy_in": "DROP", "policy_out": "ACCEPT",
             "dhcp": 0, "macfilter": 1, "ndp": 1, "log_level_in": "info"}
+
+
+def _find_ct(node, vmid):
+    return next((c for c in F.containers_of(node) if c["vmid"] == int(vmid)), None)
+
+
+def h_lxc_status(dc, m, q):
+    return _find_ct(m["node"], m["vmid"]) or {}
+
+
+def h_lxc_config(dc, m, q):
+    c = _find_ct(m["node"], m["vmid"])
+    if not c:
+        return {}
+    return {"hostname": c["name"], "cores": c["cpus"], "memory": c["maxmem"] // F.MiB, "swap": 512,
+            "ostype": "debian", "arch": "amd64", "unprivileged": 1, "onboot": 1,
+            "rootfs": f"{_guest_store(dc, c['vmid'])}:subvol-{c['vmid']}-disk-0,size={c['maxdisk'] // F.GiB}G",
+            "net0": f"name=eth0,bridge=vmbr0,hwaddr={F.mac(c['vmid'])},ip=dhcp,type=veth",
+            "digest": "5e1d0c2b9a8f7e66"}
+
+
+def h_service_state(dc, m, q):
+    return {"name": m["service"], "state": "running", "unit-state": "enabled", "active-state": "active"}
+
+
+def h_qdevice(dc, m, q):
+    # The two-node west cluster has a QDevice, as a two-node HA cluster should.
+    return {"Status": "Connected", "QNetd address": "192.0.2.53"} if dc["key"] == "west" else {}
 
 
 def h_ha_groups(dc, m, q):
@@ -628,6 +670,7 @@ ROUTES = [
     (r"^cluster/backup$", h_cluster_backup),
     (r"^cluster/ha/groups$", h_ha_groups),
     (r"^cluster/ha/resources$", h_ha_resources),
+    (r"^cluster/config/qdevice$", h_qdevice),
     (r"^cluster/ha/status/current$", h_ha_status),
     (r"^cluster/replication$", h_replication),
     (r"^storage$", h_dc_storage),
@@ -643,6 +686,9 @@ ROUTES = [
     (r"^nodes/(?P<node>[^/]+)/qemu$", h_node_qemu),
     (r"^nodes/(?P<node>[^/]+)/lxc$", h_node_lxc),
     (r"^nodes/(?P<node>[^/]+)/storage$", h_node_storage),
+    (r"^nodes/(?P<node>[^/]+)/services/(?P<service>[^/]+)/state$", h_service_state),
+    (r"^nodes/(?P<node>[^/]+)/lxc/(?P<vmid>\d+)/status/current$", h_lxc_status),
+    (r"^nodes/(?P<node>[^/]+)/lxc/(?P<vmid>\d+)/config$", h_lxc_config),
     (r"^nodes/(?P<node>[^/]+)/storage/(?P<storage>[^/]+)/content$", h_storage_content),
     (r"^nodes/(?P<node>[^/]+)/network$", h_node_network),
     (r"^nodes/(?P<node>[^/]+)/tasks$", h_node_tasks),

@@ -257,6 +257,7 @@ DATACENTERS = [
             ("local", "dir", "iso,vztmpl,backup", 220 * GiB, 0.46, 0),
             ("local-lvm", "lvmthin", "images,rootdir", 880 * GiB, 0.58, 0),
             ("nfs-west", "nfs", "images,iso,backup", 18.0 * 1024 * GiB, 0.54, 1),
+            ("local-zfs", "zfspool", "images,rootdir", 1.8 * 1024 * GiB, 0.31, 0),
         ],
     ),
     dict(

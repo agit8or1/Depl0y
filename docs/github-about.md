@@ -11,7 +11,7 @@ source of truth for what those fields should contain; copy from here.
 Repository description (≤ 350 characters, product value first):
 
 ```
-Proxmox infrastructure and server hardware management in one dashboard. Manage multiple Proxmox clusters and sites side by side, with integrated iDRAC/iLO health, power and firmware inventory over Redfish. Self-hosted, MIT licensed.
+Proxmox infrastructure and server hardware management in one dashboard. Manage multiple Proxmox clusters and sites side by side, set up HA failover with a guided wizard, and see iDRAC/iLO health, power and firmware inventory over Redfish. Self-hosted, MIT licensed.
 ```
 
 ## Website
@@ -53,6 +53,7 @@ redfish
 bmc
 out-of-band-management
 vm-management
+high-availability
 power-management
 fastapi
 vue
@@ -105,7 +106,8 @@ gh api graphql -f query='{ repository(owner:"agit8or1", name:"Depl0y")
 
 - [x] Description replaced with the text above — applied 2026-09-15
 - [x] Website cleared until a real project site resolves — applied 2026-09-15
-- [x] Topics set to the list above — applied 2026-09-15
+- [x] Topics set to the list above — applied 2026-09-15 (`high-availability` and the
+      failover wizard in the description added with v2.2.95)
 - [ ] Social preview uploaded — **manual only** (no API); the correctly sized
       image is committed at `docs/images/github/social-preview.png`.
       Regenerated 2026-09-15 from the v2.2.76 dashboard capture; the previous

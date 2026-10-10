@@ -66,6 +66,7 @@
         <NavItem v-if="isOperator" :to="'/firewall-manager'" :icon="'🛡️'" :label="t('nav.firewall')" @click="handleNavClick" />
         <div class="nav-divider"></div>
         <NavItem v-if="isAdmin" :to="'/ha-management'" :icon="'🔄'" :label="'HA'" @click="handleNavClick" />
+        <NavItem v-if="isAdmin" :to="'/ha-wizard'" :icon="'🛟'" :label="'Failover Wizard'" @click="handleNavClick" />
         <NavItem v-if="isOperator" :to="'/replication'" :icon="'🔁'" :label="t('nav.replication')" @click="handleNavClick" />
         <NavItem v-if="isOperator" :to="'/idrac'" :icon="'🖧'" :label="t('nav.idrac')" @click="handleNavClick" />
       </div>

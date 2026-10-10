@@ -349,6 +349,15 @@ export default {
     removeFromGroup: (vmid) => api.delete(`/ha/resources/${vmid}`)
   },
 
+  // Failover wizard (fixed best-practice HA setup per guest)
+  haWizard: {
+    guests: (hostId) => api.get(`/ha-wizard/${hostId}/guests`),
+    plan: (hostId, node, vmtype, vmid) => api.get(`/ha-wizard/${hostId}/${node}/${vmtype}/${vmid}/plan`),
+    apply: (hostId, node, vmtype, vmid, data) => api.post(`/ha-wizard/${hostId}/${node}/${vmtype}/${vmid}/apply`, data || {}),
+    remove: (hostId, node, vmtype, vmid) => api.post(`/ha-wizard/${hostId}/${node}/${vmtype}/${vmid}/remove`),
+    job: (jobId) => api.get(`/ha-wizard/jobs/${jobId}`)
+  },
+
   // System
   system: {
     getInfo: () => api.get('/system/info'),

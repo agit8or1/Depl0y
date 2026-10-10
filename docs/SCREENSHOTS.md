@@ -1,6 +1,6 @@
 # Screenshot gallery
 
-27 views of Depl0y — 13 dark, 14 light — captured at 1440×1000 at 2× from the running application.
+30 views of Depl0y — 15 dark, 15 light — captured at 1440×1000 at 2× from the running application.
 
 [← Back to the README](../README.md) · [▶ Watch the walkthrough](https://github.com/agit8or1/Depl0y/releases/download/v2.2.75/depl0y-walkthrough.mp4)
 
@@ -184,6 +184,30 @@ Review every pool defined on a datacenter — type, which nodes see it, what con
 [![High availability management page in dark theme listing HA groups and the guests assigned to them with their current state.](images/github/ha-management-dark.png)](images/github/ha-management-dark.png)
 
 Manage HA groups and the resources assigned to them, with quorum in view. · [Full size](images/github/ha-management-dark.png)
+
+### Failover wizard
+
+**🌙 Dark** · `/ha-wizard?hostId=1`
+
+[![Failover wizard in dark theme on the Choose guest step for DC-East: summary pills read Protected 8, Ready 17 and Needs disk move 5 above a table of guests with ID, name, node, type, status and a failover badge, showing production VMs protected by HA, Kubernetes VMs ready on shared storage and jenkins-01 needing its disks moved to ceph-nvme.](images/github/failover-wizard-dark.png)](images/github/failover-wizard-dark.png)
+
+See at a glance which guests would survive a node failure, and why the others would not. · [Full size](images/github/failover-wizard-dark.png)
+
+### Failover readiness checks
+
+**☀️ Light** · `/ha-wizard?hostId=1&node=east-03&vmid=126&type=qemu`
+
+[![Failover wizard readiness step in light theme for VM 126 staging-web-01 on east-03: passing checks for cluster votes and quorum, a warning that a local ISO will be ejected, a failed check because scsi0 is on node-local lvmthin storage, and the shared ceph-nvme pool with 24.4 TiB free preselected as the place to move the disks.](images/github/failover-wizard-readiness-light.png)](images/github/failover-wizard-readiness-light.png)
+
+Every check the wizard makes, with the reason for each failure and a fix where Depl0y can apply one. · [Full size](images/github/failover-wizard-readiness-light.png)
+
+### Failover plan
+
+**🌙 Dark** · `/ha-wizard?hostId=2&node=west-01&vmid=206&type=qemu`
+
+[![Failover wizard plan step in dark theme for VM 206 build-agent-01 on west-01: ZFS replication every 2 minutes, failing over to west-02 only, one restart then one relocation, automatic failback and migrate-on-shutdown, followed by the five changes the wizard will make and a note on how Proxmox fences a failed node.](images/github/failover-wizard-plan-dark.png)](images/github/failover-wizard-plan-dark.png)
+
+Review the fixed, best-practice HA setup before anything changes on the cluster. · [Full size](images/github/failover-wizard-plan-dark.png)
 
 ### Networking
 

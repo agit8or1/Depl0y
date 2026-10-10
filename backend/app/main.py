@@ -11,6 +11,7 @@ from app.api import vm_groups, vm_import
 from app.api import pve_access
 from app.api import tasks as task_api
 from app.api import bulk_ops
+from app.api import ha_wizard
 from app.api import integrations
 from app.api import alerts as alerts_api
 from app.api import analysis as analysis_api
@@ -358,6 +359,7 @@ app.include_router(docs.router, prefix=f"{settings.API_V1_PREFIX}/docs", tags=["
 app.include_router(setup.router, prefix=f"{settings.API_V1_PREFIX}/setup", tags=["Setup"])
 app.include_router(system_updates.router, prefix=f"{settings.API_V1_PREFIX}/system-updates", tags=["System Updates"])
 app.include_router(ha.router, prefix=f"{settings.API_V1_PREFIX}/ha", tags=["High Availability"])
+app.include_router(ha_wizard.router, prefix=f"{settings.API_V1_PREFIX}/ha-wizard", tags=["High Availability"])
 app.include_router(system.router, prefix=f"{settings.API_V1_PREFIX}/system", tags=["System"])
 app.include_router(llm.router, prefix=f"{settings.API_V1_PREFIX}/llm", tags=["LLM Deployment"])
 app.include_router(vm_agent.router, prefix=f"{settings.API_V1_PREFIX}/vm-agent", tags=["VM Agent"])

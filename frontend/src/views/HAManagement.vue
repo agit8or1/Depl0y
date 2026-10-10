@@ -6,6 +6,7 @@
         <p class="text-muted">Manage Proxmox HA resources, groups, fence devices, and monitor cluster failover</p>
       </div>
       <div class="header-actions">
+        <router-link to="/ha-wizard" class="btn btn-primary">🛟 Failover Wizard</router-link>
         <button @click="reloadAll" class="btn btn-secondary" :disabled="loadingResources || loadingGroups || loadingStatus">
           Refresh
         </button>

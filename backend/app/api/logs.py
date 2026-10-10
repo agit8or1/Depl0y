@@ -9,6 +9,27 @@ from app.models import User
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+# sudoers allows journalctl only with these exact arguments, so we always fetch
+# JOURNAL_LINES lines and trim to what the caller asked for here.
+JOURNAL_LINES = 1000
+
+
+def _journal(*extra: str) -> str:
+    result = subprocess.run(
+        ["/usr/bin/sudo", "-n", "/usr/bin/journalctl", "-u", "depl0y-backend", "-n", str(JOURNAL_LINES), "--no-pager", *extra],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    if result.returncode != 0:
+        raise Exception(f"Failed to retrieve logs: {result.stderr}")
+    return result.stdout
+
+
+def _last(text: str, lines: Optional[int]) -> list:
+    n = max(1, min(int(lines or 1), JOURNAL_LINES))
+    return text.splitlines()[-n:]
+
 
 @router.get("/backend")
 async def get_backend_logs(
@@ -18,18 +39,8 @@ async def get_backend_logs(
     """Get backend service logs (admin only)"""
     try:
         # Get logs from systemd journal (requires sudo)
-        result = subprocess.run(
-            ["sudo", "journalctl", "-u", "depl0y-backend", "-n", str(lines), "--no-pager"],
-            capture_output=True,
-            text=True,
-            timeout=10
-        )
-
-        if result.returncode != 0:
-            raise Exception(f"Failed to retrieve logs: {result.stderr}")
-
         return {
-            "logs": result.stdout,
+            "logs": "\n".join(_last(_journal(), lines)) + "\n",
             "lines": lines
         }
 
@@ -47,19 +58,8 @@ async def tail_backend_logs(
 ):
     """Get most recent backend logs (admin only)"""
     try:
-        # Get most recent logs (requires sudo)
-        result = subprocess.run(
-            ["sudo", "journalctl", "-u", "depl0y-backend", "-n", str(lines), "--no-pager", "-o", "cat"],
-            capture_output=True,
-            text=True,
-            timeout=10
-        )
-
-        if result.returncode != 0:
-            raise Exception(f"Failed to retrieve logs: {result.stderr}")
-
         # Return as array of lines for easier frontend processing
-        log_lines = result.stdout.strip().split('\n') if result.stdout else []
+        log_lines = _last(_journal("-o", "cat").strip(), lines)
 
         return {
             "logs": log_lines,

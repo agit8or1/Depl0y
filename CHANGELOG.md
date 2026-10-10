@@ -5,6 +5,49 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.90] - 2026-10-10 🔐 New updater: one root entry point, verified releases
+
+### Security
+
+- **In-app updates no longer need broad root access.** The old updater ran
+  `scripts/upgrade.sh` from `/tmp` as `depl0y`, which needed root `cp`, `rsync` and
+  `chown` with any arguments, so anything running as `depl0y` could become root. Updates
+  are now done by a root-owned `/usr/local/sbin/depl0y-update`, the only root command in
+  the new sudo rules (`scripts/sudoers.depl0y`). It takes no paths or versions from the
+  backend: it installs the latest GitHub release, checks it against `SHA256SUMS`, refuses
+  downgrades, writes into `/opt/depl0y` only as the user that owns each directory, keeps a
+  backup, and rolls back if the backend does not come up healthy.
+- **New installs get the current release.** `install.sh` downloaded its package from this
+  project's server, which was still serving v1.3.7 (end of life, with fixed critical RCEs).
+  It now downloads `depl0y.tar.gz` from the latest GitHub release and checks its sha256.
+  `/api/v1/system-updates/download`, used by older copies of `install.sh`, now redirects
+  to the same release asset.
+- **The log viewer's `journalctl` rule takes fixed arguments.** It used to allow any
+  arguments as root (for example `--vacuum-time`, which deletes journals).
+
+### Changed
+
+- `scripts/release.sh` publishes a release: tag, `depl0y.tar.gz` with a pre-built
+  frontend, `SHA256SUMS`, and the CHANGELOG section as notes.
+- Update progress is logged to `/var/log/depl0y-update/update.log`.
+- Existing installs: the first update to this version installs the new updater
+  automatically if the server's sudo rules still allow root `rsync`. Otherwise, run
+  `sudo bash scripts/install-updater.sh` once from a release, then update again.
+
+### Fixed
+
+- **Fresh installs had no admin login.** `install.sh` created the admin user before the
+  database tables existed; `create_admin.py` failed with "no such table: users" but the
+  installer still printed "admin / admin". It now creates the tables first and fails loudly.
+- **Fresh installs could not run system tools.** The installer's service unit set `PATH`
+  to the virtualenv only, so `tar`, `sudo` and other tools were not found (the old in-app
+  update failed with "No such file or directory: 'tar'"). The unit now has a normal `PATH`,
+  and the backend calls `/usr/bin/sudo` by full path.
+- `install.sh` reported "v1.3.7" and stored `app_version` 1.2.5 whatever it installed. It
+  now uses the version of the release it downloaded.
+- Installs made with an older `install.sh` whose in-app update fails: re-run the current
+  `install.sh`, which installs the new updater.
+
 ## [2.2.89] - 2026-10-10 🔒 Self-update is admin-only
 
 ### Security

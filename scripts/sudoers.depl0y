@@ -1,0 +1,21 @@
+# Depl0y sudo rules. Source: scripts/sudoers.depl0y in the Depl0y repository.
+# Installed by scripts/install-updater.sh and refreshed by /usr/local/sbin/depl0y-update.
+# Local edits are overwritten on the next update.
+#
+# Nothing here takes a path or a free-form argument as root. The only root
+# entry point for updates is the root-owned /usr/local/sbin/depl0y-update.
+
+# First-run setup installs sshpass (api/setup.py).
+depl0y ALL=(root) NOPASSWD: /usr/bin/apt-get install -y -qq sshpass
+
+# SSH tooling, run as depl0y itself (not root).
+depl0y ALL=(depl0y) NOPASSWD: /usr/bin/mkdir -p /opt/depl0y/.ssh, /usr/bin/ssh-keygen *, /usr/bin/sshpass *, /usr/bin/ssh *, /usr/bin/ssh-copy-id *
+
+# Restart the backend (Settings → restart).
+depl0y ALL=(root) NOPASSWD: /usr/bin/systemctl restart depl0y-backend, /bin/systemctl restart depl0y-backend
+
+# Backend log viewer (api/logs.py). Arguments are fixed; the API trims the line count.
+depl0y ALL=(root) NOPASSWD: /usr/bin/journalctl -u depl0y-backend -n 1000 --no-pager, /usr/bin/journalctl -u depl0y-backend -n 1000 --no-pager -o cat
+
+# Self-update. No arguments besides "apply"; the updater picks and verifies the release.
+depl0y ALL=(root) NOPASSWD: /usr/local/sbin/depl0y-update apply

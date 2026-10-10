@@ -8,7 +8,7 @@ sys.path.insert(0, '/opt/depl0y/backend')
 os.environ['DATABASE_URL'] = 'sqlite:////var/lib/depl0y/db/depl0y.db'
 
 try:
-    from app.core.database import SessionLocal
+    from app.core.database import SessionLocal, init_db
     from app.models import User, UserRole
     from app.core.security import get_password_hash
     
@@ -16,6 +16,9 @@ try:
     
     def create_admin_user():
         """Create default admin user with 2FA disabled"""
+        # install.sh runs this before the backend has ever started, so the
+        # tables may not exist yet.
+        init_db()
         db = SessionLocal()
         try:
             print("✓ Database connection established")
@@ -72,6 +75,7 @@ try:
             import traceback
             traceback.print_exc()
             db.rollback()
+            sys.exit(1)
         finally:
             db.close()
 

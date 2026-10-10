@@ -1,0 +1,245 @@
+#!/bin/bash
+# Depl0y privileged updater.
+#
+# Installed root-owned at /usr/local/sbin/depl0y-update by scripts/install-updater.sh.
+# The depl0y service user may run exactly `sudo /usr/local/sbin/depl0y-update apply`
+# and nothing else as root (see scripts/sudoers.depl0y).
+#
+# It takes no paths or versions from the caller. It installs the latest GitHub release
+# of Depl0y, verified against the release's SHA256SUMS, and refuses downgrades.
+#
+# Privilege rules this script follows:
+#   - root only writes to root-owned locations (/usr/local/sbin, /etc/sudoers.d,
+#     /etc/nginx, /var/lib/depl0y-update, /var/log/depl0y-update).
+#   - Anything under /opt/depl0y is written as the user that owns it (depl0y or
+#     www-data) via runuser, so a symlink planted by depl0y can't redirect a root write.
+#   - pip runs as depl0y, never as root.
+set -euo pipefail
+umask 022
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export LC_ALL=C
+
+REPO="agit8or1/Depl0y"
+ASSET="depl0y.tar.gz"
+INSTALL_DIR=/opt/depl0y
+SVC_USER=depl0y
+STATE_DIR=/var/lib/depl0y-update
+LOG_DIR=/var/log/depl0y-update
+LOG_FILE="$LOG_DIR/update.log"
+BACKUP_ROOT=/var/backups/depl0y
+SELF=/usr/local/sbin/depl0y-update
+UNIT=depl0y-update
+HEALTH_URL=http://127.0.0.1:8000/health
+
+# Root-owned override, for testing against a fork. Read, never sourced.
+CONF=/etc/depl0y/updater.conf
+if [ -f "$CONF" ] && [ "$(stat -c %u "$CONF")" = 0 ] && [ -z "$(find "$CONF" -perm /022)" ]; then
+    override=$(sed -n 's/^DEPL0Y_UPDATE_REPO=\([A-Za-z0-9_.-]*\/[A-Za-z0-9_.-]*\)$/\1/p' "$CONF" | tail -1)
+    [ -n "$override" ] && REPO="$override"
+fi
+
+die() { echo "❌ $*"; exit 1; }
+
+[ "$(id -u)" = 0 ] || die "must run as root"
+[ "${1:-}" = "apply" ] && [ $# -eq 1 ] || die "usage: $SELF apply"
+
+# Root-owned directories. Refuse to use them if something else got there first.
+prepare_dir() {  # path mode owner
+    if [ -L "$1" ] || { [ -e "$1" ] && [ "$(stat -c %U "$1")" != "$3" ]; }; then
+        die "$1 exists with the wrong owner or is a symlink; refusing to continue"
+    fi
+    install -d -m "$2" -o "$3" -g "$3" "$1"
+}
+
+# ── Detach ────────────────────────────────────────────────────────────────────
+# Re-run inside a transient systemd unit so restarting depl0y-backend (which
+# started us) does not kill the update. An already-running unit acts as a lock.
+if [ "${DEPL0Y_UPDATE_DETACHED:-}" != 1 ]; then
+    # Check before touching the log, so a refused second request keeps the running update's log.
+    if systemctl is-active --quiet "$UNIT"; then
+        die "an update is already running"
+    fi
+    prepare_dir "$LOG_DIR" 0755 root
+    : > "$LOG_FILE"
+    chown root:"$SVC_USER" "$LOG_FILE"
+    chmod 0640 "$LOG_FILE"
+    systemctl reset-failed "$UNIT" 2>/dev/null || true
+    exec systemd-run --unit="$UNIT" --collect --quiet \
+        --property=StandardOutput=append:"$LOG_FILE" \
+        --property=StandardError=append:"$LOG_FILE" \
+        --setenv=DEPL0Y_UPDATE_DETACHED=1 \
+        "$SELF" apply
+fi
+
+exec 9>"$STATE_DIR.lock"
+flock -n 9 || die "an update is already running"
+
+ts() { date '+%H:%M:%S'; }
+log() { echo "[$(ts)] $*"; }
+as_user() {
+    local u=$1; shift
+    runuser -u "$u" -- env HOME="$(getent passwd "$u" | cut -d: -f6)" "$@"
+}
+
+# 0711: service users may traverse to the verified release, but not list the directory.
+prepare_dir "$STATE_DIR" 0711 root
+WORK="$STATE_DIR/work"
+rm -rf --one-file-system "$WORK"
+install -d -m 0700 "$WORK"
+
+# ── Pick the version ──────────────────────────────────────────────────────────
+log "🔄 Checking the latest release of $REPO..."
+TAG=$(curl -fsSL --max-time 30 "https://api.github.com/repos/$REPO/releases/latest" \
+      | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag_name"])') \
+    || die "could not read the latest release from GitHub"
+[[ "$TAG" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]] || die "unexpected release tag: $TAG"
+NEW="${BASH_REMATCH[1]}"
+
+# The installed version comes from our own root-owned record. On the very first run
+# there is none yet, so fall back to the version the installed backend reports.
+if [ -f "$STATE_DIR/installed" ]; then
+    CUR=$(cat "$STATE_DIR/installed")
+else
+    CUR=$(grep -o 'return "[0-9]\+\.[0-9]\+\.[0-9]\+"' "$INSTALL_DIR/backend/app/core/config.py" 2>/dev/null \
+          | grep -o '[0-9.]\+' | head -1 || true)
+    CUR=${CUR:-0.0.0}
+fi
+[[ "$CUR" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "unreadable installed version: $CUR"
+if [ "$(printf '%s\n%s\n' "$CUR" "$NEW" | sort -V | tail -1)" = "$CUR" ]; then
+    log "✅ Already up to date (installed $CUR, latest $NEW)."
+    log "Upgrade complete! New version: $CUR"
+    exit 0
+fi
+log "⬆️  Updating $CUR → $NEW"
+
+# ── Download and verify ───────────────────────────────────────────────────────
+BASE="https://github.com/$REPO/releases/download/$TAG"
+log "📥 Downloading $ASSET and SHA256SUMS..."
+curl -fsSL --max-time 300 -o "$WORK/$ASSET" "$BASE/$ASSET" || die "download failed: $BASE/$ASSET"
+curl -fsSL --max-time 30 -o "$WORK/SHA256SUMS" "$BASE/SHA256SUMS" || die "download failed: $BASE/SHA256SUMS"
+expected=$(awk -v f="$ASSET" '$2 == f || $2 == "*" f {print $1}' "$WORK/SHA256SUMS")
+[[ "$expected" =~ ^[0-9a-f]{64}$ ]] || die "SHA256SUMS has no entry for $ASSET"
+actual=$(sha256sum "$WORK/$ASSET" | awk '{print $1}')
+[ "$expected" = "$actual" ] || die "checksum mismatch for $ASSET"
+log "✅ Checksum verified"
+
+# ── Extract ───────────────────────────────────────────────────────────────────
+log "📦 Extracting..."
+listing=$(tar -tvzf "$WORK/$ASSET")
+if grep -q '^h' <<<"$listing"; then die "archive contains hard links; refusing"; fi
+names=$(tar -tzf "$WORK/$ASSET")
+if grep -qE '(^/|(^|/)\.\.(/|$))' <<<"$names"; then die "archive contains unsafe paths; refusing"; fi
+SRC="$WORK/src"
+install -d -m 0755 "$SRC"
+tar -xzf "$WORK/$ASSET" -C "$SRC" --no-same-owner --no-same-permissions
+while IFS= read -r -d '' link; do
+    case "$(realpath -m "$link")" in
+        "$SRC"/*) ;;
+        *) die "archive symlink points outside the release: ${link#$SRC/}" ;;
+    esac
+done < <(find "$SRC" -type l -print0)
+[ -f "$SRC/backend/requirements.txt" ] || die "release has no backend/"
+[ -f "$SRC/frontend/dist/index.html" ] || die "release has no pre-built frontend/dist"
+grep -q "return \"$NEW\"" "$SRC/backend/app/core/config.py" || die "release $TAG does not contain version $NEW"
+# The service users read the release from here; make it world-readable, root-owned.
+chmod 0711 "$WORK"
+chmod -R a+rX,go-w "$SRC"
+
+# ── Back up ───────────────────────────────────────────────────────────────────
+DIST_OWNER=$(stat -c %U "$INSTALL_DIR/frontend/dist" 2>/dev/null || echo "$SVC_USER")
+case "$DIST_OWNER" in www-data|"$SVC_USER") ;; *) die "frontend/dist is owned by $DIST_OWNER" ;; esac
+
+prepare_dir "$BACKUP_ROOT" 0700 "$SVC_USER"
+BACKUP="$BACKUP_ROOT/$CUR-$(date +%Y%m%d-%H%M%S)"
+log "💾 Backing up to $BACKUP..."
+as_user "$SVC_USER" mkdir -p "$BACKUP"
+as_user "$SVC_USER" rsync -a --exclude venv --exclude __pycache__ "$INSTALL_DIR/backend/" "$BACKUP/backend/"
+as_user "$SVC_USER" rsync -a "$INSTALL_DIR/frontend/dist/" "$BACKUP/dist/"
+
+wait_healthy() {
+    for _ in $(seq 1 30); do
+        sleep 2
+        if curl -fsS --max-time 3 "$HEALTH_URL" >/dev/null 2>&1; then return 0; fi
+    done
+    return 1
+}
+
+restore() {
+    log "↩️  Restoring $CUR from $BACKUP..."
+    as_user "$SVC_USER" rsync -a --exclude venv --exclude __pycache__ "$BACKUP/backend/" "$INSTALL_DIR/backend/" || true
+    as_user "$SVC_USER" "$INSTALL_DIR/backend/venv/bin/pip" install -q -r "$INSTALL_DIR/backend/requirements.txt" || true
+    as_user "$DIST_OWNER" rsync -a --delete "$BACKUP/dist/" "$INSTALL_DIR/frontend/dist/" || true
+    systemctl restart depl0y-backend || true
+    if wait_healthy; then
+        log "✅ $CUR restored and healthy"
+    else
+        log "⚠ $CUR restored but the backend is not responding. See: journalctl -u depl0y-backend -n 50"
+    fi
+}
+
+# ── Install (as the owning users) ─────────────────────────────────────────────
+log "📦 Installing backend..."
+# No --delete: runtime files the release doesn't know about must survive.
+as_user "$SVC_USER" rsync -a --no-links \
+    --exclude venv --exclude __pycache__ --exclude '*.pyc' --exclude .env \
+    --exclude storage --exclude logs \
+    "$SRC/backend/" "$INSTALL_DIR/backend/"
+
+log "📦 Installing Python dependencies..."
+if ! as_user "$SVC_USER" "$INSTALL_DIR/backend/venv/bin/pip" install -q --no-input -r "$INSTALL_DIR/backend/requirements.txt"; then
+    restore; die "pip install failed; restored $CUR"
+fi
+
+log "📦 Installing frontend..."
+if ! as_user "$DIST_OWNER" rsync -a --delete --no-links "$SRC/frontend/dist/" "$INSTALL_DIR/frontend/dist/"; then
+    restore; die "frontend install failed; restored $CUR"
+fi
+SW="$INSTALL_DIR/frontend/dist/sw.js"
+if [ -f "$SW" ]; then
+    as_user "$DIST_OWNER" sed -i "s/const CACHE_VERSION = '[^']*'/const CACHE_VERSION = 'v$(date +%Y%m%d%H%M%S)'/" "$SW"
+fi
+
+# ── Restart and verify ────────────────────────────────────────────────────────
+log "🔄 Restarting depl0y-backend..."
+systemctl restart depl0y-backend
+if ! wait_healthy; then
+    restore
+    die "backend failed to start on $NEW; restored $CUR. See: journalctl -u depl0y-backend -n 50"
+fi
+log "✅ Backend is healthy"
+
+as_user "$SVC_USER" "$INSTALL_DIR/backend/venv/bin/python" -c '
+import sqlite3, sys
+db = sqlite3.connect("/var/lib/depl0y/db/depl0y.db")
+db.execute("UPDATE system_settings SET value = ? WHERE key = ?", (sys.argv[1], "app_version"))
+db.commit()' "$NEW" || log "⚠ Could not update app_version in the database"
+
+# ── Root-owned files, from the verified release ───────────────────────────────
+NGINX_CONF=/etc/nginx/sites-available/depl0y.conf
+if [ -f "$SRC/nginx-depl0y.conf" ] && [ -f "$NGINX_CONF" ] && ! cmp -s "$SRC/nginx-depl0y.conf" "$NGINX_CONF"; then
+    log "📦 Updating nginx config..."
+    cp -p "$NGINX_CONF" "$STATE_DIR/nginx.conf.prev"
+    install -m 0644 -o root -g root "$SRC/nginx-depl0y.conf" "$NGINX_CONF"
+    if nginx -t >/dev/null 2>&1; then
+        systemctl reload nginx
+    else
+        log "⚠ New nginx config failed nginx -t; keeping the previous one"
+        install -m 0644 -o root -g root "$STATE_DIR/nginx.conf.prev" "$NGINX_CONF"
+    fi
+fi
+
+log "🔐 Updating sudoers and updater..."
+if visudo -cqf "$SRC/scripts/sudoers.depl0y"; then
+    install -m 0440 -o root -g root "$SRC/scripts/sudoers.depl0y" /etc/sudoers.d/.depl0y.new
+    mv -f /etc/sudoers.d/.depl0y.new /etc/sudoers.d/depl0y
+else
+    log "⚠ sudoers.depl0y in the release failed visudo; keeping the current one"
+fi
+# mv replaces the inode, so this running copy keeps executing the old file safely.
+install -m 0755 -o root -g root "$SRC/scripts/depl0y-update" "$SELF.new"
+mv -f "$SELF.new" "$SELF"
+
+echo "$NEW" > "$STATE_DIR/installed"
+rm -rf --one-file-system "$WORK"
+log "Backup stored at: $BACKUP"
+log "✅ Upgrade complete! New version: $NEW"

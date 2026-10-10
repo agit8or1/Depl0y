@@ -11,7 +11,7 @@ set -e
 
 # Installer version for tracking. This is the single source of truth — the
 # banner below renders it, so there is no second copy to forget to bump.
-INSTALLER_VERSION="1.3.7"
+INSTALLER_VERSION="latest"
 INSTALLER_BUILD="$(date +%Y%m%d%H%M%S)"
 
 echo "╔══════════════════════════════════════════════════════════╗"
@@ -240,18 +240,27 @@ fi
 
 # Download latest Depl0y
 echo ""
-echo "⬇️  Downloading Depl0y from deploy.agit8or.net..."
+echo "⬇️  Downloading the latest Depl0y release from GitHub..."
 cd /tmp
-rm -f depl0y-latest.tar.gz
-# Add cache-busting timestamp to ensure fresh download
-CACHE_BUST=$(date +%s)
-curl -fsSL "https://deploy.agit8or.net/api/v1/system-updates/download?v=${CACHE_BUST}" -o depl0y-latest.tar.gz
+rm -f depl0y-latest.tar.gz depl0y-SHA256SUMS
+RELEASE_BASE="https://github.com/agit8or1/Depl0y/releases/latest/download"
+curl -fsSL "$RELEASE_BASE/depl0y.tar.gz" -o depl0y-latest.tar.gz
+curl -fsSL "$RELEASE_BASE/SHA256SUMS" -o depl0y-SHA256SUMS
+EXPECTED_SHA=$(awk '$2 == "depl0y.tar.gz" {print $1}' depl0y-SHA256SUMS)
+ACTUAL_SHA=$(sha256sum depl0y-latest.tar.gz | awk '{print $1}')
+if [ -z "$EXPECTED_SHA" ] || [ "$EXPECTED_SHA" != "$ACTUAL_SHA" ]; then
+    echo "❌ Checksum mismatch for the downloaded release; aborting." >&2
+    exit 1
+fi
+echo "✓ Checksum verified"
 
 echo "📦 Extracting Depl0y..."
 rm -rf /tmp/depl0y-install
 mkdir -p /tmp/depl0y-install
 cd /tmp/depl0y-install
 tar -xzf /tmp/depl0y-latest.tar.gz
+DEPL0Y_VERSION=$(grep -o 'return "[0-9]\+\.[0-9]\+\.[0-9]\+"' /tmp/depl0y-install/backend/app/core/config.py | grep -o '[0-9.]\+' | head -1)
+echo "✓ Depl0y ${DEPL0Y_VERSION:-unknown version}"
 
 # Install backend
 echo ""
@@ -397,7 +406,7 @@ Type=simple
 User=depl0y
 Group=depl0y
 WorkingDirectory=/opt/depl0y/backend
-Environment="PATH=/opt/depl0y/backend/venv/bin"
+Environment="PATH=/opt/depl0y/backend/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 Environment="SECRET_KEY=${SECRET_KEY}"
 Environment="ENCRYPTION_KEY=${ENCRYPTION_KEY}"
 ExecStart=/opt/depl0y/backend/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
@@ -481,26 +490,10 @@ systemctl restart nginx
 
 echo "✓ Nginx configured"
 
-# Setup sudoers for depl0y user
+# Sudo rules and the root-owned updater (/usr/local/sbin/depl0y-update)
 echo ""
 echo "🔐 Configuring permissions..."
-cat > /etc/sudoers.d/depl0y << 'SUDOEOF'
-# Depl0y user sudo permissions
-depl0y ALL=(ALL) NOPASSWD: /usr/bin/apt-get install -y -qq sshpass
-depl0y ALL=(ALL) NOPASSWD: /usr/bin/which sshpass
-depl0y ALL=(depl0y) NOPASSWD: /usr/bin/mkdir -p /opt/depl0y/.ssh
-depl0y ALL=(depl0y) NOPASSWD: /usr/bin/ssh-keygen *
-depl0y ALL=(depl0y) NOPASSWD: /usr/bin/sshpass *
-depl0y ALL=(depl0y) NOPASSWD: /usr/bin/ssh *
-depl0y ALL=(depl0y) NOPASSWD: /usr/bin/ssh-copy-id *
-depl0y ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart depl0y-backend
-depl0y ALL=(ALL) NOPASSWD: /bin/systemctl restart depl0y-backend
-depl0y ALL=(ALL) NOPASSWD: /usr/bin/systemctl status depl0y-backend
-depl0y ALL=(ALL) NOPASSWD: /usr/bin/journalctl -u depl0y-backend *
-SUDOEOF
-
-chmod 440 /etc/sudoers.d/depl0y
-visudo -c
+bash /tmp/depl0y-install/scripts/install-updater.sh
 
 echo "✓ Permissions configured"
 
@@ -547,7 +540,7 @@ sudo -u depl0y sqlite3 /var/lib/depl0y/db/depl0y.db "CREATE TABLE IF NOT EXISTS 
 );" 2>/dev/null || true
 
 sudo -u depl0y sqlite3 /var/lib/depl0y/db/depl0y.db "INSERT OR REPLACE INTO system_settings (key, value, description) VALUES
-    ('app_version', '1.2.5', 'Current application version'),
+    ('app_version', '${DEPL0Y_VERSION}', 'Current application version'),
     ('app_name', 'Depl0y', 'Application name');" 2>/dev/null || true
 
 echo "✓ System settings initialized"
@@ -752,15 +745,10 @@ if [ "$UPGRADE_MODE" = true ]; then
     echo "║                                                          ║"
     echo "╚══════════════════════════════════════════════════════════╝"
     echo ""
-    echo "🎉 Depl0y v1.3.7 has been successfully upgraded!"
+    echo "🎉 Depl0y v${DEPL0Y_VERSION} has been successfully upgraded!"
     echo ""
     echo "📍 Access Depl0y at:"
     echo "   http://$IP"
-    echo ""
-    echo "✨ What's new in v1.3.7:"
-    echo "   • Fixed cloud image enable completely - removed redundant sudo commands"
-    echo "   • Resolved mkdir permission errors"
-    echo "   • Backend now runs commands directly as depl0y user"
     echo ""
     if [ "$RESET_PASSWORD" = true ]; then
         echo "🔐 Password Reset:"
@@ -780,7 +768,7 @@ else
     echo "║                                                          ║"
     echo "╚══════════════════════════════════════════════════════════╝"
     echo ""
-    echo "🎉 Depl0y v1.3.7 has been successfully installed!"
+    echo "🎉 Depl0y v${DEPL0Y_VERSION} has been successfully installed!"
     echo ""
     echo "📍 Access Depl0y at:"
     echo "   http://$IP"

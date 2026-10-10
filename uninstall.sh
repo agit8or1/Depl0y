@@ -152,6 +152,11 @@ if [ -f /etc/sudoers.d/depl0y ]; then
     echo "✓ Removed /etc/sudoers.d/depl0y"
 fi
 
+# Remove the updater and its state
+rm -f /usr/local/sbin/depl0y-update
+rm -rf /var/lib/depl0y-update /var/log/depl0y-update
+echo "✓ Removed /usr/local/sbin/depl0y-update"
+
 # Remove depl0y user
 echo ""
 echo "👤 Removing depl0y system user..."

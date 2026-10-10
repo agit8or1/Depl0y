@@ -1,145 +1,43 @@
 #!/bin/bash
-# Depl0y Upgrade Script
-# Upgrades an existing Depl0y installation from extracted files
-
-set -e
+# Bridge from the old in-app updater (Depl0y 2.2.89 and earlier) to the new one.
+#
+# Old versions download the release source to /tmp/depl0y-update and run this file
+# from there as the depl0y user. From 2.2.90 on, updates are done by the root-owned
+# /usr/local/sbin/depl0y-update instead; this script installs it if it can, hands
+# over, and follows its log so the old progress view still shows what happens.
+set -uo pipefail
 
 EXTRACT_DIR="${1:-/tmp/depl0y-update}"
-INSTALL_DIR="/opt/depl0y"
+UPDATER=/usr/local/sbin/depl0y-update
+NEW_LOG=/var/log/depl0y-update/update.log
 
-echo "🔄 Upgrading Depl0y from $EXTRACT_DIR..."
+echo "🔄 Switching to the new Depl0y updater..."
 
-# Check if source directory exists
-if [ ! -d "$EXTRACT_DIR" ]; then
-    echo "❌ Source directory not found: $EXTRACT_DIR"
-    exit 1
-fi
-
-# Check if installation exists
-if [ ! -d "$INSTALL_DIR" ]; then
-    echo "❌ Depl0y not installed at $INSTALL_DIR"
-    echo "   Use install.sh for fresh installations"
-    exit 1
-fi
-
-# Stop backend service
-echo "🛑 Stopping backend service..."
-sudo systemctl stop depl0y-backend || true
-
-# Backup current installation
-BACKUP_DIR="/tmp/depl0y-backup-$(date +%Y%m%d-%H%M%S)"
-echo "💾 Creating backup at $BACKUP_DIR..."
-mkdir -p "$BACKUP_DIR"
-cp -r "$INSTALL_DIR/backend" "$BACKUP_DIR/" || true
-cp -r "$INSTALL_DIR/frontend" "$BACKUP_DIR/" || true
-
-# Copy new files
-echo "📦 Copying new backend files..."
-sudo rsync -av --exclude='*.pyc' --exclude='__pycache__' --exclude='venv' --exclude='.env' \
-    "$EXTRACT_DIR/backend/" "$INSTALL_DIR/backend/"
-
-echo "📦 Building frontend from source..."
-# Build from source so the compiled output always matches the downloaded code.
-# The dist/ directory in the release tarball may be stale or absent (gitignored).
-FRONTEND_SRC="$EXTRACT_DIR/frontend"
-if [ -f "$FRONTEND_SRC/package.json" ]; then
-    cd "$FRONTEND_SRC"
-    # Install deps quietly, then build (vite is configured to output directly to INSTALL_DIR/frontend/dist)
-    npm install --silent 2>&1 || npm install 2>&1
-    sudo chown -R "$(whoami)" "$INSTALL_DIR/frontend/dist" 2>/dev/null || true
-    # Override outDir so build goes straight to the install location
-    npx vite build --outDir "$INSTALL_DIR/frontend/dist" --emptyOutDir 2>&1
-    cd - > /dev/null
-else
-    echo "⚠ No package.json found — falling back to rsync of pre-built dist"
-    if [ -d "$FRONTEND_SRC/dist" ]; then
-        sudo rsync -av "$FRONTEND_SRC/dist/" "$INSTALL_DIR/frontend/dist/"
+if [ ! -x "$UPDATER" ] || ! sudo -n -l "$UPDATER" apply >/dev/null 2>&1; then
+    # Installs whose sudoers was widened by hand still allow root rsync. Use it once to
+    # install the updater and the new sudo rules, which remove that access.
+    if sudo -n -l /usr/bin/rsync --version >/dev/null 2>&1 \
+        && visudo -cqf "$EXTRACT_DIR/scripts/sudoers.depl0y" \
+        && bash -n "$EXTRACT_DIR/scripts/depl0y-update"; then
+        echo "🔐 Installing $UPDATER and new sudo rules..."
+        sudo -n /usr/bin/rsync --chmod=F0755 --chown=root:root \
+            "$EXTRACT_DIR/scripts/depl0y-update" "$UPDATER" || { echo "❌ Could not install $UPDATER"; exit 1; }
+        sudo -n /usr/bin/rsync --chmod=F0440 --chown=root:root \
+            "$EXTRACT_DIR/scripts/sudoers.depl0y" /etc/sudoers.d/depl0y || { echo "❌ Could not install sudo rules"; exit 1; }
     else
-        echo "⚠ No dist/ folder either — frontend unchanged"
+        echo "❌ One-time manual step needed to finish this update."
+        echo "   On the Depl0y server, as root, run:"
+        echo "     sudo bash $EXTRACT_DIR/scripts/install-updater.sh"
+        echo "   then click Update again."
+        exit 1
     fi
 fi
 
-# Inject build timestamp into service worker to bust stale caches
-BUILD_TS=$(date +%Y%m%d%H%M%S)
-SW_FILE="$INSTALL_DIR/frontend/dist/sw.js"
-if [ -f "$SW_FILE" ]; then
-    sed -i "s/const CACHE_VERSION = '[^']*'/const CACHE_VERSION = 'v${BUILD_TS}'/" "$SW_FILE"
-    echo "   ✓ Service worker cache version set to v${BUILD_TS}"
-fi
+sudo -n "$UPDATER" apply || { echo "❌ Could not start $UPDATER"; exit 1; }
 
-echo "📦 Copying scripts..."
-sudo cp -r "$EXTRACT_DIR/scripts/"* "$INSTALL_DIR/scripts/" 2>/dev/null || true
-
-echo "📦 Copying config files..."
-sudo cp "$EXTRACT_DIR/nginx-depl0y.conf" /etc/nginx/sites-available/depl0y.conf || true
-sudo cp "$EXTRACT_DIR/deploy.sh" "$INSTALL_DIR/" || true
-
-# Set correct permissions
-echo "🔒 Setting permissions..."
-sudo chown -R depl0y:depl0y "$INSTALL_DIR/backend"
-sudo chown -R depl0y:depl0y "$INSTALL_DIR/frontend"
-sudo chown -R root:root "$INSTALL_DIR/scripts"
-
-# Install Python dependencies
-echo "📦 Installing Python dependencies..."
-"$INSTALL_DIR/backend/venv/bin/pip" install -q -r "$INSTALL_DIR/backend/requirements.txt"
-"$INSTALL_DIR/backend/venv/bin/pip" install websockets --quiet 2>/dev/null || true
-
-# Clear Python cache
-echo "🗑️  Clearing Python cache..."
-find "$INSTALL_DIR/backend" -type d -name '__pycache__' -exec rm -rf {} + 2>/dev/null || true
-find "$INSTALL_DIR/backend" -type f -name '*.pyc' -delete 2>/dev/null || true
-
-# Update version in database
-echo "📝 Updating version in database..."
-NEW_VERSION=$(grep -o 'return "[0-9]\+\.[0-9]\+\.[0-9]\+"' "$INSTALL_DIR/backend/app/core/config.py" | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+' | head -1)
-echo "   Extracted version: $NEW_VERSION"
-if [ -n "$NEW_VERSION" ]; then
-    # Run sqlite3 (database is owned by depl0y, script runs as depl0y)
-    if sqlite3 /var/lib/depl0y/db/depl0y.db "UPDATE system_settings SET value = '$NEW_VERSION' WHERE key = 'app_version';" 2>&1; then
-        echo "   ✓ Database version updated to $NEW_VERSION"
-    else
-        echo "   ⚠ Warning: Failed to update database version"
-    fi
-else
-    echo "   ⚠ Warning: Could not extract version from config.py"
-fi
-
-# Restart services
-echo "🔄 Restarting services..."
-sudo systemctl daemon-reload
-sudo systemctl restart depl0y-backend
-sudo systemctl reload nginx || sudo systemctl restart nginx
-
-# Wait for backend to start
-echo "⏳ Waiting for backend to start..."
-sleep 8
-
-# Check if backend is running
-if sudo systemctl is-active --quiet depl0y-backend; then
-    echo "✅ Backend service is running"
-
-    # Get new version from API (try multiple times with increasing delays)
-    for i in {1..5}; do
-        NEW_VERSION=$(curl -s --max-time 3 http://localhost:8000/ 2>/dev/null | grep -o '"version":"[^"]*"' | cut -d'"' -f4 || echo "")
-        if [ -n "$NEW_VERSION" ]; then
-            break
-        fi
-        echo "   Waiting for API to respond (attempt $i/5)..."
-        sleep 2
-    done
-
-    if [ -z "$NEW_VERSION" ]; then
-        NEW_VERSION="unknown (API not responding)"
-    fi
-
-    echo "✅ Upgrade complete! New version: $NEW_VERSION"
-    echo ""
-    echo "Backup stored at: $BACKUP_DIR"
-    echo "You can remove it after verifying the upgrade."
-else
-    echo "❌ Backend service failed to start"
-    echo "   Check logs: journalctl -u depl0y-backend -n 50"
-    echo "   Restore from backup: $BACKUP_DIR"
-    exit 1
-fi
+# Follow the new log until the update finishes (at most 20 minutes).
+for _ in $(seq 1 600); do
+    if [ -r "$NEW_LOG" ] && grep -qE 'Upgrade complete|❌' "$NEW_LOG"; then break; fi
+    sleep 2
+done
+cat "$NEW_LOG" 2>/dev/null

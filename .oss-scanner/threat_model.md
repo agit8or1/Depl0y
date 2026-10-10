@@ -11,7 +11,8 @@ holds high-value credentials for the whole estate and acts on them:
   JWT `SECRET_KEY` come from `/etc/depl0y/config.env`.
 - It drives Proxmox (create/delete/migrate VMs, firewall, SDN, HA, users/ACLs), opens SSH sessions
   to nodes, relays VNC/terminal WebSockets, generates cloud-init, imports VM disks, and can update
-  itself via `scripts/update-wrapper.sh` under a narrow sudoers policy (see `install.sh`).
+  itself through the root-owned `/usr/local/sbin/depl0y-update` (`scripts/depl0y-update`),
+  the only root entry point in its sudoers policy (`scripts/sudoers.depl0y`).
 
 A compromise of Depl0y therefore usually means compromise of every hypervisor it manages.
 
@@ -48,8 +49,10 @@ A compromise of Depl0y therefore usually means compromise of every hypervisor it
   UI read another host's secrets.
 - SSRF: endpoints that take a host/URL (adding Proxmox/PBS/BMC hosts, webhooks, integrations,
   cloud-image URLs) and make server-side requests with stored credentials attached.
-- Self-update path: `scripts/update-wrapper.sh`, the sudoers entries in `install.sh`, and how the
-  update payload is fetched/verified.
+- Self-update path: `scripts/depl0y-update` (runs as root: release selection, download and
+  SHA256SUMS check, archive extraction, privilege drops via `runuser`, rollback),
+  `scripts/sudoers.depl0y`, `scripts/install-updater.sh`, the `/system-updates/*` endpoints,
+  and `install.sh`'s download and checksum check.
 - Frontend: XSS in the SPA, especially rendering of Markdown (`marked` + `dompurify`), VM/node names,
   descriptions, notes, alert text, and AI report output.
 

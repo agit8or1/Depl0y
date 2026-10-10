@@ -5,6 +5,31 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.91] - 2026-10-10 🔐 Keys out of the world-readable service file
+
+### Security
+
+- **`SECRET_KEY` and `ENCRYPTION_KEY` are no longer stored in the systemd unit.**
+  `install.sh` wrote both into `/etc/systemd/system/depl0y-backend.service`, which every
+  local user can read (and `systemctl show` prints). With them, a local user could forge
+  admin logins and decrypt every stored Proxmox, PBS, BMC and SSH credential. They now
+  live in `/etc/depl0y/config.env` (`depl0y`, mode 0600), and the unit loads that file.
+- **Existing installs are moved automatically by the in-app updater.** It takes the
+  `ENCRYPTION_KEY` the running backend uses, so stored credentials keep working, and
+  **replaces `SECRET_KEY`**, since it was exposed: everyone has to sign in again once. If
+  the update rolls back, the previous unit file and `config.env` are restored. The same
+  step fixes the unit's `PATH` on installs that only had the virtualenv on it.
+- If other users have shell access to a Depl0y server installed before this version,
+  treat the old `ENCRYPTION_KEY` as exposed: rotate the stored Proxmox, PBS and BMC
+  credentials (tokens/passwords) on the systems themselves.
+
+### Fixed
+
+- **Re-running `install.sh` could make stored credentials unreadable.** It only looked
+  for existing keys in the unit file; on installs that keep them in
+  `/etc/depl0y/config.env` it found none and generated a new `ENCRYPTION_KEY`. It now
+  reads keys the way systemd does (`config.env` when the unit loads it, else the unit).
+
 ## [2.2.90] - 2026-10-10 🔐 New updater: one root entry point, verified releases
 
 ### Security

@@ -12,6 +12,7 @@ set -e
 # Installer version for tracking. This is the single source of truth — the
 # banner below renders it, so there is no second copy to forget to bump.
 INSTALLER_VERSION="latest"
+ENV_FILE=/etc/depl0y/config.env
 INSTALLER_BUILD="$(date +%Y%m%d%H%M%S)"
 
 echo "╔══════════════════════════════════════════════════════════╗"
@@ -214,27 +215,37 @@ if [ "$UPGRADE_MODE" = true ]; then
         echo "✓ Stopped backend service"
     fi
 
-    # Backup encryption keys from existing service
+    # Find the existing keys. /etc/depl0y/config.env is where they belong; older
+    # installs kept them in the (world-readable) service unit instead.
     KEYS_VALID=false
-    if [ -f /etc/systemd/system/depl0y-backend.service ]; then
-        echo "🔍 Extracting existing encryption keys..."
-        EXISTING_SECRET=$(grep "SECRET_KEY=" /etc/systemd/system/depl0y-backend.service | sed 's/.*SECRET_KEY=\([^"]*\).*/\1/')
-        EXISTING_ENCRYPTION=$(grep "ENCRYPTION_KEY=" /etc/systemd/system/depl0y-backend.service | sed 's/.*ENCRYPTION_KEY=\([^"]*\).*/\1/')
+    UNIT_FILE=/etc/systemd/system/depl0y-backend.service
+    EXISTING_SECRET=""
+    EXISTING_ENCRYPTION=""
+    # Same precedence as systemd: config.env counts only if the unit loads it (or there
+    # is no unit), and then it overrides any Environment= line.
+    if [ -f "$ENV_FILE" ] && { [ ! -f "$UNIT_FILE" ] || grep -q "^EnvironmentFile=-\{0,1\}$ENV_FILE" "$UNIT_FILE"; }; then
+        EXISTING_SECRET=$(sed -n 's/^SECRET_KEY=["'"'"']\{0,1\}\([^"'"'"']*\).*/\1/p' "$ENV_FILE" | tail -1)
+        EXISTING_ENCRYPTION=$(sed -n 's/^ENCRYPTION_KEY=["'"'"']\{0,1\}\([^"'"'"']*\).*/\1/p' "$ENV_FILE" | tail -1)
+    fi
+    if [ -z "$EXISTING_ENCRYPTION" ] && [ -f "$UNIT_FILE" ]; then
+        EXISTING_ENCRYPTION=$(sed -n 's/^Environment="\{0,1\}ENCRYPTION_KEY=\([^"]*\)"\{0,1\}$/\1/p' "$UNIT_FILE" | tail -1)
+        # A SECRET_KEY found only in the unit file was readable by every local user,
+        # so it is not reused: a new one is generated (everyone signs in again).
+        EXISTING_SECRET=""
+    fi
 
-        if [ -n "$EXISTING_SECRET" ] && [ -n "$EXISTING_ENCRYPTION" ]; then
-            echo "   Found existing keys, validating..."
-            # Validate the encryption key
-            if python3 -c "from cryptography.fernet import Fernet; Fernet('${EXISTING_ENCRYPTION}'.encode())" 2>/dev/null; then
-                echo "✓ Existing encryption keys are valid and will be preserved"
-                KEYS_VALID=true
-            else
-                echo "⚠️  Existing encryption keys are INVALID (wrong format)"
-                echo "   Will generate new keys - you'll need to re-enter Proxmox credentials"
-            fi
+    if [ -n "$EXISTING_ENCRYPTION" ]; then
+        echo "🔍 Found the existing encryption key, validating..."
+        if python3 -c "import sys; from cryptography.fernet import Fernet; Fernet(sys.argv[1].encode())" "$EXISTING_ENCRYPTION" 2>/dev/null; then
+            echo "✓ Existing encryption key is valid and will be preserved"
+            KEYS_VALID=true
         else
-            echo "⚠️  Could not extract existing keys from service file"
-            echo "   Will generate new keys"
+            echo "⚠️  Existing encryption key is INVALID (wrong format)"
+            echo "   Will generate new keys - you'll need to re-enter Proxmox credentials"
         fi
+    else
+        echo "⚠️  Could not find the existing encryption key"
+        echo "   Will generate new keys"
     fi
 fi
 
@@ -374,9 +385,9 @@ fi
 echo ""
 if [ "$UPGRADE_MODE" = true ] && [ "$KEYS_VALID" = true ]; then
     echo "🔐 Reusing existing encryption keys..."
-    SECRET_KEY="$EXISTING_SECRET"
+    SECRET_KEY="${EXISTING_SECRET:-$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')}"
     ENCRYPTION_KEY="$EXISTING_ENCRYPTION"
-    echo "✓ Existing encryption keys preserved"
+    echo "✓ Existing encryption key preserved"
 else
     echo "🔐 Generating new encryption keys..."
     SECRET_KEY=$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')
@@ -393,6 +404,21 @@ else
     fi
 fi
 
+# Secrets live in /etc/depl0y/config.env (depl0y:depl0y 0600), never in the
+# world-readable unit file. Other settings already in config.env are kept.
+echo ""
+echo "🔐 Writing keys to $ENV_FILE..."
+install -d -m 0755 -o root -g root /etc/depl0y
+ENV_TMP=$(mktemp /etc/depl0y/.config.env.XXXXXX)
+if [ -f "$ENV_FILE" ] && [ ! -L "$ENV_FILE" ]; then
+    grep -vE '^(SECRET_KEY|ENCRYPTION_KEY)=' "$ENV_FILE" > "$ENV_TMP" || true
+fi
+printf 'SECRET_KEY=%s\nENCRYPTION_KEY=%s\n' "$SECRET_KEY" "$ENCRYPTION_KEY" >> "$ENV_TMP"
+chown depl0y:depl0y "$ENV_TMP"
+chmod 0600 "$ENV_TMP"
+mv -f "$ENV_TMP" "$ENV_FILE"
+echo "✓ Keys stored in $ENV_FILE"
+
 # Create systemd service
 echo ""
 echo "⚙️  Creating systemd service..."
@@ -407,8 +433,7 @@ User=depl0y
 Group=depl0y
 WorkingDirectory=/opt/depl0y/backend
 Environment="PATH=/opt/depl0y/backend/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-Environment="SECRET_KEY=${SECRET_KEY}"
-Environment="ENCRYPTION_KEY=${ENCRYPTION_KEY}"
+EnvironmentFile=${ENV_FILE}
 ExecStart=/opt/depl0y/backend/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
 Restart=always
 RestartSec=10

@@ -21,8 +21,17 @@ RRD metric charts, VM and LXC listings, storage browser, network configuration,
 task log, node terminal, and OS-level shutdown / reboot through `pvesh`.
 
 **Cluster**
-Status, node list, HA groups and resources, quorum monitoring. Nodes can be
-joined to a cluster (the fingerprint is fetched automatically) or removed.
+Status, node list, HA resources, quorum monitoring, and whether the HA services
+run on every node. Nodes can be joined to a cluster (the fingerprint is fetched
+automatically) or removed.
+
+**HA rules and groups**
+On Proxmox VE 9 the HA page manages **HA rules**: create, edit, enable/disable and
+delete *node-affinity* rules (which nodes HA resources run on, with priorities,
+optionally strict) and *resource-affinity* rules (keep HA resources on the same
+node or on different nodes). Rules made by the Failover Wizard are marked. On
+Proxmox VE 8 the same page manages **HA groups** instead. A resource's failover
+node is shown from these real settings.
 
 **Replication**
 Job create / edit / delete, force-sync, and log viewer.

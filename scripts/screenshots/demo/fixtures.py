@@ -252,7 +252,8 @@ DATACENTERS = [
     dict(
         key="west", name="DC-West · Reno", hostname="pve-west.example.net",
         loopback="127.0.0.12", cluster="west-prod", nodes=["west-01", "west-02"],
-        pve_version="8.4.1", kversion="6.8.12-9-pve",
+        # Proxmox VE 9, so the demo shows HA rules (VE 8 sites show HA groups).
+        pve_version="9.0.10", kversion="6.14.11-2-pve",
         storages=[
             ("local", "dir", "iso,vztmpl,backup", 220 * GiB, 0.46, 0),
             ("local-lvm", "lvmthin", "images,rootdir", 880 * GiB, 0.58, 0),

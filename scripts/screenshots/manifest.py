@@ -166,6 +166,24 @@ SHOTS = [
                  "view.",
          alt="High availability management page in dark theme listing HA groups and the "
              "guests assigned to them with their current state."),
+    dict(slug="ha-rules-dark", route="/ha-management", theme="dark", dwell=6,
+         action="ha_rules_tab",
+         section=MANAGEMENT, title="HA rules",
+         caption="On Proxmox VE 9, manage HA rules: which nodes guests prefer, and which "
+                 "guests must stay together or apart.",
+         alt="HA page in dark theme for the Proxmox VE 9 site DC-West, Rules tab: a table with "
+             "the node-affinity rule windows-prefer-west-01 preferring west-01 (priority 2) over "
+             "west-02 (priority 1) for vm:203, vm:204 and vm:213, and the resource-affinity rule "
+             "dc-and-sql-apart keeping vm:203 and vm:213 on different nodes, each enabled with "
+             "Edit, Disable and Delete actions."),
+    dict(slug="ha-rule-editor-light", route="/ha-management", theme="light", dwell=6,
+         action="ha_rule_editor",
+         section=MANAGEMENT, title="Editing an HA rule",
+         caption="Pick HA resources, nodes and priorities, and whether the rule is strict.",
+         alt="Edit rule dialog in light theme for windows-prefer-west-01: rule ID and type "
+             "(node affinity), HA resources vm:203, vm:204 and vm:213 ticked, west-01 at priority "
+             "2 and west-02 at priority 1, an unticked strict option, the comment and a disabled "
+             "checkbox, with Save rule and Cancel buttons."),
     dict(slug="failover-wizard-dark", route="/ha-wizard?hostId=1", theme="dark", dwell=12,
          section=MANAGEMENT, title="Failover wizard",
          caption="See at a glance which guests would survive a node failure, and why the "

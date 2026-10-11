@@ -1,6 +1,6 @@
 # Screenshot gallery
 
-30 views of Depl0y — 15 dark, 15 light — captured at 1440×1000 at 2× from the running application.
+32 views of Depl0y — 16 dark, 16 light — captured at 1440×1000 at 2× from the running application.
 
 [← Back to the README](../README.md) · [▶ Watch the walkthrough](https://github.com/agit8or1/Depl0y/releases/download/v2.2.75/depl0y-walkthrough.mp4)
 
@@ -184,6 +184,22 @@ Review every pool defined on a datacenter — type, which nodes see it, what con
 [![High availability management page in dark theme listing HA groups and the guests assigned to them with their current state.](images/github/ha-management-dark.png)](images/github/ha-management-dark.png)
 
 Manage HA groups and the resources assigned to them, with quorum in view. · [Full size](images/github/ha-management-dark.png)
+
+### HA rules
+
+**🌙 Dark** · `/ha-management`
+
+[![HA page in dark theme for the Proxmox VE 9 site DC-West, Rules tab: a table with the node-affinity rule windows-prefer-west-01 preferring west-01 (priority 2) over west-02 (priority 1) for vm:203, vm:204 and vm:213, and the resource-affinity rule dc-and-sql-apart keeping vm:203 and vm:213 on different nodes, each enabled with Edit, Disable and Delete actions.](images/github/ha-rules-dark.png)](images/github/ha-rules-dark.png)
+
+On Proxmox VE 9, manage HA rules: which nodes guests prefer, and which guests must stay together or apart. · [Full size](images/github/ha-rules-dark.png)
+
+### Editing an HA rule
+
+**☀️ Light** · `/ha-management`
+
+[![Edit rule dialog in light theme for windows-prefer-west-01: rule ID and type (node affinity), HA resources vm:203, vm:204 and vm:213 ticked, west-01 at priority 2 and west-02 at priority 1, an unticked strict option, the comment and a disabled checkbox, with Save rule and Cancel buttons.](images/github/ha-rule-editor-light.png)](images/github/ha-rule-editor-light.png)
+
+Pick HA resources, nodes and priorities, and whether the rule is strict. · [Full size](images/github/ha-rule-editor-light.png)
 
 ### Failover wizard
 

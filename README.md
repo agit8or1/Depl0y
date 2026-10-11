@@ -109,7 +109,7 @@ applies one fixed, best-practice HA setup and shows exactly what it will change.
 
 <a href="docs/images/github/failover-wizard-plan-dark.png"><img src="docs/images/github/failover-wizard-plan-dark.png" width="900" alt="Failover wizard plan step in dark theme for VM 206 build-agent-01 on west-01: ZFS replication every 2 minutes, failing over to west-02 only, one restart then one relocation, automatic failback and migrate-on-shutdown, followed by the five changes the wizard will make and a note on how Proxmox fences a failed node."></a>
 
-**📸 [Browse the full gallery — 30 views, light and dark](docs/SCREENSHOTS.md)**
+**📸 [Browse the full gallery — 32 views, light and dark](docs/SCREENSHOTS.md)**
 
 ---
 

@@ -452,8 +452,13 @@ def h_qdevice(dc, m, q):
     return {"Status": "Connected", "QNetd address": "192.0.2.53"} if dc["key"] == "west" else {}
 
 
+def _pve9(dc):
+    return int(dc["pve_version"].split(".")[0]) >= 9
+
+
 def h_ha_groups(dc, m, q):
-    if not dc["cluster"]:
+    # Proxmox VE 9 replaced HA groups with rules.
+    if not dc["cluster"] or _pve9(dc):
         return []
     return [{"group": f"{dc['cluster']}-ha", "type": "group", "nodes": ",".join(dc["nodes"]),
              "restricted": 0, "nofailback": 0, "comment": "Production workloads"}]
@@ -467,10 +472,25 @@ def h_ha_resources(dc, m, q):
         for g in F.guests_of(name):
             if g["template"] or "production" not in g["tags"]:
                 continue
-            out.append({"sid": f"vm:{g['vmid']}", "type": "vm", "state": "started",
-                        "group": f"{dc['cluster']}-ha", "max_restart": 1, "max_relocate": 1,
-                        "digest": "a1b2c3"})
+            res = {"sid": f"vm:{g['vmid']}", "type": "vm", "state": "started",
+                   "max_restart": 1, "max_relocate": 1, "digest": "a1b2c3"}
+            if not _pve9(dc):
+                res["group"] = f"{dc['cluster']}-ha"
+            out.append(res)
     return out
+
+
+def h_ha_rules(dc, m, q):
+    if not dc["cluster"] or not _pve9(dc):
+        return []
+    return [
+        {"rule": "windows-prefer-west-01", "type": "node-affinity", "resources": "vm:203,vm:204,vm:213",
+         "nodes": "west-01:2,west-02:1", "strict": 0, "disable": 0, "order": 1,
+         "comment": "Windows servers stay on west-01 unless it is down", "digest": "4e2a"},
+        {"rule": "dc-and-sql-apart", "type": "resource-affinity", "resources": "vm:203,vm:213",
+         "affinity": "negative", "disable": 0, "order": 2,
+         "comment": "Never lose the domain controller and SQL together", "digest": "4e2a"},
+    ]
 
 
 def h_ha_status(dc, m, q):
@@ -669,6 +689,7 @@ ROUTES = [
     (r"^cluster/options$", h_cluster_options),
     (r"^cluster/backup$", h_cluster_backup),
     (r"^cluster/ha/groups$", h_ha_groups),
+    (r"^cluster/ha/rules$", h_ha_rules),
     (r"^cluster/ha/resources$", h_ha_resources),
     (r"^cluster/config/qdevice$", h_qdevice),
     (r"^cluster/ha/status/current$", h_ha_status),

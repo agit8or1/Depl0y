@@ -5,6 +5,33 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.99] - 2026-10-11 📐 HA rules on the HA page
+
+### Added
+
+- **HA rules management** (Proxmox VE 9). The HA page shows a **Rules** tab on VE 9
+  clusters, where HA groups no longer exist: create, edit, enable/disable and delete
+  *node-affinity* rules (nodes with priorities, optionally strict) and
+  *resource-affinity* rules (keep HA resources together or apart). Rules made by the
+  Failover Wizard are marked, and deleting one warns why it exists. On VE 8 the Groups
+  tab is shown as before.
+- API: `GET/POST /api/v1/pve-node/{host_id}/cluster/ha/rules` and
+  `PUT/DELETE .../rules/{rule}` (writes are admin-only). Input is validated before it
+  reaches Proxmox; `GET` reports whether the cluster supports rules.
+
+### Fixed
+
+- The Add HA Resource form's **"Migration Target Node"** was never sent to Proxmox; it
+  was kept only in the browser and shown as if it were a setting. It is removed. The
+  resource table's failover node now comes from real settings only: node-affinity
+  rules on VE 9, the HA group on VE 8.
+- HA group pickers are hidden on VE 9, where sending a group fails.
+
+### Docs
+
+- Feature reference and in-app HA documentation cover rules; two new gallery views
+  (32 in total). The screenshot demo's west cluster now runs VE 9 with HA rules.
+
 ## [2.2.98] - 2026-10-11 🧹 Legacy HA endpoints removed
 
 ### Fixed

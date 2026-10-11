@@ -425,6 +425,149 @@ def remove_ha_resource(host_id: int, sid: str, db: Session = Depends(get_db),
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ── HA rules (Proxmox VE 9+; they replace HA groups) ──────────────────────────
+
+_RULE_ID = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{1,63}$")
+_HA_SID = re.compile(r"^(vm|ct):\d{2,9}$")
+_NODE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.-]{0,62}$")
+
+
+class HaRuleNode(BaseModel):
+    node: str
+    priority: Optional[int] = Field(None, ge=0, le=1000)
+
+
+class HaRuleRequest(BaseModel):
+    rule: Optional[str] = None          # required on create, taken from the URL on update
+    type: str                           # node-affinity | resource-affinity
+    resources: List[str]
+    nodes: List[HaRuleNode] = []        # node-affinity only
+    strict: bool = False                # node-affinity only
+    affinity: str = "positive"          # resource-affinity: positive = together, negative = apart
+    comment: str = ""
+    disable: bool = False
+
+    @validator("type")
+    def _type(cls, v):
+        if v not in ("node-affinity", "resource-affinity"):
+            raise ValueError("type must be node-affinity or resource-affinity")
+        return v
+
+    @validator("resources")
+    def _resources(cls, v):
+        v = [r.strip() for r in v if r.strip()]
+        bad = [r for r in v if not _HA_SID.match(r)]
+        if bad:
+            raise ValueError(f"not an HA resource id (vm:<id> or ct:<id>): {', '.join(bad)}")
+        if not v:
+            raise ValueError("pick at least one HA resource")
+        return sorted(set(v), key=v.index)
+
+    @validator("affinity")
+    def _affinity(cls, v):
+        if v not in ("positive", "negative"):
+            raise ValueError("affinity must be positive or negative")
+        return v
+
+    @validator("comment")
+    def _comment(cls, v):
+        if "\n" in v or len(v) > 4096:
+            raise ValueError("comment must be a single line")
+        return v
+
+
+def _rule_params(body: HaRuleRequest) -> dict:
+    params = {"type": body.type, "resources": ",".join(body.resources), "disable": int(body.disable)}
+    if body.type == "node-affinity":
+        if not body.nodes:
+            raise HTTPException(status_code=422, detail="A node-affinity rule needs at least one node")
+        bad = [n.node for n in body.nodes if not _NODE_NAME.match(n.node)]
+        if bad:
+            raise HTTPException(status_code=422, detail=f"Invalid node name: {', '.join(bad)}")
+        params["nodes"] = ",".join(n.node if n.priority is None else f"{n.node}:{n.priority}" for n in body.nodes)
+        params["strict"] = int(body.strict)
+    else:
+        if len(body.resources) < 2:
+            raise HTTPException(status_code=422, detail="A resource-affinity rule needs at least two HA resources")
+        params["affinity"] = body.affinity
+    if body.comment:
+        params["comment"] = body.comment
+    return params
+
+
+def _pve_error(e: Exception) -> HTTPException:
+    text = str(e)
+    return HTTPException(status_code=400 if "400" in text[:20] or "Parameter verification" in text else 500,
+                         detail=text)
+
+
+@router.get("/{host_id}/cluster/ha/rules")
+def ha_rules(host_id: int, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    """HA rules, and whether this cluster has them (Proxmox VE 9+; older versions use groups)."""
+    host = _get_host(host_id, db)
+    pve = _pve(host)
+    try:
+        version = str((pve.version.get() or {}).get("version", ""))
+    except Exception:
+        version = ""
+    major = int(re.match(r"\d+", version).group()) if re.match(r"\d+", version) else None
+    if major is not None and major < 9:
+        return {"supported": False, "pve_version": version, "rules": []}
+    try:
+        rules = pve.cluster.ha.rules.get() or []
+    except Exception as e:
+        if major is None:
+            return {"supported": False, "pve_version": version, "rules": []}
+        raise HTTPException(status_code=500, detail=str(e))
+    return {"supported": True, "pve_version": version, "rules": rules}
+
+
+@router.post("/{host_id}/cluster/ha/rules")
+def create_ha_rule(host_id: int, body: HaRuleRequest, db: Session = Depends(get_db),
+                   current_user=Depends(require_admin)):
+    if not body.rule or not _RULE_ID.match(body.rule):
+        raise HTTPException(status_code=422, detail="Rule ID must start with a letter and use only letters, "
+                                                    "digits, '-' and '_' (2-64 characters)")
+    host = _get_host(host_id, db)
+    try:
+        _pve(host).cluster.ha.rules.post(rule=body.rule, **_rule_params(body))
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise _pve_error(e)
+    return {"success": True, "rule": body.rule}
+
+
+@router.put("/{host_id}/cluster/ha/rules/{rule}")
+def update_ha_rule(host_id: int, rule: str, body: HaRuleRequest, db: Session = Depends(get_db),
+                   current_user=Depends(require_admin)):
+    if not _RULE_ID.match(rule):
+        raise HTTPException(status_code=422, detail="Invalid rule ID")
+    host = _get_host(host_id, db)
+    params = _rule_params(body)
+    if not body.comment:
+        params["delete"] = "comment"
+    try:
+        _pve(host).cluster.ha.rules(rule).put(**params)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise _pve_error(e)
+    return {"success": True, "rule": rule}
+
+
+@router.delete("/{host_id}/cluster/ha/rules/{rule}")
+def delete_ha_rule(host_id: int, rule: str, db: Session = Depends(get_db), current_user=Depends(require_admin)):
+    if not _RULE_ID.match(rule):
+        raise HTTPException(status_code=422, detail="Invalid rule ID")
+    host = _get_host(host_id, db)
+    try:
+        _pve(host).cluster.ha.rules(rule).delete()
+    except Exception as e:
+        raise _pve_error(e)
+    return {"success": True}
+
+
 @router.get("/{host_id}/cluster/ha/groups")
 def ha_groups(host_id: int, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
     host = _get_host(host_id, db)

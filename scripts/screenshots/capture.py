@@ -203,6 +203,25 @@ def api_explorer_endpoint(page):
     time.sleep(4)
 
 
+def ha_rules_tab(page):
+    """HA page on the Proxmox VE 9 site (DC-West), Rules tab."""
+    page.locator("select").first.wait_for(timeout=15000)
+    page.locator("select").first.select_option(label=page.evaluate(
+        "() => Array.from(document.querySelector('select').options).map(o => o.text)"
+        ".find(t => t.startsWith('DC-West'))"))
+    time.sleep(8)
+    page.locator("button.tab-btn", has_text="Rules").first.click(timeout=20000)
+    time.sleep(2)
+    page.evaluate("() => document.querySelector('.tab-bar').scrollIntoView({block: 'start'})")
+    time.sleep(1)
+
+
+def ha_rule_editor(page):
+    ha_rules_tab(page)
+    page.get_by_role("button", name="Edit").first.click(timeout=20000)
+    time.sleep(2)
+
+
 def failover_review_plan(page):
     """The wizard opens on the readiness step; the plan is one click further."""
     page.get_by_role("button", name="Review plan").first.click(timeout=20000)
@@ -225,6 +244,8 @@ ACTIONS = {
     "backup_schedules": backup_schedules,
     "api_explorer_endpoint": api_explorer_endpoint,
     "failover_review_plan": failover_review_plan,
+    "ha_rules_tab": ha_rules_tab,
+    "ha_rule_editor": ha_rule_editor,
 }
 
 
@@ -286,7 +307,7 @@ def main():
                     ACTIONS[shot["action"]](page)
                     tidy(page) if shot["action"] not in (
                         "expand_bmc", "create_vm_walkthrough",
-                        "create_vm_storage_step") else page.evaluate(TIDY)
+                        "create_vm_storage_step", "ha_rules_tab") else page.evaluate(TIDY)
                 applied = page.evaluate(
                     "() => document.documentElement.getAttribute('data-theme')")
                 if applied != shot["theme"]:

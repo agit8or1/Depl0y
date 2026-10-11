@@ -3,7 +3,7 @@
     <div class="page-header">
       <div>
         <h1>High Availability Management</h1>
-        <p class="text-muted">Manage Proxmox HA resources, groups, fence devices, and monitor cluster failover</p>
+        <p class="text-muted">Manage Proxmox HA resources, rules (VE 9) or groups (VE 8), fence devices, and monitor cluster failover</p>
       </div>
       <div class="header-actions">
         <router-link to="/ha-wizard" class="btn btn-primary">🛟 Failover Wizard</router-link>
@@ -178,7 +178,11 @@
           Resources
           <span v-if="haResources.length" class="tab-count">{{ haResources.length }}</span>
         </button>
-        <button :class="['tab-btn', activeTab === 'groups' ? 'tab-active' : '']" @click="activeTab = 'groups'">
+        <button v-if="rulesSupported" :class="['tab-btn', activeTab === 'rules' ? 'tab-active' : '']" @click="activeTab = 'rules'">
+          Rules
+          <span v-if="haRules.length" class="tab-count">{{ haRules.length }}</span>
+        </button>
+        <button v-if="rulesSupported === false" :class="['tab-btn', activeTab === 'groups' ? 'tab-active' : '']" @click="activeTab = 'groups'">
           Groups
           <span v-if="haGroups.length" class="tab-count">{{ haGroups.length }}</span>
         </button>
@@ -216,7 +220,7 @@
               <tr>
                 <th>SID</th>
                 <th>Type</th>
-                <th>Group</th>
+                <th>{{ rulesSupported ? 'Rules' : 'Group' }}</th>
                 <th>Configured State</th>
                 <th>Live State</th>
                 <th>Current Node</th>
@@ -231,7 +235,11 @@
               <tr v-for="resource in haResources" :key="resource.sid">
                 <td><strong>{{ resource.sid }}</strong></td>
                 <td>{{ resource.type || 'vm' }}</td>
-                <td>{{ resource.group || '—' }}</td>
+                <td v-if="rulesSupported">
+                  <span v-for="r in rulesFor(resource.sid)" :key="r.rule" class="node-chip" :title="describeRule(r)">{{ r.rule }}</span>
+                  <span v-if="!rulesFor(resource.sid).length" class="text-muted text-sm">—</span>
+                </td>
+                <td v-else>{{ resource.group || '—' }}</td>
                 <td>
                   <span :class="['badge', resourceStateBadge(resource.state)]">
                     {{ resource.state || 'unknown' }}
@@ -364,6 +372,77 @@
         </div>
       </div>
 
+      <!-- ─── Rules Tab (Proxmox VE 9+) ─────────────────────────────────────── -->
+      <div v-if="activeTab === 'rules' && rulesSupported" class="card">
+        <div class="card-header">
+          <h2>HA Rules</h2>
+          <button @click="openRuleModal()" class="btn btn-primary" :disabled="!haResources.length"
+                  :title="haResources.length ? '' : 'Add an HA resource first; rules apply to HA resources'">+ Create Rule</button>
+        </div>
+        <p class="text-sm text-muted rules-intro">
+          Rules replace HA groups in Proxmox VE 9. A <strong>node-affinity</strong> rule says which nodes HA resources should
+          run on (higher priority is preferred; <em>strict</em> means never anywhere else). A <strong>resource-affinity</strong>
+          rule keeps HA resources on the same node or on different nodes.
+        </p>
+
+        <div v-if="loadingRules" class="loading-state">Loading HA rules...</div>
+        <div v-else-if="rulesError" class="error-banner">{{ rulesError }}</div>
+        <div v-else-if="haRules.length === 0" class="empty-state">
+          <p>No HA rules on this cluster.</p>
+          <p class="text-sm text-muted">Without rules, HA may start a resource on any node with the HA service running.</p>
+        </div>
+
+        <div v-else class="table-container">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Rule</th>
+                <th>Type</th>
+                <th>Effect</th>
+                <th>Resources</th>
+                <th>State</th>
+                <th>Comment</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="rule in haRules" :key="rule.rule" :class="{ 'rule-disabled': isDisabled(rule) }">
+                <td>
+                  <strong>{{ rule.rule }}</strong>
+                  <span v-if="isWizardRule(rule)" class="badge badge-info rule-wizard" title="Created by the Failover Wizard">wizard</span>
+                </td>
+                <td><span class="badge badge-secondary">{{ rule.type }}</span></td>
+                <td class="text-sm">
+                  <template v-if="rule.type === 'node-affinity'">
+                    {{ rule.strict ? 'Only on' : 'Prefer' }}
+                    <span v-for="n in parseGroupNodes(rule.nodes)" :key="n.name" class="node-chip node-chip-priority">
+                      {{ n.name }}<span v-if="n.priority !== undefined" class="node-priority">:{{ n.priority }}</span>
+                    </span>
+                  </template>
+                  <template v-else>{{ rule.affinity === 'negative' ? 'Keep on different nodes' : 'Keep on the same node' }}</template>
+                </td>
+                <td>
+                  <span v-for="sid in splitList(rule.resources)" :key="sid" class="node-chip">{{ sid }}</span>
+                </td>
+                <td>
+                  <span :class="['badge', isDisabled(rule) ? 'badge-warning' : 'badge-success']">{{ isDisabled(rule) ? 'disabled' : 'enabled' }}</span>
+                </td>
+                <td class="text-sm text-muted">{{ rule.comment || '—' }}</td>
+                <td class="actions-cell">
+                  <button @click="openRuleModal(rule)" class="btn btn-outline btn-sm">Edit</button>
+                  <button @click="toggleRule(rule)" class="btn btn-outline btn-sm" :disabled="savingRule">
+                    {{ isDisabled(rule) ? 'Enable' : 'Disable' }}
+                  </button>
+                  <button @click="removeRule(rule)" class="btn btn-danger btn-sm" :disabled="deletingRule === rule.rule">
+                    {{ deletingRule === rule.rule ? 'Deleting...' : 'Delete' }}
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       <!-- ─── Fence Devices Tab ─────────────────────────────────────────────── -->
       <div v-if="activeTab === 'fence'" class="card">
         <div class="card-header">
@@ -457,7 +536,7 @@
             <p class="field-hint">Format: <code>vm:&lt;vmid&gt;</code> or <code>ct:&lt;vmid&gt;</code></p>
           </div>
 
-          <div class="form-group">
+          <div class="form-group" v-if="!rulesSupported">
             <label class="form-label">HA Group</label>
             <select v-model="newResource.group" class="form-control">
               <option value="">— None —</option>
@@ -465,14 +544,10 @@
             </select>
           </div>
 
-          <div class="form-group">
-            <label class="form-label">Migration Target Node (on failure)</label>
-            <select v-model="newResource.migration_target" class="form-control">
-              <option value="">— Auto (any available node) —</option>
-              <option v-for="node in clusterNodes" :key="node" :value="node">{{ node }}</option>
-            </select>
-            <p class="field-hint">The preferred node to migrate to when the current node fails.</p>
-          </div>
+          <p class="field-hint">
+            To choose where it fails over to, {{ rulesSupported ? 'add a node-affinity rule on the Rules tab' : 'put it in an HA group with node priorities' }},
+            or use the <router-link to="/ha-wizard">Failover Wizard</router-link>, which sets it up for you.
+          </p>
 
           <div class="form-row">
             <div class="form-group">
@@ -505,6 +580,81 @@
               {{ saving ? 'Adding...' : 'Add Resource' }}
             </button>
             <button type="button" @click="showAddModal = false" class="btn btn-outline">Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- ─── Rule Modal (create / edit) ───────────────────────────────────── -->
+    <div v-if="showRuleModal" class="modal" @click.self="showRuleModal = false">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>{{ editingRule ? `Edit rule ${editingRule}` : 'Create HA rule' }}</h3>
+          <button @click="showRuleModal = false" class="btn-close">&times;</button>
+        </div>
+        <form @submit.prevent="saveRule" class="modal-body">
+          <div v-if="editingRule && isWizardRule(ruleForm)" class="info-banner">
+            The Failover Wizard created this rule. With ZFS replication it must stay strict and list only nodes that have the replica.
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Rule ID <span class="required">*</span></label>
+              <input v-model="ruleForm.rule" class="form-control" :disabled="!!editingRule" placeholder="e.g. db-prefer-pve1" required />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Type</label>
+              <select v-model="ruleForm.type" class="form-control" :disabled="!!editingRule">
+                <option value="node-affinity">Node affinity: which nodes</option>
+                <option value="resource-affinity">Resource affinity: together or apart</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">HA resources <span class="required">*</span></label>
+            <div class="check-grid">
+              <label v-for="sid in ruleResourceOptions" :key="sid" class="check-item">
+                <input type="checkbox" :value="sid" v-model="ruleForm.resources" /> {{ sid }}
+              </label>
+            </div>
+            <p class="field-hint">Rules apply to HA resources; add a guest on the Resources tab first.</p>
+          </div>
+
+          <template v-if="ruleForm.type === 'node-affinity'">
+            <div class="form-group">
+              <label class="form-label">Nodes and priorities <span class="required">*</span></label>
+              <div class="node-priority-list">
+                <label v-for="n in Object.keys(ruleForm.nodes)" :key="n" class="node-priority-row">
+                  <input type="checkbox" v-model="ruleForm.nodes[n].selected" />
+                  <span class="node-name">{{ n }}</span>
+                  <input type="number" min="0" max="1000" v-model.number="ruleForm.nodes[n].priority"
+                         class="form-control priority-input" :disabled="!ruleForm.nodes[n].selected" />
+                </label>
+              </div>
+              <p class="field-hint">Higher priority is preferred. Nodes with the same priority are treated equally.</p>
+            </div>
+            <label class="check-item">
+              <input type="checkbox" v-model="ruleForm.strict" />
+              Strict: only ever run on these nodes (otherwise other nodes are used when none of these are available)
+            </label>
+          </template>
+
+          <div v-else class="form-group">
+            <label class="form-label">Placement</label>
+            <label class="check-item"><input type="radio" value="positive" v-model="ruleForm.affinity" /> Keep on the same node</label>
+            <label class="check-item"><input type="radio" value="negative" v-model="ruleForm.affinity" /> Keep on different nodes</label>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Comment</label>
+            <input v-model="ruleForm.comment" class="form-control" placeholder="Optional" />
+          </div>
+          <label class="check-item"><input type="checkbox" v-model="ruleForm.disable" /> Disabled (keep the rule but don't apply it)</label>
+
+          <div v-if="ruleFormError" class="error-banner">{{ ruleFormError }}</div>
+          <div class="modal-actions">
+            <button type="submit" class="btn btn-primary" :disabled="savingRule">{{ savingRule ? 'Saving...' : (editingRule ? 'Save rule' : 'Create rule') }}</button>
+            <button type="button" class="btn btn-outline" @click="showRuleModal = false">Cancel</button>
           </div>
         </form>
       </div>
@@ -682,7 +832,7 @@
             <input :value="editResource.sid" class="form-control" disabled />
           </div>
 
-          <div class="form-group">
+          <div class="form-group" v-if="!rulesSupported">
             <label class="form-label">HA Group</label>
             <select v-model="editResource.group" class="form-control">
               <option value="">— None —</option>
@@ -925,7 +1075,7 @@
               </label>
             </div>
 
-            <div class="form-group mt-sm">
+            <div class="form-group mt-sm" v-if="!rulesSupported">
               <label class="form-label">HA Group (optional)</label>
               <select v-model="bulkHaGroup" class="form-control">
                 <option value="">— None —</option>
@@ -1183,11 +1333,18 @@ const haResources = ref([])
 const loadingResources = ref(false)
 const resourceError = ref(null)
 const deletingSid = ref(null)
-// Track migration targets per resource (from group membership)
-const migrationTargetMap = ref({})
-
+// Where a resource would fail over to, from its real placement settings: node-affinity
+// rules on Proxmox VE 9, its HA group on older versions.
 const getMigrationTarget = (resource) => {
-  if (migrationTargetMap.value[resource.sid]) return migrationTargetMap.value[resource.sid]
+  const currentNode = liveStatus.value[resource.sid]?.node
+  if (rulesSupported.value) {
+    const nodes = rulesFor(resource.sid)
+      .filter(r => r.type === 'node-affinity' && !isDisabled(r))
+      .flatMap(r => parseGroupNodes(r.nodes))
+      .filter(n => n.name !== currentNode)
+      .sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0))
+    return nodes.length ? nodes[0].name : null
+  }
   // Infer from group — if the group has nodes with priorities, the highest-priority non-current node is the target
   if (resource.group) {
     const grp = haGroups.value.find(g => g.group === resource.group)
@@ -1247,6 +1404,146 @@ const loadHaGroups = async () => {
   }
 }
 
+// ── HA Rules (Proxmox VE 9+) ─────────────────────────────────────────────────
+const haRules = ref([])
+const rulesSupported = ref(null)     // null until known; false on Proxmox VE 8 (groups instead)
+const loadingRules = ref(false)
+const rulesError = ref(null)
+const deletingRule = ref(null)
+const savingRule = ref(false)
+const showRuleModal = ref(false)
+const editingRule = ref(null)
+const ruleForm = ref({})
+const ruleFormError = ref(null)
+const WIZARD_COMMENT = 'Managed by Depl0y failover wizard'
+
+const splitList = (str) => (str ? String(str).split(',').map(x => x.trim()).filter(Boolean) : [])
+const isDisabled = (rule) => Number(rule.disable) === 1 || rule.disable === true
+const isWizardRule = (rule) => String(rule.comment || '').includes(WIZARD_COMMENT)
+const rulesFor = (sid) => haRules.value.filter(r => splitList(r.resources).includes(sid))
+const describeRule = (rule) => rule.type === 'node-affinity'
+  ? `${rule.strict ? 'Only on' : 'Prefer'} ${rule.nodes}`
+  : (rule.affinity === 'negative' ? 'Keep on different nodes' : 'Keep on the same node')
+
+const loadHaRules = async () => {
+  if (!selectedHostId.value) return
+  loadingRules.value = true
+  rulesError.value = null
+  try {
+    const res = await api.pveNode.listHaRules(selectedHostId.value)
+    rulesSupported.value = !!res.data.supported
+    haRules.value = res.data.rules || []
+    if (rulesSupported.value && activeTab.value === 'groups') activeTab.value = 'rules'
+    if (!rulesSupported.value && activeTab.value === 'rules') activeTab.value = 'groups'
+  } catch (err) {
+    rulesError.value = err.response?.data?.detail || 'Failed to load HA rules'
+  } finally {
+    loadingRules.value = false
+  }
+}
+
+const ruleResourceOptions = computed(() => {
+  const sids = haResources.value.map(r => r.sid)
+  for (const sid of ruleForm.value.resources || []) if (!sids.includes(sid)) sids.push(sid)
+  return sids
+})
+
+const blankNodes = () => Object.fromEntries(clusterNodes.value.map(n => [n, { selected: false, priority: 1 }]))
+
+const openRuleModal = (rule = null) => {
+  ruleFormError.value = null
+  editingRule.value = rule ? rule.rule : null
+  const nodes = blankNodes()
+  if (rule) {
+    for (const n of parseGroupNodes(rule.nodes)) {
+      nodes[n.name] = { selected: true, priority: n.priority ?? 1 }
+    }
+  }
+  ruleForm.value = {
+    rule: rule?.rule || '',
+    type: rule?.type || 'node-affinity',
+    resources: rule ? splitList(rule.resources) : [],
+    nodes,
+    strict: !!Number(rule?.strict || 0),
+    affinity: rule?.affinity || 'positive',
+    comment: rule?.comment || '',
+    disable: rule ? isDisabled(rule) : false,
+  }
+  showRuleModal.value = true
+}
+
+const rulePayload = (form) => ({
+  rule: form.rule,
+  type: form.type,
+  resources: form.resources,
+  nodes: Object.entries(form.nodes || {}).filter(([, v]) => v.selected)
+    .map(([node, v]) => ({ node, priority: v.priority === '' || v.priority === null ? null : Number(v.priority) })),
+  strict: !!form.strict,
+  affinity: form.affinity,
+  comment: form.comment || '',
+  disable: !!form.disable,
+})
+
+const saveRule = async () => {
+  ruleFormError.value = null
+  const payload = rulePayload(ruleForm.value)
+  if (!payload.resources.length) { ruleFormError.value = 'Pick at least one HA resource.'; return }
+  if (payload.type === 'node-affinity' && !payload.nodes.length) { ruleFormError.value = 'Pick at least one node.'; return }
+  if (payload.type === 'resource-affinity' && payload.resources.length < 2) { ruleFormError.value = 'Pick at least two HA resources.'; return }
+  savingRule.value = true
+  try {
+    if (editingRule.value) {
+      await api.pveNode.updateHaRule(selectedHostId.value, editingRule.value, payload)
+      toast.success(`Rule ${editingRule.value} saved`)
+    } else {
+      await api.pveNode.createHaRule(selectedHostId.value, payload)
+      toast.success(`Rule ${payload.rule} created`)
+    }
+    showRuleModal.value = false
+    await loadHaRules()
+  } catch (err) {
+    ruleFormError.value = err.response?.data?.detail || 'Failed to save the rule'
+  } finally {
+    savingRule.value = false
+  }
+}
+
+const toggleRule = async (rule) => {
+  const form = {
+    rule: rule.rule, type: rule.type, resources: splitList(rule.resources),
+    nodes: Object.fromEntries(parseGroupNodes(rule.nodes).map(n => [n.name, { selected: true, priority: n.priority ?? null }])),
+    strict: !!Number(rule.strict || 0), affinity: rule.affinity || 'positive', comment: rule.comment || '',
+    disable: !isDisabled(rule),
+  }
+  savingRule.value = true
+  try {
+    await api.pveNode.updateHaRule(selectedHostId.value, rule.rule, rulePayload(form))
+    toast.success(`Rule ${rule.rule} ${form.disable ? 'disabled' : 'enabled'}`)
+    await loadHaRules()
+  } catch (err) {
+    toast.error(err.response?.data?.detail || 'Failed to update the rule')
+  } finally {
+    savingRule.value = false
+  }
+}
+
+const removeRule = async (rule) => {
+  const warn = isWizardRule(rule)
+    ? `\n\nThe Failover Wizard created this rule. Without it, a replicated guest could be started on a node without its disks.`
+    : ''
+  if (!confirm(`Delete HA rule ${rule.rule}?${warn}`)) return
+  deletingRule.value = rule.rule
+  try {
+    await api.pveNode.deleteHaRule(selectedHostId.value, rule.rule)
+    toast.success(`Rule ${rule.rule} deleted`)
+    await loadHaRules()
+  } catch (err) {
+    toast.error(err.response?.data?.detail || 'Failed to delete the rule')
+  } finally {
+    deletingRule.value = null
+  }
+}
+
 const loadClusterNodes = async () => {
   if (!selectedHostId.value) return
   try {
@@ -1269,25 +1566,20 @@ const parseGroupNodes = (nodesStr) => {
 // ── Add Resource Modal ────────────────────────────────────────────────────────
 const showAddModal = ref(false)
 const saving = ref(false)
-const newResource = ref({ sid: '', group: '', migration_target: '', max_restart: 1, max_relocate: 1, comment: '' })
+const newResource = ref({ sid: '', group: '', max_restart: 1, max_relocate: 1, comment: '' })
 
 const resetNewResource = () => {
-  newResource.value = { sid: '', group: '', migration_target: '', max_restart: 1, max_relocate: 1, comment: '' }
+  newResource.value = { sid: '', group: '', max_restart: 1, max_relocate: 1, comment: '' }
 }
 
 const addResource = async () => {
   saving.value = true
   try {
     const payload = { ...newResource.value }
-    // Remove migration_target — it's not a native Proxmox field but we store it locally
-    const migTarget = payload.migration_target
-    delete payload.migration_target
     Object.keys(payload).forEach(k => {
       if (payload[k] === '' || payload[k] === null || payload[k] === undefined) delete payload[k]
     })
     await api.pveNode.addHaResource(selectedHostId.value, payload)
-    // Store migration target client-side
-    if (migTarget) migrationTargetMap.value[payload.sid] = migTarget
     toast.success(`HA resource ${payload.sid} added`)
     showAddModal.value = false
     resetNewResource()
@@ -1308,7 +1600,6 @@ const confirmDeleteResource = async (sid) => {
   try {
     await api.pveNode.deleteHaResource(selectedHostId.value, sid)
     toast.success(`HA resource ${sid} removed`)
-    delete migrationTargetMap.value[sid]
     await loadHaResources()
   } catch (err) {
     toast.error(err.response?.data?.detail || 'Failed to remove HA resource')
@@ -1652,6 +1943,7 @@ const reloadAll = () => {
   loadHaStatus()
   loadHaResources()
   loadHaGroups()
+  loadHaRules()
   loadFenceDevices()
   loadClusterNodes()
   startPoll()
@@ -1700,6 +1992,19 @@ watch(selectedHostId, (val) => { if (val) startPoll(); else stopPoll() })
 /* ── HA Status Panel ── */
 .ha-status-panel .card-header { margin-bottom: 1rem; }
 .ha-services-wrap { display: flex; align-items: center; gap: 0.625rem; flex-wrap: wrap; }
+.rules-intro { padding: 0 1.25rem; margin: 0.5rem 0 1rem; max-width: 900px; }
+.rule-disabled td { opacity: 0.6; }
+.rule-wizard { margin-left: 0.4rem; font-size: 0.7rem; }
+.check-grid { display: flex; flex-wrap: wrap; gap: 0.4rem 1rem; }
+.check-item { display: flex; align-items: center; gap: 0.4rem; font-size: 0.9rem; cursor: pointer; margin: 0.25rem 0; }
+.node-priority-list { display: flex; flex-direction: column; gap: 0.35rem; }
+.node-priority-list .node-priority-row { display: flex; align-items: center; justify-content: flex-start; gap: 0.75rem;
+  width: auto; margin: 0; padding: 0.15rem 0; border: none; font-weight: normal; }
+.node-priority-row input[type="checkbox"] { width: auto; margin: 0; }
+.node-priority-row .node-name { min-width: 120px; text-align: left; }
+.node-priority-row .priority-input { width: 90px; flex: 0 0 90px; }
+.info-banner { padding: 0.6rem 0.8rem; border-radius: 6px; margin-bottom: 0.8rem; font-size: 0.9rem;
+  background: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.35); }
 .header-actions a.btn { text-decoration: none; }
 .toggle-label { font-size: 0.875rem; color: var(--text-secondary); }
 

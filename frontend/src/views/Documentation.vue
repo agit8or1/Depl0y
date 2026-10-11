@@ -493,7 +493,16 @@ const SECTIONS = [
 
       ${warnBox('<strong>Two-node clusters:</strong> A two-node cluster loses quorum if one node goes down, preventing HA from automatically restarting VMs. Use a third "witness" node or external corosync quorum device (QDevice) to solve this.')}
 
-      <h3>HA Groups</h3>
+      <h3>HA Rules (Proxmox VE 9)</h3>
+      <p>Proxmox VE 9 replaced HA groups with <strong>HA rules</strong>. On a VE 9 cluster the HA page shows a <strong>Rules</strong> tab instead of Groups:</p>
+      <ul>
+        <li><strong>Node affinity</strong>: which nodes the selected HA resources run on. Give each node a priority (higher is preferred); tick <em>Strict</em> to never run anywhere else (needed when only some nodes have the disks, e.g. with ZFS replication).</li>
+        <li><strong>Resource affinity</strong>: keep two or more HA resources on the <em>same</em> node, or on <em>different</em> nodes (for example a pair of domain controllers).</li>
+        <li>Rules can be edited, disabled without deleting them, and deleted. Rules created by the Failover Wizard are marked <em>wizard</em>.</li>
+        <li>Rules apply to HA resources, so add the guest on the Resources tab (or with the Failover Wizard) first.</li>
+      </ul>
+
+      <h3>HA Groups (Proxmox VE 8)</h3>
       <p>HA groups define which nodes are <em>preferred</em> for running a set of VMs and their relative priority. Navigate to <strong>HA Management → Groups</strong> to:</p>
       <ul>
         <li>Create a group with a list of nodes and per-node priority (0–1000, higher = more preferred)</li>

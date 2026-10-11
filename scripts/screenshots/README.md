@@ -33,7 +33,9 @@ with `off-box requests attempted: 0`.
 `demo/fixtures.py` defines the synthetic estate: three Proxmox endpoints
 (two clusters and a standalone lab), six BMCs (five Dell iDRAC, one HPE iLO),
 45 guests and 8 containers, with mixed utilisation, one DIMM warning and one
-storage alert. Host names use the reserved `example.net` domain; every address
+storage alert. East and the lab run Proxmox VE 8 (HA groups); west runs VE 9 with
+HA rules and a QDevice. A few guests sit on node-local LVM or ZFS so the failover
+wizard has every case to show. Host names use the reserved `example.net` domain; every address
 comes from an RFC 5737 documentation range. Service tags, serial numbers and
 MAC addresses are invented.
 

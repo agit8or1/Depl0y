@@ -7,6 +7,7 @@ from app.core.database import get_db
 from app.models import CloudImage
 from app.api.auth import get_current_user
 import logging
+from app.services.host_ssh import ssh_address
 import os
 import re
 from urllib.parse import urlparse
@@ -691,7 +692,7 @@ def check_ssh_status(
                     '-o', 'BatchMode=yes',
                     '-o', 'ConnectTimeout=5',
                     '-o', 'StrictHostKeyChecking=no',
-                    f'root@{host.hostname}',
+                    f'root@{ssh_address(host)}',
                     'echo SSH_KEY_CONFIGURED'
                 ],
                 capture_output=True,

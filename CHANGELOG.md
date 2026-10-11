@@ -5,6 +5,16 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.102] - 2026-10-11 🔑 SSH reaches the node, not the API hostname
+
+### Fixed
+
+- **"SSH access not configured" when the Proxmox host is added by a public name.** SSH (cloud-image
+  templates, deploy snippets, lock cleanup, VM import, setup, host SSH in the iDRAC panel) used the
+  host's API hostname. If that name only forwards port 8006, port 22 can land on a different machine
+  (here: the firewall), and key login fails. SSH now goes to the LAN IP of the cluster node that serves
+  the API, as reported by Proxmox in /cluster/status (cached 10 minutes; falls back to the hostname).
+
 ## [2.2.101] - 2026-10-11 🔒 Dependency security fixes
 
 ### Security

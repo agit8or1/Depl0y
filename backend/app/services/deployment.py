@@ -13,6 +13,7 @@ from app.services.proxmox import ProxmoxService
 from app.services.cloudinit import CloudInitService, SSH_PASSWORD_AUTH_RUNCMD
 from app.core.security import encrypt_data, decrypt_data
 import logging
+from app.services.host_ssh import ssh_address
 import re
 import time
 import shlex
@@ -82,7 +83,7 @@ class DeploymentService:
                     safe_node_name = shlex.quote(node.node_name)
                     get_ip_cmd = f"grep -A3 'name: {safe_node_name}' /etc/pve/corosync.conf | grep ring0_addr | awk '{{print $2}}'"
                     ip_result = subprocess.run(
-                        ['ssh', '-o', 'StrictHostKeyChecking=no', f'root@{host.hostname}', get_ip_cmd],
+                        ['ssh', '-o', 'StrictHostKeyChecking=no', f'root@{ssh_address(host)}', get_ip_cmd],
                         capture_output=True,
                         text=True,
                         timeout=10
@@ -99,7 +100,7 @@ class DeploymentService:
                         # Remove lock directly from config file via SSH
                         # Use qm unlock command which requires root privileges
                         unlock_result = subprocess.run(
-                            ['ssh', '-o', 'StrictHostKeyChecking=no', f'root@{host.hostname}',
+                            ['ssh', '-o', 'StrictHostKeyChecking=no', f'root@{ssh_address(host)}',
                              f'ssh -o StrictHostKeyChecking=no root@{node_ip} "qm unlock {vmid}"'],
                             capture_output=True,
                             text=True,
@@ -193,7 +194,7 @@ class DeploymentService:
                         safe_node_name = shlex.quote(node.node_name)
                         get_ip_cmd = f"grep -A3 'name: {safe_node_name}' /etc/pve/corosync.conf | grep ring0_addr | awk '{{print $2}}'"
                         ip_result = subprocess.run(
-                            ['ssh', '-o', 'StrictHostKeyChecking=no', f'root@{host.hostname}', get_ip_cmd],
+                            ['ssh', '-o', 'StrictHostKeyChecking=no', f'root@{ssh_address(host)}', get_ip_cmd],
                             capture_output=True,
                             text=True,
                             timeout=10
@@ -209,7 +210,7 @@ class DeploymentService:
 
                             # Remove stale lock file
                             cleanup_result = subprocess.run(
-                                ['ssh', '-o', 'StrictHostKeyChecking=no', f'root@{host.hostname}',
+                                ['ssh', '-o', 'StrictHostKeyChecking=no', f'root@{ssh_address(host)}',
                                  f'ssh -o StrictHostKeyChecking=no root@{node_ip} "rm -f /var/lock/qemu-server/lock-{locked_vmid}.conf"'],
                                 capture_output=True,
                                 text=True,
@@ -1161,7 +1162,7 @@ runcmd:
                 safe_node_name = shlex.quote(node.node_name)
                 remote_cmd = f"grep -A3 'name: {safe_node_name}' /etc/pve/corosync.conf | grep ring0_addr | awk '{{print $2}}'"
                 ip_result = subprocess.run(
-                    ['ssh', '-o', 'StrictHostKeyChecking=no', f'root@{host.hostname}', remote_cmd],
+                    ['ssh', '-o', 'StrictHostKeyChecking=no', f'root@{ssh_address(host)}', remote_cmd],
                     capture_output=True,
                     text=True,
                     timeout=10
@@ -1174,7 +1175,7 @@ runcmd:
                     # SECURITY FIX: Remove shell=True
                     snippet_path = f"/var/lib/vz/snippets/cloud-init-{vmid}.yml"
                     mkdir_result = subprocess.run(
-                        ['ssh', '-o', 'StrictHostKeyChecking=no', f'root@{host.hostname}',
+                        ['ssh', '-o', 'StrictHostKeyChecking=no', f'root@{ssh_address(host)}',
                          f'ssh -o StrictHostKeyChecking=no root@{node_ip} "mkdir -p /var/lib/vz/snippets"'],
                         capture_output=True,
                         text=True,
@@ -1189,7 +1190,7 @@ runcmd:
                     # SECURITY FIX: Remove shell=True - use argument list
                     scp_result = subprocess.run(
                         ['scp', '-o', 'StrictHostKeyChecking=no',
-                         '-o', f'ProxyJump=root@{host.hostname}',
+                         '-o', f'ProxyJump=root@{ssh_address(host)}',
                          temp_file,
                          f'root@{node_ip}:{snippet_path}'],
                         capture_output=True,
@@ -1206,7 +1207,7 @@ runcmd:
                     # Verify the file exists
                     # SECURITY FIX: Remove shell=True
                     verify_result = subprocess.run(
-                        ['ssh', '-o', 'StrictHostKeyChecking=no', f'root@{host.hostname}',
+                        ['ssh', '-o', 'StrictHostKeyChecking=no', f'root@{ssh_address(host)}',
                          f'ssh -o StrictHostKeyChecking=no root@{node_ip} "test -f {snippet_path} && echo EXISTS"'],
                         capture_output=True,
                         text=True,
@@ -1312,7 +1313,7 @@ runcmd:
 
         # Refuse to run if any value fails the strict format check; every
         # interpolation below is then trivially injection-free.
-        hostname = _safe(host.hostname, _HOSTNAME_RE, "host.hostname")
+        hostname = _safe(ssh_address(host), _HOSTNAME_RE, "host.hostname")
         target_node = _safe(node.node_name, _NODE_NAME_RE, "node.node_name")
         storage = _safe(str(storage), _STORAGE_RE, "storage")
         cloud_filename = _safe(cloud_image.filename, _FILENAME_RE, "cloud_image.filename")
@@ -1549,7 +1550,7 @@ echo "✓ Template {template_vmid} creation complete!"
                     '-o', 'UserKnownHostsFile=/dev/null',
                     '-o', 'BatchMode=yes',
                     '-o', 'ConnectTimeout=5',
-                    f'root@{host.hostname}',
+                    f'root@{ssh_address(host)}',
                     'echo', 'SSH_KEY_CONFIGURED'
                 ],
                 capture_output=True,
@@ -1586,7 +1587,7 @@ echo "✓ Template {template_vmid} creation complete!"
                     '-o', 'StrictHostKeyChecking=no',
                     '-o', 'UserKnownHostsFile=/dev/null',
                     '-i', ssh_pub_key_path,
-                    f'root@{host.hostname}'
+                    f'root@{ssh_address(host)}'
                 ],
                 capture_output=True,
                 timeout=30
@@ -1608,7 +1609,7 @@ echo "✓ Template {template_vmid} creation complete!"
                         'ssh',
                         '-o', 'StrictHostKeyChecking=no',
                         '-o', 'UserKnownHostsFile=/dev/null',
-                        f'root@{host.hostname}',
+                        f'root@{ssh_address(host)}',
                         ssh_command
                     ],
                     capture_output=True,
@@ -1628,7 +1629,7 @@ echo "✓ Template {template_vmid} creation complete!"
             logger.info(f"To enable cloud image support, you must either:")
             logger.info(f"1. Add the Proxmox root password in Settings > Proxmox Hosts > Edit Host")
             logger.info(f"2. OR manually configure SSH key by running on this server:")
-            logger.info(f"   cat /opt/depl0y/.ssh/id_rsa.pub | ssh root@{host.hostname} 'cat >> ~/.ssh/authorized_keys'")
+            logger.info(f"   cat /opt/depl0y/.ssh/id_rsa.pub | ssh root@{ssh_address(host)} 'cat >> ~/.ssh/authorized_keys'")
         else:
             logger.warning(f"Could not automatically configure SSH for {host.hostname}")
 
@@ -1926,7 +1927,7 @@ echo "Template {template_vmid} created successfully"
                     "-o", "StrictHostKeyChecking=no",
                     "-o", "UserKnownHostsFile=/dev/null",
                     cloud_image.storage_path,
-                    f"root@{host.hostname}:/tmp/cloud-image-{template_vmid}.img"
+                    f"root@{ssh_address(host)}:/tmp/cloud-image-{template_vmid}.img"
                 ],
                 check=True,
                 capture_output=True,
@@ -1941,7 +1942,7 @@ echo "Template {template_vmid} created successfully"
                     "ssh",
                     "-o", "StrictHostKeyChecking=no",
                     "-o", "UserKnownHostsFile=/dev/null",
-                    f"root@{host.hostname}",
+                    f"root@{ssh_address(host)}",
                     script_content
                 ],
                 check=True,

@@ -6,6 +6,7 @@ from app.models import ProxmoxHost, ProxmoxNode
 from app.core.database import get_db
 from sqlalchemy.orm import Session
 import logging
+from app.services.host_ssh import ssh_address
 import subprocess
 import os
 
@@ -41,7 +42,7 @@ def enable_cloud_images(
                 detail="No Proxmox host configured. Please add a Proxmox host first."
             )
 
-        proxmox_host = host.hostname
+        proxmox_host = ssh_address(host)
         password = request.proxmox_password
 
         if not password:
@@ -235,7 +236,7 @@ def enable_proxmox_cluster_ssh(
                 "message": "Only one node detected - inter-node SSH not needed for single node setups."
             }
 
-        proxmox_host = host.hostname
+        proxmox_host = ssh_address(host)
         password = request.proxmox_password
 
         if not password:

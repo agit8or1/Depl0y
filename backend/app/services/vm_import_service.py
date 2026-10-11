@@ -7,6 +7,7 @@ import shutil
 import tarfile
 import zipfile
 import logging
+from app.services.host_ssh import ssh_address
 import subprocess
 import asyncio
 import uuid
@@ -578,7 +579,7 @@ async def run_import_job(job_id: str, deploy_req: Dict, _db_factory) -> None:
             importdisk_cmd = f"qm importdisk {vmid} {import_path} {storage}"
 
             disk_imported = False
-            ssh_result = _ssh_run(host.hostname, importdisk_cmd, timeout=600)
+            ssh_result = _ssh_run(ssh_address(host), importdisk_cmd, timeout=600)
 
             if ssh_result.returncode == 0:
                 disk_imported = True
@@ -591,7 +592,7 @@ async def run_import_job(job_id: str, deploy_req: Dict, _db_factory) -> None:
                 node_ip = _get_node_ip(host.hostname, node.node_name)
                 if node_ip:
                     hop_cmd = f'ssh -o StrictHostKeyChecking=no root@{node_ip} "{importdisk_cmd}"'
-                    ssh_result2 = _ssh_run(host.hostname, hop_cmd, timeout=600)
+                    ssh_result2 = _ssh_run(ssh_address(host), hop_cmd, timeout=600)
                     if ssh_result2.returncode == 0:
                         disk_imported = True
                         logger.info(f"importdisk via hop succeeded: {ssh_result2.stdout}")
@@ -626,7 +627,7 @@ async def run_import_job(job_id: str, deploy_req: Dict, _db_factory) -> None:
 
                 # Cleanup ISO storage copy
                 try:
-                    _ssh_run(host.hostname, f"rm -f {import_path}", timeout=30)
+                    _ssh_run(ssh_address(host), f"rm -f {import_path}", timeout=30)
                 except Exception:
                     pass
 

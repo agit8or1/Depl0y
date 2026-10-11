@@ -410,6 +410,9 @@ def _ssh_ok(fn, *args, empty, label="ssh", **kwargs):
 def _get_ssh_creds(obj, hostname_attr: str = "hostname"):
     """Extract SSH hostname + decrypted credentials from a host object."""
     ssh_host = getattr(obj, hostname_attr, None)
+    if ssh_host and isinstance(obj, ProxmoxHost) and hostname_attr == "hostname":
+        from app.services.host_ssh import ssh_address
+        ssh_host = ssh_address(obj)   # the API hostname may not reach the node's SSH
     if not ssh_host:
         raise HTTPException(status_code=400, detail="No hostname configured for SSH")
     if not getattr(obj, "idrac_username", None) or not getattr(obj, "idrac_password", None):

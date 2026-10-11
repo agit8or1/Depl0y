@@ -20,7 +20,7 @@
     "qrcode.vue": "^3.4.1",
     "vis-data": "^8.0.3",
     "vis-network": "^10.0.2",
-    "vue": "^3.3.8",
+    "vue": "^3.5.43",
     "vue-chartjs": "^5.2.0",
     "vue-router": "^4.2.5",
     "vue-toastification": "^2.0.0-rc.5"

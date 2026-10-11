@@ -14,10 +14,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-class HAEnableRequest(BaseModel):
-    proxmox_password: str
-
-
 @router.get("/status")
 def check_ha_status(current_user=Depends(get_current_user), db: Session = Depends(get_db)):
     """Check if High Availability is enabled on Proxmox cluster (via API, not SSH)."""
@@ -87,60 +83,6 @@ def check_ha_status(current_user=Depends(get_current_user), db: Session = Depend
         }
 
 
-@router.post("/enable")
-def enable_ha(
-    request: HAEnableRequest,
-    current_user=Depends(require_admin),
-    db: Session = Depends(get_db)
-):
-    """Enable High Availability on Proxmox cluster"""
-    try:
-        from app.models import ProxmoxHost
-
-        host = db.query(ProxmoxHost).first()
-        if not host:
-            raise HTTPException(status_code=400, detail="No Proxmox hosts configured")
-
-        if not re.match(r'^[a-zA-Z0-9.\-_]+$', host.hostname):
-            raise HTTPException(status_code=400, detail="Invalid Proxmox hostname")
-        ssh_host = f"root@{host.hostname}"
-        logger.info(f"Enabling HA on {ssh_host}")
-
-        remote_script = (
-            'if ! pvesh get /cluster/status 2>/dev/null | grep -q "quorate.*1"; then '
-            'echo "ERROR: Cluster does not have quorum."; exit 1; fi; '
-            'if ! systemctl is-active --quiet pve-ha-lrm && ! systemctl is-active --quiet pve-ha-crm; then '
-            'systemctl start pve-ha-lrm; systemctl start pve-ha-crm; '
-            'systemctl enable pve-ha-lrm; systemctl enable pve-ha-crm; fi; '
-            'echo "HA services are running"'
-        )
-        result = subprocess.run(
-            ['ssh', '-o', 'StrictHostKeyChecking=no', '-o', 'BatchMode=yes', ssh_host, remote_script],
-            capture_output=True, timeout=30
-        )
-
-        if result.returncode != 0:
-            error_msg = result.stderr.decode() if result.stderr else result.stdout.decode()
-            if "does not have quorum" in error_msg or "quorate" in error_msg:
-                raise HTTPException(
-                    status_code=400,
-                    detail="High Availability requires a multi-node Proxmox cluster with quorum. Single-node setups cannot use HA."
-                )
-            raise HTTPException(status_code=500, detail=f"Failed to enable HA: {error_msg}")
-
-        logger.info("HA enabled successfully")
-        return {
-            "success": True,
-            "message": "High Availability enabled successfully. You can now add VMs to HA groups via the Proxmox web interface."
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to enable HA: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to enable HA: {str(e)}")
-
-
 @router.get("/groups")
 def list_ha_groups(
     current_user=Depends(get_current_user),
@@ -184,49 +126,6 @@ def list_ha_groups(
     except Exception as e:
         logger.error(f"Failed to list HA groups: {e}")
         return {"groups": [], "error": str(e)}
-
-
-@router.post("/disable")
-def disable_ha(
-    current_user=Depends(require_admin),
-    db: Session = Depends(get_db)
-):
-    """Disable High Availability (note: this just stops the services, VMs remain in HA config)"""
-    try:
-        from app.models import ProxmoxHost
-
-        host = db.query(ProxmoxHost).first()
-        if not host:
-            raise HTTPException(status_code=400, detail="No Proxmox hosts configured")
-
-        if not re.match(r'^[a-zA-Z0-9.\-_]+$', host.hostname):
-            raise HTTPException(status_code=400, detail="Invalid Proxmox hostname")
-        ssh_host = f"root@{host.hostname}"
-
-        remote_script = (
-            'systemctl stop pve-ha-lrm; systemctl stop pve-ha-crm; '
-            'systemctl disable pve-ha-lrm; systemctl disable pve-ha-crm; '
-            'echo "HA services stopped"'
-        )
-        result = subprocess.run(
-            ['ssh', '-o', 'StrictHostKeyChecking=no', '-o', 'BatchMode=yes', ssh_host, remote_script],
-            capture_output=True, timeout=30
-        )
-
-        if result.returncode != 0:
-            error_msg = result.stderr.decode() if result.stderr else "Unknown error"
-            raise HTTPException(status_code=500, detail=f"Failed to disable HA: {error_msg}")
-
-        return {
-            "success": True,
-            "message": "HA services disabled. VMs remain in HA configuration but will not be automatically restarted."
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to disable HA: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to disable HA: {str(e)}")
 
 
 class HAGroupCreate(BaseModel):

@@ -5,6 +5,31 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.97] - 2026-10-11 🔧 HA page: no more broken "HA Enabled" toggle
+
+### Fixed
+
+- **The HA page's "HA Enabled" toggle did the opposite of what it showed.** It read its
+  position from a status the backend never returns, so it always showed *on*; clicking
+  it called the old `/ha/disable`, which SSHed to the **first registered host** and
+  stopped and disabled the HA services on that one node. Turning it "on" always failed
+  with a 422 (it demanded a `proxmox_password` it never used).
+- Proxmox has no cluster-wide HA switch: `pve-ha-crm` and `pve-ha-lrm` should run on
+  every node, and a guest is protected by being an HA resource. The toggle is replaced
+  by **"HA services: running on N/M nodes"** for the selected cluster, read through the
+  Proxmox API, and a **Start HA services** button that appears only when some online
+  node is not running them (it needs quorum). There is no "disable": to stop protecting
+  a guest, remove it from HA on the Resources tab or in the Failover Wizard.
+- **Settings → High Availability** asked for the Proxmox root password, said it was
+  "only used once", and sent it to the same broken endpoint, which ignored it. The card
+  now links to the HA page and the Failover Wizard instead.
+
+### Removed
+
+- `POST /api/v1/ha/enable` and `POST /api/v1/ha/disable`. New:
+  `GET /api/v1/pve-node/{host_id}/cluster/ha/services` and
+  `POST /api/v1/pve-node/{host_id}/cluster/ha/services/start` (admin).
+
 ## [2.2.96] - 2026-10-11 🤖 Unattended signed releases
 
 ### Changed

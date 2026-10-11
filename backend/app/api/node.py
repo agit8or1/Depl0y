@@ -506,6 +506,77 @@ def ha_status(host_id: int, db: Session = Depends(get_db), current_user=Depends(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+_HA_SERVICES = ("pve-ha-crm", "pve-ha-lrm")
+
+
+def _ha_service_states(pve):
+    nodes = []
+    for res in pve.cluster.resources.get(type="node"):
+        entry = {"node": res["node"], "online": res.get("status") == "online"}
+        for svc in _HA_SERVICES:
+            state = "unknown"
+            if entry["online"]:
+                try:
+                    state = pve.nodes(res["node"]).services(svc).state.get().get("state") or "unknown"
+                except Exception:
+                    state = "unknown"
+            entry[svc.replace("pve-ha-", "")] = state
+        nodes.append(entry)
+    nodes.sort(key=lambda n: n["node"])
+    return nodes
+
+
+@router.get("/{host_id}/cluster/ha/services")
+def ha_services(host_id: int, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    """State of the HA services (pve-ha-crm, pve-ha-lrm) on every node.
+
+    Proxmox HA has no cluster-wide on/off switch: both services run on every node, and a
+    guest is protected by being an HA resource. "Running everywhere" is what HA needs."""
+    host = _get_host(host_id, db)
+    try:
+        nodes = _ha_service_states(_pve(host))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    online = [n for n in nodes if n["online"]]
+    running = [n for n in online if n["crm"] == "running" and n["lrm"] == "running"]
+    return {"nodes": nodes, "online": len(online), "running": len(running),
+            "all_running": bool(online) and len(running) == len(online)}
+
+
+@router.post("/{host_id}/cluster/ha/services/start")
+def start_ha_services(host_id: int, db: Session = Depends(get_db), current_user=Depends(require_admin)):
+    """Start pve-ha-crm and pve-ha-lrm on every online node where they are not running."""
+    host = _get_host(host_id, db)
+    pve = _pve(host)
+    try:
+        status = pve.cluster.status.get()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    cluster = next((x for x in status if x.get("type") == "cluster"), None)
+    if not cluster:
+        raise HTTPException(status_code=400, detail="This host is not part of a cluster; HA needs a Proxmox cluster.")
+    if not cluster.get("quorate"):
+        raise HTTPException(status_code=400, detail="The cluster is not quorate; HA services cannot be started safely.")
+    started, failed = [], []
+    for n in _ha_service_states(pve):
+        if not n["online"]:
+            continue
+        for svc in _HA_SERVICES:
+            if n[svc.replace("pve-ha-", "")] == "running":
+                continue
+            try:
+                upid = pve.nodes(n["node"]).services(svc).start.post()
+                task_tracker.register(upid, host_id, n["node"], f"Start {svc} on {n['node']}",
+                                      user_id=getattr(current_user, "id", None))
+                started.append(f"{svc} on {n['node']}")
+            except Exception as e:
+                failed.append(f"{svc} on {n['node']}: {e}")
+    if failed:
+        raise HTTPException(status_code=500, detail="Could not start " + "; ".join(failed))
+    return {"started": started,
+            "message": "Started " + ", ".join(started) if started else "HA services were already running on every online node"}
+
+
 # ── Access management ─────────────────────────────────────────────────────────
 
 @router.get("/{host_id}/access/users")

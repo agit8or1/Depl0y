@@ -339,8 +339,6 @@ export default {
   // High Availability
   ha: {
     checkStatus: () => api.get('/ha/status'),
-    enable: (data) => api.post('/ha/enable', data),
-    disable: () => api.post('/ha/disable'),
     listGroups: () => api.get('/ha/groups'),
     createGroup: (data) => api.post('/ha/groups', data),
     listResources: () => api.get('/ha/resources'),
@@ -697,6 +695,8 @@ export default {
     updateHaGroup: (h, groupid, data) => api.put(`/pve-node/${h}/cluster/ha/groups/${encodeURIComponent(groupid)}`, data),
     deleteHaGroup: (h, groupid) => api.delete(`/pve-node/${h}/cluster/ha/groups/${encodeURIComponent(groupid)}`),
     haStatus: (h) => api.get(`/pve-node/${h}/cluster/ha/status`),
+    haServices: (h) => api.get(`/pve-node/${h}/cluster/ha/services`),
+    startHaServices: (h) => api.post(`/pve-node/${h}/cluster/ha/services/start`),
     haCurrentStatus: (h) => api.get(`/pve-node/${h}/cluster/ha/status`),
     // Access
     listUsers: (h) => api.get(`/pve-node/${h}/access/users`),

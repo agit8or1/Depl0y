@@ -53,15 +53,18 @@
       <div class="card ha-status-panel">
         <div class="card-header">
           <h2>HA Cluster Status</h2>
-          <div class="ha-toggle-wrap">
-            <span class="toggle-label">HA Enabled</span>
+          <div class="ha-services-wrap" :title="haServicesTitle">
+            <span class="toggle-label">HA services</span>
+            <span v-if="!haServices" class="badge badge-secondary">…</span>
+            <span v-else :class="['badge', haServices.all_running ? 'badge-success' : 'badge-warning']">
+              running on {{ haServices.running }}/{{ haServices.online }} nodes
+            </span>
             <button
-              :class="['toggle-btn', haEnabled ? 'toggle-on' : 'toggle-off']"
-              :disabled="togglingHa"
-              @click="requestHaToggle"
-            >
-              <span class="toggle-knob"></span>
-            </button>
+              v-if="haServices && !haServices.all_running"
+              class="btn btn-primary btn-sm"
+              :disabled="startingHa"
+              @click="showHaStartConfirm = true"
+            >Start HA services</button>
           </div>
         </div>
 
@@ -147,21 +150,23 @@
         </div>
       </div>
 
-      <!-- ─── HA Toggle Confirm Dialog ─────────────────────────────────────── -->
-      <div v-if="showHaToggleConfirm" class="modal" @click.self="showHaToggleConfirm = false">
+      <!-- ─── Start HA services dialog ─────────────────────────────────────── -->
+      <div v-if="showHaStartConfirm" class="modal" @click.self="showHaStartConfirm = false">
         <div class="modal-content modal-sm">
           <div class="modal-header">
-            <h3>{{ haEnabled ? 'Disable HA?' : 'Enable HA?' }}</h3>
-            <button @click="showHaToggleConfirm = false" class="btn-close">&times;</button>
+            <h3>Start HA services?</h3>
+            <button @click="showHaStartConfirm = false" class="btn-close">&times;</button>
           </div>
           <div class="modal-body">
-            <p v-if="haEnabled">Disabling HA will stop automatic failover for all protected resources.</p>
-            <p v-else>Enabling HA will allow automatic VM migration and restart on node failure.</p>
+            <p>This starts <code>pve-ha-crm</code> and <code>pve-ha-lrm</code> on: {{ haServicesStopped.join(', ') }}.
+              Proxmox HA expects both to run on every node; nothing changes for guests until they are added to HA.</p>
+            <p class="text-sm text-muted">To stop protecting a guest, remove it from HA on the Resources tab or in the Failover Wizard.
+              Depl0y does not stop the HA services: on a node running HA guests that would stop their failover.</p>
             <div class="modal-actions">
-              <button class="btn btn-primary" :disabled="togglingHa" @click="confirmHaToggle">
-                {{ togglingHa ? 'Applying...' : (haEnabled ? 'Disable HA' : 'Enable HA') }}
+              <button class="btn btn-primary" :disabled="startingHa" @click="confirmStartHaServices">
+                {{ startingHa ? 'Starting...' : 'Start HA services' }}
               </button>
-              <button class="btn btn-outline" @click="showHaToggleConfirm = false">Cancel</button>
+              <button class="btn btn-outline" @click="showHaStartConfirm = false">Cancel</button>
             </div>
           </div>
         </div>
@@ -1044,7 +1049,11 @@ const statusError = ref(null)
 const quorumOk = ref(null)
 const fenceStatus = ref('')
 const lastHaEvent = ref('')
-const haEnabled = ref(true)
+const haServices = ref(null)
+const haServicesStopped = computed(() => (haServices.value?.nodes || [])
+  .filter(n => n.online && (n.crm !== 'running' || n.lrm !== 'running')).map(n => n.node))
+const haServicesTitle = computed(() => (haServices.value?.nodes || [])
+  .map(n => `${n.node}: ${n.online ? `crm ${n.crm}, lrm ${n.lrm}` : 'offline'}`).join('\n'))
 const onlineNodeCount = ref(0)
 const totalNodeCount = ref(0)
 const haEventTimeline = ref([])
@@ -1077,6 +1086,10 @@ const loadHaStatus = async () => {
   loadingStatus.value = true
   statusError.value = null
   haManagerStatus.value = ''
+  haServices.value = null
+  api.pveNode.haServices(selectedHostId.value)
+    .then(r => { haServices.value = r.data })
+    .catch(() => { haServices.value = null })
   quorumOk.value = null
   fenceStatus.value = ''
   lastHaEvent.value = ''
@@ -1115,7 +1128,6 @@ const loadHaStatus = async () => {
     for (const entry of haArr) {
       if (entry.type === 'manager' || entry.id === 'manager' || 'status' in entry) {
         haManagerStatus.value = entry.status ?? entry.state ?? haManagerStatus.value
-        haEnabled.value = haManagerStatus.value !== 'disabled'
         if (entry.timestamp || entry.crm_state_change) {
           const ts = entry.timestamp ?? entry.crm_state_change
           lastHaEvent.value = `Status changed to "${haManagerStatus.value}" — ${new Date(ts * 1000).toLocaleString()}`
@@ -1148,31 +1160,21 @@ const loadHaStatus = async () => {
   }
 }
 
-// ── HA Toggle ─────────────────────────────────────────────────────────────────
-const showHaToggleConfirm = ref(false)
-const togglingHa = ref(false)
+// ── HA services ───────────────────────────────────────────────────────────────
+const showHaStartConfirm = ref(false)
+const startingHa = ref(false)
 
-const requestHaToggle = () => { showHaToggleConfirm.value = true }
-
-const confirmHaToggle = async () => {
-  togglingHa.value = true
+const confirmStartHaServices = async () => {
+  startingHa.value = true
   try {
-    if (haEnabled.value) {
-      await api.ha.disable()
-      toast.success('HA has been disabled')
-      haEnabled.value = false
-      haManagerStatus.value = 'disabled'
-    } else {
-      await api.ha.enable({})
-      toast.success('HA has been enabled')
-      haEnabled.value = true
-    }
-    showHaToggleConfirm.value = false
+    const res = await api.pveNode.startHaServices(selectedHostId.value)
+    toast.success(res.data?.message || 'HA services started')
+    showHaStartConfirm.value = false
     await loadHaStatus()
   } catch (err) {
-    toast.error(err.response?.data?.detail || 'Failed to toggle HA')
+    toast.error(err.response?.data?.detail || 'Failed to start HA services')
   } finally {
-    togglingHa.value = false
+    startingHa.value = false
   }
 }
 
@@ -1697,15 +1699,9 @@ watch(selectedHostId, (val) => { if (val) startPoll(); else stopPoll() })
 
 /* ── HA Status Panel ── */
 .ha-status-panel .card-header { margin-bottom: 1rem; }
-.ha-toggle-wrap { display: flex; align-items: center; gap: 0.625rem; }
+.ha-services-wrap { display: flex; align-items: center; gap: 0.625rem; flex-wrap: wrap; }
+.header-actions a.btn { text-decoration: none; }
 .toggle-label { font-size: 0.875rem; color: var(--text-secondary); }
-.toggle-btn { position: relative; width: 44px; height: 24px; border-radius: 12px; border: none; cursor: pointer; transition: background 0.2s; padding: 0; flex-shrink: 0; }
-.toggle-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.toggle-on { background: #3b82f6; }
-.toggle-off { background: var(--bg-secondary, #2d3348); }
-.toggle-knob { position: absolute; top: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: left 0.2s; }
-.toggle-on .toggle-knob { left: 23px; }
-.toggle-off .toggle-knob { left: 3px; }
 
 .status-grid {
   display: grid;

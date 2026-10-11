@@ -519,7 +519,8 @@
         <div class="info-box">
           <p><strong>What is HA?</strong> High Availability ensures your critical VMs automatically restart on another node if the current node fails or goes offline.</p>
           <p class="text-sm text-muted">
-            <strong>Requirements:</strong> Multi-node Proxmox cluster with shared storage
+            <strong>Requirements:</strong> a Proxmox cluster with at least 3 votes (3 nodes, or 2 and a QDevice),
+            and guest disks on shared storage or ZFS with replication. The Failover Wizard checks this per guest.
           </p>
           <ul class="feature-list text-sm">
             <li>✅ Automatic VM migration on node failure</li>
@@ -547,7 +548,7 @@
           <div class="status-icon">⚠️</div>
           <div>
             <h4>HA Not Configured</h4>
-            <p>Enable High Availability to protect your VMs from node failures.</p>
+            <p>No guests are protected by HA yet. Use the Failover Wizard to protect a VM or container.</p>
           </div>
         </div>
 
@@ -555,13 +556,8 @@
           <button @click="checkHAStatus" class="btn btn-outline" :disabled="checkingHA">
             {{ checkingHA ? 'Checking...' : '🔍 Check HA Status' }}
           </button>
-          <button
-            v-if="haStatus && !haStatus.enabled"
-            @click="showHAPrompt = true"
-            class="btn btn-success"
-          >
-            🔒 Enable High Availability
-          </button>
+          <router-link to="/ha-management" class="btn btn-outline">🔄 Open HA</router-link>
+          <router-link to="/ha-wizard" class="btn btn-success">🛟 Failover Wizard</router-link>
           <!-- HA Groups now managed via dedicated HA Management menu item -->
         </div>
 
@@ -2362,57 +2358,6 @@
       </div>
     </div>
 
-    <!-- High Availability Setup Modal -->
-    <div v-if="showHAPrompt" class="modal" @click="showHAPrompt = false">
-      <div class="modal-content" @click.stop>
-        <div class="modal-header">
-          <h3>🔒 Enable High Availability</h3>
-          <button @click="showHAPrompt = false" class="btn-close">×</button>
-        </div>
-        <div class="modal-body">
-          <p>High Availability will be enabled on your Proxmox cluster, allowing automatic failover of VMs.</p>
-          <p class="text-sm text-muted">This requires:</p>
-          <ul class="text-sm">
-            <li>Multi-node Proxmox cluster</li>
-            <li>Shared storage accessible by all nodes</li>
-            <li>Proxmox root access</li>
-          </ul>
-
-          <div class="form-group" style="margin-top: 1rem;">
-            <label for="ha-password">Proxmox Root Password</label>
-            <input
-              type="password"
-              id="ha-password"
-              v-model="haPassword"
-              class="form-control"
-              placeholder="Enter Proxmox root password"
-              :disabled="enablingHA"
-              @keyup.enter="enableHA"
-            />
-            <p class="text-sm text-muted mt-2">
-              🔒 Your password is only used once to configure HA and is not stored.
-            </p>
-          </div>
-
-          <div v-if="haSetupError" class="error-message">
-            {{ haSetupError }}
-          </div>
-
-          <div v-if="haSetupSuccess" class="success-message">
-            ✅ {{ haSetupSuccess }}
-          </div>
-        </div>
-        <div class="modal-footer">
-          <button @click="showHAPrompt = false" class="btn btn-outline" :disabled="enablingHA">
-            Cancel
-          </button>
-          <button @click="enableHA" class="btn btn-success" :disabled="!haPassword || enablingHA">
-            {{ enablingHA ? 'Enabling HA...' : '🔒 Enable High Availability' }}
-          </button>
-        </div>
-      </div>
-    </div>
-
     <!-- HA Groups Management Modal -->
     <div v-if="showHAManagement" class="modal" @click="showHAManagement = false">
       <div class="modal-content modal-large" @click.stop>
@@ -2674,11 +2619,6 @@ export default {
     // High Availability
     const haStatus = ref(null)
     const checkingHA = ref(false)
-    const showHAPrompt = ref(false)
-    const haPassword = ref('')
-    const enablingHA = ref(false)
-    const haSetupError = ref(null)
-    const haSetupSuccess = ref(null)
     const haError = ref(null)
     const showHAManagement = ref(false)
 
@@ -3283,28 +3223,6 @@ export default {
         haStatus.value = { enabled: false, protected_vms: 0 }
       } finally {
         checkingHA.value = false
-      }
-    }
-
-    const enableHA = async () => {
-      enablingHA.value = true
-      haSetupError.value = null
-      haSetupSuccess.value = null
-      try {
-        const response = await api.ha.enable({ proxmox_password: haPassword.value })
-        haSetupSuccess.value = response.data.message || 'High Availability enabled successfully!'
-        toast.success('High Availability enabled!')
-        setTimeout(() => {
-          showHAPrompt.value = false
-          haPassword.value = ''
-          checkHAStatus()
-        }, 2000)
-      } catch (error) {
-        console.error('Failed to enable HA:', error)
-        haSetupError.value = error.response?.data?.detail || 'Failed to enable HA'
-        toast.error('Failed to enable High Availability')
-      } finally {
-        enablingHA.value = false
       }
     }
 
@@ -4198,15 +4116,9 @@ export default {
       applyUpdate,
       haStatus,
       checkingHA,
-      showHAPrompt,
-      haPassword,
-      enablingHA,
-      haSetupError,
-      haSetupSuccess,
       haError,
       showHAManagement,
       checkHAStatus,
-      enableHA,
       manageHAGroups,
       linuxAgentEnabled,
       linuxAgentLoading,

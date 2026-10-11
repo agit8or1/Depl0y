@@ -225,11 +225,13 @@ releases, so every version that should reach users goes through these steps.
 1. **Bump the version** in `backend/app/core/config.py` (`return "X.Y.Z"`) and
    `frontend/package.json`, and add a `## [X.Y.Z]` entry at the top of `CHANGELOG.md`.
 2. **Commit and push** to `main`.
-3. **Sign and publish the release**, from your own terminal (it asks for the signing
-   key's password):
+3. **Sign and publish the release:
    ```bash
    scripts/release.sh            # or --dry-run to build the assets without signing or publishing
    ```
+   If the signing key is password-protected, run it from a terminal (minisign asks for
+   the password); the current key has no password and is protected by its file mode
+   (0600, `administrator` only) on the release machine, so releases can be scripted.
    It refuses to run with uncommitted changes, if `main` is not pushed, or if the key in
    `minisign.pub` differs from the copies in `install.sh` and `scripts/depl0y-update`.
    It builds `depl0y.tar.gz` (the tree at `HEAD` plus a pre-built `frontend/dist`),

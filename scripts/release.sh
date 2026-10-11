@@ -9,8 +9,9 @@
 #   SHA256SUMS           its sha256, checked by install.sh and /usr/local/sbin/depl0y-update
 #   SHA256SUMS.minisig   minisign signature of SHA256SUMS, trusted comment "depl0y vX.Y.Z"
 #
-# Signing uses the secret key at $DEPL0Y_MINISIGN_KEY (default ~/.minisign/depl0y.key)
-# and asks for its password. The matching public key is minisign.pub; install.sh and
+# Signing uses the secret key at $DEPL0Y_MINISIGN_KEY (default ~/.minisign/depl0y.key).
+# If that key is password-protected, minisign asks for the password, so run it from a
+# terminal; an unencrypted key (mode 0600) signs without a prompt. The matching public key is minisign.pub; install.sh and
 # scripts/depl0y-update carry copies of it, and this script refuses to release if they differ.
 #
 # Needs git, npm, minisign and an authenticated gh (gh auth login).
@@ -44,7 +45,12 @@ if [ "$DRY_RUN" = false ]; then
     gh auth status >/dev/null 2>&1 || die "gh is not logged in"
     command -v minisign >/dev/null || die "minisign is not installed (sudo apt-get install minisign)"
     [ -f "$SECRET_KEY_FILE" ] || die "no signing key at $SECRET_KEY_FILE (set DEPL0Y_MINISIGN_KEY)"
-    [ -t 0 ] || die "run this from a terminal: signing asks for the key's password"
+    [ "$(stat -c %a "$SECRET_KEY_FILE")" = 600 ] || die "$SECRET_KEY_FILE must be mode 0600"
+    # Bytes 2-3 of a minisign secret key name its KDF: "Sc" (scrypt) means password-protected.
+    if [ "$(sed -n 2p "$SECRET_KEY_FILE" | base64 -d 2>/dev/null | head -c 4 | tail -c 2 | od -An -tx1 | tr -d ' \n')" = 5363 ] \
+        && [ ! -t 0 ]; then
+        die "the signing key is password-protected: run this from a terminal"
+    fi
 fi
 
 OUT=$(mktemp -d)
@@ -73,7 +79,7 @@ if [ "$DRY_RUN" = true ]; then
     exit 0
 fi
 
-echo "🔏 Signing SHA256SUMS (enter the release key password)..."
+echo "🔏 Signing SHA256SUMS..."
 minisign -S -s "$SECRET_KEY_FILE" -m "$OUT/SHA256SUMS" -x "$OUT/SHA256SUMS.minisig" \
     -c "Depl0y $TAG" -t "depl0y $TAG" \
     || die "signing failed (wrong password?). Nothing was tagged or published; run this again."

@@ -5,6 +5,18 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.96] - 2026-10-11 🤖 Unattended signed releases
+
+### Changed
+
+- `scripts/release.sh` no longer insists on a terminal. It only needs one when the
+  signing key is password-protected (minisign then asks for the password); with an
+  unencrypted key it signs without a prompt, so releases can be scripted. It now
+  refuses a signing key that is not mode 0600.
+- The Depl0y release key no longer has a password; it is protected by its file mode
+  on the release machine. The key itself (`minisign.pub`) is unchanged, so installs
+  keep trusting it.
+
 ## [2.2.95] - 2026-10-10 🛟 Failover wizard
 
 ### Added

@@ -310,4 +310,5 @@ def main():
     print("off-box requests attempted:", len(set(external)), flush=True)
 
 
-main()
+if __name__ == "__main__":
+    main()

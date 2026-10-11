@@ -338,13 +338,8 @@ export default {
 
   // High Availability
   ha: {
-    checkStatus: () => api.get('/ha/status'),
-    listGroups: () => api.get('/ha/groups'),
-    createGroup: (data) => api.post('/ha/groups', data),
-    listResources: () => api.get('/ha/resources'),
-    addResource: (data) => api.post('/ha/resources', data),
-    addToGroup: (vmid, group, priority) => api.post('/ha/resources', { vmid, group, priority }),
-    removeFromGroup: (vmid) => api.delete(`/ha/resources/${vmid}`)
+    // Summary across every endpoint; per-cluster HA lives under pveNode.*Ha* and haWizard
+    checkStatus: () => api.get('/ha/status')
   },
 
   // Failover wizard (fixed best-practice HA setup per guest)

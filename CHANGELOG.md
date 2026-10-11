@@ -5,6 +5,30 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.98] - 2026-10-11 🧹 Legacy HA endpoints removed
+
+### Fixed
+
+- **The legacy `/api/v1/ha/groups` and `/ha/resources` endpoints acted on whichever
+  Proxmox host was registered first**, over root SSH (`pvesh`), whatever cluster you
+  meant. Nothing in the app used them any more, so they are removed. Use the
+  per-cluster equivalents, which go through the Proxmox API with the selected host:
+  `/api/v1/pve-node/{host_id}/cluster/ha/resources[/{sid}]`,
+  `/api/v1/pve-node/{host_id}/cluster/ha/groups[/{group}]`, and the Failover Wizard
+  (`/api/v1/ha-wizard`).
+- **`GET /api/v1/ha/status` now covers every active endpoint** instead of the first
+  one: it returns a `hosts` list (protected guests, HA manager state, nodes online,
+  quorum, or an error per endpoint) plus totals. Settings → High Availability shows one
+  line per endpoint; standalone hosts show "not a cluster, HA not available".
+- Removed a "Manage HA Groups — coming soon" dialog in Settings that nothing opened.
+
+### Screenshot tooling
+
+- `scripts/screenshots/demo/inner.sh` now stops the mock servers, demo backend and
+  file server when it exits; each run used to leave all four running in its
+  namespace.
+- `scripts/screenshots/capture.py` only runs when executed, not when imported.
+
 ## [2.2.97] - 2026-10-11 🔧 HA page: no more broken "HA Enabled" toggle
 
 ### Fixed

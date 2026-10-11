@@ -14,6 +14,11 @@ VENV="${DEMO_VENV:-/opt/depl0y/backend/venv}/bin"
 
 mkdir -p "$STATE"/{db,isos,cloud-images,logs,run}
 
+# Stop the mocks, the demo backend and the file server however this script ends.
+# Without this every run leaves all four running in its abandoned namespace.
+cleanup() { kill $(jobs -p) 2>/dev/null || true; wait 2>/dev/null || true; }
+trap cleanup EXIT
+
 # ---------------------------------------------------------------- networking
 ip link set lo up
 for a in 203.0.113.11 203.0.113.12 203.0.113.13 \

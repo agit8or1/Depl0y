@@ -86,3 +86,51 @@ def test_routes_and_roles():
     assert "post" in paths["/api/v1/pve-node/{host_id}/cluster/ha/services/start"]
     assert "get" in paths["/api/v1/pve-node/{host_id}/cluster/ha/services"]
     assert "/api/v1/ha/enable" not in paths and "/api/v1/ha/disable" not in paths
+
+
+# ── /ha/status (Settings summary) ───────────────────────────────────────────────
+
+def test_ha_status_covers_every_active_host(monkeypatch):
+    from app.api import ha
+
+    class Host:
+        def __init__(self, id, name):
+            self.id, self.name = id, name
+
+    hosts = [Host(1, "east"), Host(2, "west"), Host(3, "lab")]
+
+    class Query:
+        def filter(self, *a): return self
+        def order_by(self, *a): return self
+        def all(self): return hosts
+
+    class DB:
+        def query(self, *a): return Query()
+
+    replies = {
+        1: {("GET", "cluster/ha/status/manager_status"): {"manager_status": {"master_node": "a",
+                "node_status": {"a": "online", "b": "online", "c": "online"}}, "quorum": {"quorate": "1"}},
+            ("GET", "cluster/ha/resources"): [{"sid": "vm:1"}, {"sid": "vm:2"}]},
+        2: {("GET", "cluster/ha/status/manager_status"): {"manager_status": {"node_status": {"d": "online"}},
+                                                          "quorum": {"quorate": "1"}},
+            ("GET", "cluster/ha/resources"): []},
+        3: {("GET", "cluster/ha/status/manager_status"): RuntimeError("connection refused")},
+    }
+    monkeypatch.setattr(ha, "ProxmoxService",
+                        lambda host: types.SimpleNamespace(proxmox=FakePVE(replies=replies[host.id])))
+    res = ha.check_ha_status(current_user=ADMIN, db=DB())
+    assert res["enabled"] and res["protected_vms"] == 2
+    by = {h["name"]: h for h in res["hosts"]}
+    assert (by["east"]["manager_status"], by["east"]["nodes_online"], by["east"]["quorum"]) == ("active", 3, True)
+    assert by["west"]["manager_status"] == "no-master" and by["west"]["protected_vms"] == 0
+    assert by["lab"]["error"] and by["lab"]["manager_status"] == "unknown"
+    assert "1 endpoint" in res["message"]
+
+
+def test_legacy_ha_group_and_resource_routes_are_gone():
+    from app.main import app
+    paths = app.openapi()["paths"]
+    legacy = [p for p in paths if p.startswith("/api/v1/ha/")]
+    assert legacy == ["/api/v1/ha/status"]
+    assert "/api/v1/pve-node/{host_id}/cluster/ha/resources" in paths
+    assert "/api/v1/pve-node/{host_id}/cluster/ha/groups" in paths

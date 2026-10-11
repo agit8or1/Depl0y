@@ -539,8 +539,15 @@
           <div class="status-icon">✅</div>
           <div>
             <h4>HA Enabled</h4>
-            <p>High Availability is configured and active on your cluster.</p>
-            <p class="text-sm text-muted">Protected VMs: {{ haStatus.protected_vms || 0 }}</p>
+            <p>{{ haStatus.message }}</p>
+            <ul v-if="haStatus.hosts && haStatus.hosts.length" class="text-sm text-muted ha-host-list">
+              <li v-for="h in haStatus.hosts" :key="h.host_id">
+                <strong>{{ h.name }}</strong>:
+                <template v-if="h.error">status unavailable</template>
+                <template v-else-if="!h.nodes_total">not a cluster, HA not available</template>
+                <template v-else>{{ h.protected_vms }} protected · HA manager {{ h.manager_status }} · {{ h.nodes_online }}/{{ h.nodes_total }} nodes{{ h.quorum ? '' : ' · no quorum' }}</template>
+              </li>
+            </ul>
           </div>
         </div>
 
@@ -2358,35 +2365,6 @@
       </div>
     </div>
 
-    <!-- HA Groups Management Modal -->
-    <div v-if="showHAManagement" class="modal" @click="showHAManagement = false">
-      <div class="modal-content modal-large" @click.stop>
-        <div class="modal-header">
-          <h3>⚙️ Manage HA Groups</h3>
-          <button @click="showHAManagement = false" class="btn-close">×</button>
-        </div>
-        <div class="modal-body">
-          <p>Configure which VMs are protected by High Availability and their restart priorities.</p>
-
-          <div class="info-box" style="margin-bottom: 1rem;">
-            <p class="text-sm"><strong>Priority Levels:</strong></p>
-            <ul class="text-sm">
-              <li><strong>1-10:</strong> Critical services (restarted first)</li>
-              <li><strong>11-50:</strong> Important services</li>
-              <li><strong>51-100:</strong> Standard services</li>
-            </ul>
-          </div>
-
-          <p class="text-center text-muted">HA Group management coming soon! For now, use the Proxmox web interface to manage HA groups.</p>
-          <p class="text-sm text-center text-muted">Datacenter → HA → Groups/Resources</p>
-        </div>
-        <div class="modal-footer">
-          <button @click="showHAManagement = false" class="btn btn-primary">
-            Close
-          </button>
-        </div>
-      </div>
-    </div>
   </div>
 </template>
 
@@ -2620,7 +2598,6 @@ export default {
     const haStatus = ref(null)
     const checkingHA = ref(false)
     const haError = ref(null)
-    const showHAManagement = ref(false)
 
     // Notification Rules (admin)
     const notifRules = ref({
@@ -3226,9 +3203,6 @@ export default {
       }
     }
 
-    const manageHAGroups = () => {
-      showHAManagement.value = true
-    }
 
     const fetchLinuxAgentSettings = async () => {
       linuxAgentLoading.value = true
@@ -4117,9 +4091,7 @@ export default {
       haStatus,
       checkingHA,
       haError,
-      showHAManagement,
       checkHAStatus,
-      manageHAGroups,
       linuxAgentEnabled,
       linuxAgentLoading,
       savingLinuxAgent,
@@ -4275,6 +4247,8 @@ export default {
 </script>
 
 <style scoped>
+.ha-host-list { margin: 0.5rem 0 0; padding-left: 1.1rem; }
+.action-buttons a.btn { text-decoration: none; }
 /* ── Advanced tab ─────────────────────────────────────────────────────────── */
 .adv-pill {
   font-size: 0.62rem;

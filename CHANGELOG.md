@@ -5,6 +5,19 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.100] - 2026-10-11 🔁 Failover wizard explains ZFS replication
+
+### Changed
+
+- **Failover wizard: clearer storage guidance.** A guest on node-local storage no longer reads as
+  "needs shared storage or ZFS": the wizard now says plainly that it can fail over either with shared
+  storage or with ZFS replication (no shared storage needed), and that the disks just have to be moved
+  onto one of them first, which the wizard does itself.
+- **"No suitable storage" names the actual problem**: a ZFS storage that exists only on this node
+  (replication needs the same storage ID on the failover node), one that is inactive, or one too small,
+  plus how to add a ZFS storage across two or more nodes. Backup-only stores such as PBS are no longer
+  listed as candidates.
+
 ## [2.2.99] - 2026-10-11 📐 HA rules on the HA page
 
 ### Added

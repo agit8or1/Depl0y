@@ -389,3 +389,24 @@ def test_pve8_remove_deletes_managed_group_but_not_others():
     hf.remove_protection(pve, hf.build_plan(facts({"scsi0": "nfs:100/a.qcow2,size=8G"}, three_nodes(), **other)),
                          lambda t: None)
     assert writes(pve) == [("DELETE", "cluster/ha/resources/vm:100", {})]
+
+
+def test_no_move_reason_names_zfs_pool_missing_on_other_nodes():
+    nodes = three_nodes()
+    for n in ("pve1", "pve2", "pve3"):
+        del nodes[n]["storages"]["nfs"]
+    for n in ("pve2", "pve3"):
+        del nodes[n]["storages"]["tank"]                                              # ZFS only on pve1
+    plan = hf.build_plan(facts({"scsi0": "local-lvm:vm-100-disk-0,size=32G"}, nodes))
+    detail = next(c["detail"] for c in plan["checks"] if c["title"] == "No suitable storage to move to")
+    assert "ZFS storage tank is not available on any other online node" in detail
+    assert "same ID" in detail
+
+
+def test_no_move_reason_when_cluster_has_no_zfs_or_shared_storage():
+    nodes = three_nodes()
+    for n in ("pve1", "pve2", "pve3"):
+        del nodes[n]["storages"]["nfs"], nodes[n]["storages"]["tank"]
+    plan = hf.build_plan(facts({"scsi0": "local-lvm:vm-100-disk-0,size=32G"}, nodes))
+    detail = next(c["detail"] for c in plan["checks"] if c["title"] == "No suitable storage to move to")
+    assert detail.startswith("pve1 has no shared storage and no ZFS pool.")

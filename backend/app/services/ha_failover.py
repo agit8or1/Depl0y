@@ -268,15 +268,15 @@ def build_plan(f: dict) -> dict:
         names = ", ".join(f"{d['key']} on {d['storage']} ({d['storage_type']})" for d in local_disks)
         _check(checks, "fail", "Disks are on node-local storage",
                f"{names}. If {node} fails these disks are unreachable, so no other node can start the guest. "
-               "Failover needs shared storage (NFS, Ceph, iSCSI) or ZFS with replication.")
+               "The guest can still fail over once its disks are on shared storage (NFS, Ceph, iSCSI: no data "
+               "loss) or on a ZFS pool, which Proxmox replicates to a second node every 2 minutes without any "
+               "shared storage.")
         plan["move_options"] = _move_options(f, vols["disks"], content)
         if not plan["move_options"] and vmtype == "lxc" and f["running"]:
             _check(checks, "info", "Stop the container to move its disks",
                    "Proxmox can only move container volumes while the container is stopped.")
         elif not plan["move_options"]:
-            _check(checks, "info", "No suitable storage to move to",
-                   f"{node} has no shared or replicable (ZFS) storage that another node can also use. "
-                   "Add an NFS share or ZFS pool to the cluster, then run the wizard again.")
+            _check(checks, "info", "No suitable storage to move to", _no_move_reason(f, vols["disks"], content))
     elif not vols["disks"]:
         plan["mode"] = "shared"
     elif zfs_disks:
@@ -340,6 +340,32 @@ def _move_options(f, disks, content):
                         "avail": st["avail"], "needed": total, "other_nodes": others})
     options.sort(key=lambda o: (not o["shared"], -o["avail"]))
     return options
+
+
+def _no_move_reason(f, disks, content):
+    """Explain why _move_options() found nothing, naming the specific ZFS/shared problem."""
+    node = f["node"]
+    total = sum(d["size"] for d in disks)
+    howto = ("For replication, create a ZFS pool on {node} and on at least one other node, and add it as one "
+             "ZFS storage (same storage ID) for those nodes under Datacenter → Storage. The wizard will then "
+             "move the disks onto it and set up replication.").format(node=node)
+    problems = []
+    for name, st in f["nodes"].get(node, {}).get("storages", {}).items():
+        if not (st["shared"] or st["type"] == "zfspool") or content not in st["content"].split(","):
+            continue   # e.g. a backup-only PBS store is not a candidate at all
+        what = "Shared storage" if st["shared"] else "ZFS storage"
+        if not st["active"]:
+            problems.append(f"{what} {name} is inactive on {node}.")
+        elif not any(n != node and info.get("online") and info.get("lrm") and _usable(info, name, content)
+                     for n, info in f["nodes"].items()):
+            problems.append(f"{what} {name} is not available on any other online node with HA running"
+                            + ("; replication needs a ZFS storage with the same ID on the failover node."
+                               if not st["shared"] else "."))
+        elif st["avail"] < total:
+            problems.append(f"{what} {name} has {st['avail'] >> 30} GiB free; the disks need {total >> 30} GiB.")
+    if problems:
+        return " ".join(problems) + " " + howto
+    return f"{node} has no shared storage and no ZFS pool. " + howto
 
 
 def _settings(f, plan):

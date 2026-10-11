@@ -49,8 +49,10 @@
           </div>
           <div v-if="allBlockedByStorage" class="alert alert-info mb-2">
             None of these guests can fail over yet: their disks are on storage that only one node can reach.
-            Failover needs shared storage (an NFS share, Ceph or iSCSI) or ZFS on at least two nodes.
-            Once the cluster has one, the wizard can move a guest's disks there for you.
+            Failover needs one of two things: shared storage (an NFS share, Ceph or iSCSI), or a ZFS pool on
+            at least two nodes added as one storage (same storage ID), which Proxmox replicates every 2 minutes
+            without any shared storage. Once the cluster has one, the wizard moves a guest's disks there and sets
+            up replication for you.
           </div>
           <table class="table guests-table">
             <thead>

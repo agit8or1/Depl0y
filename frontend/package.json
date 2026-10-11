@@ -1,6 +1,6 @@
 {
   "name": "depl0y-frontend",
-  "version": "2.2.100",
+  "version": "2.2.101",
   "description": "Depl0y Frontend - Vue.js deployment panel",
   "private": true,
   "scripts": {
@@ -27,8 +27,8 @@
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^6.0.8",
-    "eslint": "^8.54.0",
-    "eslint-plugin-vue": "^9.18.1",
+    "eslint": "^8.57.1",
+    "eslint-plugin-vue": "^10.11.1",
     "vite": "^8.2.2"
   }
 }

@@ -5,6 +5,7 @@ from app.models import VirtualMachine, UpdateLog, OSType
 from app.services.proxmox import ProxmoxService
 from app.models import ProxmoxHost, ProxmoxNode
 import paramiko
+from app.services.ssh_hw import SSH_DISABLED_ALGORITHMS
 import logging
 from datetime import datetime
 
@@ -35,9 +36,9 @@ class UpdateService:
             if ssh_key:
                 from io import StringIO
                 pkey = paramiko.RSAKey.from_private_key(StringIO(ssh_key))
-                client.connect(hostname=ip, username=username, pkey=pkey, timeout=30)
+                client.connect(hostname=ip, username=username, pkey=pkey, timeout=30, disabled_algorithms=SSH_DISABLED_ALGORITHMS)
             else:
-                client.connect(hostname=ip, username=username, password=password, timeout=30)
+                client.connect(hostname=ip, username=username, password=password, timeout=30, disabled_algorithms=SSH_DISABLED_ALGORITHMS)
             return client
         except Exception as e:
             logger.error(f"SSH connection to {ip} failed: {e}")

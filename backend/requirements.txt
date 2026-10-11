@@ -13,7 +13,7 @@ alembic==1.15.2
 # Authentication and security
 # 3.4.0 capped pyasn1 at <0.5.0, which pinned us to a version carrying four DoS
 # advisories in the BER/DER decoder. 3.5.0 relaxes that to >=0.5.0.
-python-jose[cryptography]==3.5.0
+PyJWT==2.15.1
 pyasn1>=0.6.4
 passlib[bcrypt]==1.7.4
 pyotp==2.9.0

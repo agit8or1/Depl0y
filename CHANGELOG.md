@@ -5,6 +5,20 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.101] - 2026-10-11 🔒 Dependency security fixes
+
+### Security
+
+- **Replaced python-jose with PyJWT 2.15.1** for login tokens. python-jose has an unpatched
+  algorithm-confusion flaw (critical). Depl0y only signs HS256 tokens, but the library is gone now.
+  Existing sessions stay valid: tokens are the same HS256 format.
+- **SSH no longer accepts SHA-1 RSA signatures** (`ssh-rsa`) for host keys or key login, which mitigates
+  CVE-2026-44405 in Paramiko (no fixed release yet). RSA keys still work through rsa-sha2-256/512;
+  every Proxmox node and PBS uses ed25519 host keys.
+- **Frontend dependencies updated**: dompurify 3.4.16, @vue/server-renderer 3.5.43, source-map-js 1.2.2,
+  brace-expansion 1.1.21, and eslint-plugin-vue 10.11.1 (brings postcss-selector-parser 7.1.6).
+  `npm audit` reports 0 vulnerabilities.
+
 ## [2.2.100] - 2026-10-11 🔁 Failover wizard explains ZFS replication
 
 ### Changed

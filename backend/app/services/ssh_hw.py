@@ -6,6 +6,10 @@ from typing import Dict, Any
 
 logger = logging.getLogger(__name__)
 
+# Refuse SHA-1 RSA signatures ("ssh-rsa") for host keys and our own key auth (CVE-2026-44405,
+# no fixed Paramiko release yet). RSA keys still work through rsa-sha2-256/512.
+SSH_DISABLED_ALGORITHMS = {"pubkeys": ["ssh-rsa"], "keys": ["ssh-rsa"]}
+
 
 def _run(client, cmd: str) -> str:
     try:
@@ -20,7 +24,8 @@ def get_ssh_client(hostname: str, username: str, password: str, port: int = 22):
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     client.connect(hostname, port=port, username=username, password=password,
-                   timeout=10, allow_agent=False, look_for_keys=False)
+                   timeout=10, allow_agent=False, look_for_keys=False,
+                   disabled_algorithms=SSH_DISABLED_ALGORITHMS)
     return client
 
 

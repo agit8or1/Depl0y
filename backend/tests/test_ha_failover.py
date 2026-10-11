@@ -410,3 +410,14 @@ def test_no_move_reason_when_cluster_has_no_zfs_or_shared_storage():
     plan = hf.build_plan(facts({"scsi0": "local-lvm:vm-100-disk-0,size=32G"}, nodes))
     detail = next(c["detail"] for c in plan["checks"] if c["title"] == "No suitable storage to move to")
     assert detail.startswith("pve1 has no shared storage and no ZFS pool.")
+
+
+def test_no_move_reason_when_zfs_storage_is_not_set_up_for_this_node():
+    nodes = three_nodes()
+    for n in ("pve1", "pve2", "pve3"):
+        del nodes[n]["storages"]["nfs"]
+    nodes["pve1"]["storages"]["tank"] = {**nodes["pve1"]["storages"]["tank"], "active": False, "enabled": False}
+    plan = hf.build_plan(facts({"scsi0": "local-lvm:vm-100-disk-0,size=32G"}, nodes))
+    detail = next(c["detail"] for c in plan["checks"] if c["title"] == "No suitable storage to move to")
+    assert detail.startswith("ZFS storage tank is not set up for pve1: pve1 needs the same ZFS pool")
+    assert "inactive" not in detail

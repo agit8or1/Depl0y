@@ -5,6 +5,14 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.103] - 2026-10-11 🧭 Failover wizard: storage not set up for a node
+
+### Fixed
+
+- **Failover wizard no longer calls a storage "inactive" on a node it is not set up for.** A ZFS
+  storage limited to some nodes now reads "not set up for <node>: <node> needs the same ZFS pool as
+  the other nodes, and <node> added to the storage's nodes".
+
 ## [2.2.102] - 2026-10-11 🔑 SSH reaches the node, not the API hostname
 
 ### Fixed

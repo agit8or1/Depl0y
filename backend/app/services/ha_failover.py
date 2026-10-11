@@ -124,6 +124,7 @@ def gather_cluster(pve) -> dict:
                 "type": s.get("type"),
                 "shared": bool(s.get("shared")),
                 "active": bool(s.get("active")) and bool(s.get("enabled", 1)),
+                "enabled": bool(s.get("enabled", 1)),
                 "avail": int(s.get("avail") or 0),
                 "content": s.get("content", ""),
             }
@@ -354,6 +355,11 @@ def _no_move_reason(f, disks, content):
         if not (st["shared"] or st["type"] == "zfspool") or content not in st["content"].split(","):
             continue   # e.g. a backup-only PBS store is not a candidate at all
         what = "Shared storage" if st["shared"] else "ZFS storage"
+        if not st.get("enabled", True):
+            problems.append(f"{what} {name} is not set up for {node}"
+                            + ("" if st["shared"] else f": {node} needs the same ZFS pool as the other nodes,")
+                            + f" and {node} added to {name}'s nodes under Datacenter → Storage.")
+            continue
         if not st["active"]:
             problems.append(f"{what} {name} is inactive on {node}.")
         elif not any(n != node and info.get("online") and info.get("lrm") and _usable(info, name, content)
@@ -363,6 +369,8 @@ def _no_move_reason(f, disks, content):
                                if not st["shared"] else "."))
         elif st["avail"] < total:
             problems.append(f"{what} {name} has {st['avail'] >> 30} GiB free; the disks need {total >> 30} GiB.")
+    if any("is not set up for" in p for p in problems):
+        return " ".join(problems)
     if problems:
         return " ".join(problems) + " " + howto
     return f"{node} has no shared storage and no ZFS pool. " + howto

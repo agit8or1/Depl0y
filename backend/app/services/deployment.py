@@ -11,6 +11,7 @@ from app.models import (
 )
 from app.services.proxmox import ProxmoxService
 from app.services.cloudinit import CloudInitService, build_deploy_user_data
+from app.services.vmid_reservations import release_vmid, reserve_vmid
 from app.core.security import encrypt_data, decrypt_data
 import logging
 from app.services.host_ssh import ssh_address
@@ -43,6 +44,7 @@ class DeploymentService:
 
     def __init__(self, db: Session):
         self.db = db
+        self._reserved_vmids = []   # VMIDs this deploy holds until it ends
 
     def _clear_vm_locks(self, proxmox, node, vmid, host):
         """
@@ -305,7 +307,16 @@ class DeploymentService:
             logger.error(f"Failed to ensure VirtIO ISO: {e}")
             return None
 
-    def deploy_linux_vm(
+    def deploy_linux_vm(self, vm_id: int) -> bool:
+        """Deploy, then give back the VMID reservation (the VM exists by then, or the deploy failed)."""
+        try:
+            return self._deploy_linux_vm(vm_id)
+        finally:
+            for vmid in self._reserved_vmids:
+                release_vmid(vmid)
+            self._reserved_vmids = []
+
+    def _deploy_linux_vm(
         self,
         vm_id: int,
     ) -> bool:
@@ -358,7 +369,8 @@ class DeploymentService:
             # Get next VMID
             vm.status_message = "Allocating VM ID..."
             self.db.commit()
-            vmid = proxmox.get_next_vmid()
+            vmid = reserve_vmid(proxmox.proxmox)
+            self._reserved_vmids.append(vmid)
             vm.vmid = vmid
             logger.info(f"Allocated VMID {vmid} for VM {vm.name}")
 
@@ -510,7 +522,16 @@ class DeploymentService:
                 self.db.commit()
             return False
 
-    def deploy_windows_vm(
+    def deploy_windows_vm(self, vm_id: int) -> bool:
+        """Deploy, then give back the VMID reservation (the VM exists by then, or the deploy failed)."""
+        try:
+            return self._deploy_windows_vm(vm_id)
+        finally:
+            for vmid in self._reserved_vmids:
+                release_vmid(vmid)
+            self._reserved_vmids = []
+
+    def _deploy_windows_vm(
         self,
         vm_id: int,
     ) -> bool:
@@ -563,7 +584,8 @@ class DeploymentService:
             # Get next VMID
             vm.status_message = "Allocating VM ID..."
             self.db.commit()
-            vmid = proxmox.get_next_vmid()
+            vmid = reserve_vmid(proxmox.proxmox)
+            self._reserved_vmids.append(vmid)
             vm.vmid = vmid
             logger.info(f"Allocated VMID {vmid} for VM {vm.name}")
 

@@ -5,6 +5,16 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.105] - 2026-10-13 🔢 No more VMID clashes between parallel deploys
+
+### Fixed
+
+- **Two deploys started together got the same VMID**, and the second failed with "config file
+  already exists". Proxmox's next-free-ID only counts VMs that already exist, and a deploy creates
+  its VM a while after asking (template build, image upload). VMIDs are now reserved inside Depl0y
+  until the deploy ends (success or failure), so each one is handed out once. VM imports (from URL
+  and OVF) use the same reservations, and no longer fall back to VMID 9000 when the lookup fails.
+
 ## [2.2.104] - 2026-10-13 🔐 New VMs: SSH works in about a minute, and keeps working
 
 ### Fixed

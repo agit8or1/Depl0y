@@ -14,6 +14,7 @@ from typing import Optional, List
 
 from app.api.auth import require_operator
 from app.core.database import SessionLocal, get_db
+from app.services.vmid_reservations import release_vmid, reserve_vmid
 from app.services import vm_import_service as svc
 from sqlalchemy.orm import Session
 
@@ -532,6 +533,7 @@ async def _run_from_url_import(job_id: str, req: dict, host_id: int):
     from app.models import ProxmoxHost
     from app.services.proxmox import ProxmoxService
 
+    reserved_vmid = None   # released in the finally below
     job = svc.get_import_job(job_id)
     if not job:
         return
@@ -614,10 +616,8 @@ async def _run_from_url_import(job_id: str, req: dict, host_id: int):
         # 4. Get next VMID if not provided
         vmid = req.get("vmid") or None
         if not vmid:
-            try:
-                vmid = int(pve.cluster.nextid.get())
-            except Exception:
-                vmid = 9000
+            vmid = reserve_vmid(pve)
+            reserved_vmid = vmid
 
         vm_name = re.sub(r"[^a-zA-Z0-9_-]", "-", req.get("vm_name") or "imported-vm")[:63] or "imported-vm"
         cores = max(1, int(req.get("cores") or 2))
@@ -666,6 +666,7 @@ async def _run_from_url_import(job_id: str, req: dict, host_id: int):
         job["error"] = str(e)
         job["status_message"] = f"Import failed: {str(e)}"
     finally:
+        release_vmid(reserved_vmid)
         db.close()
 
 
@@ -729,11 +730,9 @@ def import_from_ovf(
 
     # Resolve VMID
     vmid = req.vmid or None
+    reserved_vmid = None
     if not vmid:
-        try:
-            vmid = int(pve.cluster.nextid.get())
-        except Exception:
-            vmid = 9000
+        vmid = reserved_vmid = reserve_vmid(pve)
 
     vm_name = re.sub(r"[^a-zA-Z0-9_-]", "-", req.vm_name)[:63] or "imported-vm"
     cores = max(1, req.cpu_cores)
@@ -783,6 +782,8 @@ def import_from_ovf(
         return {"vmid": vmid, "upid": str(upid), "vm_name": vm_name}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"VM creation failed: {str(e)}")
+    finally:
+        release_vmid(reserved_vmid)   # the VM config exists once qemu.post returns
 
 
 # ---------------------------------------------------------------------------

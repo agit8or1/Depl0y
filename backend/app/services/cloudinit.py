@@ -39,11 +39,94 @@ SSH_PASSWORD_AUTH_RUNCMD = [
     "sed -ri 's/^[[:space:]]*#?[[:space:]]*PubkeyAuthentication[[:space:]].*/PubkeyAuthentication yes/' /etc/ssh/sshd_config",
     "sed -ri 's/^[[:space:]]*#?[[:space:]]*PermitRootLogin[[:space:]].*/PermitRootLogin yes/' /etc/ssh/sshd_config",
     "grep -q '^PasswordAuthentication yes' /etc/ssh/sshd_config || echo 'PasswordAuthentication yes' >> /etc/ssh/sshd_config",
-    # 4. Reload.  Ubuntu 24.04 is socket-activated (ssh.socket), older releases
-    #    use ssh.service; RHEL-likes call it sshd.  Validate before restarting so
-    #    a bad edit cannot leave the VM without SSH at all.
-    "sshd -t && (systemctl restart ssh.socket 2>/dev/null; systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null) || true",
+    # 4. Reload, never restart.  Ubuntu 24.04 is socket-activated: the first connection
+    #    starts ssh.service, whose sshd then holds port 22.  Restarting ssh.socket/ssh
+    #    while that listener runs orphans it, the socket cannot bind again, and every
+    #    later login is reset ("Missing privilege separation directory").  A reload
+    #    (SIGHUP) re-reads the config safely in both socket and classic mode; if no
+    #    listener runs yet, the next connection reads the new config anyway.
+    #    Validate first so a bad edit cannot take SSH down.
+    "sshd -t && (systemctl reload ssh 2>/dev/null || systemctl reload sshd 2>/dev/null) || true",
 ]
+
+# Start SSH only when nothing serves it yet (the socket on Ubuntu 24.04, the service
+# elsewhere). Starting ssh.service next to an active ssh.socket fights over port 22.
+SSH_ENSURE_RUNNING = (
+    "systemctl is-active --quiet ssh.socket || systemctl is-active --quiet ssh || "
+    "systemctl is-active --quiet sshd || systemctl enable --now ssh 2>/dev/null || "
+    "systemctl enable --now sshd 2>/dev/null || true"
+)
+
+
+SSH_AUTH_DROPIN_CONTENT = (
+    "PasswordAuthentication yes\n"
+    "PubkeyAuthentication yes\n"
+    "PermitRootLogin yes\n"
+    "KbdInteractiveAuthentication no\n"
+)
+
+# Full upgrade, run as the last base runcmd step (after SSH and the guest agent are up).
+# --force-confold keeps our edited sshd_config when openssh-server is upgraded.
+UPGRADE_CMD = (
+    "if command -v apt-get >/dev/null 2>&1; then DEBIAN_FRONTEND=noninteractive apt-get -y "
+    "-o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold dist-upgrade; "
+    "elif command -v dnf >/dev/null 2>&1; then dnf -y upgrade; "
+    "elif command -v yum >/dev/null 2>&1; then yum -y update; fi || true"
+)
+
+
+def build_deploy_user_data(hostname: str, username: str, password: Optional[str],
+                           ssh_keys: Optional[str] = None, extra: Optional[Dict[str, Any]] = None) -> str:
+    """User-data for a VM deployed from a cloud image (uploaded as the cicustom snippet).
+
+    The snippet replaces Proxmox's generated user-data, so it has to carry everything:
+    hostname, user, password, SSH keys. Order matters for how fast the VM is usable:
+    cloud-init runs `runcmd` only after the package module, so the package module only
+    installs the guest agent and SSH server (seconds), and the slow full upgrade runs
+    later from runcmd, once SSH works and the agent reports the VM's IP.
+    """
+    extra = extra if isinstance(extra, dict) else {}
+    user = {
+        "name": username,
+        "gecos": username,
+        "sudo": "ALL=(ALL) NOPASSWD:ALL",
+        "groups": "users, admin, sudo",
+        "shell": "/bin/bash",
+        "lock_passwd": not password,
+    }
+    keys = [k.strip() for k in (ssh_keys or "").splitlines() if k.strip()]
+    if keys:
+        user["ssh_authorized_keys"] = keys
+
+    packages = ["qemu-guest-agent", "openssh-server"]
+    packages += [p for p in extra.get("extra_packages", []) if p not in packages]
+
+    config: Dict[str, Any] = {
+        "hostname": hostname,
+        "fqdn": f"{hostname}.local",
+        "manage_etc_hosts": True,
+        "users": [user],
+    }
+    if password:
+        config["chpasswd"] = {"list": f"{username}:{password}\n", "expire": False}
+    config.update({
+        "disable_root": False,
+        "ssh_pwauth": bool(password),
+        # Written early in boot, so password logins work as soon as sshd answers.
+        "write_files": [{"path": SSH_AUTH_DROPIN, "permissions": "0644", "content": SSH_AUTH_DROPIN_CONTENT}]
+                       + list(extra.get("write_files", [])),
+        "package_update": True,
+        "package_upgrade": False,
+        "packages": packages,
+        "runcmd": [
+            "systemctl enable --now qemu-guest-agent",
+            SSH_ENSURE_RUNNING,
+            *SSH_PASSWORD_AUTH_RUNCMD,
+            UPGRADE_CMD,
+            *extra.get("extra_runcmd", []),
+        ],
+    })
+    return "#cloud-config\n" + yaml.safe_dump(config, default_flow_style=False, sort_keys=False, width=10000)
 
 
 class CloudInitService:
@@ -129,10 +212,7 @@ class CloudInitService:
             config["packages"].append("openssh-server")
 
         # Ensure SSH is enabled
-        config["runcmd"].extend([
-            "systemctl enable ssh 2>/dev/null || systemctl enable sshd 2>/dev/null || true",
-            "systemctl start ssh 2>/dev/null || systemctl start sshd 2>/dev/null || true",
-        ])
+        config["runcmd"].append(SSH_ENSURE_RUNNING)
 
         # Make password logins actually work on Ubuntu 22.04/24.04 cloud images
         if password:

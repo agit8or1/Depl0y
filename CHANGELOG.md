@@ -5,6 +5,28 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.104] - 2026-10-13 🔐 New VMs: SSH works in about a minute, and keeps working
+
+### Fixed
+
+- **SSH broke for good on new Ubuntu 24.04 VMs if you connected while cloud-init was still
+  running.** The setup restarted `ssh.socket`/`ssh` at the end; with socket activation that orphans
+  the running sshd listener, the socket can no longer bind port 22, and every login is reset. SSH is
+  now only reloaded, and only started when nothing serves it yet. Tested by logging in every 5
+  seconds through a whole deploy (23/23 logins, including while openssh-server itself was upgraded)
+  and after a reboot.
+- **SSH and the VM's IP are ready about a minute after deploy instead of after the full upgrade.**
+  The SSH password-login settings are written early in boot, cloud-init's package step only installs
+  the guest agent and SSH server, and the full `dist-upgrade` runs last.
+- **New VMs get their hostname.** The custom cloud-init file replaced Proxmox's own, so VMs came up
+  as `ubuntu`; it now sets hostname and FQDN. SSH keys entered at deploy are now included too.
+- **Passwords with YAML-special characters** (`#`, `: `, quotes) no longer break the cloud-init file;
+  it is generated as real YAML instead of a text template.
+- **Deleting a VM left it running in Proxmox.** depl0y sent a shutdown, destroyed without waiting,
+  failed with "VM is running", then removed its own record anyway. It now powers the VM off and waits,
+  destroys it (and its disks) and waits, finds the VM even if it was migrated, never destroys a VM
+  whose ID now belongs to another guest, and keeps its record if Proxmox refuses.
+
 ## [2.2.103] - 2026-10-11 🧭 Failover wizard: storage not set up for a node
 
 ### Fixed

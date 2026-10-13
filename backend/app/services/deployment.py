@@ -10,7 +10,7 @@ from app.models import (
     OSType,
 )
 from app.services.proxmox import ProxmoxService
-from app.services.cloudinit import CloudInitService, SSH_PASSWORD_AUTH_RUNCMD
+from app.services.cloudinit import CloudInitService, build_deploy_user_data
 from app.core.security import encrypt_data, decrypt_data
 import logging
 from app.services.host_ssh import ssh_address
@@ -1089,68 +1089,13 @@ class DeploymentService:
                 # Decrypt password from database
                 plain_password = decrypt_data(vm.password) if vm.password else None
 
-                # Merge any extra cloud-init config stored on the VM
-                # (e.g. LLM deployment adds extra packages, write_files, and runcmd)
-                _extra_packages_str = ""
-                _extra_runcmd_str = ""
-                _write_files_section = ""
-
-                if vm.cloud_init_config and isinstance(vm.cloud_init_config, dict):
-                    _extra_pkgs = vm.cloud_init_config.get("extra_packages", [])
-                    _extra_cmds = vm.cloud_init_config.get("extra_runcmd", [])
-                    _write_files = vm.cloud_init_config.get("write_files", [])
-
-                    for pkg in _extra_pkgs:
-                        _extra_packages_str += f"\n  - {pkg}"
-
-                    for cmd in _extra_cmds:
-                        # Escape any double-quotes inside the command string
-                        _escaped = cmd.replace("\\", "\\\\").replace('"', '\\"')
-                        _extra_runcmd_str += f'\n  - "{_escaped}"'
-
-                    if _write_files:
-                        _write_files_section = "\nwrite_files:"
-                        for wf in _write_files:
-                            _write_files_section += f"\n  - path: {wf['path']}"
-                            if wf.get("permissions"):
-                                _write_files_section += f"\n    permissions: '{wf['permissions']}'"
-                            if wf.get("encoding"):
-                                _write_files_section += f"\n    encoding: {wf['encoding']}"
-                            _write_files_section += f"\n    content: {wf['content']}"
-
-                # Enable SSH password auth in a way that survives the
-                # /etc/ssh/sshd_config.d/ drop-ins shipped by Ubuntu 22.04/24.04
-                # cloud images (see cloudinit.SSH_PASSWORD_AUTH_RUNCMD).
-                _ssh_auth_runcmd_str = ""
-                for _c in SSH_PASSWORD_AUTH_RUNCMD:
-                    _escaped = _c.replace("\\", "\\\\").replace('"', '\\"')
-                    _ssh_auth_runcmd_str += f'\n  - "{_escaped}"'
-
-                user_data = f"""#cloud-config
-users:
-  - name: {vm.username}
-    gecos: {vm.username}
-    sudo: ALL=(ALL) NOPASSWD:ALL
-    groups: users, admin, sudo
-    shell: /bin/bash
-    lock_passwd: false
-chpasswd:
-  list: |
-    {vm.username}:{plain_password}
-  expire: false
-disable_root: false
-ssh_pwauth: true
-package_update: true
-package_upgrade: true
-packages:
-  - qemu-guest-agent
-  - openssh-server{_extra_packages_str}
-runcmd:
-  - systemctl enable qemu-guest-agent
-  - systemctl start qemu-guest-agent
-  - systemctl enable ssh 2>/dev/null || systemctl enable sshd 2>/dev/null || true
-  - systemctl start ssh 2>/dev/null || systemctl start sshd 2>/dev/null || true{_ssh_auth_runcmd_str}{_extra_runcmd_str}{_write_files_section}
-"""
+                user_data = build_deploy_user_data(
+                    hostname=vm.hostname or vm.name,
+                    username=vm.username,
+                    password=plain_password,
+                    ssh_keys=vm.ssh_key,
+                    extra=vm.cloud_init_config,
+                )
 
                 # Create temporary file
                 with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.yml') as f:
@@ -1785,16 +1730,27 @@ echo "Template {template_vmid} created successfully"
                 node = self.db.query(ProxmoxNode).filter(ProxmoxNode.id == vm.node_id).first()
 
                 if host and node:
-                    proxmox = ProxmoxService(host)
+                    from app.services.ha_failover import wait_task
+                    pve = ProxmoxService(host).proxmox
+                    # Find the guest wherever it runs now (it may have been migrated).
+                    res = next((r for r in pve.cluster.resources.get(type="vm")
+                                if r.get("type") == "qemu" and int(r.get("vmid", 0)) == int(vm.vmid)), None)
+                    if res is None:
+                        logger.info(f"VM {vm.vmid} no longer exists in Proxmox; removing the record only")
+                    elif (res.get("name") or "") != vm.name:
+                        # The VMID was reused by another guest: never destroy that one.
+                        logger.warning(f"VMID {vm.vmid} now belongs to '{res.get('name')}', not '{vm.name}'; "
+                                       "leaving it alone and removing the record only")
+                    else:
+                        api = pve.nodes(res["node"]).qemu(vm.vmid)
+                        if res.get("status") != "stopped":
+                            logger.info(f"Powering off VM {vm.vmid} on {res['node']}")
+                            wait_task(pve, res["node"], api.status.stop.post(), timeout=180)
+                        logger.info(f"Destroying VM {vm.vmid} on {res['node']}")
+                        wait_task(pve, res["node"], api.delete(purge=1, **{"destroy-unreferenced-disks": 1}),
+                                  timeout=900)
 
-                    # Stop VM first
-                    proxmox.stop_vm(node.node_name, vm.vmid)
-                    time.sleep(2)
-
-                    # Delete VM
-                    proxmox.delete_vm(node.node_name, vm.vmid)
-
-            # Delete from database
+            # Delete from database (only reached once the guest is really gone)
             self.db.delete(vm)
             self.db.commit()
 

@@ -443,7 +443,7 @@ async def update_vm(
 
 
 @router.delete("/{vm_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_vm(
+def delete_vm(
     vm_id: int,
     current_user: User = Depends(require_operator),
     db: Session = Depends(get_db),

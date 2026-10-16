@@ -5,6 +5,26 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.106] - 2026-10-16 🗄️ HA-ZFS Wizard
+
+### Added
+
+- **HA-ZFS Wizard** (HA → HA-ZFS Wizard). It checks the replicated ZFS storage (`ha-zfs`, pool
+  `hazfs` on an LVM volume per node) on every node over SSH and suggests changes, which are applied
+  only when you pick them:
+  - set up the pool on a node with room, and add a node's pool to the storage (or create the storage);
+  - grow a pool to fit its node's own guests plus the replicas the Failover Wizard would send it;
+  - a ZFS quota where the thin pool underneath cannot back the whole pool, and autotrim;
+  - the boot drop-in that activates the LVM volume before ZFS imports pools;
+  - a cap on the ZFS cache (ARC);
+  - deleting guest volumes no guest uses any more (never preselected, and checked again just before deletion).
+  It also notes what it cannot fix, such as guests too large for the pools.
+
+### Changed
+
+- **Failover Wizard** picks, among the nodes with the replicated ZFS storage, one whose pool has room
+  for the replica (then the most free memory), instead of only the most free memory.
+
 ## [2.2.105] - 2026-10-13 🔢 No more VMID clashes between parallel deploys
 
 ### Fixed

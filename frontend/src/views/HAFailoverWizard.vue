@@ -52,7 +52,8 @@
             Failover needs one of two things: shared storage (an NFS share, Ceph or iSCSI), or a ZFS pool on
             at least two nodes added as one storage (same storage ID), which Proxmox replicates every 2 minutes
             without any shared storage. Once the cluster has one, the wizard moves a guest's disks there and sets
-            up replication for you.
+            up replication for you. The <router-link to="/ha-zfs-wizard">HA-ZFS Wizard</router-link> checks
+            and sets up that ZFS storage.
           </div>
           <table class="table guests-table">
             <thead>
@@ -93,6 +94,10 @@
               </div>
             </li>
           </ul>
+          <div v-if="needsZfsHelp" class="alert alert-info mt-2">
+            The <router-link to="/ha-zfs-wizard">HA-ZFS Wizard</router-link> can set up or grow the replicated ZFS
+            storage so this guest fits.
+          </div>
 
           <div v-if="plan.already_protected" class="mt-3">
             <h4>Current HA setup</h4>
@@ -251,6 +256,8 @@ const planStrict = computed(() => {
   const s = plan.value?.settings || {}
   return Boolean(s.rule ? s.rule.strict : s.group?.restricted)
 })
+const needsZfsHelp = computed(() => (plan.value?.checks || []).some(c =>
+  ['No suitable storage to move to', 'Not enough space for the replica'].includes(c.title)))
 const selectedMove = computed(() => plan.value?.move_options.find(o => o.storage === moveStorage.value) || {})
 const jobStatusLabel = computed(() => ({ running: 'Running', done: 'Done', failed: 'Failed' }[job.value?.status] || ''))
 

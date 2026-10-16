@@ -421,3 +421,10 @@ def test_no_move_reason_when_zfs_storage_is_not_set_up_for_this_node():
     detail = next(c["detail"] for c in plan["checks"] if c["title"] == "No suitable storage to move to")
     assert detail.startswith("ZFS storage tank is not set up for pve1: pve1 needs the same ZFS pool")
     assert "inactive" not in detail
+
+
+def test_replication_prefers_failover_node_with_room_over_more_memory():
+    nodes = three_nodes()
+    nodes["pve3"]["storages"]["tank"] = storage("zfspool", avail=4 * GiB)   # most memory, no room
+    plan = hf.build_plan(facts({"scsi0": "tank:vm-100-disk-0,size=32G"}, nodes))
+    assert plan["eligible"] and plan["target"] == "pve2"

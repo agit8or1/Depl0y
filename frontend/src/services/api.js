@@ -351,6 +351,12 @@ export default {
     job: (jobId) => api.get(`/ha-wizard/jobs/${jobId}`)
   },
 
+  // HA-ZFS wizard (replicated ZFS storage: survey, suggestions, apply; jobs via haWizard.job)
+  haZfsWizard: {
+    survey: (hostId) => api.get(`/ha-zfs-wizard/${hostId}/survey`, { timeout: 180000 }),
+    apply: (hostId, suggestions) => api.post(`/ha-zfs-wizard/${hostId}/apply`, { suggestions })
+  },
+
   // System
   system: {
     getInfo: () => api.get('/system/info'),

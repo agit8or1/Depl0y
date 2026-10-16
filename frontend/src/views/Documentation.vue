@@ -491,6 +491,18 @@ const SECTIONS = [
       ${step(4, 'Apply', '<p>Progress is shown step by step. With replication, HA is only enabled after the first copy has finished. A protected guest can be taken out of HA again from the same wizard.</p>')}
       ${infoBox('<strong>Proxmox VE 9</strong> uses HA rules (node affinity); on <strong>Proxmox VE 8</strong> the wizard creates an equivalent HA group instead. Failover is done by Proxmox itself, so it keeps working when Depl0y is down.')}
 
+      <h3>HA-ZFS Wizard</h3>
+      <p>Open <strong>HA → HA-ZFS Wizard</strong> (admins only). It checks the replicated ZFS storage that lets guests fail over without shared storage: one storage <code>ha-zfs</code> with a pool <code>hazfs</code> on each node, kept on an LVM volume <code>ha-zfs</code> in the node's data volume group (never the OS volume group). Depl0y reads each node over SSH and changes nothing until you pick suggestions and click <strong>Apply selected</strong>.</p>
+      <ul>
+        <li><strong>Set up the pool</strong> on a node that has room in its data storage but no pool yet, and add it to the storage.</li>
+        <li><strong>Grow a pool</strong> to fit what the node would hold: its own guests plus the replicas the Failover Wizard would send it. Growing is online.</li>
+        <li><strong>Quota</strong> on a pool whose thin pool cannot back its full size, so ZFS can never fill the thin pool (which would stop every volume in it), and <strong>autotrim</strong> so freed space goes back to the thin pool.</li>
+        <li><strong>Boot order</strong>: a systemd drop-in that activates the LVM volume before ZFS imports pools.</li>
+        <li><strong>ZFS cache cap</strong> (1/16 of RAM, 1–16 GiB) where the ARC has no cap or more than a quarter of RAM.</li>
+        <li><strong>Unused volumes</strong>: guest volumes no guest uses any more (for example left behind by a migration). These are never preselected and are checked again just before deletion.</li>
+      </ul>
+      <p>Notes list what the wizard cannot fix, such as a node with no room for a pool or a guest too large for the pools. Run the wizard again after moving guests into the pool: the space their old volumes free can raise a quota or allow a pool to grow further.</p>
+
       ${warnBox('<strong>Two-node clusters:</strong> A two-node cluster loses quorum if one node goes down, preventing HA from automatically restarting VMs. Use a third "witness" node or external corosync quorum device (QDevice) to solve this.')}
 
       <h3>HA Rules (Proxmox VE 9)</h3>

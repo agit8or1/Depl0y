@@ -7,6 +7,7 @@
       </div>
       <div class="header-actions">
         <router-link to="/ha-wizard" class="btn btn-primary">🛟 Failover Wizard</router-link>
+        <router-link to="/ha-zfs-wizard" class="btn btn-secondary">🗄️ HA-ZFS Wizard</router-link>
         <button @click="reloadAll" class="btn btn-secondary" :disabled="loadingResources || loadingGroups || loadingStatus">
           Refresh
         </button>

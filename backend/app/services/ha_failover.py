@@ -18,7 +18,8 @@ The wizard has no knobs: these are the settings it always uses.
   max_relocate=1, failback on.
 - A node-affinity rule keeps the guest on its current node (priority 2) and names one
   failover node (priority 1): the online node with the most free memory that can reach
-  the guest's storage. With replication the rule is strict, because only those two nodes
+  the guest's storage (with replication, among those whose pool has room for the replica).
+  With replication the rule is strict, because only those two nodes
   have the disks; with shared storage it is not, so Proxmox may use any node if both are down.
   Proxmox VE 8 has no HA rules; there the same placement is an HA group of the same name
   (restricted instead of strict, failback through nofailback=0).
@@ -285,6 +286,12 @@ def build_plan(f: dict) -> dict:
     else:
         plan["mode"] = "shared"
 
+    if plan["mode"] == "replication":
+        # Prefer failover nodes whose pool has room for the replica; memory decides among them.
+        roomy = [n for n in candidates
+                 if all(f["nodes"][n]["storages"][d["storage"]]["avail"] >= d["size"] for d in zfs_disks)]
+        candidates = roomy or candidates
+
     if plan["mode"]:
         _check(checks, "ok", "Storage supports failover",
                "Shared storage: no data loss." if plan["mode"] == "shared" else
@@ -306,7 +313,8 @@ def build_plan(f: dict) -> dict:
                         _check(checks, "fail", "Not enough space for the replica",
                                f"{d['storage']} on {target} has {tgt_st[d['storage']]['avail'] >> 30} GiB free; "
                                f"{d['key']} is {d['size'] >> 30} GiB.")
-                _check(checks, "ok", "Failover node", f"{target}: has the same ZFS storage and the most free memory.")
+                _check(checks, "ok", "Failover node",
+                       f"{target}: has the same ZFS storage with room for the replica, and the most free memory.")
             else:
                 _check(checks, "ok", "Failover node", f"{target}: can reach the shared storage and has the most free memory.")
 

@@ -261,6 +261,12 @@ const router = createRouter({
       meta: { requiresAuth: true, requiresAdmin: true }
     },
     {
+      path: '/ha-zfs-wizard',
+      name: 'HAZfsWizard',
+      component: () => import('@/views/HAZfsWizard.vue'),
+      meta: { requiresAuth: true, requiresAdmin: true }
+    },
+    {
       path: '/users',
       name: 'Users',
       component: () => import('@/views/Users.vue'),

@@ -116,7 +116,7 @@ def test_setup_on_node_with_room_and_note_for_node_without():
     s = kinds(r)
     assert s["setup:c"]["action"] == {"vg": "vgc", "thin_pool": "vgc", "size": TiB, "kind": "setup", "node": "c"}
     assert "setup:d" not in s
-    assert any("d has no room" in n["text"] for n in r["notes"])
+    assert any("d has no room" in n["text"] and "no data storage" in n["text"] for n in r["notes"])
 
 
 def test_pool_missing_from_storage_and_storage_missing():

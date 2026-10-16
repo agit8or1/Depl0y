@@ -5,6 +5,13 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.107] - 2026-10-16 🗄️ HA-ZFS Wizard layout
+
+### Fixed
+
+- HA-ZFS Wizard: the nodes table no longer cuts off its last column on a normal desktop screen, and a
+  node without any data storage is described as such (not as "0 MiB free").
+
 ## [2.2.106] - 2026-10-16 🗄️ HA-ZFS Wizard
 
 ### Added

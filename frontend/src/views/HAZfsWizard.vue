@@ -318,6 +318,7 @@ onUnmounted(stopPolling)
 .actions-row { display: flex; justify-content: flex-end; align-items: center; gap: 0.75rem; margin-top: 1rem; }
 .table-wrap { overflow-x: auto; }
 .nodes-table td, .nodes-table th { white-space: nowrap; }
+.nodes-table td:nth-child(5) { white-space: normal; min-width: 220px; }
 .text-danger { color: var(--danger-color, #ef4444); }
 
 .state-pill { display: inline-block; padding: 0.1rem 0.55rem; border-radius: 999px; font-size: 0.8rem; border: 1px solid var(--border-color, #333); white-space: nowrap; }

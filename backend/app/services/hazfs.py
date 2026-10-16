@@ -438,11 +438,12 @@ def suggest(facts: dict) -> dict:
                     f"with replication, and other nodes can replicate to it. Nothing existing is changed.",
                     {"vg": b["vg"], "thin_pool": b.get("thin_pool"), "size": size})
             else:
-                room = b["free"] if b else 0
+                where = (f"only {_gib(b['free'])} is free in {b['vg']}" if b else
+                         "it has no data storage besides the OS volume group")
                 notes.append({"level": "info", "node": name,
-                              "text": f"{name} has no room for a {POOL} pool outside its OS volume group "
-                                      f"({_gib(room)} free in its data storage; at least {_gib(MIN_SETUP_ROOM)} is needed). "
-                                      f"Its guests can only fail over by moving to another node first or with shared storage."})
+                              "text": f"{name} has no room for a {POOL} pool: {where}, and the pool needs at least "
+                                      f"{_gib(MIN_SETUP_ROOM)}. Its guests can only fail over by moving to another "
+                                      f"node first, or with shared storage."})
             continue
 
         # Pool health and thin pool fill.

@@ -125,7 +125,7 @@
                   <span v-else class="text-muted">—</span>
                 </td>
                 <td class="text-xs">
-                  <span v-if="srv._status?.error && !srv._useSSH" class="error-inline">⚠ Unreachable</span>
+                  <span v-if="srv._status?.error && !srv._useSSH" class="error-inline" :title="unreachableTitle(srv)">⚠ Unreachable</span>
                   <span v-else-if="srv._status?.health" :class="['health-badge', `health-${(srv._status.health||'unknown').toLowerCase()}`]">{{ srv._status.health }}</span>
                   <span v-else class="text-muted">—</span>
                 </td>
@@ -192,7 +192,7 @@
               <span v-if="srv._status?.power_state" :class="['power-badge', srv._status.power_state === 'On' ? 'power-on' : 'power-off']">
                 {{ srv._status.power_state }}
               </span>
-              <span v-if="srv._status?.error && !srv._useSSH" class="error-inline" title="BMC unreachable">⚠ Unreachable</span>
+              <span v-if="srv._status?.error && !srv._useSSH" class="error-inline" :title="unreachableTitle(srv)">⚠ Unreachable</span>
               <span v-if="!srv._status && srv.idrac_hostname && !srv._useSSH" class="text-muted text-xs">Pending first poll…</span>
               <span v-if="alertLevel(srv) === 'crit'" class="alert-badge alert-badge--crit" :title="alertReason(srv)">⚠ Critical</span>
               <span v-else-if="alertLevel(srv) === 'warn'" class="alert-badge alert-badge--warn" :title="alertReason(srv)">⚠ Warning</span>
@@ -267,8 +267,8 @@
             </div>
 
             <!-- Tabs -->
-            <div v-if="srv._info" class="detail-tabs">
-              <button v-for="tab in ['overview','hardware','sensors','network','firmware','logs']" :key="tab"
+            <div v-if="srv._info || srv._status" class="detail-tabs">
+              <button v-for="tab in ['overview','hardware','sensors','network','firmware','logs','history']" :key="tab"
                 @click="switchTab(srv, tab)"
                 :class="['tab-btn', srv._activeTab === tab ? 'tab-btn--active' : '']">
                 {{ tab.charAt(0).toUpperCase() + tab.slice(1) }}
@@ -695,6 +695,26 @@
               </div>
             </div>
 
+            <!-- TAB: History (stored readings — works while the BMC is down) -->
+            <div v-if="srv._activeTab === 'history'">
+              <div class="flex gap-1 mb-1" style="align-items:center">
+                <button v-for="d in [1, 7, 30, 120]" :key="d" @click="loadHistory(srv, d)"
+                  :class="['btn', 'btn-sm', srv._historyDays === d ? 'btn-primary' : 'btn-outline']">
+                  {{ d === 1 ? '24 h' : `${d} days` }}
+                </button>
+                <span v-if="srv._historyLoading" class="text-muted text-sm">Loading…</span>
+              </div>
+              <div v-if="srv._history?.points?.length" class="chart-wrapper" style="height:280px">
+                <Line :data="historyChartData(srv._history)" :options="historyChartOptions" />
+              </div>
+              <p v-else-if="srv._history" class="text-muted text-sm">
+                No readings stored for this range yet. depl0y records one every poll and keeps 120 days.
+              </p>
+              <p v-if="historyDowntime(srv._history)" class="text-muted text-sm mt-1">
+                Gaps in the lines: the BMC did not answer ({{ historyDowntime(srv._history) }} of {{ srv._history.points.length }} intervals).
+              </p>
+            </div>
+
             <!-- TAB: Logs -->
             <div v-if="srv._info && srv._activeTab === 'logs'">
               <div class="flex gap-1 mb-1" style="align-items:center">
@@ -907,20 +927,20 @@
 
 <script>
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
-import { Bar, Doughnut } from 'vue-chartjs'
+import { Bar, Doughnut, Line } from 'vue-chartjs'
 import {
   Chart as ChartJS,
-  CategoryScale, LinearScale, BarElement, ArcElement,
+  CategoryScale, LinearScale, BarElement, ArcElement, LineElement, PointElement,
   Tooltip, Legend, Title
 } from 'chart.js'
 import api from '@/services/api'
 import { useToast } from 'vue-toastification'
 
-ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, Tooltip, Legend, Title)
+ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, LineElement, PointElement, Tooltip, Legend, Title)
 
 export default {
   name: 'IDracManagement',
-  components: { Bar, Doughnut },
+  components: { Bar, Doughnut, Line },
   setup() {
     const toast = useToast()
     const loading = ref(true)
@@ -1278,6 +1298,12 @@ export default {
       }
     }
 
+    const unreachableTitle = (srv) => {
+      const st = srv._status || {}
+      const ok = st.last_heartbeat_ok || st.last_success
+      return (st.error || 'BMC unreachable') + (ok ? ` — last answered ${new Date(ok + 'Z').toLocaleString()}` : '')
+    }
+
     const applyStatusCache = (cache) => {
       for (const srv of allServers.value) {
         const key = `${srv._stype}:${srv.id}`
@@ -1539,7 +1565,57 @@ export default {
       if (tab === 'firmware' && !srv._firmware && !srv._fwLoading) loadFirmware(srv)
       if (tab === 'sensors' && !srv._sensors && !srv._sensorsLoading) loadSensors(srv)
       if (tab === 'logs' && srv._logs === null) loadLogs(srv)
+      if (tab === 'history' && !srv._history && !srv._historyLoading) loadHistory(srv, 1)
     }
+
+    const loadHistory = async (srv, days) => {
+      srv._historyDays = days
+      srv._historyLoading = true
+      try {
+        srv._history = (await api.idrac.getHistory(`${srv._stype}:${srv.id}`, days)).data
+      } catch {
+        toast.error('Failed to load history')
+      } finally {
+        srv._historyLoading = false
+      }
+    }
+
+    const historyChartData = (h) => {
+      const multiDay = h.days > 1
+      const labels = h.points.map(p => {
+        const d = new Date(p.t + 'Z')
+        return multiDay
+          ? d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+          : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      })
+      return {
+        labels,
+        datasets: [
+          {
+            label: 'Power (W)', yAxisID: 'w', borderColor: '#2563eb', backgroundColor: '#2563eb',
+            data: h.points.map(p => p.watts), pointRadius: 0, borderWidth: 1.5, spanGaps: false, tension: 0.2,
+          },
+          {
+            label: `Max temp (${tempLabel.value})`, yAxisID: 't', borderColor: '#ea580c', backgroundColor: '#ea580c',
+            data: h.points.map(p => toDisplay(p.max_temp_c)), pointRadius: 0, borderWidth: 1.5, spanGaps: false, tension: 0.2,
+          },
+        ],
+      }
+    }
+
+    const historyDowntime = (h) => (h?.points || []).filter(p => !p.reachable).length
+
+    const historyChartOptions = computed(() => ({
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } },
+      scales: {
+        x: { ticks: { font: { size: 10 }, maxTicksLimit: 8, maxRotation: 0 } },
+        w: { position: 'left', beginAtZero: true, ticks: { font: { size: 10 } }, title: { display: true, text: 'W' } },
+        t: { position: 'right', grid: { drawOnChartArea: false }, ticks: { font: { size: 10 } }, title: { display: true, text: tempLabel.value } },
+      },
+    }))
 
     const loadSensors = async (srv) => {
       if (srv._useSSH && !srv._redfishOK) return  // SSH-only mode — no Redfish sensors
@@ -2149,7 +2225,7 @@ export default {
 
     onMounted(async () => {
       await loadAll()
-      _pollInterval = setInterval(_refreshCache, 120000)
+      _pollInterval = setInterval(_refreshCache, 30000)
       document.addEventListener('mousedown', _powerMenuOutside)
       window.addEventListener('scroll', _powerMenuClose, true)
       window.addEventListener('resize', _powerMenuClose)
@@ -2163,7 +2239,7 @@ export default {
     })
 
     return {
-      tempUnit, toDisplay, tempLabel, toggleTempUnit,
+      unreachableTitle, loadHistory, historyChartData, historyChartOptions, historyDowntime, tempUnit, toDisplay, tempLabel, toggleTempUnit,
       openPowerMenuKey, openPowerMenuStyle, togglePowerMenu, runPowerAndClose,
       loading, polling, allServers, filteredServers, tileFilter, tileFilterLabel, setTileFilter, typeLabel, bmcTypeLabel, dash, alertedServers, alertLevel, alertReason, healthIssues, recentAlertLogs,
       powerHistory, powerEventClass,

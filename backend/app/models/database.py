@@ -677,6 +677,24 @@ class ReportSchedule(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
 
+class BmcReading(Base):
+    """One BMC poll result (iDRAC/iLO), kept 120 days for the history charts."""
+    __tablename__ = "bmc_readings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    bmc_key = Column(String(64), nullable=False)  # e.g. "pve_node:3", same as the status cache
+    captured_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    reachable = Column(Boolean, nullable=False, default=True)
+    power_state = Column(String(32), nullable=True)
+    health = Column(String(32), nullable=True)
+    consumed_watts = Column(Float, nullable=True)
+    max_temp_c = Column(Float, nullable=True)
+
+    __table_args__ = (
+        Index("ix_bmc_readings_key_captured", "bmc_key", "captured_at"),
+    )
+
+
 class NodeMetricSnapshot(Base):
     """Periodic point-in-time metric snapshot per node (rolling history)."""
     __tablename__ = "node_metric_snapshots"

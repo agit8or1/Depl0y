@@ -34,6 +34,7 @@ from .database import (
     ReportRun,
     ReportSchedule,
     NodeMetricSnapshot,
+    BmcReading,
 )
 from .security import (
     FailedLoginAttempt,
@@ -88,4 +89,5 @@ __all__ = [
     "ReportRun",
     "ReportSchedule",
     "NodeMetricSnapshot",
+    "BmcReading",
 ]

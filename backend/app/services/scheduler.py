@@ -34,6 +34,179 @@ def _retry_bmc(fn, attempts=_BMC_ATTEMPTS, delay=_BMC_RETRY_DELAY):
     raise last
 
 
+# BMCs on DHCP get new addresses whenever they lose link or the DHCP server
+# restarts, and polling the old address then fails forever. We remember each
+# BMC's MAC (from the ARP table, so only on-link BMCs) after a good poll, and
+# when it stops answering we sweep its /24 and follow the MAC to its new IP.
+# The sweep only opens TCP connections — no credentials go to unknown hosts.
+_BMC_SWEEP_INTERVAL = 600  # seconds between sweeps of the same subnet
+_bmc_last_sweep: dict = {}
+
+
+def _arp_table() -> dict:
+    """Return {ip: mac} for complete entries in the kernel ARP table."""
+    table = {}
+    try:
+        with open("/proc/net/arp") as f:
+            next(f)
+            for line in f:
+                parts = line.split()
+                if len(parts) >= 4 and parts[2] != "0x0" and parts[3] != "00:00:00:00:00:00":
+                    table[parts[0]] = parts[3].lower()
+    except Exception as exc:
+        logger.debug("ARP table read failed: %s", exc)
+    return table
+
+
+def _sweep_subnet(ip: str) -> None:
+    """Touch every address in ip's /24 on port 443 so the kernel learns their MACs."""
+    import ipaddress
+    import socket
+    from concurrent.futures import ThreadPoolExecutor
+
+    try:
+        net = ipaddress.ip_network(f"{ip}/24", strict=False)
+    except ValueError:
+        return
+    now = time.time()
+    if now - _bmc_last_sweep.get(str(net), 0) < _BMC_SWEEP_INTERVAL:
+        return
+    _bmc_last_sweep[str(net)] = now
+
+    def _touch(addr):
+        try:
+            socket.create_connection((str(addr), 443), timeout=1).close()
+        except Exception:
+            pass
+
+    with ThreadPoolExecutor(max_workers=64) as pool:
+        list(pool.map(_touch, net.hosts()))
+
+
+def _relocate_moved_bmcs(servers, poll_one):
+    """Record the MAC of every BMC that answered; re-point the ones that didn't
+    to wherever their MAC now lives, then poll them again at the new address."""
+    from app.core.database import SessionLocal
+    from app.models.database import ProxmoxHost, PBSServer, StandaloneBMC, ProxmoxNode, SystemSettings
+    from app.api.idrac import bmc_status_cache
+
+    models = {"pve": ProxmoxHost, "pbs": PBSServer, "standalone": StandaloneBMC, "pve_node": ProxmoxNode}
+    arp = _arp_table()
+    db = SessionLocal()
+    try:
+        lost = []
+        for stype, sid, obj in servers:
+            key = f"{stype}:{sid}"
+            mac_key = f"bmc_mac:{key}"
+            row = db.query(SystemSettings).filter(SystemSettings.key == mac_key).first()
+            if not bmc_status_cache.get(key, {}).get("stale"):
+                mac = arp.get(obj.idrac_hostname)
+                if mac and (not row or row.value != mac):
+                    if row:
+                        row.value = mac
+                    else:
+                        db.add(SystemSettings(key=mac_key, value=mac,
+                                              description=f"Last seen MAC of BMC {key}"))
+            elif row and row.value:
+                lost.append((stype, sid, obj, row.value))
+        db.commit()
+        if not lost:
+            return
+
+        for _, _, obj, _ in lost:
+            _sweep_subnet(obj.idrac_hostname)
+        arp = _arp_table()
+
+        for stype, sid, obj, mac in lost:
+            old_ip = obj.idrac_hostname
+            new_ip = next((ip for ip, m in arp.items() if m == mac and ip != old_ip), None)
+            if not new_ip:
+                continue
+            rec = db.query(models[stype]).filter_by(id=sid).first()
+            if not rec or rec.idrac_hostname != old_ip:
+                continue
+            logger.warning("BMC %s:%s (MAC %s) moved from %s to %s — updating its address",
+                           stype, sid, mac, old_ip, new_ip)
+            rec.idrac_hostname = new_ip
+            db.commit()
+            obj.idrac_hostname = new_ip
+            poll_one(stype, sid, obj)
+    except Exception as exc:
+        db.rollback()
+        logger.warning("BMC relocation check failed: %s", exc)
+    finally:
+        db.close()
+
+
+_BMC_HISTORY_DAYS = 120
+_BMC_CACHE_SETTING = "bmc_status_cache"
+
+
+def _record_bmc_readings(keys):
+    """Append one history row per BMC for this poll, prune rows older than
+    120 days, and save the whole status cache so a restart starts with the
+    last known values instead of an empty page."""
+    from datetime import timedelta
+    from app.core.database import SessionLocal
+    from app.models.database import BmcReading, SystemSettings
+    from app.api.idrac import bmc_status_cache
+
+    db = SessionLocal()
+    try:
+        now = datetime.utcnow()
+        for key in keys:
+            e = bmc_status_cache.get(key)
+            if not e:
+                continue
+            ok = not e.get("stale")
+            db.add(BmcReading(
+                bmc_key=key,
+                captured_at=now,
+                reachable=ok,
+                power_state=e.get("power_state") if ok else None,
+                health=e.get("health") if ok else None,
+                consumed_watts=e.get("consumed_watts") if ok else None,
+                max_temp_c=e.get("max_temp_c") if ok else None,
+            ))
+        db.query(BmcReading).filter(
+            BmcReading.captured_at < now - timedelta(days=_BMC_HISTORY_DAYS)
+        ).delete(synchronize_session=False)
+
+        blob = json.dumps(bmc_status_cache, default=str)
+        row = db.query(SystemSettings).filter(SystemSettings.key == _BMC_CACHE_SETTING).first()
+        if row:
+            row.value = blob
+        else:
+            db.add(SystemSettings(key=_BMC_CACHE_SETTING, value=blob,
+                                  description="Last BMC status (restored at startup)"))
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        logger.warning("BMC history write failed: %s", exc)
+    finally:
+        db.close()
+
+
+def _restore_bmc_cache():
+    """Load the BMC status saved by the last poll so the page has values
+    while the first poll after startup (slow on iDRAC 7) is still running."""
+    from app.core.database import SessionLocal
+    from app.models.database import SystemSettings
+    from app.api.idrac import bmc_status_cache
+
+    db = SessionLocal()
+    try:
+        row = db.query(SystemSettings).filter(SystemSettings.key == _BMC_CACHE_SETTING).first()
+        if row and row.value:
+            for key, entry in json.loads(row.value).items():
+                if isinstance(entry, dict):
+                    bmc_status_cache.setdefault(key, entry)
+    except Exception as exc:
+        logger.warning("BMC status restore failed: %s", exc)
+    finally:
+        db.close()
+
+
 def _get_setting(db, key, default=None):
     from app.models import SystemSettings
     row = db.query(SystemSettings).filter(SystemSettings.key == key).first()
@@ -222,6 +395,7 @@ def run_bmc_poll():
                 idrac_fw_version = None
                 bios_version = None
                 dell_system_id = None
+                health_reasons = []
 
                 # ── Routing logic ──────────────────────────────────────────
                 # One IP per BMC: idrac_hostname is the BMC. Always try both
@@ -249,7 +423,6 @@ def run_bmc_poll():
                         # Prefer component-level current health over the SEL-aware
                         # rollup so stale event-log entries don't keep us at Warning
                         # after a hardware condition has cleared.
-                        health_reasons = []
                         try:
                             cur = client.compute_current_health()
                             health = cur.get("health") or rf_info.get("health")
@@ -421,6 +594,9 @@ def run_bmc_poll():
                     "consumed_watts": consumed_watts,
                     "firmware_updates": prev.get("firmware_updates"),
                     "health_reasons": health_reasons,
+                    "reachable": True,
+                    "last_heartbeat": prev.get("last_heartbeat"),
+                    "last_heartbeat_ok": prev.get("last_heartbeat_ok"),
                 }
             except Exception as e:
                 # Keep the last good reading and mark it stale rather than
@@ -444,10 +620,82 @@ def run_bmc_poll():
         if servers:
             with ThreadPoolExecutor(max_workers=min(10, len(servers))) as pool:
                 list(pool.map(lambda args: _poll_one(*args), servers))
+            _relocate_moved_bmcs(servers, _poll_one)
+            _record_bmc_readings([f"{stype}:{sid}" for stype, sid, _ in servers])
     except Exception as e:
         logger.error(f"BMC poll job error: {e}")
     finally:
         db.close()
+
+
+def run_bmc_heartbeat():
+    """Every 30 s: check that each BMC still accepts connections on its
+    Redfish port. Only a TCP connect — no login — so it can never add to an
+    iDRAC's failed-login count. A BMC that was down and answers again is
+    polled right away instead of waiting for the next full poll."""
+    import socket
+    from concurrent.futures import ThreadPoolExecutor
+    from app.core.database import SessionLocal
+    from app.models.database import ProxmoxHost, PBSServer, StandaloneBMC, ProxmoxNode
+    from app.api.idrac import bmc_status_cache
+
+    db = SessionLocal()
+    try:
+        _has_idrac = lambda col: col.isnot(None) & (col != "")
+        targets = []
+        for stype, model, extra in (
+            ("pve", ProxmoxHost, None),
+            ("pbs", PBSServer, None),
+            ("standalone", StandaloneBMC, StandaloneBMC.is_active == True),
+            ("pve_node", ProxmoxNode, None),
+        ):
+            q = db.query(model).filter(_has_idrac(model.idrac_hostname))
+            if extra is not None:
+                q = q.filter(extra)
+            targets += [(f"{stype}:{o.id}", o.idrac_hostname, o.idrac_port or 443) for o in q.all()]
+    finally:
+        db.close()
+
+    def _alive(t):
+        _, host, port = t
+        try:
+            socket.create_connection((host, port), timeout=3).close()
+            return True
+        except Exception:
+            return False
+
+    if not targets:
+        return
+    with ThreadPoolExecutor(max_workers=min(16, len(targets))) as pool:
+        results = list(pool.map(_alive, targets))
+
+    came_back = False
+    now = datetime.utcnow().isoformat()
+    for (key, _, _), alive in zip(targets, results):
+        entry = bmc_status_cache.get(key)
+        if entry is None:
+            continue  # not polled yet — the UI shows "Pending first poll"
+        was_alive = entry.get("reachable")
+        entry["reachable"] = alive
+        entry["last_heartbeat"] = now
+        if alive:
+            entry["last_heartbeat_ok"] = now
+            # Only on the down→up transition, so a BMC that answers but
+            # rejects our login isn't hammered with polls every 30 s.
+            if entry.get("stale") and was_alive is False:
+                came_back = True
+        else:
+            if was_alive:
+                logger.warning("BMC %s stopped answering heartbeat", key)
+            entry["stale"] = True
+            entry.setdefault("error", None)
+            if not entry["error"]:
+                entry["error"] = "No response from BMC (heartbeat)"
+    if came_back:
+        try:
+            _scheduler.modify_job("bmc_poll", next_run_time=datetime.utcnow())
+        except Exception as exc:
+            logger.debug("could not trigger BMC poll after heartbeat: %s", exc)
 
 
 def run_node_metric_snapshot():
@@ -609,6 +857,7 @@ def start_scheduler(update_hours: int = 24, scan_hours: int = 24):
     global _started
     if _started:
         return
+    _restore_bmc_cache()
     _scheduler.add_job(
         run_auto_update_checks,
         IntervalTrigger(hours=update_hours),
@@ -635,6 +884,12 @@ def start_scheduler(update_hours: int = 24, scan_hours: int = 24):
         id="bmc_poll",
         max_instances=1,
         next_run_time=datetime.utcnow(),  # run immediately on startup
+    )
+    _scheduler.add_job(
+        run_bmc_heartbeat,
+        IntervalTrigger(seconds=30),
+        id="bmc_heartbeat",
+        max_instances=1,
     )
     _scheduler.add_job(
         run_firmware_update_check,

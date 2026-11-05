@@ -5,6 +5,30 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.108] - 2026-11-05 🖥️ BMCs that change address
+
+### Added
+
+- **BMC history**: every poll stores power state, health, power draw and maximum temperature for each
+  iDRAC/iLO, kept for 120 days. A new **History** tab on each server charts power and temperature
+  over 24 hours, 7, 30 or 120 days. Times when the BMC did not answer show as gaps. The tab also
+  works while the BMC is down.
+
+### Fixed
+
+- iDRAC/iLO polling no longer stops for good when a BMC is unplugged and reconnected (or the DHCP
+  server restarts) and comes back on a new address. depl0y now remembers each BMC's MAC address
+  after a good poll. When a BMC stops answering, it checks the BMC's subnet (at most once every
+  10 minutes), finds the MAC at its new IP, updates the stored address and polls it again. The
+  check only opens a connection to port 443. It sends no credentials to unknown hosts.
+- BMC heartbeat: every 30 seconds depl0y checks that each iDRAC/iLO still accepts a connection
+  (no login, so it can't trip the iDRAC failed-login lockout). A BMC that stops answering shows as
+  Unreachable within 30 seconds, and one that comes back is polled right away. The iDRAC page now
+  refreshes every 30 seconds, and the Unreachable badge's tooltip shows when the BMC last answered.
+- The iDRAC page no longer goes blank after a backend restart. The last BMC status is saved after every
+  poll and loaded again at startup, so the values show while the first poll (slow on iDRAC 7) runs.
+- A poll where Redfish failed but OS SSH worked was thrown away because of a missing variable.
+
 ## [2.2.107] - 2026-10-16 🗄️ HA-ZFS Wizard layout
 
 ### Fixed

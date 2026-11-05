@@ -478,6 +478,7 @@ export default {
   // iDRAC / iLO management (Proxmox hosts)
   idrac: {
     getStatus: () => api.get('/idrac/status'),
+    getHistory: (cacheKey, days) => api.get(`/idrac/history/${cacheKey}`, { params: { days } }),
     triggerPoll: () => api.post('/idrac/poll'),
     setModelOverride: (cacheKey, model) => api.put(`/idrac/model-override/${cacheKey}`, { model }),
     testConnection: (hostId) => api.get(`/idrac/${hostId}/test`),

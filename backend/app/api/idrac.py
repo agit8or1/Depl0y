@@ -110,6 +110,56 @@ def get_bmc_status(current_user: User = Depends(get_current_user)):
     return bmc_status_cache
 
 
+@router.get("/history/{cache_key:path}")
+def get_bmc_history(
+    cache_key: str,
+    days: int = 1,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Power/temperature history for one BMC (up to 120 days), averaged into
+    at most ~400 buckets so long ranges stay small."""
+    from datetime import timedelta
+    from app.models.database import BmcReading
+
+    days = max(1, min(days, 120))
+    since = datetime.utcnow() - timedelta(days=days)
+    rows = (
+        db.query(BmcReading)
+        .filter(BmcReading.bmc_key == cache_key, BmcReading.captured_at >= since)
+        .order_by(BmcReading.captured_at)
+        .all()
+    )
+    bucket_s = max(120, days * 86400 // 400)
+    points, cur = [], None
+    for r in rows:
+        b = int(r.captured_at.timestamp()) // bucket_s
+        if cur is None or cur["b"] != b:
+            if cur:
+                points.append(cur)
+            cur = {"b": b, "t": r.captured_at.isoformat(), "w": [], "c": [], "down": 0, "n": 0}
+        cur["n"] += 1
+        if not r.reachable:
+            cur["down"] += 1
+        if r.consumed_watts is not None:
+            cur["w"].append(r.consumed_watts)
+        if r.max_temp_c is not None:
+            cur["c"].append(r.max_temp_c)
+    if cur:
+        points.append(cur)
+    avg = lambda xs: round(sum(xs) / len(xs), 1) if xs else None
+    return {
+        "key": cache_key,
+        "days": days,
+        "points": [
+            {"t": p["t"], "watts": avg(p["w"]), "max_temp_c": avg(p["c"]),
+             "max_watts": max(p["w"]) if p["w"] else None,
+             "reachable": p["down"] == 0}
+            for p in points
+        ],
+    }
+
+
 @router.post("/poll")
 def trigger_bmc_poll(current_user: User = Depends(get_current_user)):
     """Trigger an immediate BMC poll in the background and return the current cache."""

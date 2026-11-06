@@ -6,6 +6,7 @@ from app.services.proxmox import ProxmoxService
 from app.models import ProxmoxHost, ProxmoxNode
 import paramiko
 from app.services.ssh_hw import SSH_DISABLED_ALGORITHMS
+from app.services.ssh_trust import ssh_connect
 import logging
 from datetime import datetime
 
@@ -31,14 +32,12 @@ class UpdateService:
     def _connect_ssh(self, ip: str, username: str, password: Optional[str], ssh_key: Optional[str] = None) -> Optional[paramiko.SSHClient]:
         """Create SSH connection with explicit credentials"""
         try:
-            client = paramiko.SSHClient()
-            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
             if ssh_key:
                 from io import StringIO
                 pkey = paramiko.RSAKey.from_private_key(StringIO(ssh_key))
-                client.connect(hostname=ip, username=username, pkey=pkey, timeout=30, disabled_algorithms=SSH_DISABLED_ALGORITHMS)
+                client = ssh_connect(hostname=ip, username=username, pkey=pkey, timeout=30, disabled_algorithms=SSH_DISABLED_ALGORITHMS)
             else:
-                client.connect(hostname=ip, username=username, password=password, timeout=30, disabled_algorithms=SSH_DISABLED_ALGORITHMS)
+                client = ssh_connect(hostname=ip, username=username, password=password, timeout=30, disabled_algorithms=SSH_DISABLED_ALGORITHMS)
             return client
         except Exception as e:
             logger.error(f"SSH connection to {ip} failed: {e}")

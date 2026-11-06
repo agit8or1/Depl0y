@@ -377,6 +377,44 @@ class VmAgent(Base):
     scan_results = relationship("VmScanResult", back_populates="agent", cascade="all, delete-orphan")
 
 
+class VmAgentEnrollment(Base):
+    """One-time, short-lived token an administrator issues so one VM can
+    register its agent. Only the SHA-256 of the token is stored."""
+    __tablename__ = "vm_agent_enrollments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    token_hash = Column(String(64), unique=True, nullable=False, index=True)
+    vm_id = Column(Integer, ForeignKey("virtual_machines.id"), nullable=False)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    used_at = Column(DateTime, nullable=True)
+    agent_id = Column(Integer, ForeignKey("vm_agents.id", ondelete="SET NULL"), nullable=True)
+
+
+class SshHostKey(Base):
+    """SSH server key seen for a managed host. Only `approved` keys are
+    trusted; a different key shows up as `pending` until an admin approves it."""
+    __tablename__ = "ssh_host_keys"
+
+    id = Column(Integer, primary_key=True, index=True)
+    host = Column(String(255), nullable=False)
+    port = Column(Integer, nullable=False, default=22)
+    key_type = Column(String(64), nullable=False)
+    key_b64 = Column(Text, nullable=False)
+    fingerprint = Column(String(100), nullable=False)  # "SHA256:..."
+    status = Column(String(16), nullable=False, default="pending")  # approved | pending
+    first_seen = Column(DateTime, default=datetime.utcnow, nullable=False)
+    last_seen = Column(DateTime, default=datetime.utcnow, nullable=False)
+    approved_at = Column(DateTime, nullable=True)
+    approved_by = Column(Integer, ForeignKey("users.id"), nullable=True)  # NULL + approved = trusted on first use
+
+    __table_args__ = (
+        UniqueConstraint("host", "port", "key_type", "fingerprint", name="uq_ssh_host_key"),
+        Index("ix_ssh_host_keys_host_port", "host", "port"),
+    )
+
+
 class VmScanResult(Base):
     """Scan results reported by VM agents"""
     __tablename__ = "vm_scan_results"

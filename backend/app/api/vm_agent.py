@@ -1,11 +1,20 @@
-"""VM Agent API — push agent registration, scan reporting, and management"""
+"""VM Agent API — push agent enrollment, registration, scan reporting, and management
+
+Onboarding: an administrator issues a short-lived, single-use enrollment token
+for one VM (POST /enrollments). The VM runs the install command, which calls
+/register with that token and receives its own agent token. The VM the agent
+belongs to comes from the enrollment, never from the request.
+"""
+import hashlib
+import secrets
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import PlainTextResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from app.api.auth import get_current_user, require_admin
@@ -18,6 +27,7 @@ from app.models.database import (
     SystemSettings,
     VirtualMachine,
     VmAgent,
+    VmAgentEnrollment,
     VmScanResult,
 )
 from app.models import User
@@ -27,15 +37,27 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+# Limits on what an agent can send. The request-body caps for these paths are
+# enforced before parsing by BodySizeLimitMiddleware (see main.py).
+MAX_SCANS_PER_REPORT = 10
+MAX_RESULT_JSON = 256 * 1024
+MAX_STORED_SCANS_PER_AGENT = 500
+MIN_REPORT_INTERVAL_S = 10
+ENROLLMENT_TTL_DEFAULT_MIN = 60
+ENROLLMENT_TTL_MAX_MIN = 24 * 60
+REGISTER_BODY_LIMIT = 16 * 1024
+REPORT_BODY_LIMIT = 4 * 1024 * 1024
+
 
 # ---------------------------------------------------------------------------
 # Pydantic schemas
 # ---------------------------------------------------------------------------
 
 class AgentRegisterRequest(BaseModel):
-    hostname: str
-    os_info: Optional[str] = None
-    agent_version: Optional[str] = None
+    hostname: str = Field(min_length=1, max_length=253)
+    os_info: Optional[str] = Field(default=None, max_length=255)
+    agent_version: Optional[str] = Field(default=None, max_length=50)
+    # Optional cross-check only: it must match the VM the enrollment was issued for.
     vm_id: Optional[int] = None
 
 
@@ -43,21 +65,43 @@ class AgentRegisterResponse(BaseModel):
     agent_id: int
     token: str
     hostname: str
+    vm_id: int
 
 
 class ScanResultItem(BaseModel):
     scan_type: ScanType
     status: ScanStatus
-    result_json: Optional[str] = None
-    summary: Optional[str] = None
+    result_json: Optional[str] = Field(default=None, max_length=MAX_RESULT_JSON)
+    summary: Optional[str] = Field(default=None, max_length=2000)
     severity: Optional[ScanSeverity] = ScanSeverity.INFO
 
 
 class AgentReportRequest(BaseModel):
-    hostname: Optional[str] = None
-    os_info: Optional[str] = None
-    agent_version: Optional[str] = None
-    scans: List[ScanResultItem]
+    hostname: Optional[str] = Field(default=None, max_length=253)
+    os_info: Optional[str] = Field(default=None, max_length=255)
+    agent_version: Optional[str] = Field(default=None, max_length=50)
+    scans: List[ScanResultItem] = Field(max_length=MAX_SCANS_PER_REPORT)
+
+
+class EnrollmentCreateRequest(BaseModel):
+    vm_id: int
+    ttl_minutes: int = Field(default=ENROLLMENT_TTL_DEFAULT_MIN, ge=5, le=ENROLLMENT_TTL_MAX_MIN)
+
+
+class EnrollmentResponse(BaseModel):
+    id: int
+    vm_id: int
+    vm_name: Optional[str]
+    created_at: datetime
+    expires_at: datetime
+    used_at: Optional[datetime]
+    agent_id: Optional[int]
+    status: str  # pending | used | expired
+
+
+class EnrollmentCreatedResponse(EnrollmentResponse):
+    token: str
+    install_command: str
 
 
 class AgentResponse(BaseModel):
@@ -89,59 +133,183 @@ class LinuxAgentSettings(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Helper: token-authenticated agent lookup
+# Helpers
 # ---------------------------------------------------------------------------
 
-def _get_agent_by_token(authorization: str, db: Session) -> VmAgent:
+def _bearer(authorization: Optional[str]) -> str:
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
-    token = authorization[len("Bearer "):]
+    token = authorization[len("Bearer "):].strip()
+    if not token or len(token) > 256:
+        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
+    return token
+
+
+def _get_agent_by_token(authorization: str, db: Session) -> VmAgent:
+    token = _bearer(authorization)
     agent = db.query(VmAgent).filter(VmAgent.token == token, VmAgent.enabled == True).first()
     if not agent:
         raise HTTPException(status_code=401, detail="Invalid or revoked agent token")
     return agent
 
 
+def _hash_token(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def _feature_enabled(db: Session) -> bool:
+    row = db.query(SystemSettings).filter(SystemSettings.key == "linux_vm_agent_enabled").first()
+    # Same default as GET /settings/linux-agent: off until an admin turns it on.
+    return bool(row and row.value == "true")
+
+
+def _require_feature(db: Session):
+    if not _feature_enabled(db):
+        raise HTTPException(status_code=403, detail="Linux VM agent feature is disabled")
+
+
+def _audit(db: Session, action: str, request: Request, user_id=None, resource_id=None, **details):
+    from app.api.audit import log_audit_event
+    log_audit_event(db, action, user_id=user_id, resource_type="vm_agent", resource_id=resource_id,
+                    details=details or None,
+                    ip_address=request.client.host if request.client else None,
+                    user_agent=request.headers.get("user-agent"))
+
+
 def _get_depl0y_host() -> str:
     return getattr(settings, "DEPL0Y_HOST", "http://localhost")
 
 
+def _enrollment_out(e: VmAgentEnrollment, db: Session) -> dict:
+    vm = db.query(VirtualMachine).filter(VirtualMachine.id == e.vm_id).first()
+    status = "used" if e.used_at else ("expired" if e.expires_at <= datetime.utcnow() else "pending")
+    return dict(id=e.id, vm_id=e.vm_id, vm_name=vm.name if vm else None, created_at=e.created_at,
+                expires_at=e.expires_at, used_at=e.used_at, agent_id=e.agent_id, status=status)
+
+
 # ---------------------------------------------------------------------------
-# Agent self-registration (no user auth)
+# Enrollment tokens (admin)
 # ---------------------------------------------------------------------------
+
+@router.post("/enrollments", response_model=EnrollmentCreatedResponse, status_code=201)
+def create_enrollment(
+    payload: EnrollmentCreateRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Issue a single-use enrollment token bound to one VM. The token is shown once."""
+    _require_feature(db)
+    vm = db.query(VirtualMachine).filter(VirtualMachine.id == payload.vm_id).first()
+    if not vm:
+        raise HTTPException(status_code=404, detail="VM not found")
+    token = secrets.token_urlsafe(32)
+    now = datetime.utcnow()
+    e = VmAgentEnrollment(token_hash=_hash_token(token), vm_id=vm.id, created_by=current_user.id,
+                          created_at=now, expires_at=now + timedelta(minutes=payload.ttl_minutes))
+    db.add(e)
+    db.commit()
+    db.refresh(e)
+    _audit(db, "vm_agent_enrollment_created", request, user_id=current_user.id, resource_id=e.id,
+           vm_id=vm.id, expires_at=e.expires_at.isoformat())
+    command = (f"curl -fsSL '{_get_depl0y_host()}/api/v1/vm-agent/install.sh' "
+               f"| sudo bash -s -- '{token}'")
+    return EnrollmentCreatedResponse(**_enrollment_out(e, db), token=token, install_command=command)
+
+
+@router.get("/enrollments", response_model=List[EnrollmentResponse])
+def list_enrollments(db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
+    rows = db.query(VmAgentEnrollment).order_by(VmAgentEnrollment.created_at.desc()).limit(200).all()
+    return [EnrollmentResponse(**_enrollment_out(e, db)) for e in rows]
+
+
+@router.delete("/enrollments/{enrollment_id}")
+def revoke_enrollment(
+    enrollment_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Revoke an unused enrollment token."""
+    e = db.query(VmAgentEnrollment).filter(VmAgentEnrollment.id == enrollment_id).first()
+    if not e:
+        raise HTTPException(status_code=404, detail="Enrollment not found")
+    if e.used_at:
+        raise HTTPException(status_code=409, detail="Enrollment already used; delete the agent instead")
+    vm_id = e.vm_id
+    db.delete(e)
+    db.commit()
+    _audit(db, "vm_agent_enrollment_revoked", request, user_id=current_user.id,
+           resource_id=enrollment_id, vm_id=vm_id)
+    return {"deleted": enrollment_id}
+
+
+# ---------------------------------------------------------------------------
+# Agent registration (enrollment-token auth)
+# ---------------------------------------------------------------------------
+
+_BAD_ENROLLMENT = "Invalid, expired or already used enrollment token"
+
 
 @router.post("/register", response_model=AgentRegisterResponse, status_code=201)
 def register_agent(
     payload: AgentRegisterRequest,
+    request: Request,
     db: Session = Depends(get_db),
+    authorization: Optional[str] = Header(default=None),
 ):
-    """VM calls this once to register itself and receive a bearer token."""
-    setting = db.query(SystemSettings).filter(
-        SystemSettings.key == "linux_vm_agent_enabled"
-    ).first()
-    if setting and setting.value == "false":
-        raise HTTPException(status_code=403, detail="Linux VM agent feature is disabled")
+    """VM calls this once with its enrollment token and receives an agent token."""
+    _require_feature(db)
+    token_hash = _hash_token(_bearer(authorization))
+    now = datetime.utcnow()
 
-    if payload.vm_id:
-        vm = db.query(VirtualMachine).filter(VirtualMachine.id == payload.vm_id).first()
-        if not vm:
-            raise HTTPException(status_code=404, detail="VM not found")
+    e = db.query(VmAgentEnrollment).filter(VmAgentEnrollment.token_hash == token_hash).first()
+    if not e or e.used_at or e.expires_at <= now:
+        _audit(db, "vm_agent_register_rejected", request, reason="bad_token",
+               enrollment_id=e.id if e else None)
+        raise HTTPException(status_code=401, detail=_BAD_ENROLLMENT)
+    if payload.vm_id is not None and payload.vm_id != e.vm_id:
+        # Not consumed, so the VM it was issued for can still use it.
+        _audit(db, "vm_agent_register_rejected", request, reason="vm_mismatch",
+               enrollment_id=e.id, requested_vm_id=payload.vm_id, enrolled_vm_id=e.vm_id)
+        raise HTTPException(status_code=403, detail="Enrollment token was issued for a different VM")
+    enrollment_id, vm_id = e.id, e.vm_id
+    if not db.query(VirtualMachine).filter(VirtualMachine.id == vm_id).first():
+        raise HTTPException(status_code=404, detail="VM not found")
 
-    token = str(uuid.uuid4())
+    # Consume atomically: only one request can flip used_at from NULL.
+    claimed = db.execute(
+        update(VmAgentEnrollment)
+        .where(VmAgentEnrollment.id == enrollment_id, VmAgentEnrollment.used_at.is_(None),
+               VmAgentEnrollment.expires_at > now)
+        .values(used_at=now)
+        .execution_options(synchronize_session=False)
+    ).rowcount
+    if claimed != 1:
+        db.rollback()
+        _audit(db, "vm_agent_register_rejected", request, reason="reused", enrollment_id=enrollment_id)
+        raise HTTPException(status_code=401, detail=_BAD_ENROLLMENT)
+
     agent = VmAgent(
-        vm_id=payload.vm_id,
-        token=token,
+        vm_id=vm_id,
+        token=str(uuid.uuid4()),
         hostname=payload.hostname,
         os_info=payload.os_info,
         agent_version=payload.agent_version,
         enabled=True,
-        registered_at=datetime.utcnow(),
+        registered_at=now,
     )
     db.add(agent)
+    db.flush()
+    db.execute(update(VmAgentEnrollment).where(VmAgentEnrollment.id == enrollment_id)
+               .values(agent_id=agent.id).execution_options(synchronize_session=False))
     db.commit()
     db.refresh(agent)
-    logger.info(f"VM agent registered: hostname={payload.hostname}, agent_id={agent.id}")
-    return AgentRegisterResponse(agent_id=agent.id, token=token, hostname=agent.hostname or "")
+    _audit(db, "vm_agent_registered", request, resource_id=agent.id, vm_id=vm_id,
+           enrollment_id=enrollment_id, hostname=payload.hostname)
+    logger.info(f"VM agent registered: hostname={payload.hostname}, agent_id={agent.id}, vm_id={vm_id}")
+    return AgentRegisterResponse(agent_id=agent.id, token=agent.token,
+                                 hostname=agent.hostname or "", vm_id=vm_id)
 
 
 # ---------------------------------------------------------------------------
@@ -156,8 +324,14 @@ def report_scans(
 ):
     """Agent POSTs scan results authenticated via Bearer token."""
     agent = _get_agent_by_token(authorization or "", db)
+    _require_feature(db)
 
-    agent.last_seen = datetime.utcnow()
+    now = datetime.utcnow()
+    if agent.last_seen and (now - agent.last_seen).total_seconds() < MIN_REPORT_INTERVAL_S:
+        raise HTTPException(status_code=429, detail="Reporting too often",
+                            headers={"Retry-After": str(MIN_REPORT_INTERVAL_S)})
+
+    agent.last_seen = now
     if payload.hostname:
         agent.hostname = payload.hostname
     if payload.os_info:
@@ -173,9 +347,18 @@ def report_scans(
             result_json=scan.result_json,
             summary=scan.summary,
             severity=scan.severity or ScanSeverity.INFO,
-            scanned_at=datetime.utcnow(),
+            scanned_at=now,
         )
         db.add(result)
+    db.flush()
+
+    # Keep each agent's stored history bounded.
+    keep = (db.query(VmScanResult.id).filter(VmScanResult.vm_agent_id == agent.id)
+            .order_by(VmScanResult.scanned_at.desc(), VmScanResult.id.desc())
+            .limit(MAX_STORED_SCANS_PER_AGENT))
+    db.query(VmScanResult).filter(
+        VmScanResult.vm_agent_id == agent.id, VmScanResult.id.notin_(keep.scalar_subquery())
+    ).delete(synchronize_session=False)
 
     db.commit()
     logger.info(f"Agent {agent.id} ({agent.hostname}) reported {len(payload.scans)} scan(s)")
@@ -183,35 +366,40 @@ def report_scans(
 
 
 # ---------------------------------------------------------------------------
-# Install script (served by token, no user auth)
+# Install script (no user auth; holds no secret unless an agent token is given)
 # ---------------------------------------------------------------------------
 
-@router.get("/install.sh", response_class=PlainTextResponse)
-def get_install_script(token: str, db: Session = Depends(get_db)):
-    """Serve the agent install shell script for a given token."""
-    agent = db.query(VmAgent).filter(VmAgent.token == token).first()
-    if not agent:
-        raise HTTPException(status_code=404, detail="Invalid token")
+_REGISTER_SNIPPET = r'''ENROLL_TOKEN="${1:-$DEPL0Y_ENROLL_TOKEN}"
+if [ -z "$ENROLL_TOKEN" ]; then
+  echo "Usage: curl -fsSL '<depl0y>/api/v1/vm-agent/install.sh' | sudo bash -s -- <enrollment-token>" >&2
+  exit 1
+fi
+AGENT_TOKEN=$(DEPL0Y_HOST="$DEPL0Y_HOST" ENROLL_TOKEN="$ENROLL_TOKEN" python3 - <<'REGISTER_EOF'
+import json, os, socket, sys, urllib.request, urllib.error
+body = json.dumps({"hostname": socket.gethostname()[:253], "agent_version": "1.1.0"}).encode()
+req = urllib.request.Request(
+    os.environ["DEPL0Y_HOST"] + "/api/v1/vm-agent/register", data=body, method="POST",
+    headers={"Content-Type": "application/json", "Authorization": "Bearer " + os.environ["ENROLL_TOKEN"]})
+try:
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        print(json.load(resp)["token"])
+except urllib.error.HTTPError as e:
+    sys.stderr.write("Registration failed: HTTP %d %s\n" % (e.code, e.read().decode(errors="replace")[:300]))
+    sys.exit(1)
+REGISTER_EOF
+)
+unset ENROLL_TOKEN'''
 
-    depl0y_host = _get_depl0y_host()
 
-    script = f"""#!/bin/bash
-set -e
-DEPL0Y_HOST="{depl0y_host}"
-AGENT_TOKEN="{token}"
-AGENT_SCRIPT="/opt/depl0y-agent/agent.py"
-
-echo "Installing Depl0y VM Agent..."
-mkdir -p /opt/depl0y-agent
-
-cat > "$AGENT_SCRIPT" << 'AGENT_SCRIPT_EOF'
-#!/usr/bin/env python3
+def _agent_py(depl0y_host: str) -> str:
+    return f"""#!/usr/bin/env python3
 # Depl0y VM Agent - runs scans and reports results
 import json, os, subprocess, urllib.request, urllib.error
 
 DEPL0Y_HOST = os.environ.get("DEPL0Y_HOST", "{depl0y_host}")
-AGENT_TOKEN = os.environ.get("AGENT_TOKEN", "{token}")
+AGENT_TOKEN = os.environ.get("AGENT_TOKEN", "")
 REPORT_URL = f"{{DEPL0Y_HOST}}/api/v1/vm-agent/report"
+MAX_RESULT_JSON = {MAX_RESULT_JSON}
 
 
 # Run a command as an argument list (no shell). Returns stdout, or None if it failed.
@@ -248,12 +436,12 @@ def scan_os_updates():
 def scan_security():
     ports = run(["ss", "-tlnp"]) or ""
     checks = {{
-        "open_ports": "\\n".join(ports.splitlines()[1:]),
+        "open_ports": "\\n".join(ports.splitlines()[1:200]),
         "failed_logins": run(["lastb", "-n", "10"]) or "N/A",
     }}
     return {{
         "scan_type": "security", "status": "completed",
-        "result_json": json.dumps(checks),
+        "result_json": json.dumps(checks)[:MAX_RESULT_JSON],
         "summary": "Basic security checks completed",
         "severity": "info",
     }}
@@ -261,6 +449,8 @@ def scan_security():
 
 def scan_dependencies():
     out = run(["pip3", "list", "--outdated", "--format=json"]) or "[]"
+    if len(out) > MAX_RESULT_JSON:
+        out = json.dumps({{"truncated": True}})
     return {{
         "scan_type": "dependencies", "status": "completed",
         "result_json": out,
@@ -271,9 +461,9 @@ def scan_dependencies():
 
 def report(scans):
     data = {{
-        "hostname": run(["hostname"]) or "",
-        "os_info": os_pretty_name(),
-        "agent_version": "1.0.1",
+        "hostname": (run(["hostname"]) or "")[:253],
+        "os_info": os_pretty_name()[:255],
+        "agent_version": "1.1.0",
         "scans": scans,
     }}
     body = json.dumps(data).encode()
@@ -291,9 +481,28 @@ def report(scans):
 
 if __name__ == "__main__":
     report([scan_os_updates(), scan_security(), scan_dependencies()])
-AGENT_SCRIPT_EOF
+"""
 
-chmod +x "$AGENT_SCRIPT"
+
+def _install_script(depl0y_host: str, agent_token: Optional[str]) -> str:
+    # With an agent token: reinstall an agent that is already registered.
+    # Without: a new VM trades its one-time enrollment token (first argument)
+    # for an agent token.
+    get_token = f'AGENT_TOKEN="{agent_token}"' if agent_token else _REGISTER_SNIPPET
+    return f"""#!/bin/bash
+set -e
+umask 077
+DEPL0Y_HOST="{depl0y_host}"
+AGENT_SCRIPT="/opt/depl0y-agent/agent.py"
+
+echo "Installing Depl0y VM Agent..."
+{get_token}
+mkdir -p /opt/depl0y-agent
+
+cat > "$AGENT_SCRIPT" << 'AGENT_SCRIPT_EOF'
+{_agent_py(depl0y_host)}AGENT_SCRIPT_EOF
+
+chmod 700 "$AGENT_SCRIPT"
 
 cat > /etc/systemd/system/depl0y-agent.service << 'SERVICE_EOF'
 [Unit]
@@ -319,8 +528,10 @@ OnUnitActiveSec=12h
 [Install]
 WantedBy=timers.target
 TIMER_EOF
+chmod 644 /etc/systemd/system/depl0y-agent.service /etc/systemd/system/depl0y-agent.timer
 
 printf 'DEPL0Y_HOST=%s\\nAGENT_TOKEN=%s\\n' "$DEPL0Y_HOST" "$AGENT_TOKEN" > /opt/depl0y-agent/env
+chmod 600 /opt/depl0y-agent/env
 
 systemctl daemon-reload
 systemctl enable depl0y-agent.timer
@@ -330,7 +541,22 @@ echo "Running initial scan..."
 DEPL0Y_HOST="$DEPL0Y_HOST" AGENT_TOKEN="$AGENT_TOKEN" python3 "$AGENT_SCRIPT"
 echo "Depl0y agent installed successfully."
 """
-    return PlainTextResponse(script, media_type="text/plain")
+
+
+@router.get("/install.sh", response_class=PlainTextResponse)
+def get_install_script(token: Optional[str] = None, db: Session = Depends(get_db)):
+    """Serve the agent install script.
+
+    Without `token` the script contains no secret: it takes the enrollment
+    token as its first argument. With an existing agent's token (from the
+    admin-only install-command endpoint) it reinstalls that agent.
+    """
+    _require_feature(db)
+    if token is not None:
+        agent = db.query(VmAgent).filter(VmAgent.token == token, VmAgent.enabled == True).first()
+        if not agent:
+            raise HTTPException(status_code=404, detail="Invalid token")
+    return PlainTextResponse(_install_script(_get_depl0y_host(), token), media_type="text/plain")
 
 
 # ---------------------------------------------------------------------------

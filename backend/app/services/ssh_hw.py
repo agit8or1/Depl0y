@@ -6,9 +6,9 @@ from typing import Dict, Any
 
 logger = logging.getLogger(__name__)
 
-# Refuse SHA-1 RSA signatures ("ssh-rsa") for host keys and our own key auth (CVE-2026-44405,
-# no fixed Paramiko release yet). RSA keys still work through rsa-sha2-256/512.
-SSH_DISABLED_ALGORITHMS = {"pubkeys": ["ssh-rsa"], "keys": ["ssh-rsa"]}
+# Host keys are verified and SHA-1 "ssh-rsa" is refused in ssh_trust; the
+# constant is re-exported here for existing importers.
+from app.services.ssh_trust import SSH_DISABLED_ALGORITHMS, ssh_connect  # noqa: F401
 
 
 def _run(client, cmd: str) -> str:
@@ -20,13 +20,9 @@ def _run(client, cmd: str) -> str:
 
 
 def get_ssh_client(hostname: str, username: str, password: str, port: int = 22):
-    import paramiko
-    client = paramiko.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    client.connect(hostname, port=port, username=username, password=password,
-                   timeout=10, allow_agent=False, look_for_keys=False,
-                   disabled_algorithms=SSH_DISABLED_ALGORITHMS)
-    return client
+    return ssh_connect(hostname, port=port, username=username, password=password,
+                       timeout=10, allow_agent=False, look_for_keys=False,
+                       disabled_algorithms=SSH_DISABLED_ALGORITHMS)
 
 
 def _parse_lscpu(raw: str) -> dict:

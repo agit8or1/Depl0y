@@ -5,6 +5,53 @@
       <p class="text-muted">Push agents running on managed Linux VMs</p>
     </div>
 
+    <!-- Enroll a VM: one-time install command bound to the chosen VM -->
+    <div class="card">
+      <div class="card-header">
+        <h3>Enroll a VM</h3>
+      </div>
+      <div class="enroll-body">
+        <p class="text-muted text-sm">
+          Creates a single-use install command for one VM. It stops working once used, when it
+          expires, or when you revoke it, and the agent is always tied to the VM you pick here.
+        </p>
+        <div class="enroll-form">
+          <select v-model="enrollVmId" class="form-control">
+            <option :value="null" disabled>Choose a VM…</option>
+            <option v-for="vm in vms" :key="vm.id" :value="vm.id">{{ vm.name }}<template v-if="vm.ip_address"> ({{ vm.ip_address }})</template></option>
+          </select>
+          <select v-model.number="enrollTtl" class="form-control ttl">
+            <option :value="15">Valid 15 min</option>
+            <option :value="60">Valid 1 hour</option>
+            <option :value="240">Valid 4 hours</option>
+            <option :value="1440">Valid 24 hours</option>
+          </select>
+          <button class="btn btn-primary" :disabled="!enrollVmId || enrolling" @click="createEnrollment">
+            {{ enrolling ? 'Creating…' : 'Create install command' }}
+          </button>
+        </div>
+        <div v-if="newEnrollment" class="enroll-result">
+          <p class="text-sm">
+            Run this as root on <strong>{{ newEnrollment.vm_name }}</strong> before
+            {{ formatDate(newEnrollment.expires_at + 'Z') }}. It is shown only once.
+          </p>
+          <div class="command-box">
+            <code>{{ newEnrollment.install_command }}</code>
+            <button class="btn btn-outline btn-sm" @click="copyText(newEnrollment.install_command)">Copy</button>
+          </div>
+        </div>
+        <div v-if="pendingEnrollments.length" class="pending-list">
+          <p class="text-sm"><strong>Unused install commands</strong></p>
+          <ul>
+            <li v-for="e in pendingEnrollments" :key="e.id" class="text-sm">
+              {{ e.vm_name || `VM ${e.vm_id}` }}, expires {{ formatDate(e.expires_at + 'Z') }}
+              <button class="btn btn-outline btn-sm" @click="revokeEnrollment(e)">Revoke</button>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
     <!-- Loading -->
     <div v-if="loading" class="loading-card card">
       <div class="loading-spinner"></div>
@@ -19,9 +66,9 @@
       <div class="info-box" style="margin-top: 1.5rem; text-align: left;">
         <p><strong>To install the agent on a VM:</strong></p>
         <ol class="text-sm" style="margin: 0.5rem 0 0 1.5rem;">
-          <li>First register an agent entry here (coming from a VM, call <code>POST /api/v1/vm-agent/register</code>)</li>
-          <li>Get the install command from the agent row</li>
-          <li>Run the command on the target VM as root</li>
+          <li>Choose the VM under <em>Enroll a VM</em> above and create an install command</li>
+          <li>Run the command on that VM as root before it expires</li>
+          <li>The agent registers itself and appears here</li>
         </ol>
       </div>
     </div>
@@ -183,7 +230,7 @@
 </template>
 
 <script>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import api from '@/services/api'
 import { useToast } from 'vue-toastification'
 
@@ -200,6 +247,56 @@ export default {
 
     const installModal = ref({ show: false, command: '', hostname: '', agentId: null })
     const deleteModal = ref({ show: false, agentId: null, hostname: '', loading: false })
+
+    const vms = ref([])
+    const enrollVmId = ref(null)
+    const enrollTtl = ref(60)
+    const enrolling = ref(false)
+    const newEnrollment = ref(null)
+    const enrollments = ref([])
+    const pendingEnrollments = computed(() => enrollments.value.filter(e => e.status === 'pending'))
+
+    const fetchEnrollments = async () => {
+      try {
+        enrollments.value = (await api.vmAgent.listEnrollments()).data
+      } catch { /* list is optional */ }
+    }
+
+    const fetchVms = async () => {
+      try {
+        // depl0y-managed VMs: enrollment binds to the depl0y VM record, not a Proxmox vmid.
+        vms.value = (await api.vms.listManaged()).data
+      } catch {
+        vms.value = []
+      }
+    }
+
+    const createEnrollment = async () => {
+      enrolling.value = true
+      try {
+        newEnrollment.value = (await api.vmAgent.createEnrollment(enrollVmId.value, enrollTtl.value)).data
+        await fetchEnrollments()
+      } catch (e) {
+        toast.error(e.response?.data?.detail || 'Failed to create install command')
+      } finally {
+        enrolling.value = false
+      }
+    }
+
+    const revokeEnrollment = async (e) => {
+      try {
+        await api.vmAgent.revokeEnrollment(e.id)
+        if (newEnrollment.value?.id === e.id) newEnrollment.value = null
+        await fetchEnrollments()
+      } catch (err) {
+        toast.error(err.response?.data?.detail || 'Failed to revoke')
+      }
+    }
+
+    const copyText = (text) => {
+      navigator.clipboard.writeText(text)
+      toast.success('Copied to clipboard')
+    }
 
     const fetchAgents = async () => {
       loading.value = true
@@ -308,13 +405,19 @@ export default {
       try { return JSON.stringify(JSON.parse(jsonStr), null, 2) } catch { return jsonStr }
     }
 
-    onMounted(fetchAgents)
+    onMounted(() => {
+      fetchAgents()
+      fetchVms()
+      fetchEnrollments()
+    })
 
     return {
       loading, agents, expandedAgent, scans, scansLoading, commandCopied,
       installModal, deleteModal,
       fetchAgents, toggleExpand, showInstallModal, copyInstallCommand,
       confirmDelete, deleteAgent,
+      vms, enrollVmId, enrollTtl, enrolling, newEnrollment, pendingEnrollments,
+      createEnrollment, revokeEnrollment, copyText,
       getStatusBadge, getStatusLabel, getSeverityBadge,
       formatScanType, formatDate, formatJson
     }
@@ -323,6 +426,13 @@ export default {
 </script>
 
 <style scoped>
+.enroll-body { padding: 1rem 1.25rem; display: flex; flex-direction: column; gap: 0.75rem; }
+.enroll-form { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.enroll-form select { min-width: 14rem; max-width: 100%; }
+.enroll-form .ttl { min-width: 9rem; }
+.enroll-result .command-box { display: flex; gap: 0.5rem; align-items: flex-start; }
+.enroll-result code { flex: 1; word-break: break-all; padding: 0.5rem; background: var(--bg-secondary, #f3f4f6); border-radius: 4px; font-size: 0.8rem; }
+.pending-list ul { margin: 0.25rem 0 0 1.25rem; display: flex; flex-direction: column; gap: 0.25rem; }
 .linux-vm-page {
   display: flex;
   flex-direction: column;

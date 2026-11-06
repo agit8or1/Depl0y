@@ -1,0 +1,9 @@
+[
+  {
+    "id": "PYSEC-2026-2858",
+    "aliases": ["CVE-2026-44405", "GHSA-r374-rxx8-8654"],
+    "package": "paramiko",
+    "reason": "No fixed Paramiko release exists yet. depl0y refuses SHA-1 'ssh-rsa' for host keys and client key auth on every connection (SSH_DISABLED_ALGORITHMS, enforced in app/services/ssh_trust.py and covered by tests/test_ssh_host_keys.py). Upgrade when a fixed release ships.",
+    "review_by": "2027-02-01"
+  }
+]

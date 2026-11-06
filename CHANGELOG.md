@@ -5,6 +5,38 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.109] - 2026-11-06 🔐 Security fixes
+
+### Security
+
+- **VM agent enrollment needs an admin-issued token.** `POST /vm-agent/register` used to hand an agent
+  token to anyone who asked, for any existing VM ID. An administrator now creates a single-use install
+  command for one VM (Linux VM Security → Enroll a VM, valid 15 minutes to 24 hours). The token is stored
+  only as a SHA-256 hash, is consumed atomically (concurrent reuse registers once), expires, can be revoked,
+  and fixes the VM the agent belongs to; a request naming another VM is refused. Registration, reports
+  and the install script all respect the "Linux VM agent" on/off setting. Request bodies, field sizes,
+  scans per report (10) and stored scans per agent (500) are capped; registration has the same per-IP
+  rate limit as login, and each agent can report at most every 10 seconds. Existing agent tokens keep
+  working.
+- **SSH server keys are verified.** VM updates, hardware/BMC SSH and the LLM VM tools used to accept any
+  server key. Each host's key is now stored and every later connection must present it; a changed key is
+  refused before any password is sent and shown as pending under Settings → SSH host keys, where an admin
+  compares the fingerprint, approves (rotates) or rejects it. Unknown hosts are trusted on first use by
+  default, or refused until approved with the strict policy. All approvals, rejections and policy changes
+  are audited. SHA-1 `ssh-rsa` stays refused on every connection.
+- **OpenSSH calls are verified too.** Every `ssh`, `scp` and `ssh-copy-id` depl0y runs (deployments,
+  cloud-image templates, VM import, HA-ZFS, SSH setup) checks the server key against the same store and
+  policy first, then runs with `StrictHostKeyChecking=yes` against a known_hosts file built from the
+  approved keys, so ssh refuses a key swapped in afterwards. A password is never sent to an unverified
+  host. Hops between cluster nodes use Proxmox's own per-node keys (`/etc/pve/nodes/<node>/ssh_known_hosts`),
+  and jump hosts are verified through `ProxyCommand` instead of `ProxyJump`. The old
+  `~/.ssh/known_hosts` of the depl0y user is no longer read.
+- Frontend dependencies: DOMPurify 3.4.17, follow-redirects 1.16.2, Vite 8.2.4 (`npm audit`: 0 issues).
+  AI report HTML now also drops form controls when sanitized.
+- CI: new GitHub Actions workflow runs the backend and frontend tests and a daily `pip-audit` /
+  `npm audit`, reporting vulnerabilities and scanner failures separately. Accepted advisories live in
+  `scripts/security/audit-allowlist.json` with a reason and review date.
+
 ## [2.2.108] - 2026-11-05 🖥️ BMCs that change address
 
 ### Added

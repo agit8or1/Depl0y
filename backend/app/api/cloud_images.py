@@ -8,6 +8,7 @@ from app.models import CloudImage
 from app.api.auth import get_current_user
 import logging
 from app.services.host_ssh import ssh_address
+from app.services.ssh_trust import HostKeyError, openssh_options
 import os
 import re
 from urllib.parse import urlparse
@@ -691,7 +692,7 @@ def check_ssh_status(
                     '/usr/bin/ssh',
                     '-o', 'BatchMode=yes',
                     '-o', 'ConnectTimeout=5',
-                    '-o', 'StrictHostKeyChecking=no',
+                    *openssh_options(ssh_address(host)),
                     f'root@{ssh_address(host)}',
                     'echo SSH_KEY_CONFIGURED'
                 ],
@@ -716,6 +717,12 @@ def check_ssh_status(
             return {
                 "configured": False,
                 "message": "SSH connection timed out",
+                "host": host.hostname
+            }
+        except HostKeyError as key_error:
+            return {
+                "configured": False,
+                "message": str(key_error),
                 "host": host.hostname
             }
         except Exception as ssh_error:

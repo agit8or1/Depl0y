@@ -166,7 +166,7 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useToast } from 'vue-toastification'
-import DOMPurify from 'dompurify'
+import { sanitizeReportHtml } from '@/utils/sanitizeReportHtml'
 import api from '@/services/api'
 
 export default {
@@ -204,14 +204,8 @@ export default {
     const redundancyItems = computed(() => narrative.value?.redundancy_findings || [])
     const hardwareItems = computed(() => narrative.value?.hardware_refresh_recommendations || [])
 
-    // Sanitize server-rendered report HTML before binding via v-html — the
-    // renderer can include LLM-produced markup so we strip script / event
-    // handlers / javascript: URLs at the boundary.
-    const safeRenderedHtml = computed(() => {
-      const raw = report.value?.rendered_html || ''
-      if (!raw) return ''
-      return DOMPurify.sanitize(raw, { USE_PROFILES: { html: true } })
-    })
+    // Report HTML goes through DOMPurify before v-html (see sanitizeReportHtml).
+    const safeRenderedHtml = computed(() => sanitizeReportHtml(report.value?.rendered_html))
 
     const criticalCount = computed(() => findings.value.filter(f => f.severity === 'critical').length)
     const warningCount = computed(() => findings.value.filter(f => f.severity === 'warning').length)

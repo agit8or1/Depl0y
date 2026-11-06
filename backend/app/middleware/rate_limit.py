@@ -15,6 +15,8 @@ _AUTH_PATHS = {
     "/api/v1/auth/login",
     "/api/v1/auth/2fa/login",
     "/api/v1/auth/refresh",
+    # Enrollment-token exchange: same strict per-IP limit as login.
+    "/api/v1/vm-agent/register",
 }
 
 

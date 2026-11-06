@@ -118,10 +118,14 @@ def run_on_node(ip: str, command: str, stdin: str = None, timeout: int = 120, ju
 
     If the node cannot be reached directly, retry through `jump` (the node serving the API).
     """
-    base = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=accept-new"]
+    from app.services.ssh_trust import openssh_options, proxy_command_options
+    # Host keys are checked against depl0y's store; a node only reachable via
+    # `jump` has its key read on the (verified) jump host.
+    base = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10",
+            *openssh_options(ip, scan_via=jump if jump and jump != ip else None)]
     attempts = [base + [f"root@{ip}", command]]
     if jump and jump != ip:
-        attempts.append(base + ["-o", f"ProxyJump=root@{jump}", f"root@{ip}", command])
+        attempts.append(base + [*proxy_command_options(jump), f"root@{ip}", command])
     for i, argv in enumerate(attempts):
         p = subprocess.run(argv, input=stdin, capture_output=True, text=True, timeout=timeout)
         if p.returncode == 255 and i + 1 < len(attempts):

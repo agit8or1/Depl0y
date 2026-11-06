@@ -991,6 +991,7 @@
         <div v-if="securitySettingsError" class="error-message" style="margin-top:0.75rem;">{{ securitySettingsError }}</div>
       </div>
     </div>
+    <SshHostKeysPanel v-if="user && user.role === 'admin'" />
     </div> <!-- end settings-tab-content -->
 
     <!-- ═══════════════════════════════════════════════════════════════════
@@ -2374,9 +2375,11 @@ import { onBeforeRouteLeave } from 'vue-router'
 import api from '@/services/api'
 import { useToast } from 'vue-toastification'
 import { setLocale, getCurrentLocale } from '@/i18n/index.js'
+import SshHostKeysPanel from '@/components/SshHostKeysPanel.vue'
 
 export default {
   name: 'Settings',
+  components: { SshHostKeysPanel },
 
   setup() {
     const toast = useToast()

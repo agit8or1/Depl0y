@@ -15,6 +15,7 @@ from app.services.vmid_reservations import release_vmid, reserve_vmid
 from app.core.security import encrypt_data, decrypt_data
 import logging
 from app.services.host_ssh import ssh_address
+from app.services.ssh_trust import openssh_options, pve_hop_options
 import re
 import time
 import shlex
@@ -85,7 +86,7 @@ class DeploymentService:
                     safe_node_name = shlex.quote(node.node_name)
                     get_ip_cmd = f"grep -A3 'name: {safe_node_name}' /etc/pve/corosync.conf | grep ring0_addr | awk '{{print $2}}'"
                     ip_result = subprocess.run(
-                        ['ssh', '-o', 'StrictHostKeyChecking=no', f'root@{ssh_address(host)}', get_ip_cmd],
+                        ['ssh', *openssh_options(ssh_address(host)), f'root@{ssh_address(host)}', get_ip_cmd],
                         capture_output=True,
                         text=True,
                         timeout=10
@@ -102,8 +103,8 @@ class DeploymentService:
                         # Remove lock directly from config file via SSH
                         # Use qm unlock command which requires root privileges
                         unlock_result = subprocess.run(
-                            ['ssh', '-o', 'StrictHostKeyChecking=no', f'root@{ssh_address(host)}',
-                             f'ssh -o StrictHostKeyChecking=no root@{node_ip} "qm unlock {vmid}"'],
+                            ['ssh', *openssh_options(ssh_address(host)), f'root@{ssh_address(host)}',
+                             f'ssh {pve_hop_options(node.node_name)} root@{node_ip} "qm unlock {vmid}"'],
                             capture_output=True,
                             text=True,
                             timeout=10
@@ -196,7 +197,7 @@ class DeploymentService:
                         safe_node_name = shlex.quote(node.node_name)
                         get_ip_cmd = f"grep -A3 'name: {safe_node_name}' /etc/pve/corosync.conf | grep ring0_addr | awk '{{print $2}}'"
                         ip_result = subprocess.run(
-                            ['ssh', '-o', 'StrictHostKeyChecking=no', f'root@{ssh_address(host)}', get_ip_cmd],
+                            ['ssh', *openssh_options(ssh_address(host)), f'root@{ssh_address(host)}', get_ip_cmd],
                             capture_output=True,
                             text=True,
                             timeout=10
@@ -212,8 +213,8 @@ class DeploymentService:
 
                             # Remove stale lock file
                             cleanup_result = subprocess.run(
-                                ['ssh', '-o', 'StrictHostKeyChecking=no', f'root@{ssh_address(host)}',
-                                 f'ssh -o StrictHostKeyChecking=no root@{node_ip} "rm -f /var/lock/qemu-server/lock-{locked_vmid}.conf"'],
+                                ['ssh', *openssh_options(ssh_address(host)), f'root@{ssh_address(host)}',
+                                 f'ssh {pve_hop_options(node.node_name)} root@{node_ip} "rm -f /var/lock/qemu-server/lock-{locked_vmid}.conf"'],
                                 capture_output=True,
                                 text=True,
                                 timeout=10
@@ -1129,7 +1130,7 @@ class DeploymentService:
                 safe_node_name = shlex.quote(node.node_name)
                 remote_cmd = f"grep -A3 'name: {safe_node_name}' /etc/pve/corosync.conf | grep ring0_addr | awk '{{print $2}}'"
                 ip_result = subprocess.run(
-                    ['ssh', '-o', 'StrictHostKeyChecking=no', f'root@{ssh_address(host)}', remote_cmd],
+                    ['ssh', *openssh_options(ssh_address(host)), f'root@{ssh_address(host)}', remote_cmd],
                     capture_output=True,
                     text=True,
                     timeout=10
@@ -1142,8 +1143,8 @@ class DeploymentService:
                     # SECURITY FIX: Remove shell=True
                     snippet_path = f"/var/lib/vz/snippets/cloud-init-{vmid}.yml"
                     mkdir_result = subprocess.run(
-                        ['ssh', '-o', 'StrictHostKeyChecking=no', f'root@{ssh_address(host)}',
-                         f'ssh -o StrictHostKeyChecking=no root@{node_ip} "mkdir -p /var/lib/vz/snippets"'],
+                        ['ssh', *openssh_options(ssh_address(host)), f'root@{ssh_address(host)}',
+                         f'ssh {pve_hop_options(node.node_name)} root@{node_ip} "mkdir -p /var/lib/vz/snippets"'],
                         capture_output=True,
                         text=True,
                         timeout=10
@@ -1153,17 +1154,17 @@ class DeploymentService:
                         logger.error(f"Failed to create snippets directory: {mkdir_result.stderr}")
                         raise Exception(f"Failed to create snippets directory: {mkdir_result.stderr}")
 
-                    # Upload snippet file using ProxyJump to go directly to target node
-                    # SECURITY FIX: Remove shell=True - use argument list
-                    scp_result = subprocess.run(
-                        ['scp', '-o', 'StrictHostKeyChecking=no',
-                         '-o', f'ProxyJump=root@{ssh_address(host)}',
-                         temp_file,
-                         f'root@{node_ip}:{snippet_path}'],
-                        capture_output=True,
-                        text=True,
-                        timeout=30
-                    )
+                    # Upload the snippet through the API node to the target node, with
+                    # both hops' host keys verified (ProxyJump would skip the jump host).
+                    with open(temp_file, 'rb') as snippet_in:
+                        scp_result = subprocess.run(
+                            ['ssh', *openssh_options(ssh_address(host)), f'root@{ssh_address(host)}',
+                             f'ssh {pve_hop_options(node.node_name)} root@{node_ip} '
+                             f'{shlex.quote("cat > " + snippet_path)}'],
+                            stdin=snippet_in,
+                            capture_output=True,
+                            timeout=30
+                        )
 
                     if scp_result.returncode != 0:
                         logger.error(f"Failed to upload snippet file: {scp_result.stderr}")
@@ -1174,8 +1175,8 @@ class DeploymentService:
                     # Verify the file exists
                     # SECURITY FIX: Remove shell=True
                     verify_result = subprocess.run(
-                        ['ssh', '-o', 'StrictHostKeyChecking=no', f'root@{ssh_address(host)}',
-                         f'ssh -o StrictHostKeyChecking=no root@{node_ip} "test -f {snippet_path} && echo EXISTS"'],
+                        ['ssh', *openssh_options(ssh_address(host)), f'root@{ssh_address(host)}',
+                         f'ssh {pve_hop_options(node.node_name)} root@{node_ip} "test -f {snippet_path} && echo EXISTS"'],
                         capture_output=True,
                         text=True,
                         timeout=10
@@ -1316,7 +1317,7 @@ class DeploymentService:
         # Use pvesh or qm commands directly on cluster host with node parameter
         ssh_host = f"root@{hostname}"
         # Remote scripts are passed to ssh as a single argument, so no local shell is involved.
-        ssh_cmd = ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "BatchMode=yes", ssh_host]
+        ssh_cmd = ["ssh", *openssh_options(hostname), "-o", "BatchMode=yes", ssh_host]
         logger.info(f"SSH target: {ssh_host}, will create template on node: {target_node}")
 
         # Step 1: Create VM (delete first if it exists but isn't a template)
@@ -1374,7 +1375,7 @@ pvesh create /nodes/{target_node}/qemu \\
         result = subprocess.run(
             [
                 "scp",
-                "-o", "StrictHostKeyChecking=no",
+                *openssh_options(hostname),
                 "-o", "BatchMode=yes",
                 cloud_image_path,
                 f"{ssh_host}:/tmp/{cloud_filename}",
@@ -1390,7 +1391,7 @@ pvesh create /nodes/{target_node}/qemu \\
         safe_target_node = shlex.quote(target_node)
         remote_cmd = f"grep -A3 'name: {safe_target_node}' /etc/pve/corosync.conf | grep ring0_addr | awk '{{print $2}}'"
         ip_result = subprocess.run(
-            ['ssh', '-o', 'StrictHostKeyChecking=no', '-o', 'BatchMode=yes',
+            ['ssh', *openssh_options(hostname), '-o', 'BatchMode=yes',
              ssh_host, remote_cmd],
             capture_output=True,
             text=True,
@@ -1406,29 +1407,31 @@ pvesh create /nodes/{target_node}/qemu \\
         # qm importdisk MUST run on the node where the VM exists
         logger.info(f"Importing disk and configuring template on {target_node}...")
 
-        # Use node IP for SSH instead of hostname
+        # Use node IP for SSH instead of hostname; hops are checked against the
+        # cluster's own record of the target node's host key.
+        hop = pve_hop_options(target_node)
         import_script = f"""
 set -e  # Exit on any error
 
 # Copy image file to target node
 echo "Copying cloud image to target node {target_node}..."
-scp -o StrictHostKeyChecking=no /tmp/{cloud_filename} root@{node_ip}:/tmp/{cloud_filename}
+scp {hop} /tmp/{cloud_filename} root@{node_ip}:/tmp/{cloud_filename}
 echo "Cloud image copied successfully"
 
 # Run qm importdisk ON the target node (needs local VM config)
 # This outputs: "Successfully imported disk as unused0"
 echo "Importing disk to storage {storage}..."
-IMPORT_OUTPUT=$(ssh -o StrictHostKeyChecking=no root@{node_ip} "qm importdisk {template_vmid} /tmp/{cloud_filename} {storage} --format qcow2 2>&1")
+IMPORT_OUTPUT=$(ssh {hop} root@{node_ip} "qm importdisk {template_vmid} /tmp/{cloud_filename} {storage} --format qcow2 2>&1")
 echo "$IMPORT_OUTPUT"
 
 # Verify disk was imported
 echo "Verifying disk import..."
-CONFIG=$(ssh -o StrictHostKeyChecking=no root@{node_ip} "qm config {template_vmid}")
+CONFIG=$(ssh {hop} root@{node_ip} "qm config {template_vmid}")
 echo "Current VM config after import:"
 echo "$CONFIG"
 
 # Extract the unused0 disk path - it should be in format: storage:vm-VMID-disk-0
-DISK_PATH=$(ssh -o StrictHostKeyChecking=no root@{node_ip} "qm config {template_vmid} | grep unused0 | awk '{{print \\$2}}'")
+DISK_PATH=$(ssh {hop} root@{node_ip} "qm config {template_vmid} | grep unused0 | awk '{{print \\$2}}'")
 echo "Detected disk path from unused0: [$DISK_PATH]"
 
 if [ -z "$DISK_PATH" ]; then
@@ -1438,12 +1441,12 @@ fi
 
 # Attach the imported disk to scsi0
 echo "Attaching disk to scsi0..."
-ssh -o StrictHostKeyChecking=no root@{node_ip} "qm set {template_vmid} --scsi0 \\"$DISK_PATH\\" 2>&1"
+ssh {hop} root@{node_ip} "qm set {template_vmid} --scsi0 \\"$DISK_PATH\\" 2>&1"
 echo "Disk attached to scsi0"
 
 # Verify disk attachment
 echo "Verifying disk attachment..."
-VERIFY_CONFIG=$(ssh -o StrictHostKeyChecking=no root@{node_ip} "qm config {template_vmid} | grep scsi0")
+VERIFY_CONFIG=$(ssh {hop} root@{node_ip} "qm config {template_vmid} | grep scsi0")
 echo "scsi0 configuration: $VERIFY_CONFIG"
 
 # Configure boot order and cloud-init using pvesh on cluster host
@@ -1457,7 +1460,7 @@ echo "Cloud-init drive configured"
 
 # Verify final configuration before converting to template
 echo "Final verification before template conversion..."
-FINAL_CONFIG=$(ssh -o StrictHostKeyChecking=no root@{node_ip} "qm config {template_vmid}")
+FINAL_CONFIG=$(ssh {hop} root@{node_ip} "qm config {template_vmid}")
 echo "Final VM configuration:"
 echo "$FINAL_CONFIG"
 
@@ -1470,7 +1473,7 @@ echo "✓ scsi0 disk verified in configuration"
 
 # Cleanup and convert to template
 echo "Cleaning up temporary files..."
-ssh -o StrictHostKeyChecking=no root@{node_ip} "rm -f /tmp/{cloud_filename}"
+ssh {hop} root@{node_ip} "rm -f /tmp/{cloud_filename}"
 rm -f /tmp/{cloud_filename}
 
 echo "Converting VM to template..."
@@ -1513,8 +1516,7 @@ echo "✓ Template {template_vmid} creation complete!"
             logger.info(f"Checking SSH access to {host.hostname}...")
             result = subprocess.run(
                 [
-                    'ssh', '-o', 'StrictHostKeyChecking=no',
-                    '-o', 'UserKnownHostsFile=/dev/null',
+                    'ssh', *openssh_options(ssh_address(host)),
                     '-o', 'BatchMode=yes',
                     '-o', 'ConnectTimeout=5',
                     f'root@{ssh_address(host)}',
@@ -1551,8 +1553,7 @@ echo "✓ Template {template_vmid} creation complete!"
                 [
                     'sshpass', '-p', host.password,
                     'ssh-copy-id',
-                    '-o', 'StrictHostKeyChecking=no',
-                    '-o', 'UserKnownHostsFile=/dev/null',
+                    *openssh_options(ssh_address(host)),
                     '-i', ssh_pub_key_path,
                     f'root@{ssh_address(host)}'
                 ],
@@ -1574,8 +1575,7 @@ echo "✓ Template {template_vmid} creation complete!"
                     [
                         'sshpass', '-p', host.password,
                         'ssh',
-                        '-o', 'StrictHostKeyChecking=no',
-                        '-o', 'UserKnownHostsFile=/dev/null',
+                        *openssh_options(ssh_address(host)),
                         f'root@{ssh_address(host)}',
                         ssh_command
                     ],
@@ -1703,8 +1703,7 @@ echo "Template {template_vmid} created successfully"
             # Execute the script via SSH
             ssh_command = [
                 'ssh',
-                '-o', 'StrictHostKeyChecking=no',
-                '-o', 'UserKnownHostsFile=/dev/null',
+                *openssh_options(host_hostname),
                 '-o', 'BatchMode=yes',
                 '-o', 'ConnectTimeout=10',
                 f'root@{host_hostname}',
@@ -1902,8 +1901,7 @@ echo "Template {template_vmid} created successfully"
             subprocess.run(
                 [
                     "scp",
-                    "-o", "StrictHostKeyChecking=no",
-                    "-o", "UserKnownHostsFile=/dev/null",
+                    *openssh_options(ssh_address(host)),
                     cloud_image.storage_path,
                     f"root@{ssh_address(host)}:/tmp/cloud-image-{template_vmid}.img"
                 ],
@@ -1918,8 +1916,7 @@ echo "Template {template_vmid} created successfully"
             result = subprocess.run(
                 [
                     "ssh",
-                    "-o", "StrictHostKeyChecking=no",
-                    "-o", "UserKnownHostsFile=/dev/null",
+                    *openssh_options(ssh_address(host)),
                     f"root@{ssh_address(host)}",
                     script_content
                 ],

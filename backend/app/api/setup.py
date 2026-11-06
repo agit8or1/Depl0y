@@ -7,6 +7,7 @@ from app.core.database import get_db
 from sqlalchemy.orm import Session
 import logging
 from app.services.host_ssh import ssh_address
+from app.services.ssh_trust import openssh_options, pve_hop_options
 import subprocess
 import os
 
@@ -63,7 +64,7 @@ def enable_cloud_images(
         check_ssh = subprocess.run(
             [
                 'ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5',
-                '-o', 'StrictHostKeyChecking=no',
+                *openssh_options(proxmox_host),
                 f'root@{proxmox_host}',
                 'echo test'
             ],
@@ -128,7 +129,7 @@ def enable_cloud_images(
             [
                 '/usr/bin/sshpass', '-p', password,
                 '/usr/bin/ssh-copy-id',
-                '-o', 'StrictHostKeyChecking=no',
+                *openssh_options(proxmox_host),
                 '-i', f'{ssh_key_path}.pub',
                 f'root@{proxmox_host}'
             ],
@@ -150,7 +151,7 @@ def enable_cloud_images(
             alt_result = subprocess.run(
                 [
                     '/usr/bin/sshpass', '-p', password,
-                    '/usr/bin/ssh', '-o', 'StrictHostKeyChecking=no',
+                    '/usr/bin/ssh', *openssh_options(proxmox_host),
                     f'root@{proxmox_host}',
                     f"mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo {safe_public_key} >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && sort -u ~/.ssh/authorized_keys -o ~/.ssh/authorized_keys"
                 ],
@@ -168,7 +169,7 @@ def enable_cloud_images(
         verify_result = subprocess.run(
             [
                 '/usr/bin/ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5',
-                '-o', 'StrictHostKeyChecking=no',
+                *openssh_options(proxmox_host),
                 f'root@{proxmox_host}',
                 'echo SSH_CONFIGURED'
             ],
@@ -267,8 +268,8 @@ def enable_proxmox_cluster_ssh(
         check_result = subprocess.run(
             [
                 'ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5',
-                '-o', 'StrictHostKeyChecking=no', f'root@{proxmox_host}',
-                f'ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no {test_node_2} echo test'
+                *openssh_options(proxmox_host), f'root@{proxmox_host}',
+                f'ssh -o ConnectTimeout=5 {pve_hop_options(test_node_2)} {test_node_2} echo test'
             ],
             capture_output=True,
             text=True,
@@ -307,15 +308,22 @@ fi
 # Get the public key
 PUB_KEY=$(cat ~/.ssh/id_rsa.pub)
 
+# Node-to-node SSH checks each target against the cluster's own record of its
+# host key (/etc/pve/nodes/<node>/ssh_known_hosts), as Proxmox does itself.
+hop() {{
+    echo "-o BatchMode=yes -o HostKeyAlias=$1 -o UserKnownHostsFile=/etc/pve/nodes/$1/ssh_known_hosts -o GlobalKnownHostsFile=none -o StrictHostKeyChecking=yes"
+}}
+SELF=$(hostname)
+
 # Copy key to all other nodes
 for node in {safe_node_list}; do
-    ssh-copy-id -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa.pub root@$node 2>/dev/null || true
-    ssh -o StrictHostKeyChecking=no root@$node "mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo \\"$PUB_KEY\\" >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && sort -u ~/.ssh/authorized_keys -o ~/.ssh/authorized_keys" 2>/dev/null || true
+    ssh-copy-id $(hop "$node") -i ~/.ssh/id_rsa.pub root@$node 2>/dev/null || true
+    ssh $(hop "$node") root@$node "mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo \\"$PUB_KEY\\" >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && sort -u ~/.ssh/authorized_keys -o ~/.ssh/authorized_keys" 2>/dev/null || true
 done
 
-# Set up reverse keys (each node can SSH to others)
+# Set up reverse keys (each node can SSH back to this one)
 for node in {safe_node_list}; do
-    ssh -o StrictHostKeyChecking=no root@$node "ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa -N '' -q 2>/dev/null || true; ssh-copy-id -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa.pub root@{safe_proxmox_host} 2>/dev/null || true" 2>/dev/null || true
+    ssh $(hop "$node") root@$node "ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa -N '' -q 2>/dev/null || true; ssh-copy-id $(hop "$SELF") -i ~/.ssh/id_rsa.pub root@$SELF 2>/dev/null || true" 2>/dev/null || true
 done
 
 echo "SSH_SETUP_COMPLETE"
@@ -325,7 +333,7 @@ echo "SSH_SETUP_COMPLETE"
         # SECURITY: Password is passed via -p flag, not in shell command
         result = subprocess.run(
             ['/usr/bin/sshpass', '-p', password, '/usr/bin/ssh',
-             '-o', 'StrictHostKeyChecking=no', f'root@{proxmox_host}',
+             *openssh_options(proxmox_host), f'root@{proxmox_host}',
              setup_script],
             capture_output=True,
             text=True,
@@ -341,8 +349,8 @@ echo "SSH_SETUP_COMPLETE"
         # SECURITY: Use argument list instead of shell=True
         verify_result = subprocess.run(
             ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5',
-             '-o', 'StrictHostKeyChecking=no', f'root@{proxmox_host}',
-             f'ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no {test_node_2} echo VERIFIED'],
+             *openssh_options(proxmox_host), f'root@{proxmox_host}',
+             f'ssh -o ConnectTimeout=5 {pve_hop_options(test_node_2)} {test_node_2} echo VERIFIED'],
             capture_output=True,
             text=True,
             timeout=15

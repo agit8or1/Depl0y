@@ -8,6 +8,7 @@ import tarfile
 import zipfile
 import logging
 from app.services.host_ssh import ssh_address
+from app.services.ssh_trust import openssh_options, pve_hop_options
 import subprocess
 import asyncio
 import uuid
@@ -377,7 +378,7 @@ def _ssh_run(host_addr: str, command: str, timeout: int = 120) -> subprocess.Com
     return subprocess.run(
         [
             "ssh",
-            "-o", "StrictHostKeyChecking=no",
+            *openssh_options(host_addr),
             "-o", "BatchMode=yes",
             "-o", f"ConnectTimeout=30",
             f"root@{host_addr}",
@@ -591,7 +592,7 @@ async def run_import_job(job_id: str, deploy_req: Dict, _db_factory) -> None:
                 )
                 node_ip = _get_node_ip(host.hostname, node.node_name)
                 if node_ip:
-                    hop_cmd = f'ssh -o StrictHostKeyChecking=no root@{node_ip} "{importdisk_cmd}"'
+                    hop_cmd = f'ssh {pve_hop_options(node.node_name)} root@{node_ip} "{importdisk_cmd}"'
                     ssh_result2 = _ssh_run(ssh_address(host), hop_cmd, timeout=600)
                     if ssh_result2.returncode == 0:
                         disk_imported = True

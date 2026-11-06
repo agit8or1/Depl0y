@@ -1,0 +1,86 @@
+name: Tests and dependency audit
+
+# Audit jobs report one of three outcomes (see scripts/security/audit_report.py):
+#   pass                 - scan completed, nothing unaccepted
+#   vulnerability found  - "::error title=... vulnerability::" annotations, job fails
+#   scanner failure      - "::error title=... scanner failure::", job fails; the scan
+#                          did not complete, which says nothing about vulnerabilities
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "17 6 * * *"   # daily: new advisories land without any code change
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend-tests:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - run: pip install -r backend/requirements.txt
+      - name: pytest
+        working-directory: backend
+        run: python -m pytest -q tests
+
+  frontend-tests:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+
+  backend-audit:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pip-audit==2.10.1
+      - name: pip-audit
+        run: |
+          code=0
+          pip-audit -r backend/requirements.txt --format json -o pip-audit.json || code=$?
+          python3 scripts/security/audit_report.py pip pip-audit.json "$code" | tee -a "$GITHUB_STEP_SUMMARY"
+          exit "${PIPESTATUS[0]}"
+
+  frontend-audit:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: npm audit
+        working-directory: frontend
+        run: |
+          code=0
+          npm audit --json > ../npm-audit.json || code=$?
+          cd ..
+          python3 scripts/security/audit_report.py npm npm-audit.json "$code" | tee -a "$GITHUB_STEP_SUMMARY"
+          exit "${PIPESTATUS[0]}"

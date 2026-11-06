@@ -35,6 +35,8 @@ from .database import (
     ReportSchedule,
     NodeMetricSnapshot,
     BmcReading,
+    VmAgentEnrollment,
+    SshHostKey,
 )
 from .security import (
     FailedLoginAttempt,
@@ -90,4 +92,6 @@ __all__ = [
     "ReportSchedule",
     "NodeMetricSnapshot",
     "BmcReading",
+    "VmAgentEnrollment",
+    "SshHostKey",
 ]

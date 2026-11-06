@@ -5,7 +5,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from app.core.config import settings
 from app.core.database import init_db
-from app.api import auth, users, proxmox, vms, isos, cloud_images, updates, dashboard, bug_report, logs, docs, setup, system_updates, ha, system, llm, vm_agent, security, idrac, pbs, audit, notifications
+from app.api import auth, users, proxmox, vms, isos, cloud_images, updates, dashboard, bug_report, logs, docs, setup, system_updates, ha, system, llm, vm_agent, ssh_host_keys, security, idrac, pbs, audit, notifications
 from app.api import vm_config, node as pve_node, console as pve_console, pbs_mgmt, pve_firewall, cluster as pve_cluster, sdn
 from app.api import vm_groups, vm_import
 from app.api import pve_access
@@ -84,6 +84,14 @@ app.add_middleware(
 
 # Add security headers middleware
 app.add_middleware(SecurityHeadersMiddleware)
+
+# Cap request bodies on the VM-agent endpoints, which take data without a user login.
+from app.middleware.body_limit import BodySizeLimitMiddleware
+from app.api.vm_agent import REGISTER_BODY_LIMIT, REPORT_BODY_LIMIT
+app.add_middleware(BodySizeLimitMiddleware, limits={
+    f"{settings.API_V1_PREFIX}/vm-agent/register": REGISTER_BODY_LIMIT,
+    f"{settings.API_V1_PREFIX}/vm-agent/report": REPORT_BODY_LIMIT,
+})
 
 # Add rate limiting middleware (default rpm driven by config)
 app.add_middleware(RateLimitMiddleware, requests_per_minute=settings.RATE_LIMIT_DEFAULT)
@@ -365,6 +373,7 @@ app.include_router(hazfs_wizard.router, prefix=f"{settings.API_V1_PREFIX}/ha-zfs
 app.include_router(system.router, prefix=f"{settings.API_V1_PREFIX}/system", tags=["System"])
 app.include_router(llm.router, prefix=f"{settings.API_V1_PREFIX}/llm", tags=["LLM Deployment"])
 app.include_router(vm_agent.router, prefix=f"{settings.API_V1_PREFIX}/vm-agent", tags=["VM Agent"])
+app.include_router(ssh_host_keys.router, prefix=f"{settings.API_V1_PREFIX}/ssh-host-keys", tags=["SSH Host Keys"])
 app.include_router(security.router, prefix=f"{settings.API_V1_PREFIX}/security", tags=["Security"])
 app.include_router(idrac.router, prefix=f"{settings.API_V1_PREFIX}/idrac", tags=["iDRAC/iLO"])
 app.include_router(pbs.router, prefix=f"{settings.API_V1_PREFIX}/pbs", tags=["PBS Servers"])

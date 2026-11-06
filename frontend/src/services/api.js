@@ -437,14 +437,24 @@ export default {
   },
 
   // VM Agent
+  sshHostKeys: {
+    list: () => api.get('/ssh-host-keys/'),
+    scan: (host, port = 22) => api.post('/ssh-host-keys/scan', { host, port }),
+    approve: (id) => api.post(`/ssh-host-keys/${id}/approve`),
+    remove: (id) => api.delete(`/ssh-host-keys/${id}`),
+    getPolicy: () => api.get('/ssh-host-keys/policy'),
+    setPolicy: (policy) => api.put('/ssh-host-keys/policy', { policy }),
+  },
   vmAgent: {
-    register: (data) => api.post('/vm-agent/register', data),
     list: () => api.get('/vm-agent/'),
     get: (id) => api.get(`/vm-agent/${id}`),
     getScans: (id, limit = 50) => api.get(`/vm-agent/${id}/scans`, { params: { limit } }),
     delete: (id) => api.delete(`/vm-agent/${id}`),
     getInstallCommand: (id) => api.get(`/vm-agent/${id}/install-command`),
     getSettings: () => api.get('/vm-agent/settings/linux-agent'),
+    createEnrollment: (vmId, ttlMinutes = 60) => api.post('/vm-agent/enrollments', { vm_id: vmId, ttl_minutes: ttlMinutes }),
+    listEnrollments: () => api.get('/vm-agent/enrollments'),
+    revokeEnrollment: (id) => api.delete(`/vm-agent/enrollments/${id}`),
     updateSettings: (data) => api.put('/vm-agent/settings/linux-agent', data),
     runAITune: (vmId) => api.post(`/llm/ai-tune/${vmId}`),
     applyTuneAction: (vmId, actionId) => api.post(`/llm/ai-tune/${vmId}/apply`, { action_id: actionId }),

@@ -22,6 +22,7 @@ from app.models import (
 )
 from app.services.llm_cloudinit import LLMCloudInitService
 from app.services.ssh_hw import SSH_DISABLED_ALGORITHMS
+from app.services.ssh_trust import ssh_connect
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -984,9 +985,7 @@ async def ai_tune_vm(
             password = vm.password
 
     try:
-        client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        client.connect(vm.ip_address, username=vm.username, password=password, timeout=30, disabled_algorithms=SSH_DISABLED_ALGORITHMS)
+        client = ssh_connect(vm.ip_address, username=vm.username, password=password, timeout=30, disabled_algorithms=SSH_DISABLED_ALGORITHMS)
 
         def run(cmd):
             try:
@@ -1104,9 +1103,7 @@ def _run_apply_job(job_id: str, commands: list, ip: str, username: str, password
     import paramiko, shlex, time as _t
     job = _apply_jobs[job_id]
     try:
-        client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        client.connect(ip, username=username, password=password, timeout=30, disabled_algorithms=SSH_DISABLED_ALGORITHMS)
+        client = ssh_connect(ip, username=username, password=password, timeout=30, disabled_algorithms=SSH_DISABLED_ALGORITHMS)
         # Send SSH keepalives every 30 s so NAT/firewalls don't drop long-running
         # transfers (e.g. ollama pull of a several-GB model).
         client.get_transport().set_keepalive(30)
@@ -1295,9 +1292,7 @@ async def get_vm_models(
             password = vm.password
 
     try:
-        client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        client.connect(vm.ip_address, username=vm.username, password=password, timeout=30, disabled_algorithms=SSH_DISABLED_ALGORITHMS)
+        client = ssh_connect(vm.ip_address, username=vm.username, password=password, timeout=30, disabled_algorithms=SSH_DISABLED_ALGORITHMS)
         _, stdout, _ = client.exec_command("ollama list 2>/dev/null", timeout=20)
         raw = stdout.read().decode("utf-8", errors="replace")
         stdout.channel.recv_exit_status()
@@ -1344,9 +1339,7 @@ def _run_pull_job(job_id: str, model: str, ip: str, username: str, password):
     log_file = f"/tmp/depl0y-pull-{job_id}.log"
 
     def _ssh_run(cmd, timeout=20):
-        c = _pm.SSHClient()
-        c.set_missing_host_key_policy(_pm.AutoAddPolicy())
-        c.connect(ip, username=username, password=password, timeout=20, disabled_algorithms=SSH_DISABLED_ALGORITHMS)
+        c = ssh_connect(ip, username=username, password=password, timeout=20, disabled_algorithms=SSH_DISABLED_ALGORITHMS)
         stdin, stdout, _ = c.exec_command(
             f"sudo -S bash -c {shlex.quote(cmd)}", timeout=timeout
         )
@@ -1499,9 +1492,7 @@ async def delete_ollama_model(
             password = vm.password
 
     try:
-        client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        client.connect(vm.ip_address, username=vm.username, password=password, timeout=30, disabled_algorithms=SSH_DISABLED_ALGORITHMS)
+        client = ssh_connect(vm.ip_address, username=vm.username, password=password, timeout=30, disabled_algorithms=SSH_DISABLED_ALGORITHMS)
         cmd = f"ollama rm {_shlex.quote(model_name)}"
         stdin, stdout, stderr = client.exec_command(
             f"sudo -S bash -c {_shlex.quote(cmd)}", timeout=30
@@ -1540,9 +1531,7 @@ async def delete_ollama_model(
 def _ssh_run_quick(ip: str, username: str, password: str, cmd: str, timeout: int = 15) -> str:
     """Open a short SSH session, run one command, return stdout."""
     import paramiko as _pm, shlex
-    c = _pm.SSHClient()
-    c.set_missing_host_key_policy(_pm.AutoAddPolicy())
-    c.connect(ip, username=username, password=password, timeout=15, disabled_algorithms=SSH_DISABLED_ALGORITHMS)
+    c = ssh_connect(ip, username=username, password=password, timeout=15, disabled_algorithms=SSH_DISABLED_ALGORITHMS)
     stdin, stdout, _ = c.exec_command(
         f"sudo -S bash -c {shlex.quote(cmd)}", timeout=timeout
     )

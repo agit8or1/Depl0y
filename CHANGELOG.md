@@ -5,6 +5,15 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.110] - 2026-11-07 🔧 Dependency update
+
+### Changed
+
+- **paramiko 3.5.1 → 5.0.0.** The SSH library behind VM updates, hardware/BMC SSH and the LLM VM tools
+  moves to its current major release. 5.0 drops SHA-1 key exchange and GSSAPI and raises the
+  group-exchange minimum to 2048 bits; depl0y uses none of these. A handshake against every pinned host,
+  including the iDRAC 7 controllers, still succeeds.
+
 ## [2.2.109] - 2026-11-06 🔐 Security fixes
 
 ### Security

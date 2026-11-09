@@ -993,7 +993,7 @@ def set_vm_firewall_options(host_id: int, node: str, vmid: int, options: dict,
 
 @router.post("/{host_id}/{node}/{vmid}/vncticket")
 def get_vnc_ticket(host_id: int, node: str, vmid: int, db: Session = Depends(get_db),
-                   current_user=Depends(get_current_user)):
+                   current_user=Depends(require_operator)):
     host = _get_host(host_id, db)
     try:
         result = _pve(_svc(host)).nodes(node).qemu(vmid).vncproxy.post(websocket=1)

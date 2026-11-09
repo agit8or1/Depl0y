@@ -503,7 +503,7 @@ def restart_backend(
 
 
 @router.put("/version")
-def update_version(new_version: str, db: Session = Depends(get_db)) -> Dict[str, str]:
+def update_version(new_version: str, db: Session = Depends(get_db), current_user=Depends(require_admin)) -> Dict[str, str]:
     """Update system version (admin only)"""
     try:
         version_setting = db.query(SystemSettings).filter(SystemSettings.key == "app_version").first()

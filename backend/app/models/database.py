@@ -415,6 +415,36 @@ class SshHostKey(Base):
     )
 
 
+class TlsCertificate(Base):
+    """TLS identity of a managed host (Proxmox, PBS, BMC) reached without
+    system-CA verification. One `approved` row per host:port is trusted:
+    mode ``pin`` trusts exactly that certificate (SHA-256 of the DER), mode
+    ``ca`` means the host presented a publicly trusted certificate on first
+    use, so it must keep doing so. Anything else is stored as `pending`."""
+    __tablename__ = "tls_certificates"
+
+    id = Column(Integer, primary_key=True, index=True)
+    host = Column(String(255), nullable=False)
+    port = Column(Integer, nullable=False)
+    mode = Column(String(8), nullable=False, default="pin")  # pin | ca
+    fingerprint = Column(String(64), nullable=False)  # sha256 hex of the leaf DER
+    pem = Column(Text, nullable=False)
+    subject = Column(String(512), nullable=True)
+    issuer = Column(String(512), nullable=True)
+    dns_names = Column(Text, nullable=True)  # comma-separated SAN DNS names
+    not_after = Column(DateTime, nullable=True)
+    status = Column(String(16), nullable=False, default="pending")  # approved | pending
+    first_seen = Column(DateTime, default=datetime.utcnow, nullable=False)
+    last_seen = Column(DateTime, default=datetime.utcnow, nullable=False)
+    approved_at = Column(DateTime, nullable=True)
+    approved_by = Column(Integer, ForeignKey("users.id"), nullable=True)  # NULL + approved = automatic
+
+    __table_args__ = (
+        UniqueConstraint("host", "port", "fingerprint", name="uq_tls_certificate"),
+        Index("ix_tls_certificates_host_port", "host", "port"),
+    )
+
+
 class VmScanResult(Base):
     """Scan results reported by VM agents"""
     __tablename__ = "vm_scan_results"

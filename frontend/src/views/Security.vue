@@ -857,6 +857,32 @@
 
       <!-- ── 2FA Overview ────────────────────────────────────── -->
       <div v-if="activeTab === '2fa'">
+        <div class="card mb-2">
+          <div class="card-header">
+            <h3>2FA Policy</h3>
+          </div>
+          <div class="section-body">
+            <div class="setting-row">
+              <div class="setting-info">
+                <span class="setting-label">Require 2FA</span>
+                <span class="setting-desc">
+                  Users the policy covers must set up 2FA at their next sign-in and can't turn it off.
+                  You need 2FA on your own account before you can turn this on.
+                </span>
+              </div>
+              <select v-model="settings.require_totp" class="form-control setting-input">
+                <option value="off">Optional</option>
+                <option value="admins">Required for admins</option>
+                <option value="all">Required for everyone</option>
+              </select>
+            </div>
+            <div class="section-footer">
+              <button @click="saveSettings" class="btn btn-primary" :disabled="savingSettings">
+                {{ savingSettings ? 'Saving...' : 'Save' }}
+              </button>
+            </div>
+          </div>
+        </div>
         <div class="card">
           <div class="card-header">
             <h3>2FA Status Overview</h3>
@@ -1081,6 +1107,7 @@ export default {
       ip_list_mode: 'blacklist',
       geoip_enabled: false,
       geoip_mode: 'blacklist',
+      require_totp: 'off',
     })
 
     const passwordPolicy = ref({

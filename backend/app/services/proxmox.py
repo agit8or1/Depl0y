@@ -2,6 +2,9 @@
 from typing import List, Dict, Optional, Any
 from proxmoxer import ProxmoxAPI
 from proxmoxer.core import ResourceException
+from app.services.tls_trust import install as _install_tls_pinning
+
+_install_tls_pinning()  # verify=False requests check the pinned certificate
 from sqlalchemy.orm import Session
 from app.models import ProxmoxHost, ProxmoxNode
 from app.core.security import decrypt_data

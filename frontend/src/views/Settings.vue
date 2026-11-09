@@ -992,6 +992,7 @@
       </div>
     </div>
     <SshHostKeysPanel v-if="user && user.role === 'admin'" />
+    <TlsCertificatesPanel v-if="user && user.role === 'admin'" class="mt-4" />
     </div> <!-- end settings-tab-content -->
 
     <!-- ═══════════════════════════════════════════════════════════════════
@@ -2376,10 +2377,11 @@ import api from '@/services/api'
 import { useToast } from 'vue-toastification'
 import { setLocale, getCurrentLocale } from '@/i18n/index.js'
 import SshHostKeysPanel from '@/components/SshHostKeysPanel.vue'
+import TlsCertificatesPanel from '@/components/TlsCertificatesPanel.vue'
 
 export default {
   name: 'Settings',
-  components: { SshHostKeysPanel },
+  components: { SshHostKeysPanel, TlsCertificatesPanel },
 
   setup() {
     const toast = useToast()

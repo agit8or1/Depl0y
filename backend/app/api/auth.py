@@ -1,5 +1,5 @@
 """Authentication API routes"""
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, EmailStr
@@ -191,7 +191,7 @@ class TwoFactorLoginRequest(BaseModel):
 
 
 class RefreshRequest(BaseModel):
-    refresh_token: str
+    refresh_token: Optional[str] = None
 
 
 class TOTPSetupResponse(BaseModel):
@@ -232,6 +232,8 @@ class UserResponse(BaseModel):
     is_active: bool
     totp_enabled: bool
     created_at: datetime
+    # True when the 2FA policy applies to this user (they must keep 2FA on).
+    totp_required: bool = False
 
     class Config:
         from_attributes = True
@@ -304,34 +306,88 @@ async def get_current_user(
         user = db.query(User).filter(User.id == matched_key.user_id).first()
         if user is None or not user.is_active:
             raise HTTPException(status_code=400, detail="Inactive user")
+        _record_auth(request, user, "api_key", api_key_id=matched_key.id)
         return user
 
     # --- Fall back to JWT Bearer token ---
     if not token:
         raise credentials_exception
 
-    payload = decode_token(token)
-    if payload is None:
-        raise credentials_exception
-
-    username: str = payload.get("sub")
-    if username is None:
-        raise credentials_exception
-
-    user = db.query(User).filter(User.username == username).first()
+    user = user_from_access_token(token, db)
     if user is None:
         raise credentials_exception
-
     if not user.is_active:
         raise HTTPException(status_code=400, detail="Inactive user")
 
-    # Check token_version for session invalidation
+    _record_auth(request, user, "jwt")
+
+    # Mandatory-2FA policy: until the user enrols, only the routes needed to
+    # enrol (and to see who they are / sign out) are reachable.
+    if totp_required_for(user, db) and not user.totp_enabled:
+        if not request.url.path.endswith(_TOTP_ENROLL_ALLOWED):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="totp_enrollment_required",
+            )
+    return user
+
+
+# Paths a user may call while the mandatory-2FA policy is pending for them.
+_TOTP_ENROLL_ALLOWED = ("/auth/me", "/auth/totp/setup", "/auth/totp/verify", "/auth/logout")
+
+TOTP_POLICY_VALUES = ("off", "admins", "all")
+
+
+def get_totp_policy(db: Session) -> str:
+    from app.models.database import SystemSettings
+    row = db.query(SystemSettings).filter(SystemSettings.key == "require_totp").first()
+    value = (row.value if row else "off") or "off"
+    return value if value in TOTP_POLICY_VALUES else "off"
+
+
+def totp_required_for(user: User, db: Session) -> bool:
+    policy = get_totp_policy(db)
+    if policy == "all":
+        return True
+    if policy == "admins":
+        return user.role == UserRole.ADMIN
+    return False
+
+
+def user_from_access_token(token: Optional[str], db: Session) -> Optional[User]:
+    """Validate a JWT *access* token and return its user, or None.
+
+    Rejects refresh tokens (and anything else without type == "access") and
+    tokens whose token_version is older than the user's (revoked sessions).
+    Does not check is_active; callers decide how to report that.
+    """
+    if not token:
+        return None
+    payload = decode_token(token)
+    if payload is None or payload.get("type") != "access":
+        return None
+    username = payload.get("sub")
+    if not username:
+        return None
+    user = db.query(User).filter(User.username == username).first()
+    if user is None:
+        return None
     token_version = payload.get("tv", 0)
     user_token_version = getattr(user, "token_version", 0) or 0
     if token_version < user_token_version:
-        raise credentials_exception
-
+        return None
     return user
+
+
+def _record_auth(request: Request, user: User, method: str, api_key_id: Optional[int] = None) -> None:
+    """Expose who authenticated this request to the audit middleware.
+
+    The middleware puts a dict in the ASGI scope before calling the app; we
+    fill it in place so it survives any scope copying by inner middleware.
+    """
+    ctx = request.scope.get("depl0y_auth")
+    if isinstance(ctx, dict):
+        ctx.update({"user_id": user.id, "method": method, "api_key_id": api_key_id})
 
 
 # Dependency for admin-only access
@@ -567,6 +623,34 @@ def _count_remaining_backup_codes(db: Session, user_id: int) -> int:
     )
 
 
+# Browser sessions keep the refresh token in an httpOnly cookie, so page
+# scripts (and anything injected into them) can't read it from storage. It is
+# only sent to the auth endpoints. The JSON body still carries the tokens for
+# API clients and scripts.
+REFRESH_COOKIE = "depl0y_refresh"
+REFRESH_COOKIE_PATH = "/api/v1/auth"
+
+
+def _is_https(request: Request) -> bool:
+    return (request.url.scheme == "https"
+            or request.headers.get("x-forwarded-proto", "").split(",")[0].strip() == "https")
+
+
+def _set_refresh_cookie(response: Response, request: Request, token: str) -> None:
+    from app.core.config import settings
+    response.set_cookie(
+        REFRESH_COOKIE, token,
+        max_age=int(getattr(settings, "REFRESH_TOKEN_EXPIRE_DAYS", 7)) * 86400,
+        path=REFRESH_COOKIE_PATH, httponly=True, samesite="strict",
+        secure=_is_https(request),
+    )
+
+
+def _clear_refresh_cookie(response: Response, request: Request) -> None:
+    response.delete_cookie(REFRESH_COOKIE, path=REFRESH_COOKIE_PATH, httponly=True,
+                           samesite="strict", secure=_is_https(request))
+
+
 def _finalize_login(
     db: Session,
     user: User,
@@ -656,7 +740,8 @@ def _finalize_login(
 
 
 @router.post("/login")
-async def login(credentials: LoginRequest, request: Request, db: Session = Depends(get_db)):
+async def login(credentials: LoginRequest, request: Request, response: Response,
+                db: Session = Depends(get_db)):
     """
     Login endpoint — step 1 of 2.
 
@@ -838,11 +923,14 @@ async def login(credentials: LoginRequest, request: Request, db: Session = Depen
     except Exception:
         pass
 
-    return _finalize_login(db, user, client_ip, user_agent)
+    result = _finalize_login(db, user, client_ip, user_agent)
+    _set_refresh_cookie(response, request, result["refresh_token"])
+    return result
 
 
 @router.post("/2fa/login", response_model=Token)
-async def login_2fa(data: TwoFactorLoginRequest, request: Request, db: Session = Depends(get_db)):
+async def login_2fa(data: TwoFactorLoginRequest, request: Request, response: Response,
+                    db: Session = Depends(get_db)):
     """
     Login step 2: verify TOTP or backup code against temp_token from step 1.
     Returns full JWT tokens on success.
@@ -926,13 +1014,16 @@ async def login_2fa(data: TwoFactorLoginRequest, request: Request, db: Session =
     except Exception:
         pass
 
-    return _finalize_login(db, user, client_ip, user_agent)
+    result = _finalize_login(db, user, client_ip, user_agent)
+    _set_refresh_cookie(response, request, result["refresh_token"])
+    return result
 
 
 @router.post("/refresh", response_model=Token)
 async def refresh_token(
     request: Request,
-    body: RefreshRequest,
+    response: Response,
+    body: Optional[RefreshRequest] = None,
     db: Session = Depends(get_db),
 ):
     """
@@ -941,7 +1032,12 @@ async def refresh_token(
     - Revokes old token
     - Issues new access + refresh token pair
     """
-    token_value = body.refresh_token
+    # Body (API clients, one-time migration of old browser sessions) or the
+    # httpOnly cookie (browser).
+    token_value = (body.refresh_token if body and body.refresh_token else None) \
+        or request.cookies.get(REFRESH_COOKIE)
+    if not token_value:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="No refresh token")
     payload = decode_token(token_value)
 
     if payload is None or payload.get("type") != "refresh":
@@ -991,6 +1087,7 @@ async def refresh_token(
         expires_delta_days=getattr(settings, "REFRESH_TOKEN_EXPIRE_DAYS", 30),
     )
 
+    _set_refresh_cookie(response, request, new_refresh_token_value)
     return {
         "access_token": access_token,
         "refresh_token": new_refresh_token_value,
@@ -1004,13 +1101,21 @@ class LogoutRequest(BaseModel):
 
 @router.post("/logout")
 async def logout(
-    data: LogoutRequest,
-    current_user: User = Depends(get_current_user),
+    request: Request,
+    response: Response,
+    data: Optional[LogoutRequest] = None,
     db: Session = Depends(get_db),
 ):
-    """Revoke the current refresh token, invalidating this session."""
-    if data.refresh_token:
-        _revoke_refresh_token(db, data.refresh_token)
+    """Revoke the current refresh token, invalidating this session.
+
+    Works without a valid access token (it may have expired in memory); the
+    refresh token itself — body or cookie — identifies the session.
+    """
+    for token in {data.refresh_token if data else None, request.cookies.get(REFRESH_COOKIE)} - {None, ""}:
+        payload = decode_token(token)
+        if payload and payload.get("type") == "refresh":
+            _revoke_refresh_token(db, token)
+    _clear_refresh_cookie(response, request)
     return {"message": "Logged out successfully"}
 
 
@@ -1055,9 +1160,13 @@ async def revoke_session(
 
 
 @router.get("/me", response_model=UserResponse)
-async def get_current_user_info(current_user: User = Depends(get_current_user)):
+async def get_current_user_info(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     """Get current user information"""
-    return current_user
+    info = UserResponse.model_validate(current_user)
+    return info.model_copy(update={"totp_required": totp_required_for(current_user, db)})
 
 
 class PasswordChangeRequest(BaseModel):
@@ -1201,6 +1310,11 @@ async def disable_totp(
     """
     if not current_user.totp_enabled:
         raise HTTPException(status_code=400, detail="2FA not enabled")
+    if totp_required_for(current_user, db):
+        raise HTTPException(
+            status_code=403,
+            detail="Two-factor authentication is required for your account by the administrator",
+        )
 
     code = request.code.strip().upper()
     totp_valid = current_user.totp_secret and verify_totp_code(current_user.totp_secret, code)

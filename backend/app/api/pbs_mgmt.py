@@ -242,7 +242,7 @@ def verify_snapshot(
     server_id: int,
     datastore: str,
     payload: Dict[str, Any],
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_operator),
     db: Session = Depends(get_db),
 ) -> Any:
     """
@@ -279,7 +279,7 @@ def forget_snapshot(
     backup_type: str = Query(..., alias="backup-type"),
     backup_id: str = Query(..., alias="backup-id"),
     backup_time: int = Query(..., alias="backup-time"),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ) -> Any:
     """
@@ -306,7 +306,7 @@ def prune_group(
     server_id: int,
     datastore: str,
     payload: Dict[str, Any],
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ) -> Any:
     """
@@ -465,7 +465,7 @@ def run_job(
     server_id: int,
     job_id: str,
     job_type: str = "sync",
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_operator),
     db: Session = Depends(get_db),
 ) -> Any:
     """Trigger a PBS job to run immediately. Supports sync (pull+push), verify, and prune jobs."""

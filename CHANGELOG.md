@@ -5,6 +5,48 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.111] - 2026-11-09 🔐 Security fixes
+
+Thanks to the mspzero.com security review (2026-11-09) for reporting these.
+
+### Security
+
+- **Viewers are read-only.** Several actions only checked that the caller was signed in. Now the Proxmox
+  node shell (WebSocket and termproxy), deleting and pruning PBS snapshots, and deleting cloud images need
+  **admin**. VM/LXC consoles (VNC/SPICE tickets, LXC terminals and their WebSockets), the other
+  cloud-image actions, PBS verify/run job, ISO verify, Proxmox test/poll/reconnect, iDRAC poll, analysis
+  actions and the VM update check need **operator**. `PUT /system/version`, which needed no sign-in at
+  all, now needs admin.
+- **TLS certificates of managed hosts are checked.** Connections to Proxmox, PBS, BMCs (Redfish) and VMware
+  that don't use "verify SSL" used to accept any certificate. Each host's certificate is now recorded on
+  first contact (Settings → TLS certificates) and checked on every connection, including the console
+  WebSocket proxy. A host with a publicly trusted certificate must keep presenting one, so Let's Encrypt
+  renewals keep working. Any other host is pinned to its exact certificate. A changed certificate is
+  refused before credentials are sent and waits for an admin to approve it. The exception is a CA-issued
+  renewal for the same names, which is accepted automatically and audited. A "strict" policy refuses
+  unknown hosts until they are approved.
+- **Tokens.** Refresh tokens are no longer accepted as access tokens. The console WebSockets now apply
+  the same session-revocation check as the API. The browser keeps the access token in memory only; the
+  refresh token is an httpOnly, SameSite=Strict cookie that is only sent to `/api/v1/auth`. Existing
+  sessions move over on their next page load, so nobody has to sign in again. Every token now has a
+  unique ID, which fixes a 500 error when two refreshes happened in the same second.
+- **API-key calls are audited.** Changes made with `X-API-Key` are now written to the audit log, with
+  the key's ID.
+- **2FA can be required.** Security → 2FA Overview → 2FA Policy: optional, required for admins, or
+  required for everyone. Users the policy covers are sent to their profile to set up 2FA before they can
+  do anything else, and they can't turn it off. To avoid locking yourself out, you must have 2FA on your
+  own account before you can require it.
+- **Stored secrets survive a restart without `ENCRYPTION_KEY`.** Deployments that don't set
+  `ENCRYPTION_KEY` / `SECRET_KEY` (anything not installed by `install.sh`) used to get new random keys
+  on every start. Stored credentials then became unreadable and everyone was signed out. The keys are now
+  generated once and kept in `/var/lib/depl0y/encryption.key` and `/var/lib/depl0y/secret_key`
+  (mode 0600; change the directory with `DEPL0Y_KEY_DIR`).
+- **The installer pins the release it installs.** `install.sh` looks up the latest release tag (or uses
+  `DEPL0Y_TAG=vX.Y.Z`), downloads that tag's assets, and requires the signature's trusted comment to
+  name exactly that tag. It also refuses to replace a newer installed version (override with
+  `DEPL0Y_ALLOW_DOWNGRADE=1`). Before this, any older signed release served as "latest" would install.
+- **Private vulnerability reporting** is enabled on GitHub, and SECURITY.md now links to it.
+
 ## [2.2.110] - 2026-11-07 🔧 Dependency update
 
 ### Changed

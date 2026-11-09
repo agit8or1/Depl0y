@@ -67,7 +67,7 @@ def _install_updates_bg(vm_id: int, user_id: int, override_ip=None, override_use
 async def check_vm_updates(
     vm_id: int,
     creds: Optional[InlineCreds] = Body(default=None),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_operator),
     db: Session = Depends(get_db),
 ):
     """Check for available updates on a VM"""

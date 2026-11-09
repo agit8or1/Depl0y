@@ -230,6 +230,7 @@
 </template>
 
 <script>
+import { getAccessToken } from '@/services/tokens'
 import { ref, computed, onMounted } from 'vue'
 import { copyToClipboard } from '@/utils/clipboard'
 
@@ -507,7 +508,7 @@ export default {
     const endpoints = ref([...HARDCODED_ENDPOINTS])
     let queryCounter = 0
 
-    const tokenPresent = computed(() => !!localStorage.getItem('access_token'))
+    const tokenPresent = computed(() => !!getAccessToken())
 
     // Group endpoints by tag
     const grouped = computed(() => {
@@ -628,7 +629,7 @@ export default {
       lastResponse.value = null
 
       const ep = selectedEndpoint.value
-      const token = localStorage.getItem('access_token')
+      const token = getAccessToken()
 
       let path = ep.path.replace('/api/v1', '')
       Object.entries(tryItParams.value).forEach(([k, v]) => {
@@ -719,7 +720,7 @@ export default {
 
     const copyCurl = () => {
       if (!selectedEndpoint.value) return
-      const token = localStorage.getItem('access_token') || 'YOUR_TOKEN'
+      const token = getAccessToken() || 'YOUR_TOKEN'
       const url = window.location.origin + buildUrl()
       const ep = selectedEndpoint.value
       let curl = `curl -X ${ep.method} '${url}' \\\n  -H 'Authorization: Bearer ${token}' \\\n  -H 'Content-Type: application/json'`
@@ -752,7 +753,7 @@ export default {
     const fetchFromOpenApi = async () => {
       loadingOpenApi.value = true
       try {
-        const token = localStorage.getItem('access_token')
+        const token = getAccessToken()
         const axiosLib = (await import('axios')).default
         const resp = await axiosLib.get('/api/v1/openapi-summary', {
           headers: token ? { Authorization: `Bearer ${token}` } : {},

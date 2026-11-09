@@ -1474,7 +1474,7 @@ def rollback_ct_snapshot(host_id: int, node: str, vmid: int, snapname: str,
 
 @router.post("/{host_id}/nodes/{node}/lxc/{vmid}/termproxy")
 def ct_termproxy(host_id: int, node: str, vmid: int, db: Session = Depends(get_db),
-                 current_user=Depends(get_current_user)):
+                 current_user=Depends(require_operator)):
     host = _get_host(host_id, db)
     try:
         result = _pve(host).nodes(node).lxc(vmid).termproxy.post()

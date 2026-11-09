@@ -21,10 +21,11 @@ from fastapi.responses import PlainTextResponse, Response
 from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal, get_db
-from app.core.security import decode_token, decrypt_data
-from app.models import ProxmoxHost, User
+from app.core.security import decrypt_data
+from app.models import ProxmoxHost, User, UserRole
 from app.services.proxmox import ProxmoxService
-from app.api.auth import get_current_user
+from app.services import tls_trust
+from app.api.auth import get_current_user, require_operator, user_from_access_token
 
 logger = logging.getLogger(__name__)
 
@@ -55,30 +56,54 @@ release-cursor=shift+f12
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _make_ssl_context() -> ssl.SSLContext:
-    """Return an SSL context that skips verification (Proxmox self-signed certs)."""
-    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
-    return ctx
+def _make_ssl_context(host: ProxmoxHost) -> ssl.SSLContext:
+    """SSL context for the outbound Proxmox WebSocket.
+
+    verify_ssl hosts get normal CA verification. Otherwise the host's approved
+    certificate (see services/tls_trust.py) is the only one accepted, the same
+    check the REST client applies — so the API-token header is never sent to
+    a server presenting some other certificate.
+    """
+    if getattr(host, "verify_ssl", False):
+        return ssl.create_default_context()
+    return tls_trust.websocket_ssl_context(host.hostname, host.port)
+
+
+def _note_tls_failure(host: ProxmoxHost, exc: Exception) -> Optional[str]:
+    """If *exc* is a certificate failure, record it and return a close reason."""
+    if isinstance(exc, tls_trust.CertificateNotTrustedError):
+        logger.error("Console proxy refused: %s", exc)
+        return "Proxmox TLS certificate not trusted"
+    if not isinstance(exc, ssl.SSLCertVerificationError) or getattr(host, "verify_ssl", False):
+        return None
+    try:
+        if tls_trust.recheck_after_failure(host.hostname, host.port):
+            return "Proxmox certificate was renewed; please reconnect"
+    except tls_trust.CertificateChangedError as changed:
+        logger.error("Console proxy refused: %s", changed)
+        return "Proxmox TLS certificate changed; approve it under Settings"
+    except Exception as other:
+        logger.warning("TLS recheck failed for %s: %s", host.hostname, other)
+    return None
 
 
 def _get_db() -> Session:
     return SessionLocal()
 
 
-async def _authenticate(token: Optional[str], db: Session) -> Optional[User]:
-    """Validate JWT token and return the User, or None on failure."""
-    if not token:
+_ROLE_RANK = {UserRole.VIEWER: 0, UserRole.OPERATOR: 1, UserRole.ADMIN: 2}
+
+
+async def _authenticate(token: Optional[str], db: Session, min_role: UserRole) -> Optional[User]:
+    """Validate a WebSocket access token and the user's role.
+
+    Uses the same checks as get_current_user: access-type tokens only, and
+    revoked sessions (token_version) are refused. Returns None on failure.
+    """
+    user = user_from_access_token(token, db)
+    if user is None or not user.is_active:
         return None
-    payload = decode_token(token)
-    if payload is None:
-        return None
-    username: Optional[str] = payload.get("sub")
-    if not username:
-        return None
-    user = db.query(User).filter(User.username == username).first()
-    if not user or not user.is_active:
+    if _ROLE_RANK.get(user.role, -1) < _ROLE_RANK[min_role]:
         return None
     return user
 
@@ -192,7 +217,7 @@ def get_vm_vnc_ticket(
     host_id: int,
     node: str,
     vmid: int,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_operator),
     db: Session = Depends(get_db),
 ):
     """
@@ -220,7 +245,7 @@ def get_lxc_ticket(
     host_id: int,
     node: str,
     ctid: int,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_operator),
     db: Session = Depends(get_db),
 ):
     """
@@ -251,7 +276,7 @@ def get_vm_spice(
     host_id: int,
     node: str,
     vmid: int,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_operator),
     db: Session = Depends(get_db),
 ):
     """
@@ -324,7 +349,7 @@ async def vm_vnc_proxy(
     """
     db = _get_db()
     try:
-        user = await _authenticate(token, db)
+        user = await _authenticate(token, db, UserRole.OPERATOR)
         if user is None:
             await websocket.close(code=4401, reason="Unauthorized")
             return
@@ -367,7 +392,11 @@ async def vm_vnc_proxy(
             vnc_ticket[:20],
             list(auth_headers.keys()),
         )
-        ssl_ctx = _make_ssl_context()
+        try:
+            ssl_ctx = _make_ssl_context(host)
+        except Exception as exc:
+            await websocket.close(code=4502, reason=_note_tls_failure(host, exc) or "Proxmox TLS check failed")
+            return
 
         # Log browser WebSocket headers for diagnosing proxy chain issues
         ws_headers = dict(websocket.scope.get("headers", []))
@@ -419,7 +448,7 @@ async def vm_vnc_proxy(
         except Exception as exc:
             logger.error("VNC proxy connection failed: %s", exc)
             try:
-                await websocket.close(code=4502, reason="Proxmox VNC connection failed")
+                await websocket.close(code=4502, reason=_note_tls_failure(host, exc) or "Proxmox VNC connection failed")
             except Exception:
                 pass
     finally:
@@ -446,7 +475,7 @@ async def lxc_terminal_proxy(
     """
     db = _get_db()
     try:
-        user = await _authenticate(token, db)
+        user = await _authenticate(token, db, UserRole.OPERATOR)
         if user is None:
             await websocket.close(code=4401, reason="Unauthorized")
             return
@@ -474,7 +503,11 @@ async def lxc_terminal_proxy(
             f"/lxc/{vmid}/vncwebsocket?port={port}&vncticket={encoded_ticket}"
         )
         auth_headers = _build_auth_header(host)
-        ssl_ctx = _make_ssl_context()
+        try:
+            ssl_ctx = _make_ssl_context(host)
+        except Exception as exc:
+            await websocket.close(code=4502, reason=_note_tls_failure(host, exc) or "Proxmox TLS check failed")
+            return
 
         try:
             async with websockets.connect(
@@ -496,7 +529,7 @@ async def lxc_terminal_proxy(
         except Exception as exc:
             logger.error("LXC terminal proxy connection failed: %s", exc)
             try:
-                await websocket.close(code=4502, reason="Proxmox terminal connection failed")
+                await websocket.close(code=4502, reason=_note_tls_failure(host, exc) or "Proxmox terminal connection failed")
             except Exception:
                 pass
     finally:
@@ -522,7 +555,7 @@ async def node_terminal_proxy(
     """
     db = _get_db()
     try:
-        user = await _authenticate(token, db)
+        user = await _authenticate(token, db, UserRole.ADMIN)
         if user is None:
             await websocket.close(code=4401, reason="Unauthorized")
             return
@@ -550,7 +583,11 @@ async def node_terminal_proxy(
             f"/vncwebsocket?port={port}&vncticket={encoded_ticket}"
         )
         auth_headers = _build_auth_header(host)
-        ssl_ctx = _make_ssl_context()
+        try:
+            ssl_ctx = _make_ssl_context(host)
+        except Exception as exc:
+            await websocket.close(code=4502, reason=_note_tls_failure(host, exc) or "Proxmox TLS check failed")
+            return
 
         try:
             async with websockets.connect(
@@ -572,7 +609,7 @@ async def node_terminal_proxy(
         except Exception as exc:
             logger.error("Node terminal proxy connection failed: %s", exc)
             try:
-                await websocket.close(code=4502, reason="Proxmox terminal connection failed")
+                await websocket.close(code=4502, reason=_note_tls_failure(host, exc) or "Proxmox terminal connection failed")
             except Exception:
                 pass
     finally:

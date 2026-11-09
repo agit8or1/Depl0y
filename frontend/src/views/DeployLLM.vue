@@ -1562,6 +1562,7 @@
 </template>
 
 <script>
+import { getAccessToken } from '@/services/tokens'
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useToast } from 'vue-toastification'
 import api from '@/services/api'
@@ -1821,7 +1822,7 @@ export default {
       pullProgress.value = { ...pullProgress.value, [inst.vmid]: { status: 'Starting pull...', completed: 0, total: 0 } }
 
       try {
-        const token = localStorage.getItem('access_token')
+        const token = getAccessToken()
         const response = await fetch(
           `/api/v1/llm/instances/${inst.host_id}/${inst.node}/${inst.vmid}/pull`,
           {

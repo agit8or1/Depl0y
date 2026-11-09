@@ -11,6 +11,9 @@ import logging
 from typing import Any, Dict, List, Optional
 
 import requests
+from app.services.tls_trust import install as _install_tls_pinning
+
+_install_tls_pinning()  # verify=False requests check the pinned certificate
 import urllib3
 
 from app.core.security import decrypt_data

@@ -333,6 +333,7 @@
 </template>
 
 <script setup>
+import { getAccessToken } from '@/services/tokens'
 import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import api from '@/services/api'
@@ -440,7 +441,7 @@ const proxmoxConsoleUrl = computed(() => {
 })
 
 function buildWsUrl() {
-  const token = localStorage.getItem('access_token') || ''
+  const token = getAccessToken() || ''
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
   let url = `${proto}//${location.host}/api/v1/pve-console/ws/vm/${hostId.value}/${node.value}/${vmid.value}?token=${encodeURIComponent(token)}`
   // Pass the VNC ticket and port so the proxy can skip its own vncproxy call
@@ -714,7 +715,7 @@ const serialStatusLabel = computed(() => {
 })
 
 function buildSerialWsUrl() {
-  const token = localStorage.getItem('access_token') || ''
+  const token = getAccessToken() || ''
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
   return `${proto}//${location.host}/api/v1/pve-console/ws/vm-term/${hostId.value}/${node.value}/${vmid.value}?token=${encodeURIComponent(token)}`
 }

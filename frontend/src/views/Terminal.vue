@@ -21,6 +21,7 @@
 </template>
 
 <script>
+import { getAccessToken } from '@/services/tokens'
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute } from 'vue-router'
 
@@ -46,7 +47,7 @@ export default {
     })
 
     const buildWsUrl = () => {
-      const token = localStorage.getItem('access_token')
+      const token = getAccessToken()
       const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
       const host = location.host
       if (vmid.value) {

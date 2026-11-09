@@ -6,7 +6,7 @@ from typing import List, Optional
 from datetime import datetime, timezone
 
 from app.core.database import get_db
-from app.api.auth import require_admin, get_current_user
+from app.api.auth import require_admin, get_current_user, get_totp_policy, TOTP_POLICY_VALUES
 from app.models.database import SystemSettings
 from app.models.security import (
     FailedLoginAttempt,
@@ -74,6 +74,7 @@ class SecuritySettingsUpdate(BaseModel):
     ip_list_mode: Optional[str] = None          # "blacklist" or "whitelist"
     geoip_enabled: Optional[bool] = None
     geoip_mode: Optional[str] = None            # "blacklist" or "whitelist"
+    require_totp: Optional[str] = None          # "off", "admins" or "all"
 
 
 class LockoutResponse(BaseModel):
@@ -150,6 +151,7 @@ async def get_security_settings(
         "ip_list_mode": _get_setting(db, "ip_list_mode", "blacklist"),
         "geoip_enabled": _get_setting(db, "geoip_enabled", "false") == "true",
         "geoip_mode": _get_setting(db, "geoip_mode", "blacklist"),
+        "require_totp": get_totp_policy(db),
     }
 
 
@@ -184,6 +186,20 @@ async def update_security_settings(
         if data.geoip_mode not in ("blacklist", "whitelist"):
             raise HTTPException(status_code=400, detail="geoip_mode must be 'blacklist' or 'whitelist'")
         _set_setting(db, "geoip_mode", data.geoip_mode, "GeoIP mode: blacklist or whitelist")
+
+    if data.require_totp is not None:
+        if data.require_totp not in TOTP_POLICY_VALUES:
+            raise HTTPException(status_code=400, detail="require_totp must be 'off', 'admins' or 'all'")
+        # Don't let an admin lock themselves into the enrolment-only state by
+        # accident: they must already use 2FA before making it mandatory.
+        if (data.require_totp != "off" and data.require_totp != get_totp_policy(db)
+                and not current_user.totp_enabled):
+            raise HTTPException(
+                status_code=400,
+                detail="Enable 2FA on your own account before making it mandatory",
+            )
+        _set_setting(db, "require_totp", data.require_totp,
+                     "Mandatory 2FA: off, admins or all")
 
     return {"message": "Security settings updated"}
 

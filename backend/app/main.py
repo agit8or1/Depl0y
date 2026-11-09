@@ -5,10 +5,16 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from app.core.config import settings
 from app.core.database import init_db
+from app.services import tls_trust
+
+# Every requests call made with verify=False (Proxmox, PBS, BMC) checks the
+# server's certificate against the pinned one from here on.
+tls_trust.install()
 from app.api import auth, users, proxmox, vms, isos, cloud_images, updates, dashboard, bug_report, logs, docs, setup, system_updates, ha, system, llm, vm_agent, ssh_host_keys, security, idrac, pbs, audit, notifications
 from app.api import vm_config, node as pve_node, console as pve_console, pbs_mgmt, pve_firewall, cluster as pve_cluster, sdn
 from app.api import vm_groups, vm_import
 from app.api import pve_access
+from app.api import tls_certificates
 from app.api import tasks as task_api
 from app.api import bulk_ops
 from app.api import ha_wizard
@@ -114,6 +120,9 @@ async def count_requests(request: Request, call_next):
 async def audit_middleware(request: Request, call_next):
     import time as _time
     start = _time.time()
+    # Filled in by get_current_user (JWT or X-API-Key) once auth succeeds.
+    auth_ctx: dict = {}
+    request.scope["depl0y_auth"] = auth_ctx
     response = await call_next(request)
     duration_ms = int((_time.time() - start) * 1000)
 
@@ -143,23 +152,11 @@ async def audit_middleware(request: Request, call_next):
     # Try to identify the user from the request
     try:
         from app.core.database import SessionLocal
-        from app.core.security import decode_token
-        from app.models.database import AuditLog, User as UserModel
+        from app.models.database import AuditLog
 
-        user_id = None
-        token = request.headers.get("Authorization", "")
-        if token.startswith("Bearer "):
-            payload = decode_token(token[7:])
-            if payload:
-                username = payload.get("sub")
-                if username:
-                    _db = SessionLocal()
-                    try:
-                        u = _db.query(UserModel).filter(UserModel.username == username).first()
-                        if u:
-                            user_id = u.id
-                    finally:
-                        _db.close()
+        user_id = auth_ctx.get("user_id")
+        auth_method = auth_ctx.get("method")
+        api_key_id = auth_ctx.get("api_key_id")
 
         # Determine action from method + path
         action = "api_call"
@@ -213,7 +210,12 @@ async def audit_middleware(request: Request, call_next):
                     user_id=user_id,
                     action=action,
                     resource_type=resource_type,
-                    details={"path": path, "method": method},
+                    details={
+                        "path": path,
+                        "method": method,
+                        "auth": auth_method,
+                        **({"api_key_id": api_key_id} if api_key_id is not None else {}),
+                    },
                     ip_address=client_ip,
                     user_agent=user_agent[:500] if user_agent else None,
                     http_method=method,
@@ -374,6 +376,7 @@ app.include_router(system.router, prefix=f"{settings.API_V1_PREFIX}/system", tag
 app.include_router(llm.router, prefix=f"{settings.API_V1_PREFIX}/llm", tags=["LLM Deployment"])
 app.include_router(vm_agent.router, prefix=f"{settings.API_V1_PREFIX}/vm-agent", tags=["VM Agent"])
 app.include_router(ssh_host_keys.router, prefix=f"{settings.API_V1_PREFIX}/ssh-host-keys", tags=["SSH Host Keys"])
+app.include_router(tls_certificates.router, prefix=f"{settings.API_V1_PREFIX}/tls-certificates", tags=["TLS Certificates"])
 app.include_router(security.router, prefix=f"{settings.API_V1_PREFIX}/security", tags=["Security"])
 app.include_router(idrac.router, prefix=f"{settings.API_V1_PREFIX}/idrac", tags=["iDRAC/iLO"])
 app.include_router(pbs.router, prefix=f"{settings.API_V1_PREFIX}/pbs", tags=["PBS Servers"])

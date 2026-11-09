@@ -4,7 +4,10 @@
 
 **Please do not report security vulnerabilities through public GitHub issues.**
 
-Instead, please report them via email to **agit8or@agit8or.net** with the subject line "Depl0y Security Vulnerability".
+Instead, report them privately in either of these ways:
+
+- **GitHub:** use [Report a vulnerability](https://github.com/agit8or1/Depl0y/security/advisories/new) on the repository's Security tab. Only the maintainers can see the report.
+- **Email:** **agit8or@agit8or.net** with the subject line "Depl0y Security Vulnerability".
 
 You should receive a response within 48 hours. If for some reason you do not, please follow up via email to ensure we received your original message.
 

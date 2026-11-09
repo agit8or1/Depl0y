@@ -161,7 +161,7 @@ def get_bmc_history(
 
 
 @router.post("/poll")
-def trigger_bmc_poll(current_user: User = Depends(get_current_user)):
+def trigger_bmc_poll(current_user: User = Depends(require_operator)):
     """Trigger an immediate BMC poll in the background and return the current cache."""
     import threading
     from app.services.scheduler import run_bmc_poll

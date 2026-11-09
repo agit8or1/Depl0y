@@ -26,7 +26,53 @@ def get_app_version():
         # Fallback to hardcoded version if database query fails
         pass
 
-    return "2.2.110"
+    return "2.2.111"
+
+
+def _persistent_secret(env_name: str, filename: str, generate) -> str:
+    """Return a secret from the environment, or from a key file that persists.
+
+    Installer deploys set these in /etc/depl0y/config.env. For any other deploy
+    we generate the secret once and keep it in DEPL0Y_KEY_DIR (default
+    /var/lib/depl0y) with mode 0600, so encrypted DB fields stay readable and
+    sessions survive a restart. If the directory can't be written we fall back
+    to a per-process value and log loudly.
+    """
+    value = os.getenv(env_name)
+    if value:
+        return value
+    import logging
+    log = logging.getLogger("depl0y.config")
+    key_dir = os.getenv("DEPL0Y_KEY_DIR", "/var/lib/depl0y")
+    path = os.path.join(key_dir, filename)
+    try:
+        with open(path, "r") as fh:
+            stored = fh.read().strip()
+        if stored:
+            return stored
+    except FileNotFoundError:
+        pass
+    except OSError as exc:
+        log.error("Cannot read %s (%s)", path, exc)
+    new_value = generate()
+    try:
+        os.makedirs(key_dir, mode=0o700, exist_ok=True)
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w") as fh:
+            fh.write(new_value + "\n")
+        log.warning("%s not set; generated one and saved it to %s. Back this file up.", env_name, path)
+        return new_value
+    except FileExistsError:
+        # Another worker created it first; use theirs.
+        with open(path, "r") as fh:
+            return fh.read().strip()
+    except OSError as exc:
+        log.critical(
+            "%s not set and %s is not writable (%s). Using a temporary value: "
+            "data encrypted with it will be unreadable after a restart. "
+            "Set %s in the environment.", env_name, path, exc, env_name,
+        )
+        return new_value
 
 
 class Settings(BaseSettings):
@@ -42,7 +88,9 @@ class Settings(BaseSettings):
 
     # Security
     # SECURITY: Generate strong random SECRET_KEY if not set via environment
-    SECRET_KEY: str = os.getenv("SECRET_KEY") or __import__('secrets').token_urlsafe(64)
+    SECRET_KEY: str = _persistent_secret(
+        "SECRET_KEY", "secret_key", lambda: __import__("secrets").token_urlsafe(64)
+    )
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
@@ -80,9 +128,11 @@ class Settings(BaseSettings):
     PROXMOX_POLL_INTERVAL: int = 60  # seconds
 
     # Encryption key for sensitive data
-    # SECURITY: Auto-generate strong encryption key if not set via environment
-    # This prevents application crashes when encrypting/decrypting credentials
-    ENCRYPTION_KEY: str = os.getenv("ENCRYPTION_KEY") or Fernet.generate_key().decode()
+    # SECURITY: never a fresh key per start — that would make every stored
+    # secret unreadable after a restart. See _persistent_secret.
+    ENCRYPTION_KEY: str = _persistent_secret(
+        "ENCRYPTION_KEY", "encryption.key", lambda: Fernet.generate_key().decode()
+    )
 
     # Cloud-init
     CLOUDINIT_TEMPLATE_PATH: str = os.getenv(

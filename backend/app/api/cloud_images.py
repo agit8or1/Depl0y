@@ -5,7 +5,7 @@ from typing import List
 from pydantic import BaseModel, field_validator
 from app.core.database import get_db
 from app.models import CloudImage
-from app.api.auth import get_current_user
+from app.api.auth import get_current_user, require_admin, require_operator
 import logging
 from app.services.host_ssh import ssh_address
 from app.services.ssh_trust import HostKeyError, openssh_options
@@ -174,7 +174,7 @@ def populate_default_cloud_images(db: Session):
 @router.post("/fetch-latest")
 def fetch_latest_cloud_images(
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user)
+    current_user=Depends(require_operator)
 ):
     """Fetch the latest cloud image information from upstream sources and update existing images"""
     try:
@@ -301,7 +301,7 @@ def download_cloud_image(
     image_id: int,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user)
+    current_user=Depends(require_operator)
 ):
     """Trigger download of a cloud image"""
     try:
@@ -401,7 +401,7 @@ class CloudImageUpdate(BaseModel):
 def create_cloud_image(
     image_data: CloudImageCreate,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user)
+    current_user=Depends(require_operator)
 ):
     """Create a new cloud image entry"""
     try:
@@ -441,7 +441,7 @@ def update_cloud_image(
     image_id: int,
     image_data: CloudImageUpdate,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user)
+    current_user=Depends(require_operator)
 ):
     """Update a cloud image entry"""
     try:
@@ -484,7 +484,7 @@ def update_cloud_image(
 def delete_cloud_image(
     image_id: int,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user)
+    current_user=Depends(require_admin)
 ):
     """Delete a cloud image"""
     try:
@@ -621,7 +621,7 @@ def setup_templates_automated(
     request: SetupTemplatesRequest,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user)
+    current_user=Depends(require_operator)
 ):
     """Automatically setup cloud image templates on a Proxmox node"""
     try:

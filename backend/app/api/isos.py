@@ -537,7 +537,7 @@ async def get_upload_progress(
 @router.post("/{iso_id}/verify")
 async def verify_iso(
     iso_id: int,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_operator),
     db: Session = Depends(get_db),
 ):
     """Verify ISO checksum"""

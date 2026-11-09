@@ -1,5 +1,6 @@
 import axios from 'axios'
 import { useToast } from 'vue-toastification'
+import { getAccessToken, setAccessToken, clearAccessToken } from './tokens'
 
 const toast = useToast()
 
@@ -20,7 +21,7 @@ const api = axios.create({
 // Request interceptor to add auth token
 api.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('access_token')
+    const token = getAccessToken()
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
     }
@@ -42,38 +43,21 @@ api.interceptors.response.use(
     if (originalRequest?._silent) return Promise.reject(error)
 
     // Handle 401 — try token refresh, then redirect to login
-    if (status === 401 && !originalRequest._retry) {
+    const isAuthCall = originalRequest?.url?.includes('/auth/login') ||
+                       originalRequest?.url?.includes('/auth/2fa') ||
+                       originalRequest?.url?.includes('/auth/refresh')
+    if (status === 401 && !originalRequest._retry && !isAuthCall) {
       originalRequest._retry = true
-
       try {
-        const refreshToken = localStorage.getItem('refresh_token')
-        if (refreshToken) {
-          const response = await axios.post('/api/v1/auth/refresh', {
-            refresh_token: refreshToken
-          })
-
-          const { access_token, refresh_token: newRefreshToken } = response.data
-
-          localStorage.setItem('access_token', access_token)
-          localStorage.setItem('refresh_token', newRefreshToken)
-
-          originalRequest.headers.Authorization = `Bearer ${access_token}`
-          return api(originalRequest)
-        }
+        const access = await refreshAccessToken()
+        originalRequest.headers.Authorization = `Bearer ${access}`
+        return api(originalRequest)
       } catch (refreshError) {
-        localStorage.removeItem('access_token')
-        localStorage.removeItem('refresh_token')
+        clearAccessToken()
         toast.error('Session expired — please log in again')
         window.location.href = '/login'
         return Promise.reject(refreshError)
       }
-
-      // No refresh token available — go to login
-      localStorage.removeItem('access_token')
-      localStorage.removeItem('refresh_token')
-      toast.error('Session expired — please log in again')
-      window.location.href = '/login'
-      return Promise.reject(error)
     }
 
     if (import.meta.env.DEV) {
@@ -100,6 +84,15 @@ api.interceptors.response.use(
     // Network error — no response received
     if (!error.response) {
       toast.error('Network error — check your connection')
+      return Promise.reject(error)
+    }
+
+    // 403 because the mandatory-2FA policy applies and the user hasn't enrolled:
+    // send them to Profile (which opens the setup wizard) instead of toasting.
+    if (status === 403 && error.response?.data?.detail === 'totp_enrollment_required') {
+      if (window.location.pathname !== '/profile') {
+        window.location.assign('/profile')
+      }
       return Promise.reject(error)
     }
 
@@ -153,6 +146,23 @@ api.interceptors.response.use(
   }
 )
 
+// Exchange the httpOnly refresh cookie (or, once, a legacy stored refresh
+// token) for a new access token. Concurrent callers share one request, since
+// each refresh rotates the token and a second parallel use would be refused.
+let refreshInFlight = null
+export function refreshAccessToken (legacyRefreshToken = null) {
+  if (!refreshInFlight) {
+    const body = legacyRefreshToken ? { refresh_token: legacyRefreshToken } : {}
+    refreshInFlight = axios.post('/api/v1/auth/refresh', body, { timeout: REQUEST_TIMEOUT_MS })
+      .then((r) => {
+        setAccessToken(r.data.access_token)
+        return r.data.access_token
+      })
+      .finally(() => { refreshInFlight = null })
+  }
+  return refreshInFlight
+}
+
 // Named export for views that use the raw axios instance directly
 export { api as axiosInstance }
 
@@ -161,13 +171,10 @@ export default {
   auth: {
     login: (credentials) => api.post('/auth/login', credentials),
     login2fa: (data) => api.post('/auth/2fa/login', data),
-    logout: (refreshToken) => {
-      const p = refreshToken
-        ? api.post('/auth/logout', { refresh_token: refreshToken }).catch(() => {})
-        : Promise.resolve()
-      localStorage.removeItem('access_token')
-      localStorage.removeItem('refresh_token')
-      return p
+    // The server revokes the session named by the httpOnly cookie and clears it.
+    logout: () => {
+      clearAccessToken()
+      return axios.post('/api/v1/auth/logout', {}, { timeout: REQUEST_TIMEOUT_MS }).catch(() => {})
     },
     getMe: () => api.get('/auth/me'),
     setupTOTP: () => api.post('/auth/totp/setup'),
@@ -444,6 +451,14 @@ export default {
     remove: (id) => api.delete(`/ssh-host-keys/${id}`),
     getPolicy: () => api.get('/ssh-host-keys/policy'),
     setPolicy: (policy) => api.put('/ssh-host-keys/policy', { policy }),
+  },
+  tlsCertificates: {
+    list: () => api.get('/tls-certificates/'),
+    scan: (host, port = 443) => api.post('/tls-certificates/scan', { host, port }),
+    approve: (id) => api.post(`/tls-certificates/${id}/approve`),
+    remove: (id) => api.delete(`/tls-certificates/${id}`),
+    getPolicy: () => api.get('/tls-certificates/policy'),
+    setPolicy: (policy) => api.put('/tls-certificates/policy', { policy }),
   },
   vmAgent: {
     list: () => api.get('/vm-agent/'),

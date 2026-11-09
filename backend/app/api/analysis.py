@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 from typing import Optional
 from app.core.database import get_db
-from app.api.auth import get_current_user
+from app.api.auth import get_current_user, require_operator
 
 router = APIRouter()
 
@@ -94,7 +94,7 @@ def snooze_recommendation(
     rec_id: int,
     hours: Optional[float] = None,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user=Depends(require_operator),
 ):
     """
     Snooze a recommendation for a set number of hours.
@@ -117,7 +117,7 @@ def snooze_recommendation(
 def unsnooze_recommendation(
     rec_id: int,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user=Depends(require_operator),
 ):
     """Clear the snooze on a recommendation so it shows up again."""
     from app.models.analysis_models import Recommendation
@@ -133,7 +133,7 @@ def unsnooze_recommendation(
 def dismiss_recommendation(
     rec_id: int,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user=Depends(require_operator),
 ):
     """Dismiss a single recommendation so it won't appear again until re-triggered."""
     from app.models.analysis_models import Recommendation
@@ -150,7 +150,7 @@ def dismiss_recommendation(
 def dismiss_all(
     category: Optional[str] = None,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user=Depends(require_operator),
 ):
     """Dismiss all (or all in a category) active recommendations."""
     from app.models.analysis_models import Recommendation
@@ -169,7 +169,7 @@ def dismiss_all(
 def trigger_analysis(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user=Depends(require_operator),
 ):
     """Manually trigger an analysis cycle (runs in background)."""
     from app.services.analysis_engine import analysis_engine

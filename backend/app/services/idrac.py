@@ -1,38 +1,19 @@
 """iDRAC / iLO out-of-band management via Redfish API."""
 import ssl
 import requests
-from requests.adapters import HTTPAdapter
+from app.services.tls_trust import LegacyPinningAdapter, install as _install_tls_pinning
 import logging
 from typing import Optional, Dict, Any
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 logger = logging.getLogger(__name__)
 
-# Disable insecure HTTPS warnings for BMC connections (self-signed certs are the norm)
+# BMC certificates are self-signed; they are pinned instead (tls_trust), so
+# urllib3's "unverified HTTPS" warning is noise here.
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+_install_tls_pinning()
 
-
-class _LegacyTLSAdapter(HTTPAdapter):
-    """HTTPAdapter that handles legacy BMC TLS (iDRAC 7/8, iLO 3/4).
-
-    OpenSSL 3.0 requires OP_LEGACY_SERVER_CONNECT for servers that use
-    unsafe legacy renegotiation (common on older iDRAC firmware).
-    """
-    def init_poolmanager(self, *args, **kwargs):
-        ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
-        try:
-            ctx.minimum_version = ssl.TLSVersion.TLSv1
-        except AttributeError:
-            ctx.options &= ~(ssl.OP_NO_TLSv1 | ssl.OP_NO_TLSv1_1)
-        ctx.set_ciphers("DEFAULT:@SECLEVEL=0")
-        # Required for iDRAC 7 (and other older BMCs) on OpenSSL 3.0+
-        if hasattr(ssl, "OP_LEGACY_SERVER_CONNECT"):
-            ctx.options |= ssl.OP_LEGACY_SERVER_CONNECT
-        kwargs["ssl_context"] = ctx
-        super().init_poolmanager(*args, **kwargs)
 
 # ── Dell PCI subsystem device ID → PowerEdge model name ──────────────────
 # Source: PCI IDs database + Dell product datasheets. Used to identify server
@@ -129,15 +110,16 @@ class RedfishClient:
         self.bmc_type = bmc_type if bmc_type in _PATHS else "idrac"
         self.paths = _PATHS[self.bmc_type]
         self.session = requests.Session()
+        # verify=False means "check against the pinned certificate" — see
+        # services/tls_trust.py (BMC certificates are self-signed).
         self.session.verify = False
         self.session.auth = (username, password)
         self.session.headers.update({
             "Content-Type": "application/json",
             "Accept": "application/json",
         })
-        # Mount legacy TLS adapter for all HTTPS — handles iDRAC 7 (TLS 1.0) transparently
-        _adapter = _LegacyTLSAdapter()
-        self.session.mount("https://", _adapter)
+        # Legacy TLS (iDRAC 7, TLS 1.0) plus certificate pinning for all HTTPS.
+        self.session.mount("https://", LegacyPinningAdapter())
 
     def _get(self, path: str) -> Dict[str, Any]:
         url = self.base_url + path

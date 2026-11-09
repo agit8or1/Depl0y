@@ -9,7 +9,7 @@ import re
 from app.core.database import get_db
 from app.core.security import encrypt_data, decrypt_data
 from app.models import ProxmoxHost, ProxmoxNode
-from app.api.auth import get_current_user, require_admin
+from app.api.auth import get_current_user, require_admin, require_operator
 from app.models import User, UserRole
 from app.services.proxmox import ProxmoxService, poll_proxmox_resources
 from app.core.cache import pve_cache
@@ -662,7 +662,7 @@ async def delete_proxmox_host(
 @router.post("/{host_id}/test")
 async def test_proxmox_connection(
     host_id: int,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_operator),
     db: Session = Depends(get_db),
 ):
     """Test connection to Proxmox host"""
@@ -686,7 +686,7 @@ async def test_proxmox_connection(
 async def poll_proxmox_host(
     host_id: int,
     background_tasks: BackgroundTasks,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_operator),
     db: Session = Depends(get_db),
 ):
     """Poll Proxmox host for resources"""
@@ -910,7 +910,7 @@ async def get_host_version(
 @router.post("/{host_id}/reconnect")
 async def reconnect_proxmox_host(
     host_id: int,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_operator),
     db: Session = Depends(get_db),
 ):
     """

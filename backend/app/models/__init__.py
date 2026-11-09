@@ -37,6 +37,7 @@ from .database import (
     BmcReading,
     VmAgentEnrollment,
     SshHostKey,
+    TlsCertificate,
 )
 from .security import (
     FailedLoginAttempt,
@@ -94,4 +95,5 @@ __all__ = [
     "BmcReading",
     "VmAgentEnrollment",
     "SshHostKey",
+    "TlsCertificate",
 ]

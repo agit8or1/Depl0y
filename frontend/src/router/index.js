@@ -555,7 +555,7 @@ router.beforeEach(async (to, from, next) => {
   const authStore = useAuthStore()
 
   // Initialize auth if not already done
-  if (!authStore.isAuthenticated && localStorage.getItem('access_token')) {
+  if (!authStore.isAuthenticated && !authStore.initialized) {
     await authStore.initializeAuth()
   }
 
@@ -563,6 +563,10 @@ router.beforeEach(async (to, from, next) => {
     next('/login')
   } else if (to.path === '/login' && authStore.isAuthenticated) {
     next('/')
+  } else if (authStore.isAuthenticated && authStore.user?.totp_required &&
+             !authStore.user?.totp_enabled && to.path !== '/profile') {
+    // Mandatory 2FA not set up yet — the backend refuses everything else.
+    next('/profile')
   } else if (to.meta.requiresAdmin && !authStore.isAdmin) {
     next('/')
   } else if (to.meta.requiresOperator && !authStore.isOperator) {

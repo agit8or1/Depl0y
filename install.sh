@@ -262,7 +262,22 @@ echo ""
 echo "⬇️  Downloading the latest Depl0y release from GitHub..."
 cd /tmp
 rm -f depl0y-latest.tar.gz depl0y-SHA256SUMS depl0y-SHA256SUMS.minisig
-RELEASE_BASE="https://github.com/agit8or1/Depl0y/releases/latest/download"
+# Pin the release we expect *before* downloading, and require the signature to be
+# for exactly that tag. Without this, any older signed release served in place of
+# "latest" would verify (a downgrade to a version with known bugs).
+# Set DEPL0Y_TAG=vX.Y.Z to install a specific release.
+EXPECTED_TAG="${DEPL0Y_TAG:-}"
+if [ -z "$EXPECTED_TAG" ]; then
+    EXPECTED_TAG=$(curl -fsSL -H "Accept: application/vnd.github+json" \
+        "https://api.github.com/repos/agit8or1/Depl0y/releases/latest" \
+        | sed -n 's/^[[:space:]]*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+fi
+if ! [[ "$EXPECTED_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo "❌ Could not determine the release to install (got '${EXPECTED_TAG}'); set DEPL0Y_TAG=vX.Y.Z." >&2
+    exit 1
+fi
+echo "   Release: $EXPECTED_TAG"
+RELEASE_BASE="https://github.com/agit8or1/Depl0y/releases/download/$EXPECTED_TAG"
 curl -fsSL "$RELEASE_BASE/depl0y.tar.gz" -o depl0y-latest.tar.gz
 curl -fsSL "$RELEASE_BASE/SHA256SUMS" -o depl0y-SHA256SUMS
 if ! curl -fsSL "$RELEASE_BASE/SHA256SUMS.minisig" -o depl0y-SHA256SUMS.minisig; then
@@ -278,6 +293,10 @@ fi
 SIGNED_FOR=$(sed -n 's/^Trusted comment: depl0y v\([0-9]\+\.[0-9]\+\.[0-9]\+\)$/\1/p' <<<"$SIG_OUT")
 if [ -z "$SIGNED_FOR" ]; then
     echo "❌ Unexpected signature comment on SHA256SUMS; aborting." >&2
+    exit 1
+fi
+if [ "v$SIGNED_FOR" != "$EXPECTED_TAG" ]; then
+    echo "❌ The signature is for depl0y v$SIGNED_FOR, but $EXPECTED_TAG was expected; aborting." >&2
     exit 1
 fi
 echo "✓ Signature verified (depl0y v$SIGNED_FOR)"
@@ -300,6 +319,15 @@ if [ "$DEPL0Y_VERSION" != "$SIGNED_FOR" ]; then
     exit 1
 fi
 echo "✓ Depl0y ${DEPL0Y_VERSION}"
+
+# Refuse to downgrade an existing install unless asked to.
+INSTALLED_VERSION=$(grep -o 'return "[0-9]\+\.[0-9]\+\.[0-9]\+"' /opt/depl0y/backend/app/core/config.py 2>/dev/null | grep -o '[0-9.]\+' | head -1 || true)
+if [ -n "$INSTALLED_VERSION" ] && [ "$INSTALLED_VERSION" != "$DEPL0Y_VERSION" ] \
+   && [ "$(printf '%s\n%s\n' "$INSTALLED_VERSION" "$DEPL0Y_VERSION" | sort -V | tail -1)" = "$INSTALLED_VERSION" ] \
+   && [ "${DEPL0Y_ALLOW_DOWNGRADE:-0}" != "1" ]; then
+    echo "❌ v$INSTALLED_VERSION is installed; refusing to downgrade to v$DEPL0Y_VERSION (set DEPL0Y_ALLOW_DOWNGRADE=1 to force)." >&2
+    exit 1
+fi
 
 # Install backend
 echo ""

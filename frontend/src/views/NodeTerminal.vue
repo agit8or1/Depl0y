@@ -107,6 +107,7 @@
 </template>
 
 <script setup>
+import { getAccessToken } from '@/services/tokens'
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute } from 'vue-router'
 
@@ -222,7 +223,7 @@ const wsEndpoint = computed(() => {
 })
 
 function buildWsUrl() {
-  const token = localStorage.getItem('access_token') || ''
+  const token = getAccessToken() || ''
   return `${wsEndpoint.value}?token=${encodeURIComponent(token)}`
 }
 

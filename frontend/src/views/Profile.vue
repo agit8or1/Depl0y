@@ -83,7 +83,7 @@
               <button class="btn btn-outline" @click="startRegenBackupCodes">
                 Regenerate Backup Codes
               </button>
-              <button class="btn btn-danger-outline" @click="startDisable2FA">
+              <button v-if="!user.totp_required" class="btn btn-danger-outline" @click="startDisable2FA">
                 Disable 2FA
               </button>
             </div>
@@ -91,6 +91,9 @@
 
           <!-- 2FA DISABLED state -->
           <div v-else>
+            <div v-if="user && user.totp_required" style="margin-bottom: 1rem; padding: 0.75rem 1rem; border-radius: 6px; border: 1px solid #f59e0b; background: rgba(245, 158, 11, 0.12);">
+              Your administrator requires two-factor authentication. Set it up to continue using Depl0y.
+            </div>
             <p class="text-muted text-sm" style="margin-bottom: 1.25rem;">
               Two-factor authentication is not enabled. Enable it to add an extra layer of security to your account.
             </p>
@@ -1159,7 +1162,13 @@ export default {
     }
 
     await loadProfile()
-    await Promise.all([
+    // Mandatory-2FA policy: the rest of the app is locked until the user enrols,
+    // so skip the other profile data and open the setup wizard straight away.
+    const enrollmentPending = !!(user.value?.totp_required && !user.value?.totp_enabled)
+    if (enrollmentPending) {
+      startSetup2FA()
+    }
+    await Promise.all(enrollmentPending ? [] : [
       loadApiKeys(),
       loadSessions(),
       loadActivity(),

@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
-import api from '@/services/api'
+import api, { refreshAccessToken } from '@/services/api'
+import { setAccessToken, takeLegacyRefreshToken } from '@/services/tokens'
 import { useToast } from 'vue-toastification'
 
 const toast = useToast()
@@ -8,6 +9,7 @@ export const useAuthStore = defineStore('auth', {
   state: () => ({
     user: null,
     isAuthenticated: false,
+    initialized: false,
     loading: false
   }),
 
@@ -30,9 +32,8 @@ export const useAuthStore = defineStore('auth', {
           return { success: false, requires_2fa: true, temp_token: data.temp_token }
         }
 
-        const { access_token, refresh_token } = data
-        localStorage.setItem('access_token', access_token)
-        localStorage.setItem('refresh_token', refresh_token)
+        // The refresh token arrives as an httpOnly cookie; keep only the access token, in memory.
+        setAccessToken(data.access_token)
 
         await this.fetchUser()
         toast.success('Login successful')
@@ -50,10 +51,7 @@ export const useAuthStore = defineStore('auth', {
       this.loading = true
       try {
         const response = await api.auth.login2fa({ temp_token: tempToken, totp_code: totpCode })
-        const { access_token, refresh_token } = response.data
-
-        localStorage.setItem('access_token', access_token)
-        localStorage.setItem('refresh_token', refresh_token)
+        setAccessToken(response.data.access_token)
 
         await this.fetchUser()
         toast.success('Login successful')
@@ -78,18 +76,23 @@ export const useAuthStore = defineStore('auth', {
     },
 
     logout() {
-      const refreshToken = localStorage.getItem('refresh_token')
-      api.auth.logout(refreshToken)
+      api.auth.logout()
       this.user = null
       this.isAuthenticated = false
       toast.info('Logged out successfully')
     },
 
+    // Called once per page load: trade the refresh cookie (or a pre-2.2.111
+    // localStorage token, once) for an access token. No session → stay logged out.
     async initializeAuth() {
-      const token = localStorage.getItem('access_token')
-      if (token) {
-        await this.fetchUser()
+      if (this.initialized) return
+      this.initialized = true
+      try {
+        await refreshAccessToken(takeLegacyRefreshToken())
+      } catch (e) {
+        return
       }
+      await this.fetchUser()
     }
   }
 })

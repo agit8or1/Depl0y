@@ -11,3 +11,5 @@ _TEST_DB_DIR = tempfile.mkdtemp(prefix="depl0y-tests-")
 os.environ["DATABASE_URL"] = f"sqlite:///{_TEST_DB_DIR}/test.db"
 os.environ["LOG_FILE"] = f"{_TEST_DB_DIR}/app.log"
 os.environ["DEPL0Y_SSH_KNOWN_HOSTS"] = f"{_TEST_DB_DIR}/ssh/known_hosts"
+# Keep _persistent_secret's generated key files out of /var/lib/depl0y.
+os.environ["DEPL0Y_KEY_DIR"] = f"{_TEST_DB_DIR}/keys"

@@ -10,6 +10,10 @@ import requests
 from pyVmomi import vim
 from pyVim.connect import SmartConnect, Disconnect
 
+from app.services import tls_trust
+
+tls_trust.install()  # verify=False requests (disk downloads) check the pinned certificate
+
 logger = logging.getLogger(__name__)
 
 
@@ -27,7 +31,9 @@ def _make_ssl_context(verify_ssl: bool) -> ssl.SSLContext:
 
 def _connect(hostname: str, username: str, password: str, port: int, verify_ssl: bool):
     """Return a connected SmartConnect ServiceInstance."""
-    ctx = _make_ssl_context(verify_ssl)
+    # Without CA verification, the ESXi/vCenter certificate is pinned on first
+    # use like every other managed host, so the login isn't sent to an impostor.
+    ctx = _make_ssl_context(True) if verify_ssl else tls_trust.websocket_ssl_context(hostname, port)
     return SmartConnect(
         host=hostname, user=username, pwd=password,
         port=port, sslContext=ctx,

@@ -5,6 +5,14 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.113] - 2026-11-09 🧹 Cleanup
+
+### Removed
+
+- **Serial Terminal tab on the VM console page.** It connected to `/api/v1/pve-console/ws/vm-term/…`, a
+  WebSocket the backend never provided, so it always failed. The VNC Console and SPICE Download tabs are
+  unchanged.
+
 ## [2.2.112] - 2026-11-09 📝 API docs
 
 ### Fixed

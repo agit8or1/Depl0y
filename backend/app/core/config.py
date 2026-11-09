@@ -26,7 +26,7 @@ def get_app_version():
         # Fallback to hardcoded version if database query fails
         pass
 
-    return "2.2.112"
+    return "2.2.113"
 
 
 def _persistent_secret(env_name: str, filename: str, generate) -> str:

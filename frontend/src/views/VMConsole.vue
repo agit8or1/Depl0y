@@ -66,13 +66,6 @@
             </button>
           </template>
 
-          <!-- Serial terminal controls -->
-          <template v-if="activeConsoleTab === 'serial'">
-            <span :class="['conn-badge', serialStatus]">{{ serialStatusLabel }}</span>
-            <button v-if="serialStatus !== 'connected' && serialStatus !== 'connecting'" @click="connectSerial" class="btn-toolbar btn-connect">Connect</button>
-            <button v-if="serialStatus === 'connected' || serialStatus === 'connecting'" @click="disconnectSerial" class="btn-toolbar btn-disconnect">Disconnect</button>
-            <button @click="clearTerminal" class="btn-toolbar" title="Clear terminal output">Clear</button>
-          </template>
         </div>
       </div>
 
@@ -184,79 +177,6 @@
       </div>
     </div>
 
-    <!-- ====================== SERIAL TERMINAL TAB ====================== -->
-    <div v-show="activeConsoleTab === 'serial'" class="serial-area">
-      <!-- Connection overlay -->
-      <div v-if="serialStatus === 'idle' || serialStatus === 'disconnected' || serialStatus === 'error'" class="serial-connect-overlay">
-        <div class="overlay-content">
-          <div class="console-icon" style="color:#58a6ff;">&#9646;&#9646;</div>
-          <h3>{{ vmName || `VM ${vmid}` }} — Serial Terminal</h3>
-          <p class="subtitle">Node: <strong>{{ node }}</strong> &nbsp;|&nbsp; VMID: <strong>{{ vmid }}</strong></p>
-
-          <div v-if="serialStatus === 'error'" class="error-box">
-            <strong>Error:</strong> {{ serialErrorMessage }}
-          </div>
-          <div v-if="serialStatus === 'disconnected'" class="info-box">
-            Terminal disconnected.
-          </div>
-
-          <div class="info-panel" style="text-align:left;margin-bottom:1.25rem;">
-            <div class="info-row">
-              <span class="info-key">Endpoint</span>
-              <code class="info-val">/api/v1/pve-console/ws/vm-term/{{ hostId }}/{{ node }}/{{ vmid }}</code>
-            </div>
-            <div class="info-row">
-              <span class="info-key">Note</span>
-              <span class="info-val muted" style="font-size:0.75rem;">Serial terminal uses the Proxmox LXC/QEMU termproxy. VM must be running and have a serial port configured.</span>
-            </div>
-          </div>
-
-          <div class="overlay-actions">
-            <button @click="connectSerial" class="btn-primary-lg" :disabled="serialStatus === 'connecting'">
-              {{ serialStatus === 'connecting' ? 'Connecting…' : (serialStatus === 'disconnected' ? 'Reconnect' : 'Connect') }}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Connecting indicator -->
-      <div v-if="serialStatus === 'connecting'" class="serial-connecting-bar">
-        <div class="spinner" style="width:1.25rem;height:1.25rem;border-width:2px;"></div>
-        <span>Connecting to terminal…</span>
-      </div>
-
-      <!-- Terminal output -->
-      <div class="terminal-wrap">
-        <textarea
-          ref="terminalRef"
-          class="terminal-output"
-          :value="terminalOutput"
-          readonly
-          spellcheck="false"
-          autocomplete="off"
-          placeholder="Terminal output will appear here when connected…"
-        ></textarea>
-        <!-- Input row -->
-        <div class="terminal-input-row" v-if="serialStatus === 'connected'">
-          <span class="terminal-prompt">$</span>
-          <input
-            ref="terminalInputRef"
-            v-model="terminalInput"
-            class="terminal-input"
-            placeholder="Type command and press Enter…"
-            spellcheck="false"
-            autocomplete="off"
-            @keydown.enter="sendTerminalInput"
-            @keydown.up="navigateHistory(-1)"
-            @keydown.down="navigateHistory(1)"
-            @keydown.ctrl.c.prevent="sendSerialCtrlC"
-          />
-          <button @click="sendTerminalInput" class="btn-terminal-send" :disabled="!terminalInput.trim()">Send</button>
-          <button @click="sendSerialCtrlC" class="btn-key" title="Send Ctrl+C">Ctrl+C</button>
-        </div>
-      </div>
-    </div>
-
     <!-- ====================== SPICE TAB ====================== -->
     <div v-show="activeConsoleTab === 'spice'" class="spice-area">
       <div class="overlay-content" style="max-width:560px;margin:auto;padding-top:3rem;text-align:center;">
@@ -334,7 +254,7 @@
 
 <script setup>
 import { getAccessToken } from '@/services/tokens'
-import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute } from 'vue-router'
 import api from '@/services/api'
 import toast from '@/plugins/toast.js'
@@ -350,7 +270,6 @@ const standaloneMode = computed(() => !!route.query.standalone)
 // ── Console tab switcher ────────────────────────────────────────────────────
 const consoleTabs = [
   { id: 'vnc', label: 'VNC Console' },
-  { id: 'serial', label: 'Serial Terminal' },
   { id: 'spice', label: 'SPICE Download' },
 ]
 const activeConsoleTab = ref('vnc')
@@ -691,153 +610,6 @@ async function downloadSpice() {
   }
 }
 
-// ── Serial Terminal ─────────────────────────────────────────────────────────
-
-const serialStatus = ref('idle')
-const serialErrorMessage = ref('')
-const terminalOutput = ref('')
-const terminalInput = ref('')
-const terminalRef = ref(null)
-const terminalInputRef = ref(null)
-const commandHistory = ref([])
-let historyIndex = -1
-let serialWs = null
-
-const serialStatusLabel = computed(() => {
-  const map = {
-    idle: 'Not connected',
-    connecting: 'Connecting…',
-    connected: 'Connected',
-    disconnected: 'Disconnected',
-    error: 'Error',
-  }
-  return map[serialStatus.value] || serialStatus.value
-})
-
-function buildSerialWsUrl() {
-  const token = getAccessToken() || ''
-  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
-  return `${proto}//${location.host}/api/v1/pve-console/ws/vm-term/${hostId.value}/${node.value}/${vmid.value}?token=${encodeURIComponent(token)}`
-}
-
-function appendToTerminal(text) {
-  terminalOutput.value += text
-  // Scroll to bottom
-  nextTick(() => {
-    if (terminalRef.value) {
-      terminalRef.value.scrollTop = terminalRef.value.scrollHeight
-    }
-  })
-}
-
-function connectSerial() {
-  if (serialWs) {
-    try { serialWs.close() } catch {}
-    serialWs = null
-  }
-
-  serialStatus.value = 'connecting'
-  serialErrorMessage.value = ''
-
-  const wsUrl = buildSerialWsUrl()
-
-  try {
-    serialWs = new WebSocket(wsUrl, ['binary'])
-
-    serialWs.onopen = () => {
-      serialStatus.value = 'connected'
-      appendToTerminal('\r\n--- Terminal connected ---\r\n')
-      nextTick(() => {
-        if (terminalInputRef.value) terminalInputRef.value.focus()
-      })
-    }
-
-    serialWs.onmessage = (event) => {
-      if (event.data instanceof Blob) {
-        const reader = new FileReader()
-        reader.onload = () => {
-          appendToTerminal(reader.result)
-        }
-        reader.readAsText(event.data)
-      } else if (event.data instanceof ArrayBuffer) {
-        const text = new TextDecoder().decode(event.data)
-        appendToTerminal(text)
-      } else {
-        appendToTerminal(String(event.data))
-      }
-    }
-
-    serialWs.onerror = () => {
-      serialStatus.value = 'error'
-      serialErrorMessage.value = 'WebSocket connection error. Ensure the VM is running and has serial console configured.'
-      appendToTerminal('\r\n--- Connection error ---\r\n')
-    }
-
-    serialWs.onclose = (event) => {
-      if (serialStatus.value === 'connected') {
-        appendToTerminal(`\r\n--- Connection closed (code ${event.code}) ---\r\n`)
-      }
-      if (serialStatus.value !== 'error') {
-        serialStatus.value = 'disconnected'
-      }
-      serialWs = null
-    }
-  } catch (e) {
-    serialStatus.value = 'error'
-    serialErrorMessage.value = e.message || 'Failed to open WebSocket'
-  }
-}
-
-function disconnectSerial() {
-  if (serialWs) {
-    try { serialWs.close() } catch {}
-    serialWs = null
-  }
-  serialStatus.value = 'disconnected'
-  appendToTerminal('\r\n--- Disconnected by user ---\r\n')
-}
-
-function sendTerminalInput() {
-  const text = terminalInput.value
-  if (!text || serialStatus.value !== 'connected' || !serialWs) return
-
-  commandHistory.value.unshift(text)
-  if (commandHistory.value.length > 50) commandHistory.value.pop()
-  historyIndex = -1
-
-  // Show echo in terminal
-  appendToTerminal(`${text}\r\n`)
-
-  try {
-    const encoder = new TextEncoder()
-    serialWs.send(encoder.encode(text + '\n'))
-  } catch (e) {
-    appendToTerminal(`\r\n[Error sending: ${e.message}]\r\n`)
-  }
-
-  terminalInput.value = ''
-}
-
-function sendSerialCtrlC() {
-  if (serialStatus.value !== 'connected' || !serialWs) return
-  try {
-    serialWs.send(new Uint8Array([0x03]))
-    appendToTerminal('^C\r\n')
-  } catch (e) {
-    // ignore
-  }
-}
-
-function navigateHistory(direction) {
-  if (commandHistory.value.length === 0) return
-  historyIndex = Math.max(-1, Math.min(commandHistory.value.length - 1, historyIndex + direction))
-  terminalInput.value = historyIndex >= 0 ? commandHistory.value[historyIndex] : ''
-}
-
-function clearTerminal() {
-  terminalOutput.value = ''
-}
-
 // ── Misc ───────────────────────────────────────────────────────────────────
 
 function openNewTab() {
@@ -876,10 +648,6 @@ onBeforeUnmount(() => {
   if (rfb) {
     try { rfb.disconnect() } catch {}
     rfb = null
-  }
-  if (serialWs) {
-    try { serialWs.close() } catch {}
-    serialWs = null
   }
 })
 </script>
@@ -1355,108 +1123,6 @@ onBeforeUnmount(() => {
   animation: spin 0.8s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
-
-/* ---- Serial Terminal area ---- */
-.serial-area {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  position: relative;
-  overflow: hidden;
-  background: #0d1117;
-}
-
-.serial-connect-overlay {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: #0d1117;
-  z-index: 5;
-  overflow-y: auto;
-  padding: 1rem;
-}
-
-.serial-connecting-bar {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.5rem 1rem;
-  background: #161b22;
-  border-bottom: 1px solid #30363d;
-  font-size: 0.82rem;
-  color: #e3b341;
-  flex-shrink: 0;
-}
-
-.terminal-wrap {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.terminal-output {
-  flex: 1;
-  width: 100%;
-  box-sizing: border-box;
-  background: #0d1117;
-  color: #c9d1d9;
-  font-family: 'Fira Mono', 'Cascadia Code', 'Consolas', monospace;
-  font-size: 0.82rem;
-  line-height: 1.5;
-  padding: 0.75rem 1rem;
-  border: none;
-  outline: none;
-  resize: none;
-  overflow-y: auto;
-  white-space: pre-wrap;
-  word-break: break-all;
-}
-
-.terminal-input-row {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 1rem;
-  background: #161b22;
-  border-top: 1px solid #30363d;
-  flex-shrink: 0;
-}
-
-.terminal-prompt {
-  color: #3fb950;
-  font-family: monospace;
-  font-size: 0.9rem;
-  flex-shrink: 0;
-}
-
-.terminal-input {
-  flex: 1;
-  background: transparent;
-  border: none;
-  border-bottom: 1px solid #30363d;
-  color: #f0f6fc;
-  font-family: 'Fira Mono', 'Cascadia Code', 'Consolas', monospace;
-  font-size: 0.82rem;
-  outline: none;
-  padding: 0.2rem 0;
-}
-.terminal-input::placeholder { color: #4d5566; }
-
-.btn-terminal-send {
-  padding: 0.25rem 0.75rem;
-  background: #238636;
-  border: none;
-  border-radius: 4px;
-  color: #fff;
-  font-size: 0.78rem;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-.btn-terminal-send:hover:not(:disabled) { background: #2ea043; }
-.btn-terminal-send:disabled { opacity: 0.4; cursor: not-allowed; }
 
 /* ---- SPICE area ---- */
 .spice-area {

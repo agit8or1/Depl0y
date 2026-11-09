@@ -557,8 +557,8 @@ const SECTIONS = [
 
       <h3>Authentication Methods</h3>
       <div class="tab-list">
-        ${tabItem('JWT Bearer Token', 'Obtained via POST /api/v1/auth/login. Access token valid for 30 minutes. Refresh using /api/v1/auth/refresh. Used by the web UI automatically.')}
-        ${tabItem('API Key', 'Long-lived token generated in your Profile. Prefixed with <code>dpl0y_</code>. Pass as <code>Authorization: Bearer dpl0y_xxxx</code>. Revoke from Profile at any time.')}
+        ${tabItem('JWT Bearer Token', 'Obtained via POST /api/v1/auth/login and sent as <code>Authorization: Bearer &lt;access_token&gt;</code>. Short-lived (the login token lasts the configured session timeout, 8 hours by default); renew it with POST /api/v1/auth/refresh. Used by the web UI automatically.')}
+        ${tabItem('API Key', 'Long-lived key generated in your Profile. Prefixed with <code>dk_</code>. Pass it in the <code>X-API-Key</code> header (not <code>Authorization</code>). Limited to 60 requests per minute per key. Revoke from Profile at any time.')}
       </div>
 
       <h3>Generating an API Key</h3>
@@ -568,11 +568,11 @@ const SECTIONS = [
 
       <h3>Using the API</h3>
       <p>Start a VM:</p>
-      ${codeBlock(`curl -X POST https://depl0y.example.com/api/v1/vms/123/start \\\n  -H "Authorization: Bearer dpl0y_your_key_here"`)}
+      ${codeBlock(`curl -X POST https://depl0y.example.com/api/v1/vms/123/start \\\n  -H "X-API-Key: dk_your_key_here"`)}
       <p>List Proxmox hosts:</p>
-      ${codeBlock(`curl https://depl0y.example.com/api/v1/proxmox/ \\\n  -H "Authorization: Bearer dpl0y_your_key_here"`)}
+      ${codeBlock(`curl https://depl0y.example.com/api/v1/proxmox/ \\\n  -H "X-API-Key: dk_your_key_here"`)}
       <p>Create a snapshot:</p>
-      ${codeBlock(`curl -X POST https://depl0y.example.com/api/v1/pve-vm/1/pve/100/snapshots \\\n  -H "Authorization: Bearer dpl0y_your_key_here" \\\n  -H "Content-Type: application/json" \\\n  -d '{"snapname": "pre-upgrade", "description": "Before package upgrade"}'`)}
+      ${codeBlock(`curl -X POST https://depl0y.example.com/api/v1/pve-vm/1/pve/100/snapshots \\\n  -H "X-API-Key: dk_your_key_here" \\\n  -H "Content-Type: application/json" \\\n  -d '{"snapname": "pre-upgrade", "description": "Before package upgrade"}'`)}
 
       <h3>Rate Limits</h3>
       <p>The API enforces rate limits to protect the backend:</p>
@@ -618,7 +618,7 @@ const SECTIONS = [
       ${step(4, 'Verify', '<p>Enter the 6-digit code to confirm setup. Login now requires both password and TOTP code.</p>')}
 
       <h3>API Keys</h3>
-      <p>Users can generate API keys for programmatic access from their Profile page. Keys are prefixed with <code>dpl0y_</code> and grant the same permissions as the user's role. Keys can be revoked at any time.</p>
+      <p>Users can generate API keys for programmatic access from their Profile page. Keys are prefixed with <code>dk_</code>, are sent in the <code>X-API-Key</code> header, and grant the same permissions as the user's role. Calls made with a key are recorded in the audit log. Keys can be revoked at any time.</p>
 
       ${infoBox('<strong>Admin tip:</strong> Use the <strong>Operator</strong> role for day-to-day users; reserve <strong>Admin</strong> for designated administrators only. Enable TOTP 2FA on all admin accounts.')}
     `

@@ -30,7 +30,7 @@
       <span>
         <strong>Authentication:</strong>
         Your current session JWT is attached automatically to all requests.
-        For scripts, use an API key (<code>Authorization: Bearer dpl0y_...</code>) — create one in
+        For scripts, use an API key (<code>X-API-Key: dk_...</code>) — create one in
         <router-link to="/profile">Profile &rarr; API Keys</router-link>.
       </span>
       <span v-if="tokenPresent" class="token-badge token-ok">Token active</span>
@@ -105,7 +105,7 @@
           <span>
             <strong>Authentication required.</strong>
             Your JWT token is attached automatically. For external scripts, pass
-            <code>Authorization: Bearer &lt;token_or_api_key&gt;</code>.
+            <code>X-API-Key: dk_...</code> (API key) or <code>Authorization: Bearer &lt;access_token&gt;</code>.
           </span>
         </div>
 
@@ -246,7 +246,7 @@ const HARDCODED_ENDPOINTS = [
   { method: 'POST',   path: '/api/v1/auth/totp/verify',        tag: 'Authentication', summary: 'Verify and enable TOTP 2FA' },
   { method: 'POST',   path: '/api/v1/auth/totp/disable',       tag: 'Authentication', summary: 'Disable TOTP 2FA' },
   { method: 'GET',    path: '/api/v1/auth/api-keys',           tag: 'Authentication', summary: 'List API keys' },
-  { method: 'POST',   path: '/api/v1/auth/api-keys',           tag: 'Authentication', summary: 'Create API key', description: 'Creates a long-lived API key prefixed with dpl0y_. The key value is shown only once.' },
+  { method: 'POST',   path: '/api/v1/auth/api-keys',           tag: 'Authentication', summary: 'Create API key', description: 'Creates a long-lived API key prefixed with dk_, used in the X-API-Key header. The key value is shown only once.' },
   { method: 'DELETE', path: '/api/v1/auth/api-keys/{key_id}',  tag: 'Authentication', summary: 'Revoke API key' },
 
   // Users

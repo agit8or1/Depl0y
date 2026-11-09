@@ -5,6 +5,15 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.112] - 2026-11-09 📝 API docs
+
+### Fixed
+
+- **API key instructions.** The Documentation page and the API Explorer said to send API keys as
+  `Authorization: Bearer dpl0y_…`. Keys actually start with `dk_` and go in the `X-API-Key` header,
+  which the Profile page already showed correctly. The docs also gave a fixed 30-minute access-token
+  lifetime; the login token actually lasts the configured session timeout (8 hours by default).
+
 ## [2.2.111] - 2026-11-09 🔐 Security fixes
 
 Thanks to the mspzero.com security review (2026-11-09) for reporting these.

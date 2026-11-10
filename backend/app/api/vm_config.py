@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from typing import Optional, List, Any, Dict
 from app.core.database import get_db
 from app.models import ProxmoxHost
-from app.api.auth import ensure_host_access, get_current_user, require_operator
+from app.api.auth import ensure_host_access, ensure_hosts_access, get_current_user, require_operator, scope_to_hosts
 from app.services.proxmox import ProxmoxService
 from app.services.task_tracker import task_tracker
 from app.core.cache import pve_cache
@@ -1116,7 +1116,9 @@ def search_vms(
     if host_id is not None:
         hosts = db.query(ProxmoxHost).filter(ProxmoxHost.id == host_id, ProxmoxHost.is_active == True).all()
     else:
-        hosts = db.query(ProxmoxHost).filter(ProxmoxHost.is_active == True).all()
+        hosts = scope_to_hosts(
+            db.query(ProxmoxHost).filter(ProxmoxHost.is_active == True), ProxmoxHost.id, current_user, db
+        ).all()
 
     tag_filter = [t.strip().lower() for t in tags.split(",") if t.strip()] if tags else []
     q_lower = q.strip().lower() if q else None
@@ -1223,7 +1225,9 @@ def list_all_tags_cross_host(
     if host_id is not None:
         hosts = db.query(ProxmoxHost).filter(ProxmoxHost.id == host_id, ProxmoxHost.is_active == True).all()
     else:
-        hosts = db.query(ProxmoxHost).filter(ProxmoxHost.is_active == True).all()
+        hosts = scope_to_hosts(
+            db.query(ProxmoxHost).filter(ProxmoxHost.is_active == True), ProxmoxHost.id, current_user, db
+        ).all()
 
     tag_counts: Dict[str, int] = {}
     for host in hosts:
@@ -1262,6 +1266,7 @@ def bulk_tag_vms(
 
     if not tags_add and not tags_remove:
         raise HTTPException(status_code=400, detail="At least one tag to add or remove is required")
+    ensure_hosts_access(current_user, [e.get("host_id") for e in req.vmids if e.get("host_id") is not None], db)
 
     results: List[Dict[str, Any]] = []
 

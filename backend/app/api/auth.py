@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, EmailStr
-from typing import Optional, List
+from typing import List, Optional, Set
 from datetime import datetime, timedelta
 import ipaddress
 import qrcode
@@ -314,6 +314,7 @@ async def get_current_user(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="totp_enrollment_required",
             )
+        _enforce_path_host_scope(request, user, db)
         return user
 
     # --- Fall back to JWT Bearer token ---
@@ -336,7 +337,52 @@ async def get_current_user(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="totp_enrollment_required",
             )
+    _enforce_path_host_scope(request, user, db)
     return user
+
+
+def _enforce_path_host_scope(request: Request, user: User, db: Session) -> None:
+    """Per-host access for every route, checked once here.
+
+    Path or query parameters with these names always identify a Proxmox
+    host, directly or through a row that belongs to one (verified across all
+    routers):
+      {host_id} -> ProxmoxHost.id
+      {vm_id}   -> VirtualMachine.id   (its proxmox_host_id)
+      {node_id} -> ProxmoxNode.id      (its host_id)
+    A missing VM/node row is left to the route (404). Routes that name a host
+    some other way (query, body, other ids) call ensure_host_access or
+    scope_to_hosts themselves.
+    """
+    if user.role == UserRole.ADMIN:
+        return
+    path = request.path_params or {}
+    query = request.query_params
+
+    def _int(name):
+        raw = path.get(name, query.get(name))
+        if raw in (None, ""):
+            return None
+        try:
+            return int(raw)
+        except (TypeError, ValueError):
+            return None  # not an int: the route's own validation answers 422
+
+    host_id = _int("host_id")
+    if host_id is not None:
+        ensure_host_access(user, host_id, db)
+    vm_id = _int("vm_id")
+    if vm_id is not None:
+        from app.models.database import VirtualMachine
+        row = db.query(VirtualMachine.proxmox_host_id).filter(VirtualMachine.id == vm_id).first()
+        if row is not None:
+            ensure_host_access(user, row[0], db)
+    node_id = _int("node_id")
+    if node_id is not None:
+        from app.models.database import ProxmoxNode
+        row = db.query(ProxmoxNode.host_id).filter(ProxmoxNode.id == node_id).first()
+        if row is not None:
+            ensure_host_access(user, row[0], db)
 
 
 # Paths a user may call while the mandatory-2FA policy is pending for them.
@@ -382,10 +428,59 @@ def user_has_host_access(user: User, host_id: int, db: Session) -> bool:
     return bool(perm and (perm.can_view or perm.can_manage or perm.can_admin))
 
 
-def ensure_host_access(user: User, host_id: int, db: Session) -> None:
-    if not user_has_host_access(user, host_id, db):
+def ensure_host_access(user: User, host_id: Optional[int], db: Session) -> None:
+    """Raise 403 unless *user* may reach Proxmox host *host_id*. An unknown
+    host (None) is refused for everyone but admins."""
+    if user.role == UserRole.ADMIN:
+        return
+    if host_id is None or not user_has_host_access(user, host_id, db):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
                             detail="No access to this Proxmox host")
+
+
+def ensure_hosts_access(user: User, host_ids, db: Session) -> None:
+    """ensure_host_access for every id in a bulk request: one inaccessible
+    host refuses the whole request, before anything is changed."""
+    allowed = accessible_host_ids(user, db)
+    if allowed is None:
+        return
+    for raw in host_ids:
+        try:
+            ok = int(raw) in allowed
+        except (TypeError, ValueError):
+            ok = False
+        if not ok:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                                detail="No access to this Proxmox host")
+
+
+def accessible_host_ids(user: User, db: Session) -> Optional[Set[int]]:
+    """Host ids *user* may see, or None for "all hosts" (admins)."""
+    if user.role == UserRole.ADMIN:
+        return None
+    from app.models.database import UserHostPermission
+    rows = db.query(UserHostPermission.host_id).filter(
+        UserHostPermission.user_id == user.id,
+        (UserHostPermission.can_view == True) | (UserHostPermission.can_manage == True)  # noqa: E712
+        | (UserHostPermission.can_admin == True),  # noqa: E712
+    ).all()
+    return {r[0] for r in rows}
+
+
+def scope_to_hosts(query, host_column, user: User, db: Session):
+    """Restrict a SQLAlchemy query to rows on hosts *user* may see."""
+    ids = accessible_host_ids(user, db)
+    return query if ids is None else query.filter(host_column.in_(ids))
+
+
+def host_visible(host_id, allowed: Optional[Set[int]]) -> bool:
+    """For filtering already-built lists: allowed is accessible_host_ids()."""
+    if allowed is None:
+        return True
+    try:
+        return int(host_id) in allowed
+    except (TypeError, ValueError):
+        return False
 
 
 def user_from_access_token(token: Optional[str], db: Session) -> Optional[User]:

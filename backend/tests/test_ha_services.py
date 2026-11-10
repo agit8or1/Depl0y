@@ -5,6 +5,7 @@ import pytest
 from fastapi import HTTPException
 
 from app.api import node
+from app.models import UserRole
 from tests.test_ha_failover import FakePVE
 
 
@@ -23,7 +24,7 @@ def cluster(states, quorate=1, clustered=True, offline=()):
 
 
 RUNNING = {"pve-ha-crm": "running", "pve-ha-lrm": "running"}
-ADMIN = types.SimpleNamespace(id=1)
+ADMIN = types.SimpleNamespace(id=1, role=UserRole.ADMIN)
 
 
 @pytest.fixture

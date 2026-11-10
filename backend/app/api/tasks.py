@@ -5,7 +5,7 @@ from typing import Optional
 
 from app.core.database import get_db
 from app.models import ProxmoxHost
-from app.api.auth import get_current_user, require_operator
+from app.api.auth import accessible_host_ids, get_current_user, host_visible, scope_to_hosts, require_operator
 from app.services.proxmox import ProxmoxService
 from app.services.task_tracker import task_tracker
 import logging
@@ -70,7 +70,9 @@ def get_running_tasks(db: Session = Depends(get_db), current_user=Depends(get_cu
     node_targets: list[tuple[int, str]] = []  # (host_id, node_name)
     host_index: dict[int, ProxmoxHost] = {}
     try:
-        hosts = db.query(ProxmoxHost).filter(ProxmoxHost.is_active == True).all()
+        hosts = scope_to_hosts(
+            db.query(ProxmoxHost).filter(ProxmoxHost.is_active == True), ProxmoxHost.id, current_user, db
+        ).all()
         for host in hosts:
             host_index[host.id] = host
             db_nodes = (
@@ -209,6 +211,16 @@ def get_running_tasks(db: Session = Depends(get_db), current_user=Depends(get_cu
         logger.debug("get_running_tasks pbs poll outer error: %s", exc)
 
     result = tracked + pve_running + pbs_running
+    allowed = accessible_host_ids(current_user, db)
+    if allowed is not None:
+        # Per-host access: PVE tasks only for the caller's hosts; Depl0y-tracked
+        # tasks without a host only when the caller started them.
+        result = [
+            t for t in result
+            if t.get("source") == "pbs"
+            or (t.get("host_id") is not None and host_visible(t["host_id"], allowed))
+            or (t.get("host_id") is None and t.get("user_id") == current_user.id)
+        ]
     for t in result:
         if t.get("source") == "proxmox":
             # External PVE task — fetch+parse log with short TTL cache

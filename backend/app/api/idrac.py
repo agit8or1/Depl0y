@@ -7,7 +7,9 @@ from datetime import datetime
 
 from app.core.database import get_db
 from app.core.security import encrypt_data, decrypt_data
-from app.api.auth import get_current_user, require_admin, require_operator
+from app.api.auth import (
+    accessible_host_ids, ensure_host_access, get_current_user, require_admin, require_operator,
+)
 from app.models.database import ProxmoxHost, StandaloneBMC, User, ProxmoxNode, SystemSettings
 from app.services.idrac import RedfishClient
 import logging
@@ -104,10 +106,44 @@ def _build_client(host: ProxmoxHost) -> RedfishClient:
 # BMC status cache endpoint
 # ─────────────────────────────────────────────────────────────
 
+_UNSCOPED = object()
+
+
+def _bmc_cache_for_user(user: User, db: Session) -> dict:
+    """BMCs of Proxmox hosts/nodes follow per-host access. PBS and standalone
+    BMCs are not tied to a Proxmox host and stay visible."""
+    allowed = accessible_host_ids(user, db)
+    if allowed is None:
+        return bmc_status_cache
+    node_host = {nid: hid for nid, hid in db.query(ProxmoxNode.id, ProxmoxNode.host_id)}
+    out = {}
+    for key, entry in list(bmc_status_cache.items()):
+        owner = _bmc_key_host(key, node_host)
+        if owner is _UNSCOPED or owner in allowed:
+            out[key] = entry
+    return out
+
+
+def _bmc_key_host(key: str, node_host: dict):
+    """Proxmox host id a BMC cache key belongs to, or _UNSCOPED (PBS/standalone)."""
+    kind, _, raw = str(key).partition(":")
+    try:
+        obj_id = int(raw)
+    except ValueError:
+        return None
+    if kind == "pve":
+        return obj_id
+    if kind == "pve_node":
+        return node_host.get(obj_id)
+    if kind in ("pbs", "standalone"):
+        return _UNSCOPED
+    return None
+
+
 @router.get("/status")
-def get_bmc_status(current_user: User = Depends(get_current_user)):
+def get_bmc_status(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Return cached BMC status for all servers (updated by scheduler)."""
-    return bmc_status_cache
+    return _bmc_cache_for_user(current_user, db)
 
 
 @router.get("/history/{cache_key:path}")
@@ -122,6 +158,11 @@ def get_bmc_history(
     from datetime import timedelta
     from app.models.database import BmcReading
 
+    if accessible_host_ids(current_user, db) is not None:
+        node_host = {nid: hid for nid, hid in db.query(ProxmoxNode.id, ProxmoxNode.host_id)}
+        owner = _bmc_key_host(cache_key, node_host)
+        if owner is not _UNSCOPED:
+            ensure_host_access(current_user, owner, db)
     days = max(1, min(days, 120))
     since = datetime.utcnow() - timedelta(days=days)
     rows = (
@@ -161,12 +202,12 @@ def get_bmc_history(
 
 
 @router.post("/poll")
-def trigger_bmc_poll(current_user: User = Depends(require_operator)):
+def trigger_bmc_poll(current_user: User = Depends(require_operator), db: Session = Depends(get_db)):
     """Trigger an immediate BMC poll in the background and return the current cache."""
     import threading
     from app.services.scheduler import run_bmc_poll
     threading.Thread(target=run_bmc_poll, daemon=True).start()
-    return bmc_status_cache
+    return _bmc_cache_for_user(current_user, db)
 
 
 @router.put("/model-override/{cache_key:path}")
@@ -564,7 +605,11 @@ def list_nodes_with_idrac(
     db: Session = Depends(get_db),
 ):
     """Return all ProxmoxNodes so users can configure iDRAC/iLO for each."""
-    nodes = db.query(ProxmoxNode).order_by(ProxmoxNode.node_name).all()
+    allowed = accessible_host_ids(current_user, db)
+    q = db.query(ProxmoxNode)
+    if allowed is not None:
+        q = q.filter(ProxmoxNode.host_id.in_(allowed))
+    nodes = q.order_by(ProxmoxNode.node_name).all()
     return [
         {
             "id": n.id,

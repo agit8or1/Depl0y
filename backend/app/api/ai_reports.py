@@ -13,7 +13,7 @@ from fastapi.responses import PlainTextResponse, HTMLResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.api.auth import get_current_user, require_admin, require_operator
+from app.api.auth import accessible_host_ids, get_current_user, require_admin, require_operator
 from app.core.database import get_db
 from app.core.security import encrypt_data
 from app.models.database import (
@@ -375,12 +375,42 @@ def update_power_settings(
 
 # ── Reports ─────────────────────────────────────────────────────────────────
 
+def _scope_hosts(db: Session, scope_type: str, scope_ref: Optional[str]) -> Optional[set]:
+    """Proxmox host ids a report scope covers, or None for "every host"."""
+    from app.models.database import ProxmoxNode
+    if scope_type == "cluster" and scope_ref:
+        try:
+            return {int(scope_ref)}
+        except ValueError:
+            return set()
+    if scope_type == "node" and scope_ref:
+        # The collector matches the node name on every host.
+        return {hid for (hid,) in db.query(ProxmoxNode.host_id).filter(ProxmoxNode.node_name == scope_ref)}
+    return None
+
+
+def _scope_allowed(user: User, db: Session, scope_type: str, scope_ref: Optional[str]) -> bool:
+    """Per-host access: a non-admin may only see or create reports whose
+    scope lies entirely on hosts they can access (no global reports)."""
+    allowed = accessible_host_ids(user, db)
+    if allowed is None:
+        return True
+    covered = _scope_hosts(db, scope_type, scope_ref)
+    return covered is not None and bool(covered) and covered <= allowed
+
+
+def _ensure_report_visible(user: User, db: Session, row) -> None:
+    if row is not None and not _scope_allowed(user, db, row.scope_type, row.scope_ref):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="No access to this Proxmox host")
+
 @router.post("/reports", response_model=ReportSummary, status_code=status.HTTP_201_CREATED)
 def create_report(
     payload: ReportCreateRequest,
     db: Session = Depends(get_db),
     user: User = Depends(require_operator),
 ):
+    if not _scope_allowed(user, db, payload.scope_type, payload.scope_ref):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="No access to this Proxmox host")
     if not _rate_ok(user.id):
         raise HTTPException(429, detail=f"Rate limit: max {_RATE_MAX} reports per minute per user")
     try:
@@ -416,7 +446,12 @@ def list_reports(
         q = q.filter(ReportRun.scope_type == scope_type)
     if status_filter:
         q = q.filter(ReportRun.status == status_filter)
-    rows = q.order_by(ReportRun.created_at.desc()).offset(offset).limit(limit).all()
+    q = q.order_by(ReportRun.created_at.desc())
+    if accessible_host_ids(_user, db) is None:
+        rows = q.offset(offset).limit(limit).all()
+    else:
+        rows = [r for r in q.all() if _scope_allowed(_user, db, r.scope_type, r.scope_ref)]
+        rows = rows[offset:offset + limit]
     return [ReportSummary.model_validate(r) for r in rows]
 
 
@@ -427,6 +462,7 @@ def get_report(
     _user: User = Depends(get_current_user),
 ):
     row = db.query(ReportRun).filter(ReportRun.id == report_id).first()
+    _ensure_report_visible(_user, db, row)
     if not row:
         raise HTTPException(404, detail="Report not found")
     return _run_to_detail(row)
@@ -438,6 +474,7 @@ def regenerate_report(
     db: Session = Depends(get_db),
     user: User = Depends(require_operator),
 ):
+    _ensure_report_visible(user, db, db.query(ReportRun).filter(ReportRun.id == report_id).first())
     if not _rate_ok(user.id):
         raise HTTPException(429, detail=f"Rate limit: max {_RATE_MAX} reports per minute per user")
     new_run = report_service.regenerate(db, report_id, user, run_async=True)
@@ -453,6 +490,7 @@ def delete_report(
     user: User = Depends(require_operator),
 ):
     row = db.query(ReportRun).filter(ReportRun.id == report_id).first()
+    _ensure_report_visible(user, db, row)
     if not row:
         raise HTTPException(404, detail="Report not found")
     _audit(db, user.id, "ai_report.delete", report_id, {"title": row.title, "type": row.report_type})
@@ -468,6 +506,7 @@ def export_markdown(
     _user: User = Depends(get_current_user),
 ):
     row = db.query(ReportRun).filter(ReportRun.id == report_id).first()
+    _ensure_report_visible(_user, db, row)
     if not row or not row.rendered_markdown:
         raise HTTPException(404, detail="Report not available")
     return PlainTextResponse(
@@ -484,6 +523,7 @@ def export_html(
     _user: User = Depends(get_current_user),
 ):
     row = db.query(ReportRun).filter(ReportRun.id == report_id).first()
+    _ensure_report_visible(_user, db, row)
     if not row or not row.rendered_html:
         raise HTTPException(404, detail="Report not available")
     return HTMLResponse(
@@ -500,6 +540,7 @@ def update_notes(
     user: User = Depends(require_operator),
 ):
     row = db.query(ReportRun).filter(ReportRun.id == report_id).first()
+    _ensure_report_visible(user, db, row)
     if not row:
         raise HTTPException(404, detail="Report not found")
     row.manual_notes = payload.manual_notes

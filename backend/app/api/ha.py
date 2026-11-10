@@ -9,7 +9,7 @@ import logging
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from app.api.auth import get_current_user
+from app.api.auth import get_current_user, scope_to_hosts
 from app.core.database import get_db
 from app.models import ProxmoxHost
 from app.services.proxmox import ProxmoxService
@@ -59,7 +59,8 @@ def _host_status(host: ProxmoxHost) -> dict:
 @router.get("/status")
 def check_ha_status(current_user=Depends(get_current_user), db: Session = Depends(get_db)):
     """HA state of every active Proxmox endpoint, plus totals (read through the API)."""
-    hosts = db.query(ProxmoxHost).filter(ProxmoxHost.is_active == True).order_by(ProxmoxHost.id).all()
+    hosts = (scope_to_hosts(db.query(ProxmoxHost), ProxmoxHost.id, current_user, db)
+             .filter(ProxmoxHost.is_active == True).order_by(ProxmoxHost.id).all())
     per_host = [_host_status(h) for h in hosts]
     enabled = any(h["enabled"] for h in per_host)
     protected = sum(h["protected_vms"] for h in per_host)

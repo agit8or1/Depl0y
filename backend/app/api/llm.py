@@ -7,7 +7,7 @@ from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException, st
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.api.auth import get_current_user, require_operator
+from app.api.auth import ensure_host_access, get_current_user, require_operator, scope_to_hosts
 from app.core.database import get_db
 from app.core.security import encrypt_data
 from app.models import (
@@ -663,6 +663,10 @@ async def deploy_llm(
     db: Session = Depends(get_db),
 ):
     """Deploy a new LLM inference VM using the wizard configuration."""
+    ensure_host_access(current_user, deploy_data.proxmox_host_id, db)
+    _node = db.query(ProxmoxNode).filter(ProxmoxNode.id == deploy_data.node_id).first()
+    if _node is None or _node.host_id != deploy_data.proxmox_host_id:
+        raise HTTPException(status_code=400, detail="node_id does not belong to proxmox_host_id")
 
     # --- Validate selections against catalog ---
     valid_engines = [e["id"] for e in LLM_CATALOG["engines"]]
@@ -890,7 +894,8 @@ def list_llm_deployments(
 ):
     """List all LLM deployments."""
     deps = (
-        db.query(LLMDeployment)
+        scope_to_hosts(db.query(LLMDeployment).join(VirtualMachine, VirtualMachine.id == LLMDeployment.vm_id),
+                       VirtualMachine.proxmox_host_id, current_user, db)
         .order_by(LLMDeployment.created_at.desc())
         .all()
     )
@@ -932,6 +937,7 @@ def get_llm_deployment(
         raise HTTPException(status_code=404, detail="LLM deployment not found")
 
     vm = db.query(VirtualMachine).filter(VirtualMachine.id == dep.vm_id).first()
+    ensure_host_access(current_user, vm.proxmox_host_id if vm else None, db)
     ip = vm.ip_address if vm else None
     port = _access_port(dep.engine, dep.ui_type)
     access_url = f"http://{ip}:{port}" if ip else None
@@ -1208,6 +1214,7 @@ async def apply_ai_tune_action(
     _cleanup_apply_jobs()
     job_id = str(_uuid_mod.uuid4())
     _apply_jobs[job_id] = {
+        "vm_id": vm_id,
         "status": "running",
         "output": "",
         "error": None,
@@ -1231,7 +1238,7 @@ async def get_apply_job_status(
 ):
     """Poll for apply-action progress."""
     job = _apply_jobs.get(job_id)
-    if not job:
+    if not job or job.get("vm_id") != vm_id:
         raise HTTPException(status_code=404, detail="Job not found or expired")
     return job
 
@@ -1438,6 +1445,7 @@ async def pull_ollama_model(
     _cleanup_apply_jobs()
     job_id = str(_uuid_mod.uuid4())
     _apply_jobs[job_id] = {
+        "vm_id": vm_id,
         "status": "running",
         "output": "",
         "error": None,
@@ -1461,7 +1469,7 @@ async def get_pull_job_status(
 ):
     """Poll for model pull progress."""
     job = _apply_jobs.get(job_id)
-    if not job:
+    if not job or job.get("vm_id") != vm_id:
         raise HTTPException(status_code=404, detail="Job not found or expired")
     return job
 
@@ -1766,6 +1774,7 @@ SVC_EOF""",
     _cleanup_apply_jobs()
     job_id = str(_uuid_mod.uuid4())
     _apply_jobs[job_id] = {
+        "vm_id": vm_id,
         "status": "running",
         "output": "",
         "error": None,
@@ -1966,6 +1975,7 @@ async def install_rag(
     _cleanup_apply_jobs()
     job_id = str(_uuid_mod.uuid4())
     _apply_jobs[job_id] = {
+        "vm_id": vm_id,
         "status": "running",
         "output": "",
         "error": None,
@@ -2218,8 +2228,10 @@ def list_llm_instances(
     combined with LLMDeployment records in our DB."""
     result = []
 
-    # Pull from all registered Proxmox hosts
-    hosts = db.query(ProxmoxHost).filter(ProxmoxHost.is_active == True).all()
+    # Pull from the Proxmox hosts the caller may access
+    hosts = scope_to_hosts(
+        db.query(ProxmoxHost).filter(ProxmoxHost.is_active == True), ProxmoxHost.id, current_user, db
+    ).all()
     for host in hosts:
         try:
             from app.services.proxmox import ProxmoxService
@@ -2275,7 +2287,11 @@ def list_llm_instances(
             logger.warning(f"Failed to query host {host.name} for LLM instances: {e}")
 
     # Also include any DB deployments not yet in Proxmox (e.g. still creating)
-    deps = db.query(LLMDeployment).order_by(LLMDeployment.created_at.desc()).all()
+    deps = (
+        scope_to_hosts(db.query(LLMDeployment).join(VirtualMachine, VirtualMachine.id == LLMDeployment.vm_id),
+                       VirtualMachine.proxmox_host_id, current_user, db)
+        .order_by(LLMDeployment.created_at.desc()).all()
+    )
     existing_vm_ids = {r["vm_id"] for r in result if r["vm_id"]}
     for dep in deps:
         if dep.vm_id in existing_vm_ids:

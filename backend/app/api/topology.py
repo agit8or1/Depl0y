@@ -19,7 +19,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
-from app.api.auth import get_current_user
+from app.api.auth import accessible_host_ids, get_current_user, scope_to_hosts
 from app.core.database import get_db
 from app.models.database import (
     PBSServer,
@@ -566,6 +566,10 @@ async def get_topology_graph(
         f"|bmc={include_bmc}|pbs={include_pbs}|lxc={include_lxc}|sync={include_sync}"
         f"|view={vm}"
     )
+    # The graph is cached per host scope, so a cached graph is never served
+    # to a user who may see fewer hosts than the one it was built for.
+    allowed = accessible_host_ids(current_user, db)
+    cache_key += "|scope=" + ("all" if allowed is None else ",".join(map(str, sorted(allowed))))
     if not refresh:
         cached = _cache_get(cache_key)
         if cached is not None:
@@ -583,7 +587,7 @@ async def get_topology_graph(
 
     # --- Proxmox hosts ---
     hosts = (
-        db.query(ProxmoxHost)
+        scope_to_hosts(db.query(ProxmoxHost), ProxmoxHost.id, current_user, db)
         .filter(ProxmoxHost.is_active == True)  # noqa: E712
         .all()
     )
@@ -632,7 +636,7 @@ async def get_topology_graph(
     # on a ProxmoxNode row.
     if include_bmc:
         pve_nodes = (
-            db.query(ProxmoxNode)
+            scope_to_hosts(db.query(ProxmoxNode), ProxmoxNode.host_id, current_user, db)
             .filter(ProxmoxNode.idrac_hostname != None)  # noqa: E711
             .all()
         )

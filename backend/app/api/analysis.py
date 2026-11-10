@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 from typing import Optional
 from app.core.database import get_db
-from app.api.auth import get_current_user, require_operator
+from app.api.auth import ensure_host_access, get_current_user, require_operator, scope_to_hosts
 
 router = APIRouter()
 
@@ -47,7 +47,7 @@ def get_recommendations(
     """Return all active (non-dismissed) recommendations, optionally filtered."""
     from app.models.analysis_models import Recommendation
     from sqlalchemy import or_
-    q = db.query(Recommendation)
+    q = scope_to_hosts(db.query(Recommendation), Recommendation.host_id, current_user, db)
     if not include_dismissed:
         q = q.filter(Recommendation.dismissed == False)
     # Exclude currently snoozed recommendations (unless including dismissed which shows all history)
@@ -75,7 +75,8 @@ def get_summary(
     from sqlalchemy import func
 
     rows = (
-        db.query(Recommendation.category, Recommendation.severity, func.count())
+        scope_to_hosts(db.query(Recommendation.category, Recommendation.severity, func.count()),
+                       Recommendation.host_id, current_user, db)
         .filter(Recommendation.dismissed == False)
         .group_by(Recommendation.category, Recommendation.severity)
         .all()
@@ -104,6 +105,7 @@ def snooze_recommendation(
     rec = db.query(Recommendation).filter(Recommendation.id == rec_id).first()
     if not rec:
         raise HTTPException(status_code=404, detail="Recommendation not found")
+    ensure_host_access(current_user, rec.host_id, db)
     if hours:
         rec.snoozed_until = datetime.utcnow() + timedelta(hours=hours)
     else:
@@ -124,6 +126,7 @@ def unsnooze_recommendation(
     rec = db.query(Recommendation).filter(Recommendation.id == rec_id).first()
     if not rec:
         raise HTTPException(status_code=404, detail="Recommendation not found")
+    ensure_host_access(current_user, rec.host_id, db)
     rec.snoozed_until = None
     db.commit()
     return {"ok": True}
@@ -140,6 +143,7 @@ def dismiss_recommendation(
     rec = db.query(Recommendation).filter(Recommendation.id == rec_id).first()
     if not rec:
         raise HTTPException(status_code=404, detail="Recommendation not found")
+    ensure_host_access(current_user, rec.host_id, db)
     rec.dismissed = True
     rec.dismissed_at = datetime.utcnow()
     db.commit()
@@ -154,7 +158,8 @@ def dismiss_all(
 ):
     """Dismiss all (or all in a category) active recommendations."""
     from app.models.analysis_models import Recommendation
-    q = db.query(Recommendation).filter(Recommendation.dismissed == False)
+    q = scope_to_hosts(db.query(Recommendation), Recommendation.host_id, current_user, db).filter(
+        Recommendation.dismissed == False)
     if category:
         q = q.filter(Recommendation.category == category)
     now = datetime.utcnow()

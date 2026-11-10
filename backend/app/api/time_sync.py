@@ -19,7 +19,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.api.auth import get_current_user, require_admin, require_operator
+from app.api.auth import accessible_host_ids, get_current_user, require_admin, require_operator
 from app.core.database import get_db
 from app.models import User
 from app.services import time_sync as time_sync_service
@@ -60,6 +60,19 @@ def _cached_status(db: Session, force: bool = False) -> Dict[str, Any]:
     except (TypeError, ValueError):
         threshold = DEFAULT_DRIFT_THRESHOLD_SECONDS
 
+    payload = {
+        "generated_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+        "drift_threshold_seconds": threshold,
+        "targets": target_dicts,
+        "summary": _summarize(target_dicts, threshold),
+    }
+    with _cache_lock:
+        _cache_payload = payload
+        _cache_expires_at = time.time() + _CACHE_TTL_SECONDS
+    return payload
+
+
+def _summarize(target_dicts, threshold) -> Dict[str, Any]:
     summary = {
         "total": len(target_dicts),
         "ok": 0,
@@ -85,17 +98,22 @@ def _cached_status(db: Session, force: bool = False) -> Dict[str, Any]:
             summary["ntp_disabled_count"] += 1
         else:
             summary["ntp_unknown_count"] += 1
+    return summary
 
-    payload = {
-        "generated_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
-        "drift_threshold_seconds": threshold,
-        "targets": target_dicts,
-        "summary": summary,
-    }
-    with _cache_lock:
-        _cache_payload = payload
-        _cache_expires_at = time.time() + _CACHE_TTL_SECONDS
-    return payload
+
+_NODE_KINDS = ("pve_node", "bmc_node")   # target id is a ProxmoxNode id
+
+
+def _status_for_user(payload: Dict[str, Any], user: User, db: Session) -> Dict[str, Any]:
+    """Drop PVE node / node-BMC targets on hosts the caller cannot access."""
+    allowed = accessible_host_ids(user, db)
+    if allowed is None:
+        return payload
+    from app.models.database import ProxmoxNode
+    node_ids = {nid for (nid,) in db.query(ProxmoxNode.id).filter(ProxmoxNode.host_id.in_(allowed))}
+    targets = [t for t in payload["targets"] if t.get("kind") not in _NODE_KINDS or t.get("id") in node_ids]
+    return {**payload, "targets": targets,
+            "summary": _summarize(targets, payload["drift_threshold_seconds"])}
 
 
 def _invalidate_cache() -> None:
@@ -142,7 +160,7 @@ async def get_status(
 ):
     """Probe every configured target for clock + NTP state. Cached 30s."""
     try:
-        return _cached_status(db, force=refresh)
+        return _status_for_user(_cached_status(db, force=refresh), current_user, db)
     except Exception as e:
         logger.exception("time-sync status failed: %s", e)
         raise HTTPException(status_code=500, detail=f"Probe error: {e}")

@@ -24,7 +24,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Body
 from sqlalchemy.orm import Session
 
-from app.api.auth import get_current_user, require_admin, require_operator
+from app.api.auth import get_current_user, require_admin, require_operator, scope_to_hosts
 from app.core.database import get_db
 from app.models import ProxmoxHost, PBSServer, User
 from app.models.database import AuditLog
@@ -119,7 +119,8 @@ def updates_overview(
     reported with an 'error' field but the response still returns 200.
     """
     hosts: List[ProxmoxHost] = (
-        db.query(ProxmoxHost).filter(ProxmoxHost.is_active == True).order_by(ProxmoxHost.name).all()
+        scope_to_hosts(db.query(ProxmoxHost), ProxmoxHost.id, current_user, db)
+        .filter(ProxmoxHost.is_active == True).order_by(ProxmoxHost.name).all()
     )
     pbs_servers: List[PBSServer] = (
         db.query(PBSServer).filter(PBSServer.is_active == True).order_by(PBSServer.name).all()

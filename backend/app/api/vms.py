@@ -8,7 +8,7 @@ from datetime import datetime
 from app.core.database import get_db
 from app.core.security import encrypt_data
 from app.models import VirtualMachine, VMStatus, OSType, User
-from app.api.auth import get_current_user, require_operator
+from app.api.auth import ensure_host_access, get_current_user, require_operator, scope_to_hosts
 from app.services.deployment import DeploymentService
 
 router = APIRouter()
@@ -124,6 +124,22 @@ class ProxmoxVMResponse(BaseModel):
         from_attributes = True
 
 
+def _vm_for_user(db: Session, vm_id: int, user: User) -> VirtualMachine:
+    vm = db.query(VirtualMachine).filter(VirtualMachine.id == vm_id).first()
+    if not vm:
+        raise HTTPException(status_code=404, detail="VM not found")
+    ensure_host_access(user, vm.proxmox_host_id, db)
+    return vm
+
+
+def _ensure_node_on_host(db: Session, node_id, host_id: int) -> None:
+    """A node id from the request must belong to the host it is paired with."""
+    from app.models import ProxmoxNode
+    node = db.query(ProxmoxNode).filter(ProxmoxNode.id == int(node_id)).first()
+    if node is None or node.host_id != int(host_id):
+        raise HTTPException(status_code=400, detail="node_id does not belong to proxmox_host_id")
+
+
 @router.get("/", response_model=List[ProxmoxVMResponse])
 async def list_vms(
     skip: int = 0,
@@ -139,7 +155,9 @@ async def list_vms(
     logger = logging.getLogger(__name__)
 
     # Query all active Proxmox hosts and get VMs from Proxmox itself
-    active_hosts = db.query(ProxmoxHost).filter(ProxmoxHost.is_active == True).all()
+    active_hosts = scope_to_hosts(
+        db.query(ProxmoxHost).filter(ProxmoxHost.is_active == True), ProxmoxHost.id, current_user, db
+    ).all()
 
     import asyncio
     from concurrent.futures import ThreadPoolExecutor
@@ -197,6 +215,13 @@ async def adopt_vm(
 
     if not vmid or not proxmox_host_id:
         raise HTTPException(status_code=400, detail="vmid and proxmox_host_id are required")
+    try:
+        proxmox_host_id = int(proxmox_host_id)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="proxmox_host_id must be an integer")
+    ensure_host_access(current_user, proxmox_host_id, db)
+    if node_id:
+        _ensure_node_on_host(db, node_id, proxmox_host_id)
 
     # Prevent duplicate adoption
     existing = db.query(VirtualMachine).filter(VirtualMachine.vmid == int(vmid)).first()
@@ -271,6 +296,9 @@ async def create_vm(
     if 'ssh_key' in vm_data_safe and vm_data_safe['ssh_key']:
         vm_data_safe['ssh_key'] = '***REDACTED***'
     logger.info(f"Received VM create request: {vm_data_safe}")
+    ensure_host_access(current_user, vm_data.proxmox_host_id, db)
+    if vm_data.node_id:
+        _ensure_node_on_host(db, vm_data.node_id, vm_data.proxmox_host_id)
 
     # Convert os_type string to enum
     try:
@@ -377,7 +405,7 @@ async def list_managed_vms(
 ):
     """List VMs managed by Depl0y that have been successfully deployed (have a Proxmox vmid)"""
     vms = (
-        db.query(VirtualMachine)
+        scope_to_hosts(db.query(VirtualMachine), VirtualMachine.proxmox_host_id, current_user, db)
         .filter(
             VirtualMachine.vmid.isnot(None),
             VirtualMachine.status.notin_([VMStatus.CREATING, VMStatus.DELETING])
@@ -398,6 +426,7 @@ async def get_vm(
     vm = db.query(VirtualMachine).filter(VirtualMachine.id == vm_id).first()
     if not vm:
         raise HTTPException(status_code=404, detail="VM not found")
+    ensure_host_access(current_user, vm.proxmox_host_id, db)
 
     # Check permissions
     if current_user.role.value == "viewer" and vm.created_by != current_user.id:
@@ -417,6 +446,7 @@ async def update_vm(
     vm = db.query(VirtualMachine).filter(VirtualMachine.id == vm_id).first()
     if not vm:
         raise HTTPException(status_code=404, detail="VM not found")
+    ensure_host_access(current_user, vm.proxmox_host_id, db)
 
     # Update fields
     if vm_data.name is not None:
@@ -452,6 +482,7 @@ def delete_vm(
     vm = db.query(VirtualMachine).filter(VirtualMachine.id == vm_id).first()
     if not vm:
         raise HTTPException(status_code=404, detail="VM not found")
+    ensure_host_access(current_user, vm.proxmox_host_id, db)
 
     # Delete from Proxmox and database
     deployment_service = DeploymentService(db)
@@ -473,6 +504,7 @@ async def start_vm(
     vm = db.query(VirtualMachine).filter(VirtualMachine.id == vm_id).first()
     if not vm:
         raise HTTPException(status_code=404, detail="VM not found")
+    ensure_host_access(current_user, vm.proxmox_host_id, db)
 
     from app.services.proxmox import ProxmoxService
     from app.models import ProxmoxHost, ProxmoxNode
@@ -504,6 +536,7 @@ async def stop_vm(
     vm = db.query(VirtualMachine).filter(VirtualMachine.id == vm_id).first()
     if not vm:
         raise HTTPException(status_code=404, detail="VM not found")
+    ensure_host_access(current_user, vm.proxmox_host_id, db)
 
     from app.services.proxmox import ProxmoxService
     from app.models import ProxmoxHost, ProxmoxNode
@@ -532,6 +565,7 @@ async def get_vm_status(
     db: Session = Depends(get_db),
 ):
     """Get VM status from Proxmox"""
+    _vm_for_user(db, vm_id, current_user)
     deployment_service = DeploymentService(db)
     status_info = deployment_service.check_vm_status(vm_id)
 
@@ -551,6 +585,7 @@ async def get_vm_progress(
     vm = db.query(VirtualMachine).filter(VirtualMachine.id == vm_id).first()
     if not vm:
         raise HTTPException(status_code=404, detail="VM not found")
+    ensure_host_access(current_user, vm.proxmox_host_id, db)
 
     return {
         "id": vm.id,
@@ -572,7 +607,9 @@ async def get_vm_agent_ip(
     """Fetch VM IP address via QEMU guest agent (requires agent to be running)"""
     from app.services.proxmox import ProxmoxService
     from app.models import ProxmoxHost
-    active_hosts = db.query(ProxmoxHost).filter(ProxmoxHost.is_active == True).all()
+    active_hosts = scope_to_hosts(
+        db.query(ProxmoxHost).filter(ProxmoxHost.is_active == True), ProxmoxHost.id, current_user, db
+    ).all()
     for host in active_hosts:
         try:
             service = ProxmoxService(host)
@@ -599,7 +636,9 @@ async def start_vm_by_vmid(
     logger = logging.getLogger(__name__)
 
     # Find the host that has this node
-    active_hosts = db.query(ProxmoxHost).filter(ProxmoxHost.is_active == True).all()
+    active_hosts = scope_to_hosts(
+        db.query(ProxmoxHost).filter(ProxmoxHost.is_active == True), ProxmoxHost.id, current_user, db
+    ).all()
 
     for host in active_hosts:
         try:
@@ -634,7 +673,9 @@ async def stop_vm_by_vmid(
 
     logger = logging.getLogger(__name__)
 
-    active_hosts = db.query(ProxmoxHost).filter(ProxmoxHost.is_active == True).all()
+    active_hosts = scope_to_hosts(
+        db.query(ProxmoxHost).filter(ProxmoxHost.is_active == True), ProxmoxHost.id, current_user, db
+    ).all()
 
     for host in active_hosts:
         try:
@@ -668,7 +709,9 @@ async def shutdown_vm_by_vmid(
 
     logger = logging.getLogger(__name__)
 
-    active_hosts = db.query(ProxmoxHost).filter(ProxmoxHost.is_active == True).all()
+    active_hosts = scope_to_hosts(
+        db.query(ProxmoxHost).filter(ProxmoxHost.is_active == True), ProxmoxHost.id, current_user, db
+    ).all()
 
     for host in active_hosts:
         try:
@@ -702,7 +745,9 @@ async def restart_vm_by_vmid(
 
     logger = logging.getLogger(__name__)
 
-    active_hosts = db.query(ProxmoxHost).filter(ProxmoxHost.is_active == True).all()
+    active_hosts = scope_to_hosts(
+        db.query(ProxmoxHost).filter(ProxmoxHost.is_active == True), ProxmoxHost.id, current_user, db
+    ).all()
 
     for host in active_hosts:
         try:
@@ -737,7 +782,9 @@ async def delete_vm_by_vmid(
     logger = logging.getLogger(__name__)
     logger.info(f"Delete request for VM {vmid} on node {node_name} by user {current_user.username}")
 
-    active_hosts = db.query(ProxmoxHost).filter(ProxmoxHost.is_active == True).all()
+    active_hosts = scope_to_hosts(
+        db.query(ProxmoxHost).filter(ProxmoxHost.is_active == True), ProxmoxHost.id, current_user, db
+    ).all()
 
     for host in active_hosts:
         try:
@@ -751,7 +798,8 @@ async def delete_vm_by_vmid(
                     logger.info(f"Successfully deleted VM {vmid} from node {node_name}")
 
                     # Also remove from database if it exists
-                    vm_record = db.query(VirtualMachine).filter(VirtualMachine.vmid == vmid).first()
+                    vm_record = db.query(VirtualMachine).filter(
+                        VirtualMachine.vmid == vmid, VirtualMachine.proxmox_host_id == host.id).first()
                     if vm_record:
                         db.delete(vm_record)
                         db.commit()

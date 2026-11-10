@@ -80,8 +80,10 @@ When deploying Depl0y in production:
 - Follow the principle of least privilege
 - Use role-based access control (Admin, Operator, Viewer)
 - Scope operators and viewers to the Proxmox hosts they need (Users → Host
-  Access). Consoles (VNC, SPICE, LXC terminals) require access to the host as
-  well as the operator role; admins reach every host
+  Access). Every API route that addresses a Proxmox host, node or VM checks
+  that access, and lists only show those hosts; the role still decides what
+  the user may do there. Admins reach every host. PBS servers, standalone
+  BMCs, ISOs and cloud images are shared and not scoped per host
 - Regularly audit user accounts and permissions
 - Remove inactive user accounts promptly
 

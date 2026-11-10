@@ -20,9 +20,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Mandatory 2FA covers every sign-in method.** While the 2FA policy applies to an account that has not
   enrolled, its API keys and console sessions are refused as well. Enrol 2FA for accounts that own
   automation API keys before turning the policy on.
-- **Consoles follow per-host access.** Operators need **Host Access** to a Proxmox host (Users → edit
-  user) to open its VM consoles, LXC terminals or SPICE files, the same scoping the host list already
-  used. Admins keep access to every host. Check operators' Host Access after upgrading.
+- **Per-host access applies across the API.** Operators and viewers now reach only the Proxmox hosts
+  granted under **Users → Host Access**: host, node and VM pages and actions, consoles, bulk actions and
+  scripts, imports, LLM deployments, VM groups, tasks, the dashboard, topology, time sync, HA status,
+  BMC status, recommendations and AI reports. Lists show only those hosts. Admins keep access to every
+  host. Check operators' and viewers' Host Access after upgrading.
+- **Activity feeds for non-admins show their own actions.** The dashboard activity feed and audit feed
+  no longer show other users' actions to operators and viewers.
+- **AI reports for non-admins are per host.** Operators can create and view cluster or node reports for
+  their hosts; global reports are admin-only.
 - **First-use trust is easier to review.** Under Settings → TLS certificates and SSH host keys, entries
   that were trusted automatically are flagged *unconfirmed* with a banner. **Confirm** records that an
   admin checked the fingerprint. Confirming a CA-validated certificate keeps it in CA mode.

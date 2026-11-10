@@ -5,7 +5,7 @@ from typing import List
 from pydantic import BaseModel, field_validator
 from app.core.database import get_db
 from app.models import CloudImage
-from app.api.auth import get_current_user, require_admin, require_operator
+from app.api.auth import ensure_host_access, get_current_user, require_admin, require_operator, scope_to_hosts
 import logging
 from app.services.host_ssh import ssh_address
 from app.services.ssh_trust import HostKeyError, openssh_options
@@ -629,6 +629,8 @@ def setup_templates_automated(
         from app.services.cloud_images import create_template_on_node
 
         node = db.query(ProxmoxNode).filter(ProxmoxNode.id == request.node_id).first()
+        if node is not None:
+            ensure_host_access(current_user, node.host_id, db)
         if not node:
             raise HTTPException(status_code=404, detail="Node not found")
 
@@ -677,7 +679,7 @@ def check_ssh_status(
         from app.models import ProxmoxHost
 
         # Get the first Proxmox host
-        host = db.query(ProxmoxHost).first()
+        host = scope_to_hosts(db.query(ProxmoxHost), ProxmoxHost.id, current_user, db).first()
         if not host:
             return {
                 "configured": False,

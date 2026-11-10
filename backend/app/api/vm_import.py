@@ -12,7 +12,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Up
 from pydantic import BaseModel
 from typing import Optional, List
 
-from app.api.auth import require_operator
+from app.api.auth import ensure_host_access, require_operator
 from app.core.database import SessionLocal, get_db
 from app.services.vmid_reservations import release_vmid, reserve_vmid
 from app.services import vm_import_service as svc
@@ -332,8 +332,14 @@ async def deploy_import(
     request: ImportDeployRequest,
     background_tasks: BackgroundTasks,
     current_user=Depends(require_operator),
+    db: Session = Depends(get_db),
 ):
     """Start deploying an uploaded VM image to Proxmox."""
+    ensure_host_access(current_user, request.proxmox_host_id, db)
+    from app.models import ProxmoxNode
+    _node = db.query(ProxmoxNode).filter(ProxmoxNode.id == request.node_id).first()
+    if _node is None or _node.host_id != request.proxmox_host_id:
+        raise HTTPException(status_code=400, detail="node_id does not belong to proxmox_host_id")
     job = svc.get_import_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Import job not found")
@@ -499,6 +505,7 @@ async def import_from_url(
 
     Returns: { job_id, upid, status }
     """
+    ensure_host_access(current_user, req.proxmox_host_id, db)
     from app.models import ProxmoxHost
     from app.services.proxmox import ProxmoxService
 
@@ -716,6 +723,7 @@ def import_from_ovf(
 
     Returns: { vmid, upid }
     """
+    ensure_host_access(current_user, req.proxmox_host_id, db)
     from app.models import ProxmoxHost
     from app.services.proxmox import ProxmoxService
 
@@ -813,6 +821,7 @@ def convert_disk(
     Returns: { command, note }  — the exact command executed, so the user
     can also run it manually if SSH is not available.
     """
+    ensure_host_access(current_user, req.proxmox_host_id, db)
     from app.models import ProxmoxHost
     from app.services import vm_import_service as _svc
 

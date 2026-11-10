@@ -9,8 +9,11 @@ import re
 from app.core.database import get_db
 from app.core.security import encrypt_data, decrypt_data
 from app.models import ProxmoxHost, ProxmoxNode
-from app.api.auth import get_current_user, require_admin, require_operator
-from app.models import User, UserRole
+from app.api.auth import (
+    accessible_host_ids, ensure_host_access, get_current_user, require_admin, require_operator,
+    scope_to_hosts,
+)
+from app.models import User
 from app.services.proxmox import ProxmoxService, poll_proxmox_resources
 from app.core.cache import pve_cache
 import logging
@@ -326,19 +329,8 @@ async def list_proxmox_hosts(
     db: Session = Depends(get_db),
 ):
     """List Proxmox hosts. Admins see all; operators/viewers see only hosts they have permission for."""
-    from app.models.database import UserHostPermission
-    if current_user.role == UserRole.ADMIN:
-        hosts = db.query(ProxmoxHost).offset(skip).limit(limit).all()
-    else:
-        perms = db.query(UserHostPermission).filter(
-            UserHostPermission.user_id == current_user.id,
-            UserHostPermission.can_view == True,
-        ).all()
-        allowed_host_ids = {p.host_id for p in perms}
-        hosts = db.query(ProxmoxHost).filter(
-            ProxmoxHost.id.in_(allowed_host_ids)
-        ).offset(skip).limit(limit).all()
-    return hosts
+    q = scope_to_hosts(db.query(ProxmoxHost), ProxmoxHost.id, current_user, db)
+    return q.offset(skip).limit(limit).all()
 
 
 @router.post("/", response_model=ProxmoxHostResponse, status_code=status.HTTP_201_CREATED)
@@ -423,7 +415,7 @@ async def get_federation_summary(
     cache_key = "federation:summary"
     cached = pve_cache.get(cache_key)
     if cached is not None:
-        return cached
+        return _federation_for_user(cached, current_user, db)
 
     hosts = db.query(ProxmoxHost).filter(ProxmoxHost.is_active == True).all()
 
@@ -533,9 +525,15 @@ async def get_federation_summary(
     # Sort by host_id for stable ordering
     summaries.sort(key=lambda x: x["host_id"])
 
-    response = {
+    response = _federation_response(summaries, datetime.utcnow().isoformat() + "Z")
+    pve_cache.set(cache_key, response, ttl=60)
+    return _federation_for_user(response, current_user, db)
+
+
+def _federation_response(summaries: list, fetched_at: str) -> dict:
+    return {
         "hosts": summaries,
-        "fetched_at": datetime.utcnow().isoformat() + "Z",
+        "fetched_at": fetched_at,
         "total_vms": sum(s["vm_count"] for s in summaries),
         "total_lxc": sum(s["lxc_count"] for s in summaries),
         "total_nodes": sum(s["node_count"] for s in summaries),
@@ -545,8 +543,14 @@ async def get_federation_summary(
         "offline_hosts": sum(1 for s in summaries if s["status"] == "offline"),
     }
 
-    pve_cache.set(cache_key, response, ttl=60)
-    return response
+
+def _federation_for_user(response: dict, user: User, db: Session) -> dict:
+    """The cached summary covers every host; trim it to the caller's hosts."""
+    allowed = accessible_host_ids(user, db)
+    if allowed is None:
+        return response
+    mine = [h for h in response["hosts"] if h["host_id"] in allowed]
+    return _federation_response(mine, response["fetched_at"])
 
 
 @router.get("/{host_id}", response_model=ProxmoxHostResponse)
@@ -768,6 +772,7 @@ async def get_proxmox_node(
     node = db.query(ProxmoxNode).filter(ProxmoxNode.id == node_id).first()
     if not node:
         raise HTTPException(status_code=404, detail="Node not found")
+    ensure_host_access(current_user, node.host_id, db)
     return node
 
 
@@ -796,6 +801,7 @@ async def get_node_storage(
     node = db.query(ProxmoxNode).filter(ProxmoxNode.id == node_id).first()
     if not node:
         raise HTTPException(status_code=404, detail="Node not found")
+    ensure_host_access(current_user, node.host_id, db)
 
     host = db.query(ProxmoxHost).filter(ProxmoxHost.id == node.host_id).first()
     if not host:
@@ -820,6 +826,7 @@ async def get_node_network(
     node = db.query(ProxmoxNode).filter(ProxmoxNode.id == node_id).first()
     if not node:
         raise HTTPException(status_code=404, detail="Node not found")
+    ensure_host_access(current_user, node.host_id, db)
 
     host = db.query(ProxmoxHost).filter(ProxmoxHost.id == node.host_id).first()
     if not host:

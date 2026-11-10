@@ -8,7 +8,7 @@ import json
 
 from app.core.database import get_db
 from app.models.database import VMGroup
-from app.api.auth import get_current_user, require_operator
+from app.api.auth import accessible_host_ids, ensure_host_access, get_current_user, require_operator
 
 router = APIRouter()
 
@@ -79,7 +79,13 @@ def _group_to_response(group: VMGroup) -> VMGroupResponse:
 def list_vm_groups(db: Session = Depends(get_db),
                    current_user=Depends(get_current_user)):
     """List all VM groups."""
-    groups = db.query(VMGroup).order_by(VMGroup.name).all()
+    q = db.query(VMGroup)
+    allowed = accessible_host_ids(current_user, db)
+    if allowed is not None:
+        # Groups bound to a host follow that host's access; unbound groups
+        # (just names and VMID lists) stay visible.
+        q = q.filter((VMGroup.host_id == None) | (VMGroup.host_id.in_(allowed)))  # noqa: E711
+    groups = q.order_by(VMGroup.name).all()
     return [_group_to_response(g) for g in groups]
 
 
@@ -87,6 +93,8 @@ def list_vm_groups(db: Session = Depends(get_db),
 def create_vm_group(body: VMGroupCreate, db: Session = Depends(get_db),
                     current_user=Depends(require_operator)):
     """Create a new VM group."""
+    if body.host_id is not None:
+        ensure_host_access(current_user, body.host_id, db)
     existing = db.query(VMGroup).filter(VMGroup.name == body.name).first()
     if existing:
         raise HTTPException(status_code=400, detail="A group with this name already exists")
@@ -110,6 +118,8 @@ def get_vm_group(group_id: int, db: Session = Depends(get_db),
     group = db.query(VMGroup).filter(VMGroup.id == group_id).first()
     if not group:
         raise HTTPException(status_code=404, detail="Group not found")
+    if group.host_id is not None:
+        ensure_host_access(current_user, group.host_id, db)
     return _group_to_response(group)
 
 
@@ -120,6 +130,8 @@ def update_vm_group(group_id: int, body: VMGroupUpdate, db: Session = Depends(ge
     group = db.query(VMGroup).filter(VMGroup.id == group_id).first()
     if not group:
         raise HTTPException(status_code=404, detail="Group not found")
+    if group.host_id is not None:
+        ensure_host_access(current_user, group.host_id, db)
     if body.name is not None:
         conflict = db.query(VMGroup).filter(
             VMGroup.name == body.name, VMGroup.id != group_id
@@ -132,6 +144,7 @@ def update_vm_group(group_id: int, body: VMGroupUpdate, db: Session = Depends(ge
     if body.color is not None:
         group.color = body.color
     if body.host_id is not None:
+        ensure_host_access(current_user, body.host_id, db)
         group.host_id = body.host_id
     if body.vmids is not None:
         group.vmids = _dump_vmids(body.vmids)
@@ -147,6 +160,8 @@ def delete_vm_group(group_id: int, db: Session = Depends(get_db),
     group = db.query(VMGroup).filter(VMGroup.id == group_id).first()
     if not group:
         raise HTTPException(status_code=404, detail="Group not found")
+    if group.host_id is not None:
+        ensure_host_access(current_user, group.host_id, db)
     db.delete(group)
     db.commit()
     return None
@@ -159,6 +174,8 @@ def add_vm_to_group(group_id: int, body: VmidBody, db: Session = Depends(get_db)
     group = db.query(VMGroup).filter(VMGroup.id == group_id).first()
     if not group:
         raise HTTPException(status_code=404, detail="Group not found")
+    if group.host_id is not None:
+        ensure_host_access(current_user, group.host_id, db)
     vmids = _load_vmids(group)
     if body.vmid not in vmids:
         vmids.append(body.vmid)
@@ -175,6 +192,8 @@ def remove_vm_from_group(group_id: int, vmid: str, db: Session = Depends(get_db)
     group = db.query(VMGroup).filter(VMGroup.id == group_id).first()
     if not group:
         raise HTTPException(status_code=404, detail="Group not found")
+    if group.host_id is not None:
+        ensure_host_access(current_user, group.host_id, db)
     vmids = [v for v in _load_vmids(group) if v != vmid]
     group.vmids = _dump_vmids(vmids)
     db.commit()

@@ -181,8 +181,9 @@ Full walkthrough: [Deploy LLM guide](LLM_DEPLOY_GUIDE.md).
   `/etc/depl0y/config.env`.
 - **Audit log** — every user action and system change, with filtering.
 - **Rate limiting** and standard security headers on the API.
-- **Per-host permissions** — users can be scoped to specific Proxmox endpoints;
-  the host list and the VM/LXC consoles honour that scope.
+- **Per-host permissions** — operators and viewers can be scoped to specific
+  Proxmox endpoints; every host, node and VM route, console and list honours
+  that scope.
 
 ---
 

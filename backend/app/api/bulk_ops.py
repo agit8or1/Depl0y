@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from typing import Optional, List, Any, Dict
 from app.core.database import get_db
 from app.models import ProxmoxHost
-from app.api.auth import get_current_user, require_operator
+from app.api.auth import ensure_hosts_access, get_current_user, require_operator
 from app.services.proxmox import ProxmoxService
 from app.core.cache import pve_cache
 import logging
@@ -31,6 +31,14 @@ def _pve(host: ProxmoxHost):
 
 
 # ── Pydantic models ───────────────────────────────────────────────────────────
+
+def _ensure_req_hosts(req, user, db) -> None:
+    """Per-host access for bulk/script requests: every host they touch."""
+    ids = [v.host_id for v in (getattr(req, "vms", None) or [])]
+    if getattr(req, "host_id", None) is not None:
+        ids.append(req.host_id)
+    ensure_hosts_access(user, ids, db)
+
 
 class VMTarget(BaseModel):
     host_id: int
@@ -89,6 +97,7 @@ def bulk_power(req: BulkPowerRequest, db: Session = Depends(get_db),
     """Execute a power action on a list of VMs.
     Returns per-VM result: {host_id, node, vmid, upid, error}.
     """
+    _ensure_req_hosts(req, current_user, db)
     VALID_ACTIONS = {"start", "stop", "shutdown", "reboot", "reset"}
     if req.action not in VALID_ACTIONS:
         raise HTTPException(status_code=400,
@@ -150,6 +159,7 @@ def bulk_rolling_restart(req: RollingRestartRequest, db: Session = Depends(get_d
     Performs shutdown -> wait for stop -> start for each VM sequentially.
     Returns per-VM result with status at each step.
     """
+    _ensure_req_hosts(req, current_user, db)
     results = []
     host_cache: Dict[int, ProxmoxHost] = {}
 
@@ -219,6 +229,7 @@ def bulk_snapshot(req: BulkSnapshotRequest, db: Session = Depends(get_db),
     """Create a snapshot on each VM in the list.
     Snapshot name template supports: {vmid}, {name}, {date}.
     """
+    _ensure_req_hosts(req, current_user, db)
     from datetime import datetime
     today = datetime.utcnow().strftime("%Y%m%d")
 
@@ -278,6 +289,7 @@ def bulk_delete_old_snapshots(req: BulkDeleteSnapshotsRequest,
                                db: Session = Depends(get_db),
                                current_user=Depends(require_operator)):
     """Delete snapshots older than N days across the selected VMs."""
+    _ensure_req_hosts(req, current_user, db)
     import time as _time
     cutoff = _time.time() - (req.older_than_days * 86400)
 
@@ -330,6 +342,7 @@ def bulk_config_update(req: BulkConfigRequest, db: Session = Depends(get_db),
     Returns per-VM result: {vmid, changes_applied, error}.
     Supports dry_run=true to simulate without applying.
     """
+    _ensure_req_hosts(req, current_user, db)
     results = []
     host_cache: Dict[int, ProxmoxHost] = {}
 
@@ -403,6 +416,7 @@ def bulk_config_update(req: BulkConfigRequest, db: Session = Depends(get_db),
 def bulk_config_preview(req: BulkConfigRequest, db: Session = Depends(get_db),
                         current_user=Depends(require_operator)):
     """Dry-run: return what would change per VM without applying anything."""
+    _ensure_req_hosts(req, current_user, db)
     results = []
     host_cache: Dict[int, ProxmoxHost] = {}
 
@@ -482,6 +496,7 @@ def bulk_config_preview(req: BulkConfigRequest, db: Session = Depends(get_db),
 def bulk_migrate(req: BulkMigrateRequest, db: Session = Depends(get_db),
                  current_user=Depends(require_operator)):
     """Migrate a list of VMs to a target node (sequential)."""
+    _ensure_req_hosts(req, current_user, db)
     results = []
     host_cache: Dict[int, ProxmoxHost] = {}
 
@@ -701,6 +716,7 @@ def script_cleanup_snapshots(req: ScriptCleanupSnapsRequest,
                               db: Session = Depends(get_db),
                               current_user=Depends(require_operator)):
     """Find (and optionally delete) all snapshots older than N days across all VMs."""
+    _ensure_req_hosts(req, current_user, db)
     import time as _time
     host = _get_host(req.host_id, db)
     pve = _pve(host)
@@ -765,6 +781,7 @@ def script_tag_compliance(req: ScriptTagComplianceRequest,
                           db: Session = Depends(get_db),
                           current_user=Depends(require_operator)):
     """Find VMs missing required tags. Optionally add them."""
+    _ensure_req_hosts(req, current_user, db)
     host = _get_host(req.host_id, db)
     pve = _pve(host)
 
@@ -823,6 +840,7 @@ def script_resource_audit(req: ScriptResourceAuditRequest,
                           db: Session = Depends(get_db),
                           current_user=Depends(require_operator)):
     """Find over-provisioned VMs by comparing allocation vs recent RRD usage."""
+    _ensure_req_hosts(req, current_user, db)
     host = _get_host(req.host_id, db)
     pve = _pve(host)
 
@@ -891,6 +909,7 @@ def script_nightly_snapshot(req: ScriptNightlySnapshotRequest,
     """Create snapshots of all (or all running) VMs on the host.
     Designed to be triggered at midnight / on a schedule.
     """
+    _ensure_req_hosts(req, current_user, db)
     from datetime import datetime
     host = _get_host(req.host_id, db)
     pve = _pve(host)
@@ -973,6 +992,7 @@ def script_vm_health_check(req: ScriptVmHealthCheckRequest,
     """Check all VMs are running. Alert on stopped / paused ones.
     Optionally restrict to a specific set of VMIDs.
     """
+    _ensure_req_hosts(req, current_user, db)
     host = _get_host(req.host_id, db)
     pve = _pve(host)
 
@@ -1043,6 +1063,7 @@ def script_resource_rebalancer(req: ScriptResourceRebalancerRequest,
                                 db: Session = Depends(get_db),
                                 current_user=Depends(require_operator)):
     """Analyze CPU/RAM load across nodes and suggest VM migrations for better balance."""
+    _ensure_req_hosts(req, current_user, db)
     host = _get_host(req.host_id, db)
     pve = _pve(host)
 
@@ -1153,6 +1174,7 @@ def script_bulk_tag_updater(req: ScriptBulkTagUpdaterRequest,
                              db: Session = Depends(get_db),
                              current_user=Depends(require_operator)):
     """Add or remove tags from multiple VMs at once across the host."""
+    _ensure_req_hosts(req, current_user, db)
     host = _get_host(req.host_id, db)
     pve = _pve(host)
 
@@ -1225,6 +1247,7 @@ def script_config_standardizer(req: ScriptConfigStandardizerRequest,
                                 db: Session = Depends(get_db),
                                 current_user=Depends(require_operator)):
     """Ensure all VMs have consistent settings: backup enabled, agent enabled, onboot, required tags."""
+    _ensure_req_hosts(req, current_user, db)
     host = _get_host(req.host_id, db)
     pve = _pve(host)
 

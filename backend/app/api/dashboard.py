@@ -15,7 +15,8 @@ from app.models import (
     User,
     UpdateLog,
 )
-from app.api.auth import get_current_user
+from app.api.auth import get_current_user, scope_to_hosts
+from app.models import UserRole
 from app.services.proxmox import is_cloud_template
 
 router = APIRouter()
@@ -43,6 +44,21 @@ class ResourceStats(BaseModel):
     used_disk_gb: float
 
 
+def _nodes(user: User, db: Session):
+    return scope_to_hosts(db.query(ProxmoxNode), ProxmoxNode.host_id, user, db)
+
+
+def _vms(user: User, db: Session):
+    return scope_to_hosts(db.query(VirtualMachine), VirtualMachine.proxmox_host_id, user, db)
+
+
+def _audit(user: User, db: Session):
+    """Audit entries carry no reliable host, so non-admins see only their own."""
+    from app.models.database import AuditLog
+    q = db.query(AuditLog)
+    return q if user.role == UserRole.ADMIN else q.filter(AuditLog.user_id == user.id)
+
+
 @router.get("/stats", response_model=DashboardStats)
 async def get_dashboard_stats(
     current_user: User = Depends(get_current_user),
@@ -54,7 +70,9 @@ async def get_dashboard_stats(
     from app.services.proxmox import ProxmoxService
 
     # Query all active Proxmox hosts
-    active_hosts = db.query(ProxmoxHost).filter(ProxmoxHost.is_active == True).all()
+    active_hosts = scope_to_hosts(
+        db.query(ProxmoxHost).filter(ProxmoxHost.is_active == True), ProxmoxHost.id, current_user, db
+    ).all()
 
     def fetch_resources_for_host(host):
         """Use cluster/resources (single call) instead of per-node qemu.get()"""
@@ -97,7 +115,7 @@ async def get_dashboard_stats(
     datacenters = len(active_hosts)
 
     # Node statistics
-    total_nodes = db.query(ProxmoxNode).count()
+    total_nodes = _nodes(current_user, db).count()
 
     # ISO statistics
     total_isos = db.query(ISOImage).filter(ISOImage.is_available == True).count()
@@ -127,7 +145,7 @@ async def get_resource_stats(
 ):
     """Get resource statistics across all nodes"""
     # Query node resources - these are ACTUAL usage from Proxmox
-    nodes = db.query(ProxmoxNode).all()
+    nodes = _nodes(current_user, db).all()
 
     total_cpu_cores = 0
     total_memory_bytes = 0
@@ -179,7 +197,7 @@ async def get_recent_activity(
     """Get recent activity"""
     # Recent VMs
     recent_vms = (
-        db.query(VirtualMachine)
+        _vms(current_user, db)
         .order_by(VirtualMachine.created_at.desc())
         .limit(limit)
         .all()
@@ -187,7 +205,8 @@ async def get_recent_activity(
 
     # Recent updates
     recent_updates = (
-        db.query(UpdateLog)
+        scope_to_hosts(db.query(UpdateLog).join(VirtualMachine, VirtualMachine.id == UpdateLog.vm_id),
+                       VirtualMachine.proxmox_host_id, current_user, db)
         .order_by(UpdateLog.started_at.desc())
         .limit(limit)
         .all()
@@ -228,7 +247,9 @@ async def get_dashboard_summary(
     from datetime import datetime, timedelta
     import time
 
-    active_hosts = db.query(ProxmoxHost).filter(ProxmoxHost.is_active == True).all()
+    active_hosts = scope_to_hosts(
+        db.query(ProxmoxHost).filter(ProxmoxHost.is_active == True), ProxmoxHost.id, current_user, db
+    ).all()
 
     def fetch_vm_summary(host):
         try:
@@ -254,10 +275,10 @@ async def get_dashboard_summary(
         total_vms += len(real_vms)
         running_vms += sum(1 for v in real_vms if v.get("status", "").lower() == "running")
 
-    node_count = db.query(ProxmoxNode).count()
+    node_count = _nodes(current_user, db).count()
 
     # Storage used from node data
-    nodes = db.query(ProxmoxNode).all()
+    nodes = _nodes(current_user, db).all()
     total_disk_bytes = sum(n.disk_total or 0 for n in nodes)
     used_disk_bytes = sum(n.disk_used or 0 for n in nodes)
     storage_used_gb = round(used_disk_bytes / (1024 ** 3), 2)
@@ -267,7 +288,7 @@ async def get_dashboard_summary(
     from sqlalchemy import or_
     cutoff = datetime.utcnow() - timedelta(hours=24)
     failed_tasks_24h = (
-        db.query(AuditLog)
+        _audit(current_user, db)
         .filter(AuditLog.timestamp >= cutoff)
         .filter(or_(AuditLog.action.ilike("%fail%"), AuditLog.action.ilike("%error%")))
         .count()
@@ -275,11 +296,14 @@ async def get_dashboard_summary(
 
     # Active users — users with audit activity in last 24h
     from sqlalchemy import distinct
-    active_users = (
-        db.query(func.count(distinct(AuditLog.user_id)))
-        .filter(AuditLog.timestamp >= cutoff)
-        .scalar()
-    ) or 0
+    if current_user.role == UserRole.ADMIN:
+        active_users = (
+            db.query(func.count(distinct(AuditLog.user_id)))
+            .filter(AuditLog.timestamp >= cutoff)
+            .scalar()
+        ) or 0
+    else:
+        active_users = 1  # other users' activity is not shown to non-admins
 
     return {
         "vm_count": total_vms,
@@ -305,7 +329,7 @@ async def get_recent_activity_alias(
     from app.api.audit import _action_icon
 
     logs = (
-        db.query(AuditLog)
+        _audit(current_user, db)
         .order_by(desc(AuditLog.timestamp))
         .offset(offset)
         .limit(limit)
@@ -344,7 +368,7 @@ async def get_dashboard_alerts(
     cutoff_24h = datetime.utcnow() - timedelta(hours=24)
 
     # 1. Offline nodes (from cached node data — node.is_online or cpu_usage is None)
-    all_nodes = db.query(ProxmoxNode).all()
+    all_nodes = _nodes(current_user, db).all()
     offline_node_names = set()
     for node in all_nodes:
         # Heuristic: if cpu_usage is None, treat as potentially offline
@@ -372,7 +396,7 @@ async def get_dashboard_alerts(
     # 3. Failed backup jobs in last 24h (via audit log)
     from sqlalchemy import or_
     failed_backups = (
-        db.query(AuditLog)
+        _audit(current_user, db)
         .filter(AuditLog.timestamp >= cutoff_24h)
         .filter(AuditLog.action.ilike("%backup%"))
         .filter(or_(AuditLog.action.ilike("%fail%"), AuditLog.action.ilike("%error%")))
@@ -389,7 +413,7 @@ async def get_dashboard_alerts(
 
     # 4. Unexpectedly stopped VMs (VMs in DB with status stopped that were previously running)
     stopped_vms = (
-        db.query(VirtualMachine)
+        _vms(current_user, db)
         .filter(VirtualMachine.status == VMStatus.STOPPED)
         .limit(5)
         .all()

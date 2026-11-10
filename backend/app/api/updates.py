@@ -6,8 +6,8 @@ from typing import List, Optional
 from datetime import datetime
 
 from app.core.database import get_db, SessionLocal
-from app.models import UpdateLog, User, SystemSettings, VmScanCache
-from app.api.auth import get_current_user, require_operator
+from app.models import UpdateLog, User, SystemSettings, VirtualMachine, VmScanCache
+from app.api.auth import ensure_host_access, get_current_user, require_operator, scope_to_hosts
 from app.services.updates import UpdateService
 
 router = APIRouter()
@@ -209,6 +209,8 @@ async def get_update_log(
     log = db.query(UpdateLog).filter(UpdateLog.id == log_id).first()
     if not log:
         raise HTTPException(status_code=404, detail="Update log not found")
+    vm = db.query(VirtualMachine).filter(VirtualMachine.id == log.vm_id).first()
+    ensure_host_access(current_user, vm.proxmox_host_id if vm else None, db)
     return log
 
 
@@ -281,7 +283,10 @@ async def get_scan_cache(
     db: Session = Depends(get_db),
 ):
     """Get latest cached scan results for all VMs"""
-    rows = db.query(VmScanCache).all()
+    rows = scope_to_hosts(
+        db.query(VmScanCache).join(VirtualMachine, VirtualMachine.id == VmScanCache.vm_id),
+        VirtualMachine.proxmox_host_id, current_user, db,
+    ).all()
     return [
         {
             "vm_id": r.vm_id,

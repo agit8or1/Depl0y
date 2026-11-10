@@ -8,7 +8,7 @@ import csv
 import io
 from app.core.database import get_db
 from app.api.auth import get_current_user, require_admin
-from app.models import User
+from app.models import User, UserRole
 
 router = APIRouter()
 
@@ -207,9 +207,13 @@ async def get_audit_feed(
     from app.models.database import AuditLog
     from sqlalchemy import desc
 
+    q = db.query(AuditLog)
+    if current_user.role != UserRole.ADMIN:
+        # Audit entries carry no reliable Proxmox host, so per-host access
+        # cannot be applied to them: non-admins see only their own actions.
+        q = q.filter(AuditLog.user_id == current_user.id)
     logs = (
-        db.query(AuditLog)
-        .order_by(desc(AuditLog.timestamp))
+        q.order_by(desc(AuditLog.timestamp))
         .offset(offset)
         .limit(limit)
         .all()

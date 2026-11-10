@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field, validator
 from typing import Optional, List, Any, Dict
 from app.core.database import get_db
 from app.models import ProxmoxHost
-from app.api.auth import get_current_user, require_operator, require_admin
+from app.api.auth import ensure_host_access, get_current_user, require_operator, require_admin
 from app.services.proxmox import ProxmoxService
 from app.services.task_tracker import task_tracker
 from app.core.cache import pve_cache
@@ -1206,6 +1206,7 @@ def revert_network_config(host_id: int, node: str, db: Session = Depends(get_db)
 @router.post("/{host_id}/nodes/{node}/termproxy")
 def node_termproxy(host_id: int, node: str, db: Session = Depends(get_db),
                    current_user=Depends(require_admin)):
+    ensure_host_access(current_user, host_id, db)
     host = _get_host(host_id, db)
     try:
         result = _pve(host).nodes(node).termproxy.post()
@@ -1475,6 +1476,7 @@ def rollback_ct_snapshot(host_id: int, node: str, vmid: int, snapname: str,
 @router.post("/{host_id}/nodes/{node}/lxc/{vmid}/termproxy")
 def ct_termproxy(host_id: int, node: str, vmid: int, db: Session = Depends(get_db),
                  current_user=Depends(require_operator)):
+    ensure_host_access(current_user, host_id, db)
     host = _get_host(host_id, db)
     try:
         result = _pve(host).nodes(node).lxc(vmid).termproxy.post()

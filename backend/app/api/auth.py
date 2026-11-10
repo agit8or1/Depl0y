@@ -368,6 +368,26 @@ def totp_enrollment_pending(user: User, db: Session) -> bool:
     return totp_required_for(user, db) and not user.totp_enabled
 
 
+def user_has_host_access(user: User, host_id: int, db: Session) -> bool:
+    """Per-host scoping (Users → Host Access). Admins reach every host; any
+    other user only the hosts granted to them. What they may do there is
+    still decided by their role."""
+    if user.role == UserRole.ADMIN:
+        return True
+    from app.models.database import UserHostPermission
+    perm = db.query(UserHostPermission).filter(
+        UserHostPermission.user_id == user.id,
+        UserHostPermission.host_id == host_id,
+    ).first()
+    return bool(perm and (perm.can_view or perm.can_manage or perm.can_admin))
+
+
+def ensure_host_access(user: User, host_id: int, db: Session) -> None:
+    if not user_has_host_access(user, host_id, db):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail="No access to this Proxmox host")
+
+
 def user_from_access_token(token: Optional[str], db: Session) -> Optional[User]:
     """Validate a JWT *access* token and return its user, or None.
 

@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from typing import Optional, List, Any, Dict
 from app.core.database import get_db
 from app.models import ProxmoxHost
-from app.api.auth import get_current_user, require_operator
+from app.api.auth import ensure_host_access, get_current_user, require_operator
 from app.services.proxmox import ProxmoxService
 from app.services.task_tracker import task_tracker
 from app.core.cache import pve_cache
@@ -994,6 +994,7 @@ def set_vm_firewall_options(host_id: int, node: str, vmid: int, options: dict,
 @router.post("/{host_id}/{node}/{vmid}/vncticket")
 def get_vnc_ticket(host_id: int, node: str, vmid: int, db: Session = Depends(get_db),
                    current_user=Depends(require_operator)):
+    ensure_host_access(current_user, host_id, db)
     host = _get_host(host_id, db)
     try:
         result = _pve(_svc(host)).nodes(node).qemu(vmid).vncproxy.post(websocket=1)

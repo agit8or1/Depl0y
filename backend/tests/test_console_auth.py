@@ -7,11 +7,14 @@ from starlette.websockets import WebSocketDisconnect
 
 from app.core.database import SessionLocal, engine
 from app.core.security import create_access_token, get_password_hash
-from app.models.database import ApiKey, Base, SystemSettings, TlsCertificate, User, UserRole
+from app.models.database import (
+    ApiKey, Base, ProxmoxHost, SystemSettings, TlsCertificate, User, UserHostPermission, UserRole,
+)
 from app.services import ws_tickets
 
 API = "/api/v1"
-HOST_ID = 999          # no such host: an authenticated socket then closes 4404
+HOST_ID = 999          # inactive host the operator may access: an authenticated socket closes 4404
+OTHER_HOST = 998       # inactive host nobody but admins may access
 
 TARGETS = {
     "vm": ({"kind": "vm", "host_id": HOST_ID, "node": "pve", "vmid": 100}, f"/ws/vm/{HOST_ID}/pve/100"),
@@ -28,6 +31,10 @@ def db():
     s = SessionLocal()
     for uid, name, role in ((1, "admin", UserRole.ADMIN), (2, "oper", UserRole.OPERATOR), (3, "viewer", UserRole.VIEWER)):
         s.add(User(id=uid, username=name, email=f"{name}@example.com", hashed_password="x", role=role))
+    for hid in (HOST_ID, OTHER_HOST):
+        s.add(ProxmoxHost(id=hid, name=f"h{hid}", hostname=f"h{hid}.invalid", username="root@pam", is_active=False))
+    s.flush()
+    s.add(UserHostPermission(user_id=2, host_id=HOST_ID, can_view=True))
     s.commit()
     yield s
     s.close()
@@ -207,3 +214,44 @@ def test_confirming_automatic_ca_certificate_keeps_ca_mode(client, db):
     r = client.post(f"{API}/tls-certificates/5/approve", headers=_bearer("admin"))
     assert r.status_code == 200, r.text
     assert r.json()["mode"] == "ca" and r.json()["automatic"] is False and r.json()["approved_by"] == 1
+
+
+# ── per-host access (Users → Host Access) ─────────────────────────────────
+
+CONSOLE_REST = [
+    ("get", f"/pve-console/ticket/{OTHER_HOST}/pve/100"),
+    ("get", f"/pve-console/lxc-ticket/{OTHER_HOST}/pve/101"),
+    ("get", f"/pve-console/spice/{OTHER_HOST}/pve/100"),
+    ("post", f"/pve-vm/{OTHER_HOST}/pve/100/vncticket"),
+    # /pve-node/.../lxc/{vmid}/termproxy is shadowed by the generic lxc/{action} route.
+]
+
+
+@pytest.mark.parametrize("method,path", CONSOLE_REST)
+def test_console_rest_refused_on_host_without_access(client, method, path):
+    r = getattr(client, method)(API + path, headers=_bearer("oper"))
+    assert r.status_code == 403 and r.json()["detail"] == "No access to this Proxmox host", r.text
+
+
+@pytest.mark.parametrize("kind", ["vm", "lxc"])
+def test_ws_ticket_refused_on_host_without_access(client, kind):
+    body = dict(TARGETS[kind][0], host_id=OTHER_HOST)
+    r = client.post(f"{API}/pve-console/ws-ticket", json=body, headers=_bearer("oper"))
+    assert r.status_code == 403
+
+
+def test_revoked_host_access_refuses_issued_ticket(client, db):
+    t = _ticket(client, "oper", "vm").json()["ticket"]
+    db.query(UserHostPermission).filter(UserHostPermission.user_id == 2).delete(); db.commit()
+    assert _connect(client, "vm", t) == 4403
+
+
+def test_host_permission_with_no_rights_is_no_access(client, db):
+    db.query(UserHostPermission).filter(UserHostPermission.user_id == 2).update({"can_view": False}); db.commit()
+    assert _ticket(client, "oper", "vm").status_code == 403
+
+
+def test_admin_reaches_every_host(client):
+    body = dict(TARGETS["node"][0], host_id=OTHER_HOST)
+    t = client.post(f"{API}/pve-console/ws-ticket", json=body, headers=_bearer("admin")).json()["ticket"]
+    assert _ws_close_code(client, f"/ws/node/{OTHER_HOST}/pve", f"ws_ticket={t}") == 4404

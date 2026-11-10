@@ -31,7 +31,10 @@ from app.services.proxmox import ProxmoxService
 from pydantic import BaseModel, Field, model_validator
 
 from app.services import tls_trust, ws_tickets
-from app.api.auth import get_current_user, require_operator, totp_enrollment_pending
+from app.api.auth import (
+    ensure_host_access, get_current_user, require_operator, totp_enrollment_pending,
+    user_has_host_access,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -113,7 +116,8 @@ async def _authenticate(ticket: Optional[str], db: Session,
 
     Returns (user, 0, "") on success, or (None, close_code, reason). The user
     is re-checked at connect time: still active, session not revoked
-    (token_version), role still sufficient, and the mandatory-2FA policy.
+    (token_version), role still sufficient, the mandatory-2FA policy, and
+    access to the target's Proxmox host.
     """
     redeemed = ws_tickets.consume(ticket, target)
     if redeemed is None:
@@ -128,6 +132,8 @@ async def _authenticate(ticket: Optional[str], db: Session,
         return None, 4401, "Unauthorized"
     if totp_enrollment_pending(user, db):
         return None, 4403, "totp_enrollment_required"
+    if not user_has_host_access(user, target[1], db):
+        return None, 4403, "No access to this Proxmox host"
     return user, 0, ""
 
 
@@ -149,6 +155,7 @@ async def issue_ws_ticket(
     body: WsTicketRequest,
     request: Request,
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """Issue a single-use, short-lived ticket for one console WebSocket.
 
@@ -159,6 +166,7 @@ async def issue_ws_ticket(
         raise HTTPException(status_code=403, detail="Console sessions require an interactive login")
     if not _role_ok(current_user, _KIND_MIN_ROLE[body.kind]):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
+    ensure_host_access(current_user, body.host_id, db)
     ticket = ws_tickets.issue(
         current_user.id, getattr(current_user, "token_version", 0) or 0,
         (body.kind, body.host_id, body.node, body.vmid),
@@ -282,6 +290,7 @@ def get_vm_vnc_ticket(
     Request a VNC ticket for a QEMU VM from Proxmox and return it so the
     frontend can display metadata (port, ticket) before opening the WebSocket.
     """
+    ensure_host_access(current_user, host_id, db)
     host = _get_host_or_none(db, host_id)
     if host is None or not host.is_active:
         raise HTTPException(status_code=404, detail="Proxmox host not found")
@@ -309,6 +318,7 @@ def get_lxc_ticket(
     """
     Request a terminal ticket for an LXC container from Proxmox.
     """
+    ensure_host_access(current_user, host_id, db)
     host = _get_host_or_none(db, host_id)
     if host is None or not host.is_active:
         raise HTTPException(status_code=404, detail="Proxmox host not found")
@@ -344,6 +354,7 @@ def get_vm_spice(
     virt-viewer compatible .vv file, and returns it as plain text
     (the frontend downloads it directly).
     """
+    ensure_host_access(current_user, host_id, db)
     host = _get_host_or_none(db, host_id)
     if host is None or not host.is_active:
         raise HTTPException(status_code=404, detail="Proxmox host not found")

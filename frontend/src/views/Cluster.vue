@@ -367,7 +367,7 @@
       </div>
 
       <!-- ── Add Node / Cluster Join Instructions ───────────────────────── -->
-      <div class="card">
+      <div v-if="isAdmin" class="card">
         <div class="card-header">
           <h3>Add a Node to This Cluster</h3>
           <button @click="showJoinInfo = !showJoinInfo" class="btn btn-outline btn-sm">
@@ -427,6 +427,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import api from '@/services/api'
+import { useAuthStore } from '@/store/auth'
 import { useToast } from 'vue-toastification'
 
 function formatUptime(seconds) {
@@ -709,6 +710,7 @@ export default {
     })
 
     return {
+      isAdmin: computed(() => useAuthStore().isAdmin),  // cluster join info is admin-only
       hostId,
       loading,
       clusterStatus,

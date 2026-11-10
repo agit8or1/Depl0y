@@ -3990,11 +3990,15 @@ export default {
     }
 
     onMounted(() => {
-      fetchUser()
+      // The SSH status check logs into a Proxmox host, so it needs operator.
+      fetchUser().then(() => {
+        if (user.value && user.value.role !== 'viewer') {
+          checkSSHStatus()
+          checkClusterSSHStatus()
+        }
+      })
       fetchSystemInfo()
       fetchProxmoxHosts()
-      checkSSHStatus()
-      checkClusterSSHStatus()
       checkForUpdates()
       checkHAStatus()
       fetchLinuxAgentSettings()

@@ -408,10 +408,10 @@ def scan_remote_datastores(
 def create_sync_job(
     server_id: int,
     payload: Dict[str, Any],
-    current_user: User = Depends(require_operator),
+    current_user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ) -> Any:
-    """Create a new PBS sync job (operator+).
+    """Create a new PBS sync job (admin).
     Required keys in payload: id, store, remote, remote-store. Optional: schedule, remove-vanished, comment.
     """
     missing = [k for k in ("id", "store", "remote", "remote-store") if not payload.get(k)]

@@ -129,7 +129,7 @@
                     <span class="type-badge">{{ img.content || img.format || 'image' }}</span>
                   </td>
                   <td class="actions-cell">
-                    <button class="btn btn-danger btn-sm" @click="confirmDeleteVolume(img)">Delete</button>
+                    <button v-if="isAdmin" class="btn btn-danger btn-sm" @click="confirmDeleteVolume(img)">Delete</button>
                   </td>
                 </tr>
               </tbody>
@@ -226,7 +226,7 @@
             <!-- Bulk actions bar -->
             <div v-if="isoSelected.size > 0" class="bulk-bar">
               <span>{{ isoSelected.size }} selected</span>
-              <button class="btn btn-danger btn-sm" @click="bulkDeleteIsos" :disabled="isoDeleting">
+              <button v-if="isAdmin" class="btn btn-danger btn-sm" @click="bulkDeleteIsos" :disabled="isoDeleting">
                 {{ isoDeleting ? 'Deleting...' : 'Delete Selected' }}
               </button>
               <button class="btn btn-outline btn-sm" @click="isoSelected.clear(); isoSelected = new Set()">Clear</button>
@@ -264,7 +264,7 @@
                     <span v-else class="dim">—</span>
                   </td>
                   <td class="actions-cell">
-                    <button class="btn btn-danger btn-sm" @click="confirmDeleteVolume(iso)">Delete</button>
+                    <button v-if="isAdmin" class="btn btn-danger btn-sm" @click="confirmDeleteVolume(iso)">Delete</button>
                   </td>
                 </tr>
               </tbody>
@@ -710,6 +710,8 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/services/api'
+import { useAuthStore } from '@/store/auth'
+const isAdmin = computed(() => useAuthStore().isAdmin)  // deleting volumes is admin-only
 import { detectOs, formatTemplateSize } from '@/utils/osIcons'
 
 const router = useRouter()

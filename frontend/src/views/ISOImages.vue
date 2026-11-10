@@ -66,7 +66,7 @@
               <td>
                 <div class="flex gap-1">
                   <button @click="verifyISO(iso.id)" class="btn btn-outline btn-sm">Verify</button>
-                  <button @click="deleteISO(iso.id)" class="btn btn-danger btn-sm">Delete</button>
+                  <button v-if="isAdmin" @click="deleteISO(iso.id)" class="btn btn-danger btn-sm">Delete</button>
                 </div>
               </td>
             </tr>
@@ -385,6 +385,7 @@
 <script>
 import { ref, computed, onMounted } from 'vue'
 import api from '@/services/api'
+import { useAuthStore } from '@/store/auth'
 import { useToast } from 'vue-toastification'
 
 export default {
@@ -880,6 +881,7 @@ export default {
     })
 
     return {
+      isAdmin: computed(() => useAuthStore().isAdmin),  // deletes are admin-only
       isos,
       loading,
       uploading,

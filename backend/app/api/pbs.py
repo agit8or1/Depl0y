@@ -7,7 +7,7 @@ from datetime import datetime
 
 from app.core.database import get_db
 from app.core.security import encrypt_data, decrypt_data
-from app.api.auth import get_current_user, require_admin, require_operator
+from app.api.auth import get_current_user, require_admin
 from app.models.database import PBSServer, User
 from app.services.idrac import RedfishClient
 import logging
@@ -267,7 +267,7 @@ def get_pbs_power_state(
 def pbs_power_action(
     server_id: int,
     action: str = Path(...),
-    current_user: User = Depends(require_operator),
+    current_user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
     valid_actions = ("on", "off", "graceful_off", "reset", "graceful_reset", "pxe")
@@ -393,7 +393,7 @@ def get_pbs_firmware(server_id: int, current_user: User = Depends(get_current_us
     except Exception as e: raise HTTPException(status_code=502, detail=f"Redfish error: {str(e)}")
 
 @router.post("/{server_id}/idrac/clear-sel")
-def clear_pbs_sel(server_id: int, current_user: User = Depends(require_operator), db: Session = Depends(get_db)):
+def clear_pbs_sel(server_id: int, current_user: User = Depends(require_admin), db: Session = Depends(get_db)):
     server = _get_or_404(db, server_id)
     client = _build_client(server)
     try:
@@ -414,7 +414,7 @@ def get_pbs_sensors(server_id: int, current_user: User = Depends(get_current_use
     except Exception as e: raise HTTPException(status_code=502, detail=f"Redfish error: {str(e)}")
 
 @router.post("/{server_id}/idrac/ssh/update")
-def run_pbs_ssh_update(server_id: int, current_user: User = Depends(require_operator), db: Session = Depends(get_db)):
+def run_pbs_ssh_update(server_id: int, current_user: User = Depends(require_admin), db: Session = Depends(get_db)):
     server = _get_or_404(db, server_id)
     host, user, pw = _get_ssh_creds(server)
     try:

@@ -212,7 +212,7 @@
                 <button @click="openConfigBMC(srv)" class="btn btn-outline btn-sm">{{ srv.idrac_hostname ? 'Edit BMC' : 'Configure BMC' }}</button>
                 <button v-if="srv.idrac_hostname" @click="clearBMCDirect(srv)" class="btn btn-danger btn-sm">Clear BMC</button>
               </template>
-              <div v-if="srv.idrac_hostname" class="idr-power-wrap" @click.stop>
+              <div v-if="srv.idrac_hostname && isAdmin" class="idr-power-wrap" @click.stop>
                 <button @click="togglePowerMenu(srv._key, $event)" class="btn btn-outline btn-sm" :title="'Power actions'" :disabled="srv._actioning">
                   ⚡ Power
                   <span v-if="srv._status?.power_state" :class="['badge', 'badge-xs', srv._status.power_state === 'On' ? 'badge-success' : 'badge-danger']" style="margin-left:0.3rem">
@@ -306,7 +306,7 @@
                 <!-- Data loaded but no specific component issues -->
                 <div v-else class="text-xs" style="padding: 0.25rem 0; color: #fcd34d;">
                   No specific sensor/component issues detected. The warning may be from a RAID volume, PSU, or NIC. Check the <button class="hi-tab-link" @click="switchTab(srv, 'hardware')">Hardware</button> and <button class="hi-tab-link" @click="switchTab(srv, 'logs')">Logs</button> tabs, or
-                  <button v-if="srv._stype !== 'pve_host'" class="hi-tab-link" @click="clearSel(srv)" :disabled="srv._clearingSel">{{ srv._clearingSel ? 'clearing event log…' : 'clear the BMC event log' }}</button>
+                  <button v-if="srv._stype !== 'pve_host' && isAdmin" class="hi-tab-link" @click="clearSel(srv)" :disabled="srv._clearingSel">{{ srv._clearingSel ? 'clearing event log…' : 'clear the BMC event log' }}</button>
                   if the warning is stale.
                 </div>
 
@@ -377,7 +377,7 @@
                       {{ srv._info.health || 'Unknown' }}
                     </span>
                   </div>
-                  <div class="power-buttons">
+                  <div v-if="isAdmin" class="power-buttons">
                     <button @click="powerAction(srv, 'on')" class="btn btn-success btn-sm" :disabled="srv._actioning">Power On</button>
                     <button @click="powerAction(srv, 'graceful_off')" class="btn btn-warning btn-sm" :disabled="srv._actioning">Graceful Off</button>
                     <button @click="powerAction(srv, 'off')" class="btn btn-danger btn-sm" :disabled="srv._actioning">Force Off</button>
@@ -672,7 +672,7 @@
                     Dell Support ↗
                   </a>
                   <div style="margin-left:auto;display:flex;gap:0.4rem">
-                    <button v-if="srv._useSSH" @click="runUpdate(srv)" class="btn btn-warning btn-sm" :disabled="updateRunning">
+                    <button v-if="srv._useSSH && isAdmin" @click="runUpdate(srv)" class="btn btn-warning btn-sm" :disabled="updateRunning">
                       {{ updateRunning ? 'Updating…' : 'Apply Updates' }}
                     </button>
                     <button @click="loadFirmware(srv)" class="btn btn-outline btn-sm">Refresh</button>
@@ -720,7 +720,7 @@
               <div class="flex gap-1 mb-1" style="align-items:center">
                 <h4 style="margin:0">{{ srv._useSSH ? 'System Journal' : 'System Event Log' }}</h4>
                 <button @click="loadLogs(srv)" class="btn btn-outline btn-sm">Refresh</button>
-                <button v-if="srv._stype !== 'pve_host'"
+                <button v-if="srv._stype !== 'pve_host' && isAdmin"
                         @click="clearSel(srv)"
                         class="btn btn-danger-outline btn-sm"
                         :disabled="srv._clearingSel"
@@ -934,6 +934,7 @@ import {
   Tooltip, Legend, Title
 } from 'chart.js'
 import api from '@/services/api'
+import { useAuthStore } from '@/store/auth'
 import { useToast } from 'vue-toastification'
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, LineElement, PointElement, Tooltip, Legend, Title)
@@ -2239,6 +2240,8 @@ export default {
     })
 
     return {
+      // BMC power, event-log clearing and server package updates are admin-only
+      isAdmin: computed(() => useAuthStore().isAdmin),
       unreachableTitle, loadHistory, historyChartData, historyChartOptions, historyDowntime, tempUnit, toDisplay, tempLabel, toggleTempUnit,
       openPowerMenuKey, openPowerMenuStyle, togglePowerMenu, runPowerAndClose,
       loading, polling, allServers, filteredServers, tileFilter, tileFilterLabel, setTileFilter, typeLabel, bmcTypeLabel, dash, alertedServers, alertLevel, alertReason, healthIssues, recentAlertLogs,

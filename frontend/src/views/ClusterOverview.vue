@@ -40,7 +40,7 @@
                     View
                   </button>
                   <button
-                    v-if="item.online"
+                    v-if="item.online && isAdmin"
                     class="btn btn-xs"
                     :class="maintenanceNodes.has(item.name) ? 'btn-success' : 'btn-warning'"
                     @click.stop="toggleMaintenance(item.name)"

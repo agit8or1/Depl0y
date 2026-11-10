@@ -71,6 +71,7 @@
               type="button"
               class="btn btn-sm btn-danger-outline"
               :disabled="deletingVolid === tmpl.volid"
+              v-if="isAdmin"
               @click="deleteTemplate(tmpl)"
               title="Delete template"
             >
@@ -179,6 +180,7 @@
 
 <script>
 import api from '@/services/api'
+import { useAuthStore } from '@/store/auth'
 import { detectOs, templateDisplayName, formatTemplateSize } from '@/utils/osIcons'
 
 export default {
@@ -214,6 +216,8 @@ export default {
   },
 
   computed: {
+    // Deleting storage volumes is admin-only
+    isAdmin() { return useAuthStore().isAdmin },
     filteredLocal() {
       const q = this.searchQuery.toLowerCase()
       return this.localTemplates.filter(t =>

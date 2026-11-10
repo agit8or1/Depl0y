@@ -4823,7 +4823,7 @@ const availableNodes = computed(() => {
   return clusterNodes.value.map(n => n.node || n)
 })
 
-const tabs = [
+const allTabs = [
   { id: 'overview', label: 'Overview' },
   { id: 'config', label: 'Config' },
   { id: 'hardware', label: 'Hardware' },
@@ -4837,8 +4837,9 @@ const tabs = [
   { id: 'schedule', label: 'Power Schedule' },
   { id: 'performance', label: 'Performance' },
   { id: 'console', label: 'Console' },
-  { id: 'access', label: 'Access' },
+  { id: 'access', label: 'Access', adminOnly: true },  // Proxmox ACLs are admin-only
 ]
+const tabs = computed(() => allTabs.filter(t => !t.adminOnly || authStore.isAdmin))
 
 let pollInterval = null
 

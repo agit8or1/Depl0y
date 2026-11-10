@@ -17,7 +17,7 @@ import subprocess
 from app.core.database import get_db
 from app.core.config import settings
 from app.models import ISOImage, OSType, User
-from app.api.auth import get_current_user, require_operator
+from app.api.auth import get_current_user, require_admin, require_operator
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -494,7 +494,7 @@ async def get_iso(
 @router.delete("/{iso_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_iso(
     iso_id: int,
-    current_user: User = Depends(require_operator),
+    current_user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
     """Delete ISO image"""

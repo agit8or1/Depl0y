@@ -309,10 +309,10 @@
         <!-- Auto-check schedule -->
         <div class="auto-check-bar">
           <label class="auto-check-toggle">
-            <input type="checkbox" v-model="schedule.auto_update_check_enabled" @change="saveSchedule" />
+            <input type="checkbox" v-model="schedule.auto_update_check_enabled" :disabled="!isAdmin" title="Admins set the schedule" @change="saveSchedule" />
             Auto-check every
           </label>
-          <select v-model="schedule.auto_update_check_interval_hours" @change="saveSchedule" class="interval-select">
+          <select v-model="schedule.auto_update_check_interval_hours" :disabled="!isAdmin" @change="saveSchedule" class="interval-select">
             <option :value="6">6 hours</option>
             <option :value="12">12 hours</option>
             <option :value="24">24 hours</option>
@@ -568,10 +568,10 @@
         <!-- Auto-scan schedule -->
         <div class="auto-check-bar">
           <label class="auto-check-toggle">
-            <input type="checkbox" v-model="schedule.auto_security_scan_enabled" @change="saveSchedule" />
+            <input type="checkbox" v-model="schedule.auto_security_scan_enabled" :disabled="!isAdmin" title="Admins set the schedule" @change="saveSchedule" />
             Auto-scan every
           </label>
-          <select v-model="schedule.auto_security_scan_interval_hours" @change="saveSchedule" class="interval-select">
+          <select v-model="schedule.auto_security_scan_interval_hours" :disabled="!isAdmin" @change="saveSchedule" class="interval-select">
             <option :value="6">6 hours</option>
             <option :value="12">12 hours</option>
             <option :value="24">24 hours</option>
@@ -1259,6 +1259,7 @@
 <script>
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import api from '@/services/api'
+import { useAuthStore } from '@/store/auth'
 import { useToast } from 'vue-toastification'
 
 export default {
@@ -2455,6 +2456,7 @@ export default {
     const fleetParseTags = (t) => { if (!t) return []; return t.split(';').map(x => x.trim()).filter(Boolean) }
 
     return {
+      isAdmin: computed(() => useAuthStore().isAdmin),  // the update schedule is a global, admin-only setting
       activeTab, tabs, vms, loadingVMs, loadingMonitor,
       expandedVM, updatingVM, updateAction, updateChecks,
       updateHistory, loadingHistory, tuningVM, tuningResults, llmVMs, llmOllamaVMs,

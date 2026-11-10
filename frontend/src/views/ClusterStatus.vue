@@ -371,7 +371,7 @@
         </div>
 
         <!-- Join Info (fingerprint + addresses for other nodes to join this cluster) -->
-        <div v-if="clusterStatus?.cluster" class="card mb-2">
+        <div v-if="clusterStatus?.cluster && isAdmin" class="card mb-2">
           <div class="card-header">
             <h3>Join Information</h3>
             <button @click="loadJoinInfo" class="btn btn-outline btn-sm" :disabled="loadingJoinInfo">
@@ -571,6 +571,8 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import api from '@/services/api'
+import { useAuthStore } from '@/store/auth'
+const isAdmin = computed(() => useAuthStore().isAdmin)  // cluster join info is admin-only
 import { useToast } from 'vue-toastification'
 
 const toast = useToast()

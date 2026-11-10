@@ -25,6 +25,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   scripts, imports, LLM deployments, VM groups, tasks, the dashboard, topology, time sync, HA status,
   BMC status, recommendations and AI reports. Lists show only those hosts. Admins keep access to every
   host. Check operators' and viewers' Host Access after upgrading.
+- **Infrastructure actions are admin-only.** BMC power actions, clearing BMC event logs and the BMC
+  page's "Apply Updates" (an OS package upgrade on the server) for Proxmox hosts, nodes, PBS and
+  standalone BMCs; evacuating a node; deleting storage volumes; creating PBS sync jobs; the VM update
+  check schedule; deleting ISOs; cluster join information, Proxmox ACLs under `/pve-node/…/access/acl`
+  and the Depl0y update log now need **admin**. The SSH status check (which logs into a host) needs
+  **operator**. Guest-level actions are unchanged. The matching buttons are hidden for other roles.
 - **Activity feeds for non-admins show their own actions.** The dashboard activity feed and audit feed
   no longer show other users' actions to operators and viewers.
 - **AI reports for non-admins are per host.** Operators can create and view cluster or node reports for

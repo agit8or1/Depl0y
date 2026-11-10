@@ -78,7 +78,11 @@ When deploying Depl0y in production:
 
 ### Access Control
 - Follow the principle of least privilege
-- Use role-based access control (Admin, Operator, Viewer)
+- Use role-based access control (Admin, Operator, Viewer). Viewers are
+  read-only. Operators manage guests (VMs, containers, their disks, snapshots,
+  backups, consoles). Physical servers (BMC power, event logs, OS package
+  updates), node evacuation, shared storage, cluster join data, Proxmox ACLs
+  and global settings are admin-only
 - Scope operators and viewers to the Proxmox hosts they need (Users → Host
   Access). Every API route that addresses a Proxmox host, node or VM checks
   that access, and lists only show those hosts; the role still decides what

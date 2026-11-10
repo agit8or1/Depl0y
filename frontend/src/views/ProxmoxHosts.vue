@@ -287,7 +287,7 @@
               </svg>
             </a>
             <button @click="openDetailDrawer(host)" class="btn btn-outline btn-sm hca-icon" title="View Details">📊</button>
-            <div class="power-menu-wrap hca-icon-wrap">
+            <div v-if="isAdmin" class="power-menu-wrap hca-icon-wrap">
               <button @click.stop="togglePowerMenu('host-'+host.id, $event)" class="btn btn-outline btn-sm hca-power-btn" :title="'Power: ' + (getHostPower(host.id) || 'Unknown')">
                 <span>⚡</span>
                 <span v-if="getHostPower(host.id)" :class="['hca-power-dot', powerStateClass(getHostPower(host.id))]"></span>
@@ -427,7 +427,7 @@
                   <button class="btn-notes-edit" @click.stop="openNodeNotes(node)" :title="node.notes ? 'Edit notes' : 'Add notes'">
                     {{ node.notes ? '📝' : '+ Note' }}
                   </button>
-                  <div class="power-menu-wrap">
+                  <div v-if="isAdmin" class="power-menu-wrap">
                     <button @click.stop="togglePowerMenu('node-'+node.id, $event)" class="btn btn-outline btn-xs" title="Power actions">
                       ⚡
                       <span v-if="getNodePower(node.id)" :class="['badge', 'badge-xs', powerStateClass(getNodePower(node.id))]" style="margin-left:0.2rem">
@@ -1278,6 +1278,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/services/api'
+import { useAuthStore } from '@/store/auth'
 import { useToast } from 'vue-toastification'
 import AddHostWizard from '@/components/AddHostWizard.vue'
 
@@ -2687,6 +2688,8 @@ export default {
     })
 
     return {
+      // Proxmox node and BMC power actions are admin-only
+      isAdmin: computed(() => useAuthStore().isAdmin),
       hosts,
       allNodes,
       loading,

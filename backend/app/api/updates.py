@@ -7,7 +7,7 @@ from datetime import datetime
 
 from app.core.database import get_db, SessionLocal
 from app.models import UpdateLog, User, SystemSettings, VirtualMachine, VmScanCache
-from app.api.auth import ensure_host_access, get_current_user, require_operator, scope_to_hosts
+from app.api.auth import ensure_host_access, get_current_user, require_admin, require_operator, scope_to_hosts
 from app.services.updates import UpdateService
 
 router = APIRouter()
@@ -252,7 +252,7 @@ async def get_schedule(
 @router.put("/schedule")
 async def update_schedule(
     settings: ScheduleSettings,
-    current_user: User = Depends(require_operator),
+    current_user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
     """Update auto-check schedule settings"""

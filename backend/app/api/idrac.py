@@ -303,7 +303,7 @@ def get_power_state(
 def power_action(
     host_id: int,
     action: str = Path(...),
-    current_user: User = Depends(require_operator),
+    current_user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
     valid_actions = ("on", "off", "graceful_off", "reset", "graceful_reset", "power_cycle", "pxe")
@@ -516,7 +516,7 @@ def _get_ssh_creds(obj, hostname_attr: str = "hostname"):
 
 
 @router.post("/{host_id}/ssh/update")
-def run_ssh_update(host_id: int, current_user: User = Depends(require_operator), db: Session = Depends(get_db)):
+def run_ssh_update(host_id: int, current_user: User = Depends(require_admin), db: Session = Depends(get_db)):
     host = _get_host_or_404(db, host_id)
     ssh_host, username, password = _get_ssh_creds(host, "hostname")
     try:
@@ -526,7 +526,7 @@ def run_ssh_update(host_id: int, current_user: User = Depends(require_operator),
         raise HTTPException(status_code=502, detail=f"SSH error: {str(e)}")
 
 @router.post("/standalone/{bmc_id}/ssh/update")
-def run_standalone_ssh_update(bmc_id: int, current_user: User = Depends(require_operator), db: Session = Depends(get_db)):
+def run_standalone_ssh_update(bmc_id: int, current_user: User = Depends(require_admin), db: Session = Depends(get_db)):
     bmc = db.query(StandaloneBMC).filter(StandaloneBMC.id == bmc_id).first()
     if not bmc: raise HTTPException(status_code=404, detail="Standalone BMC not found")
     ssh_host, username, password = _get_ssh_creds(bmc, "idrac_hostname")
@@ -660,7 +660,7 @@ def get_node_power_state(node_id: int, current_user: User = Depends(get_current_
 
 
 @router.post("/node/{node_id}/clear-sel")
-def node_clear_sel(node_id: int, current_user: User = Depends(require_operator), db: Session = Depends(get_db)):
+def node_clear_sel(node_id: int, current_user: User = Depends(require_admin), db: Session = Depends(get_db)):
     node = _get_node_or_404(db, node_id)
     try:
         result = _build_client_from_obj(node).clear_sel()
@@ -672,7 +672,7 @@ def node_clear_sel(node_id: int, current_user: User = Depends(require_operator),
 
 
 @router.post("/{host_id}/clear-sel")
-def host_clear_sel(host_id: int, current_user: User = Depends(require_operator), db: Session = Depends(get_db)):
+def host_clear_sel(host_id: int, current_user: User = Depends(require_admin), db: Session = Depends(get_db)):
     host = _get_host_or_404(db, host_id)
     try:
         result = _build_client_from_obj(host).clear_sel()
@@ -683,7 +683,7 @@ def host_clear_sel(host_id: int, current_user: User = Depends(require_operator),
 
 
 @router.post("/standalone/{bmc_id}/clear-sel")
-def standalone_clear_sel(bmc_id: int, current_user: User = Depends(require_operator), db: Session = Depends(get_db)):
+def standalone_clear_sel(bmc_id: int, current_user: User = Depends(require_admin), db: Session = Depends(get_db)):
     bmc = db.query(StandaloneBMC).filter(StandaloneBMC.id == bmc_id).first()
     if not bmc:
         raise HTTPException(status_code=404, detail="Standalone BMC not found")
@@ -696,7 +696,7 @@ def standalone_clear_sel(bmc_id: int, current_user: User = Depends(require_opera
 
 
 @router.post("/node/{node_id}/power/{action}")
-def node_power_action(node_id: int, action: str = Path(...), current_user: User = Depends(require_operator), db: Session = Depends(get_db)):
+def node_power_action(node_id: int, action: str = Path(...), current_user: User = Depends(require_admin), db: Session = Depends(get_db)):
     valid_actions = ("on", "off", "graceful_off", "reset", "graceful_reset", "power_cycle", "pxe")
     if action not in valid_actions:
         raise HTTPException(status_code=400, detail=f"Invalid action '{action}'")
@@ -843,7 +843,7 @@ def get_node_ssh_logs(node_id: int, limit: int = 100, current_user: User = Depen
 
 
 @router.post("/node/{node_id}/ssh/update")
-def run_node_ssh_update(node_id: int, current_user: User = Depends(require_operator), db: Session = Depends(get_db)):
+def run_node_ssh_update(node_id: int, current_user: User = Depends(require_admin), db: Session = Depends(get_db)):
     node = _get_node_or_404(db, node_id)
     ssh_host, username, password = _get_ssh_creds(node, "idrac_hostname")
     from app.services.ssh_hw import run_system_update
@@ -977,7 +977,7 @@ def get_standalone_info(
 def standalone_power_action(
     bmc_id: int,
     action: str = Path(...),
-    current_user: User = Depends(require_operator),
+    current_user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
     valid_actions = ("on", "off", "graceful_off", "reset", "graceful_reset", "power_cycle", "pxe")

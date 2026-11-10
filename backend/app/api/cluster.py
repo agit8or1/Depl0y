@@ -88,7 +88,7 @@ def cluster_config(
 def cluster_config_join(
     host_id: int,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user=Depends(require_admin),
 ):
     """Get join information for this cluster (addresses, fingerprint, totem key)."""
     host = _get_host(host_id, db)
@@ -318,7 +318,7 @@ def evacuate_node(
     node: str,
     body: dict = {},
     db: Session = Depends(get_db),
-    current_user=Depends(require_operator),
+    current_user=Depends(require_admin),
 ):
     """
     Migrate all VMs off a node to other online nodes.

@@ -220,7 +220,7 @@
                               <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
                             </svg>
                           </button>
-                          <button @click="openDeleteModal(item)" class="btn btn-danger btn-sm">Delete</button>
+                          <button v-if="isAdmin" @click="openDeleteModal(item)" class="btn btn-danger btn-sm">Delete</button>
                         </div>
                       </td>
                     </tr>
@@ -296,6 +296,8 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useToast } from 'vue-toastification'
 import api from '@/services/api'
+import { useAuthStore } from '@/store/auth'
+const isAdmin = computed(() => useAuthStore().isAdmin)  // deleting volumes is admin-only
 import { formatBytes } from '@/utils/proxmox'
 
 const route = useRoute()

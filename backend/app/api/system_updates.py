@@ -134,7 +134,7 @@ UPDATER = "/usr/local/sbin/depl0y-update"
 
 
 @router.get("/log")
-def get_update_log(current_user=Depends(get_current_user)):
+def get_update_log(current_user=Depends(require_admin)):
     """Return the current contents of the update log for real-time progress display."""
     try:
         with open(UPDATE_LOG) as f:

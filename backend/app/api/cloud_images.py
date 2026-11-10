@@ -671,7 +671,7 @@ def setup_templates_automated(
 @router.get("/ssh-status")
 def check_ssh_status(
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user)
+    current_user=Depends(require_operator)
 ):
     """Check if SSH access is configured for Proxmox hosts"""
     try:

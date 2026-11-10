@@ -839,7 +839,7 @@ def delete_role(host_id: int, roleid: str, db: Session = Depends(get_db),
 
 
 @router.get("/{host_id}/access/acl")
-def get_acl(host_id: int, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+def get_acl(host_id: int, db: Session = Depends(get_db), current_user=Depends(require_admin)):
     host = _get_host(host_id, db)
     try:
         return _pve(host).access.acl.get()
@@ -1111,7 +1111,7 @@ def storage_content(host_id: int, node: str, storage: str, content: Optional[str
 
 @router.delete("/{host_id}/nodes/{node}/storage/{storage}/content/{volid:path}")
 def delete_storage_volume(host_id: int, node: str, storage: str, volid: str,
-                          db: Session = Depends(get_db), current_user=Depends(require_operator)):
+                          db: Session = Depends(get_db), current_user=Depends(require_admin)):
     host = _get_host(host_id, db)
     try:
         _pve(host).nodes(node).storage(storage).content(volid).delete()

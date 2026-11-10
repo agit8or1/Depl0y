@@ -153,7 +153,7 @@
           <!-- Bulk actions bar -->
           <div v-if="isoSelectedIds.size > 0" class="bulk-action-bar">
             <span>{{ isoSelectedIds.size }} selected</span>
-            <button class="btn btn-danger btn-sm" @click="bulkDeleteISOs" :disabled="isoBulkDeleting">
+            <button v-if="isAdmin" class="btn btn-danger btn-sm" @click="bulkDeleteISOs" :disabled="isoBulkDeleting">
               {{ isoBulkDeleting ? 'Deleting...' : 'Delete Selected' }}
             </button>
             <button class="btn btn-outline btn-sm" @click="isoSelectedIds = new Set()">Clear Selection</button>
@@ -220,7 +220,7 @@
                 <td>
                   <div class="flex gap-1">
                     <button @click="verifyISO(iso.id)" class="btn btn-outline btn-sm">Verify</button>
-                    <button @click="deleteISO(iso.id)" class="btn btn-danger btn-sm">Delete</button>
+                    <button v-if="isAdmin" @click="deleteISO(iso.id)" class="btn btn-danger btn-sm">Delete</button>
                   </div>
                 </td>
               </tr>
@@ -570,7 +570,7 @@
                     </div>
                     <div class="download-progress-row">
                       <span class="text-xs text-muted">{{ image.download_progress }}%</span>
-                      <button @click="cancelDownload(image.id)" class="btn btn-danger btn-xs ml-1">Cancel</button>
+                      <button v-if="isAdmin" @click="cancelDownload(image.id)" class="btn btn-danger btn-xs ml-1">Cancel</button>
                     </div>
                   </div>
                   <span v-else-if="image.is_downloaded" class="badge badge-success">Downloaded</span>
@@ -592,7 +592,7 @@
                       Download
                     </button>
                     <button
-                      v-if="image.is_downloaded && !image.template_vmid"
+                      v-if="isAdmin && image.is_downloaded && !image.template_vmid"
                       @click="deleteLocalCopy(image.id)"
                       class="btn btn-outline btn-sm"
                       title="Delete local copy to free disk space"
@@ -600,7 +600,7 @@
                       Del Local
                     </button>
                     <button @click="editImage(image)" class="btn btn-outline btn-sm">Edit</button>
-                    <button @click="deleteImage(image.id)" class="btn btn-danger btn-sm">Delete</button>
+                    <button v-if="isAdmin" @click="deleteImage(image.id)" class="btn btn-danger btn-sm">Delete</button>
                   </div>
                 </td>
               </tr>
@@ -1065,6 +1065,7 @@
 <script>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import api from '@/services/api'
+import { useAuthStore } from '@/store/auth'
 import { useToast } from 'vue-toastification'
 
 export default {
@@ -2021,6 +2022,7 @@ export default {
     })
 
     return {
+      isAdmin: computed(() => useAuthStore().isAdmin),  // deletes are admin-only
       activeTab,
       // ISO
       isos, isoLoading, uploading, isoDownloading, uploadProgress, uploadedBytes, totalBytes, uploadSpeed,

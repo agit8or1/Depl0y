@@ -1015,6 +1015,8 @@ export default {
     getVmTicket: (hostId, node, vmid) => api.get(`/pve-console/ticket/${hostId}/${node}/${vmid}`),
     getLxcTicket: (hostId, node, ctid) => api.get(`/pve-console/lxc-ticket/${hostId}/${node}/${ctid}`),
     downloadSpice: (hostId, node, vmid) => api.get(`/pve-console/spice/${hostId}/${node}/${vmid}`, { responseType: 'text' }),
+    // Single-use, ~30 s ticket for one console WebSocket (see consoleSocket.js)
+    wsTicket: (body) => api.post('/pve-console/ws-ticket', body),
   },
 
   // Resource Pools (convenience namespace — delegates to pve-node pool endpoints)

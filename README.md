@@ -230,7 +230,11 @@ BMC does not answer Redfish.
 - Proxmox passwords, API token secrets and BMC passwords are stored
   Fernet-encrypted; the key lives in `/etc/depl0y/config.env`.
 - Accounts support TOTP with backup codes, and every action is written to the
-  audit log.
+  audit log. Mandatory 2FA (for admins or for everyone) also covers API keys
+  and console sessions.
+- Managed hosts' TLS certificates and SSH host keys are pinned. The first one
+  seen is trusted automatically and flagged *unconfirmed* under Settings until
+  an admin checks its fingerprint; see [SECURITY.md](SECURITY.md) for strict mode.
 - Report vulnerabilities privately — see [SECURITY.md](SECURITY.md). Please do
   not open a public issue for a security problem.
 

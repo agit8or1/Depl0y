@@ -867,6 +867,7 @@
                 <span class="setting-label">Require 2FA</span>
                 <span class="setting-desc">
                   Users the policy covers must set up 2FA at their next sign-in and can't turn it off.
+                  Until they do, their API keys and console sessions are refused too.
                   You need 2FA on your own account before you can turn this on.
                 </span>
               </div>

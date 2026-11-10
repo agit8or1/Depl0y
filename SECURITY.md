@@ -48,7 +48,12 @@ When deploying Depl0y in production:
 
 ### Authentication
 - Change the default admin password immediately after installation
-- Enable 2FA (TOTP) for all admin accounts
+- Enable 2FA (TOTP) for all admin accounts, and require it with
+  **Security → 2FA Policy → Require 2FA** (for admins or for everyone). While the
+  policy applies to an account that has not enrolled yet, that account can only
+  enrol, view its profile and sign out: every other API call, every API key the
+  account owns and every console session (VM/LXC console, node shell) is refused
+  until it enrols
 - Use strong, unique passwords (minimum 12 characters)
 - Regularly rotate passwords and API tokens
 
@@ -126,9 +131,30 @@ the changelog as having no published upstream fix.
 
 ### API Security
 - API uses JWT tokens for authentication
-- Tokens expire after 30 minutes by default
-- Refresh tokens expire after 7 days
-- Configure appropriate token lifetimes for your security needs
+- Access tokens last the configured session timeout (8 hours by default);
+  refresh tokens are httpOnly cookies
+- API keys (`X-API-Key: dk_...`) act as their owner and follow the same role
+  and mandatory-2FA rules; they cannot open console sessions
+- Console WebSockets (`/api/v1/pve-console/ws/...`) never carry the access token.
+  The page first calls `POST /api/v1/pve-console/ws-ticket`, which returns a
+  random ticket that works once, for about 30 seconds, for that one user and
+  that one VM, container or node. Only the ticket appears in the socket URL, so
+  proxy and server access logs hold nothing reusable
+
+### Trust of managed hosts (TLS certificates and SSH host keys)
+- Connections to Proxmox, PBS, BMCs and VMware without "Verify SSL" are pinned
+  to an approved certificate (Settings → TLS certificates); SSH connections to
+  nodes and BMCs are pinned to an approved host key (Settings → SSH host keys).
+  A changed certificate or key is always refused before credentials are sent
+- By default the **first** certificate or key seen for a new host is trusted
+  automatically (trust on first use). Such entries are flagged **unconfirmed**
+  on those settings pages until an admin compares the fingerprint with the host
+  (`openssl x509 -noout -fingerprint -sha256 -in /etc/pve/local/pve-ssl.pem`,
+  `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`) and clicks **Confirm**.
+  Each first-use trust is also written to the audit log
+- If depl0y may be on the same network as an attacker when it first contacts a
+  host, set "Unknown hosts" to **Refuse until an admin approves** on both pages
+  before adding hosts. New hosts are then held as pending until approved
 
 ### File Uploads
 - ISO and cloud image uploads are restricted to specific directories

@@ -15,6 +15,15 @@
         (or <code>pve-ssl.pem</code>) on the node, or the certificate shown in the BMC's web UI.
       </p>
 
+      <div v-if="unconfirmed.length" class="first-use-callout" role="status">
+        <p class="text-sm">
+          <strong>{{ unconfirmed.length }} certificate{{ unconfirmed.length === 1 ? ' was' : 's were' }} trusted automatically</strong>
+          (first contact or CA-issued renewal) and {{ unconfirmed.length === 1 ? 'has' : 'have' }} not been confirmed by an admin:
+          {{ unconfirmed.map(c => c.host + ':' + c.port).join(', ') }}.
+          Compare each fingerprint with the host, then click <strong>Confirm</strong> — or <strong>Forget</strong> it if it does not match.
+        </p>
+      </div>
+
       <div class="keys-toolbar">
         <label class="text-sm">
           Unknown hosts:
@@ -38,7 +47,7 @@
             <tr><th>Host</th><th>Certificate</th><th>SHA-256 fingerprint</th><th>Status</th><th>Last seen</th><th></th></tr>
           </thead>
           <tbody>
-            <tr v-for="c in certs" :key="c.id" :class="{ 'row-pending': c.status === 'pending' }">
+            <tr v-for="c in certs" :key="c.id" :class="{ 'row-pending': c.status === 'pending' || c.automatic }">
               <td>
                 {{ c.host }}<span class="text-muted">:{{ c.port }}</span>
                 <div v-for="u in c.used_by" :key="u" class="text-muted text-xs">{{ u }}</div>
@@ -52,11 +61,14 @@
               <td>
                 <span :class="['badge', c.status === 'approved' ? 'badge-success' : 'badge-warning']">{{ c.status }}</span>
                 <span v-if="c.status === 'approved'" class="text-muted text-xs"> · {{ c.mode === 'ca' ? 'CA' : 'pinned' }}</span>
-                <span v-if="c.automatic" class="text-muted text-xs" title="Approved automatically (first use or CA-issued renewal)"> (automatic)</span>
+                <div v-if="c.automatic" class="text-xs" title="Approved automatically (first use or CA-issued renewal); no admin has confirmed the fingerprint yet">
+                  <span class="badge badge-warning">unconfirmed</span> trusted automatically {{ fmt(c.first_seen) }}
+                </div>
               </td>
               <td class="text-sm">{{ fmt(c.last_seen) }}</td>
               <td class="actions">
                 <button v-if="c.status === 'pending'" class="btn btn-primary btn-sm" @click="approve(c)">Approve</button>
+                <button v-if="c.automatic" class="btn btn-primary btn-sm" @click="approve(c)">Confirm</button>
                 <button class="btn btn-outline btn-sm" @click="remove(c)">{{ c.status === 'pending' ? 'Reject' : 'Forget' }}</button>
               </td>
             </tr>
@@ -68,7 +80,7 @@
 </template>
 
 <script>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useToast } from 'vue-toastification'
 import api from '@/services/api'
 
@@ -126,9 +138,14 @@ export default {
       }
     }
 
+    const unconfirmed = computed(() => certs.value.filter(c => c.automatic))
+
     const approve = async (c) => {
-      const replaces = certs.value.some(o => o.host === c.host && o.port === c.port && o.status === 'approved')
-      const msg = `Pin this certificate for ${c.host}:${c.port}?\n\n${c.subject || ''}\nSHA-256 ${c.fingerprint}\n\n` +
+      const replaces = certs.value.some(o => o.host === c.host && o.port === c.port && o.status === 'approved' && o.id !== c.id)
+      const msg = (c.automatic
+        ? `Confirm the certificate trusted automatically for ${c.host}:${c.port}?`
+        : `Pin this certificate for ${c.host}:${c.port}?`) +
+        `\n\n${c.subject || ''}\nSHA-256 ${c.fingerprint}\n\n` +
         'Only approve it if this matches the fingerprint of the certificate on the host itself.' +
         (replaces ? '\n\nThe currently approved certificate for this host will be removed.' : '')
       if (!window.confirm(msg)) return
@@ -155,7 +172,7 @@ export default {
     }
 
     onMounted(load)
-    return { certs, loading, policy, policyLoading, scanHost, scanPort, scanning, load, savePolicy, scan, approve, remove, fmt }
+    return { certs, unconfirmed, loading, policy, policyLoading, scanHost, scanPort, scanning, load, savePolicy, scan, approve, remove, fmt }
   }
 }
 </script>
@@ -171,4 +188,6 @@ export default {
 .keys-table .fp { font-size: 0.7rem; word-break: break-all; }
 .keys-table .actions { white-space: nowrap; display: flex; gap: 0.35rem; }
 .row-pending { background: var(--warning-bg, rgba(234, 179, 8, 0.08)); }
+.first-use-callout { border-left: 3px solid var(--warning-color, #d97706); background: var(--warning-bg, rgba(234, 179, 8, 0.08)); padding: 0.6rem 0.8rem; margin: 0.5rem 0 0.75rem; border-radius: 4px; }
+.first-use-callout p { margin: 0; }
 </style>

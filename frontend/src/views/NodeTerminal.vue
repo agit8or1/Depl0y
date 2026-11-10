@@ -107,7 +107,7 @@
 </template>
 
 <script setup>
-import { getAccessToken } from '@/services/tokens'
+import { consoleSocketUrl } from '@/services/consoleSocket'
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute } from 'vue-router'
 
@@ -223,8 +223,9 @@ const wsEndpoint = computed(() => {
 })
 
 function buildWsUrl() {
-  const token = getAccessToken() || ''
-  return `${wsEndpoint.value}?token=${encodeURIComponent(token)}`
+  return lxcVmid.value
+    ? consoleSocketUrl('lxc', hostId.value, node.value, lxcVmid.value)
+    : consoleSocketUrl('node', hostId.value, node.value)
 }
 
 function formatBytes(bytes) {
@@ -376,14 +377,21 @@ function stopSessionTimer() {
 }
 
 // ---- WebSocket ----
-function connectWs() {
+async function connectWs() {
   wsStatus.value = 'connecting'
   disconnectMsg.value = false
   errorMessage.value = ''
   bytesReceived.value = 0
   sessionLog.value = []
 
-  const url = buildWsUrl()
+  let url
+  try {
+    url = await buildWsUrl()
+  } catch (e) {
+    wsStatus.value = 'error'
+    errorMessage.value = e?.response?.data?.detail || e.message || 'Could not start the session'
+    return
+  }
   ws = new WebSocket(url)
   ws.binaryType = 'arraybuffer'
 

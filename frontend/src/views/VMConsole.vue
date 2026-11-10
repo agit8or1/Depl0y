@@ -154,9 +154,6 @@
             <button @click="connect" class="btn-primary-lg" :disabled="loadingTicket">
               {{ loadingTicket ? 'Loading…' : (connectionStatus === 'disconnected' ? 'Reconnect' : 'Connect') }}
             </button>
-            <button v-if="ticketData" @click="copyWsUrl" class="btn-secondary-lg">
-              Copy WS URL
-            </button>
             <a v-if="proxmoxConsoleUrl !== '#'" :href="proxmoxConsoleUrl" target="_blank" rel="noopener" class="btn-secondary-lg">
               Proxmox Web UI
             </a>
@@ -253,7 +250,7 @@
 </template>
 
 <script setup>
-import { getAccessToken } from '@/services/tokens'
+import { consoleSocketUrl } from '@/services/consoleSocket'
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute } from 'vue-router'
 import api from '@/services/api'
@@ -360,14 +357,11 @@ const proxmoxConsoleUrl = computed(() => {
 })
 
 function buildWsUrl() {
-  const token = getAccessToken() || ''
-  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
-  let url = `${proto}//${location.host}/api/v1/pve-console/ws/vm/${hostId.value}/${node.value}/${vmid.value}?token=${encodeURIComponent(token)}`
   // Pass the VNC ticket and port so the proxy can skip its own vncproxy call
-  if (ticketData.value?.ticket && ticketData.value?.port) {
-    url += `&ticket=${encodeURIComponent(ticketData.value.ticket)}&port=${encodeURIComponent(ticketData.value.port)}`
-  }
-  return url
+  const extra = (ticketData.value?.ticket && ticketData.value?.port)
+    ? { ticket: ticketData.value.ticket, port: String(ticketData.value.port) }
+    : {}
+  return consoleSocketUrl('vm', hostId.value, node.value, vmid.value, extra)
 }
 
 async function getTicketAndHost() {
@@ -406,7 +400,7 @@ async function connect() {
       rfb = null
     }
 
-    const wsUrl = buildWsUrl()
+    const wsUrl = await buildWsUrl()
     // Proxmox VNC sessions use VNC Auth (type 2); the ticket is the VNC password
     const rfbOptions = ticketData.value?.ticket
       ? { credentials: { password: ticketData.value.ticket } }
@@ -615,15 +609,6 @@ async function downloadSpice() {
 function openNewTab() {
   const url = `/proxmox/${hostId.value}/nodes/${node.value}/console/${vmid.value}?standalone=1`
   window.open(url, '_blank')
-}
-
-function copyWsUrl() {
-  const url = buildWsUrl()
-  navigator.clipboard.writeText(url).then(() => {
-    toast.success('WebSocket URL copied to clipboard')
-  }).catch(() => {
-    toast.error('Failed to copy to clipboard')
-  })
 }
 
 // Keyboard handler for F11 compact toggle

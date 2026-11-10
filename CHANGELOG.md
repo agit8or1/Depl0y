@@ -5,6 +5,25 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.114] - 2026-11-10 🔐 Security hardening
+
+### Security
+
+- Security hardening of authentication and console sessions. Upgrading is recommended.
+
+### Changed
+
+- **Console sessions use a one-time ticket.** The VM console, LXC terminal and node shell pages now
+  ask for a short-lived, single-use ticket before opening their WebSocket. The old `?token=` socket
+  parameter is no longer accepted. The **Copy WS URL** button on the VM console page was removed, since
+  a ticketed URL works only once.
+- **Mandatory 2FA covers every sign-in method.** While the 2FA policy applies to an account that has not
+  enrolled, its API keys and console sessions are refused as well. Enrol 2FA for accounts that own
+  automation API keys before turning the policy on.
+- **First-use trust is easier to review.** Under Settings → TLS certificates and SSH host keys, entries
+  that were trusted automatically are flagged *unconfirmed* with a banner. **Confirm** records that an
+  admin checked the fingerprint. Confirming a CA-validated certificate keeps it in CA mode.
+
 ## [2.2.113] - 2026-11-09 🧹 Cleanup
 
 ### Removed

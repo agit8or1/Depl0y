@@ -86,6 +86,13 @@ Proxmox side and can be revoked on its own.
 Depl0y tests the connection before saving. Repeat for every cluster or
 standalone host you want in one dashboard.
 
+With *Verify SSL* off, the first certificate the host presents is pinned
+automatically. Afterwards open **Settings → TLS certificates** (and **SSH host
+keys** once nodes are polled over SSH), compare each entry flagged
+*unconfirmed* with the fingerprint on the host, and click **Confirm**. To
+require approval before the first connection instead, set *Unknown hosts* to
+*Refuse until an admin approves* on both pages before adding hosts.
+
 Username/password authentication also works and is the fallback when tokens are
 not an option.
 

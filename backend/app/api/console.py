@@ -4,19 +4,23 @@ WebSocket proxy endpoints for Proxmox VNC (noVNC) and xterm.js terminal access.
 Provides:
   GET  /ticket/{host_id}/{node}/{vmid}      — VNC ticket for QEMU VMs
   GET  /lxc-ticket/{host_id}/{node}/{ctid}  — terminal ticket for LXC containers
+  POST /ws-ticket                           — single-use ticket for the sockets below
   WS   /ws/vm/{host_id}/{node}/{vmid}       — VNC proxy for QEMU VMs
   WS   /ws/lxc/{host_id}/{node}/{vmid}      — terminal proxy for LXC containers
   WS   /ws/node/{host_id}/{node}            — terminal proxy for node shell
+
+The sockets authenticate with ?ws_ticket=<ticket> from POST /ws-ticket (see
+services/ws_tickets.py), never with the access token itself.
 """
 import asyncio
 import logging
 import ssl
 import urllib.parse
-from typing import Optional
+from typing import Literal, Optional, Tuple
 
 import websockets
 import websockets.exceptions
-from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import PlainTextResponse, Response
 from sqlalchemy.orm import Session
 
@@ -24,8 +28,10 @@ from app.core.database import SessionLocal, get_db
 from app.core.security import decrypt_data
 from app.models import ProxmoxHost, User, UserRole
 from app.services.proxmox import ProxmoxService
-from app.services import tls_trust
-from app.api.auth import get_current_user, require_operator, user_from_access_token
+from pydantic import BaseModel, Field, model_validator
+
+from app.services import tls_trust, ws_tickets
+from app.api.auth import get_current_user, require_operator, totp_enrollment_pending
 
 logger = logging.getLogger(__name__)
 
@@ -94,18 +100,70 @@ def _get_db() -> Session:
 _ROLE_RANK = {UserRole.VIEWER: 0, UserRole.OPERATOR: 1, UserRole.ADMIN: 2}
 
 
-async def _authenticate(token: Optional[str], db: Session, min_role: UserRole) -> Optional[User]:
-    """Validate a WebSocket access token and the user's role.
+_KIND_MIN_ROLE = {"vm": UserRole.OPERATOR, "lxc": UserRole.OPERATOR, "node": UserRole.ADMIN}
 
-    Uses the same checks as get_current_user: access-type tokens only, and
-    revoked sessions (token_version) are refused. Returns None on failure.
+
+def _role_ok(user: User, min_role: UserRole) -> bool:
+    return _ROLE_RANK.get(user.role, -1) >= _ROLE_RANK[min_role]
+
+
+async def _authenticate(ticket: Optional[str], db: Session,
+                        target: ws_tickets.Target) -> Tuple[Optional[User], int, str]:
+    """Redeem a single-use WebSocket ticket for *target*.
+
+    Returns (user, 0, "") on success, or (None, close_code, reason). The user
+    is re-checked at connect time: still active, session not revoked
+    (token_version), role still sufficient, and the mandatory-2FA policy.
     """
-    user = user_from_access_token(token, db)
+    redeemed = ws_tickets.consume(ticket, target)
+    if redeemed is None:
+        return None, 4401, "Unauthorized"
+    user_id, token_version = redeemed
+    user = db.query(User).filter(User.id == user_id).first()
     if user is None or not user.is_active:
-        return None
-    if _ROLE_RANK.get(user.role, -1) < _ROLE_RANK[min_role]:
-        return None
-    return user
+        return None, 4401, "Unauthorized"
+    if token_version < (getattr(user, "token_version", 0) or 0):
+        return None, 4401, "Unauthorized"
+    if not _role_ok(user, _KIND_MIN_ROLE[target[0]]):
+        return None, 4401, "Unauthorized"
+    if totp_enrollment_pending(user, db):
+        return None, 4403, "totp_enrollment_required"
+    return user, 0, ""
+
+
+class WsTicketRequest(BaseModel):
+    kind: Literal["vm", "lxc", "node"]
+    host_id: int
+    node: str = Field(min_length=1, max_length=255)
+    vmid: Optional[int] = None
+
+    @model_validator(mode="after")
+    def _vmid_matches_kind(self):
+        if (self.kind == "node") != (self.vmid is None):
+            raise ValueError("vmid is required for vm/lxc and not allowed for node")
+        return self
+
+
+@router.post("/ws-ticket")
+async def issue_ws_ticket(
+    body: WsTicketRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+):
+    """Issue a single-use, short-lived ticket for one console WebSocket.
+
+    get_current_user already applies the mandatory-2FA policy. Console
+    sockets are for interactive sessions, so API keys cannot mint tickets.
+    """
+    if (request.headers.get("X-API-Key") or "").startswith("dk_"):
+        raise HTTPException(status_code=403, detail="Console sessions require an interactive login")
+    if not _role_ok(current_user, _KIND_MIN_ROLE[body.kind]):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    ticket = ws_tickets.issue(
+        current_user.id, getattr(current_user, "token_version", 0) or 0,
+        (body.kind, body.host_id, body.node, body.vmid),
+    )
+    return {"ticket": ticket, "expires_in": int(ws_tickets.TICKET_TTL)}
 
 
 def _get_host_or_none(db: Session, host_id: int) -> Optional[ProxmoxHost]:
@@ -333,7 +391,7 @@ async def vm_vnc_proxy(
     host_id: int,
     node: str,
     vmid: int,
-    token: Optional[str] = Query(default=None),
+    ws_ticket: Optional[str] = Query(default=None),
     ticket: Optional[str] = Query(default=None),
     port: Optional[str] = Query(default=None),
 ):
@@ -349,9 +407,9 @@ async def vm_vnc_proxy(
     """
     db = _get_db()
     try:
-        user = await _authenticate(token, db, UserRole.OPERATOR)
+        user, code, reason = await _authenticate(ws_ticket, db, ("vm", host_id, node, vmid))
         if user is None:
-            await websocket.close(code=4401, reason="Unauthorized")
+            await websocket.close(code=code, reason=reason)
             return
 
         host = _get_host_or_none(db, host_id)
@@ -465,7 +523,7 @@ async def lxc_terminal_proxy(
     host_id: int,
     node: str,
     vmid: int,
-    token: Optional[str] = Query(default=None),
+    ws_ticket: Optional[str] = Query(default=None),
 ):
     """
     WebSocket endpoint that proxies an xterm.js terminal for an LXC container.
@@ -475,9 +533,9 @@ async def lxc_terminal_proxy(
     """
     db = _get_db()
     try:
-        user = await _authenticate(token, db, UserRole.OPERATOR)
+        user, code, reason = await _authenticate(ws_ticket, db, ("lxc", host_id, node, vmid))
         if user is None:
-            await websocket.close(code=4401, reason="Unauthorized")
+            await websocket.close(code=code, reason=reason)
             return
 
         host = _get_host_or_none(db, host_id)
@@ -545,7 +603,7 @@ async def node_terminal_proxy(
     websocket: WebSocket,
     host_id: int,
     node: str,
-    token: Optional[str] = Query(default=None),
+    ws_ticket: Optional[str] = Query(default=None),
 ):
     """
     WebSocket endpoint that proxies an xterm.js shell terminal for a Proxmox node.
@@ -555,9 +613,9 @@ async def node_terminal_proxy(
     """
     db = _get_db()
     try:
-        user = await _authenticate(token, db, UserRole.ADMIN)
+        user, code, reason = await _authenticate(ws_ticket, db, ("node", host_id, node, None))
         if user is None:
-            await websocket.close(code=4401, reason="Unauthorized")
+            await websocket.close(code=code, reason=reason)
             return
 
         host = _get_host_or_none(db, host_id)

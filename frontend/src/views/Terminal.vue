@@ -21,7 +21,7 @@
 </template>
 
 <script>
-import { getAccessToken } from '@/services/tokens'
+import { consoleSocketUrl } from '@/services/consoleSocket'
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute } from 'vue-router'
 
@@ -46,15 +46,9 @@ export default {
       return `Node Shell — ${node.value}`
     })
 
-    const buildWsUrl = () => {
-      const token = getAccessToken()
-      const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
-      const host = location.host
-      if (vmid.value) {
-        return `${proto}//${host}/api/v1/pve-console/ws/lxc/${hostId.value}/${node.value}/${vmid.value}?token=${token}`
-      }
-      return `${proto}//${host}/api/v1/pve-console/ws/node/${hostId.value}/${node.value}?token=${token}`
-    }
+    const buildWsUrl = () => vmid.value
+      ? consoleSocketUrl('lxc', hostId.value, node.value, vmid.value)
+      : consoleSocketUrl('node', hostId.value, node.value)
 
     const loadScript = (src) => new Promise((resolve, reject) => {
       if (document.querySelector(`script[src="${src}"]`)) { resolve(); return }
@@ -134,9 +128,16 @@ export default {
       }
     }
 
-    const connectWs = () => {
+    const connectWs = async () => {
       wsStatus.value = 'connecting'
-      const url = buildWsUrl()
+      let url
+      try {
+        url = await buildWsUrl()
+      } catch (e) {
+        wsStatus.value = 'error'
+        if (term) term.write('\r\n\x1b[31mCould not start the session: ' + (e?.response?.data?.detail || e.message) + '\x1b[0m\r\n')
+        return
+      }
 
       ws = new WebSocket(url)
 

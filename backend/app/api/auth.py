@@ -307,6 +307,13 @@ async def get_current_user(
         if user is None or not user.is_active:
             raise HTTPException(status_code=400, detail="Inactive user")
         _record_auth(request, user, "api_key", api_key_id=matched_key.id)
+        # API keys never reach the enrolment routes: a key holder must not be
+        # able to bind a TOTP secret to the account.
+        if totp_enrollment_pending(user, db):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="totp_enrollment_required",
+            )
         return user
 
     # --- Fall back to JWT Bearer token ---
@@ -323,7 +330,7 @@ async def get_current_user(
 
     # Mandatory-2FA policy: until the user enrols, only the routes needed to
     # enrol (and to see who they are / sign out) are reachable.
-    if totp_required_for(user, db) and not user.totp_enabled:
+    if totp_enrollment_pending(user, db):
         if not request.url.path.endswith(_TOTP_ENROLL_ALLOWED):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -352,6 +359,13 @@ def totp_required_for(user: User, db: Session) -> bool:
     if policy == "admins":
         return user.role == UserRole.ADMIN
     return False
+
+
+def totp_enrollment_pending(user: User, db: Session) -> bool:
+    """True while the mandatory-2FA policy applies to *user* and they have not
+    enrolled. Every authentication path (bearer tokens, API keys, console
+    WebSocket tickets) must refuse such a user outside the enrolment routes."""
+    return totp_required_for(user, db) and not user.totp_enabled
 
 
 def user_from_access_token(token: Optional[str], db: Session) -> Optional[User]:

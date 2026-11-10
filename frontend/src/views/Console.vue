@@ -44,7 +44,7 @@
 </template>
 
 <script>
-import { getAccessToken } from '@/services/tokens'
+import { consoleSocketUrl } from '@/services/consoleSocket'
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute } from 'vue-router'
 
@@ -61,11 +61,7 @@ export default {
     const canvasRef = ref(null)
     let rfb = null
 
-    const buildWsUrl = () => {
-      const token = getAccessToken()
-      const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
-      return `${proto}//${location.host}/api/v1/pve-console/ws/vm/${hostId.value}/${node.value}/${vmid.value}?token=${token}`
-    }
+    const buildWsUrl = () => consoleSocketUrl('vm', hostId.value, node.value, vmid.value)
 
     // Clipboard paste handler: intercept browser paste events and relay text
     // into the VNC session via rfb.clipboardPasteFrom().
@@ -90,7 +86,7 @@ export default {
           rfb = null
         }
 
-        const wsUrl = buildWsUrl()
+        const wsUrl = await buildWsUrl()
         rfb = new RFB(canvasRef.value, wsUrl)
 
         rfb.viewOnly = false

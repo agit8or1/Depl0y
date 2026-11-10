@@ -97,8 +97,14 @@ def scan_certificate(body: ScanRequest, db: Session = Depends(get_db),
 @router.post("/{cert_id}/approve", response_model=CertificateResponse)
 def approve_certificate(cert_id: int, db: Session = Depends(get_db),
                         current_user: User = Depends(require_admin)):
-    """Pin this certificate; any other certificate for the same host:port is removed."""
-    return _out(tls_trust.approve(db, _get(db, cert_id), current_user.id), _users_of(db))
+    """Pin this certificate; any other certificate for the same host:port is removed.
+
+    On a certificate that was trusted automatically (first use), this records
+    the admin's confirmation of the fingerprint and keeps its mode, so a
+    CA-validated host stays in ``ca`` mode."""
+    row = _get(db, cert_id)
+    mode = row.mode if row.status == "approved" else "pin"
+    return _out(tls_trust.approve(db, row, current_user.id, mode=mode), _users_of(db))
 
 
 @router.delete("/{cert_id}")

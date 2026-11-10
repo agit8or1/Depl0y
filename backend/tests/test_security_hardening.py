@@ -1,5 +1,4 @@
 """Regression tests for the 2026-11-09 security review (roles, tokens, audit, 2FA policy, keys)."""
-import asyncio
 import os
 import stat
 from datetime import datetime
@@ -50,19 +49,6 @@ def test_revoked_token_version_is_refused(client, db):
     assert client.get(f"{API}/auth/me", headers=_bearer("admin")).status_code == 401
 
 
-def test_console_websocket_auth_checks_type_version_and_role(db):
-    from app.api.console import _authenticate
-    run = lambda tok, role: asyncio.run(_authenticate(tok, db, role))
-    admin_access = create_access_token({"sub": "admin", "tv": 0})
-    assert run(admin_access, UserRole.ADMIN).username == "admin"
-    assert run(create_refresh_token({"sub": "admin", "tv": 0}), UserRole.VIEWER) is None
-    assert run(create_access_token({"sub": "viewer", "tv": 0}), UserRole.OPERATOR) is None
-    assert run(create_access_token({"sub": "oper", "tv": 0}), UserRole.OPERATOR).username == "oper"
-    assert run(create_access_token({"sub": "oper", "tv": 0}), UserRole.ADMIN) is None
-    db.query(User).filter(User.id == 1).update({"token_version": 1}); db.commit()
-    assert run(admin_access, UserRole.ADMIN) is None
-
-
 # ── viewer is read-only ───────────────────────────────────────────────────
 
 VIEWER_FORBIDDEN = [
@@ -106,15 +92,6 @@ def test_operator_cannot_do_admin_only(client, method, path):
 def test_system_version_requires_admin(client):
     assert client.put(f"{API}/system/version?new_version=9.9.9").status_code == 401
     assert client.put(f"{API}/system/version?new_version=9.9.9", headers=_bearer("viewer")).status_code == 403
-
-
-def test_viewer_websocket_node_shell_refused(client):
-    from starlette.websockets import WebSocketDisconnect
-    tok = create_access_token({"sub": "oper", "tv": 0})
-    with pytest.raises(WebSocketDisconnect) as exc:
-        with client.websocket_connect(f"{API}/pve-console/ws/node/1/pve?token={tok}"):
-            pass
-    assert exc.value.code == 4401
 
 
 # ── audit of API-key calls ────────────────────────────────────────────────

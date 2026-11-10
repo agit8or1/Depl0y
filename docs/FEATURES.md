@@ -171,7 +171,11 @@ Full walkthrough: [Deploy LLM guide](LLM_DEPLOY_GUIDE.md).
 ## Access control and auditing
 
 - **Roles** — Admin, Operator and Viewer, enforced at the route level.
-- **2FA** — TOTP with QR-code enrolment and backup codes.
+- **2FA** — TOTP with QR-code enrolment and backup codes. It can be made
+  mandatory for admins or for everyone; until an account enrols, its API keys
+  and console sessions are refused too.
+- **Host pinning** — TLS certificates and SSH host keys of managed hosts are
+  pinned; first-use entries are flagged until an admin confirms them.
 - **Encryption at rest** — Proxmox passwords, API token secrets and BMC
   passwords are stored Fernet-encrypted using the key in
   `/etc/depl0y/config.env`.

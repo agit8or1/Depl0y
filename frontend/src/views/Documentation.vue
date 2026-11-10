@@ -534,8 +534,8 @@ const SECTIONS = [
       ${codeBlock(`POST /api/v1/pve-node/{host_id}/cluster/ha/resources\nContent-Type: application/json\n\n{\n  "sid": "vm:100",\n  "group": "my-ha-group",\n  "max_restart": 3,\n  "state": "started"\n}`)}
 
       <h3>Node Evacuation</h3>
-      <p>Before taking a node offline for maintenance, use <strong>Cluster Operations → Evacuate Node</strong> to live-migrate all running VMs to other nodes in the cluster. The API endpoint is:</p>
-      ${codeBlock('POST /api/v1/cluster/{host_id}/nodes/{node}/evacuate')}
+      <p>Before taking a node down, click <strong>Maintenance</strong> on the node in <strong>Cluster Overview</strong>. Depl0y first shows a read-only plan: every VM and container, the node it would move to and why, classed as <em>movable online</em>, <em>downtime required</em>, <em>blocked</em> or <em>unknown</em>. RAM and disk space are counted across all proposed moves. An admin then moves the selected guests. Each move is checked again first and confirmed on its target afterwards. Guests that need downtime move only when you tick them. Shutting the node down stays a separate step. See <code>docs/NODE_MAINTENANCE.md</code>.</p>
+      ${codeBlock('GET  /api/v1/cluster/{host_id}/nodes/{node}/maintenance/preview\nPOST /api/v1/cluster/{host_id}/nodes/{node}/evacuate\n     {"plan_id": "...", "guests": ["vm:100"], "allow_downtime": ["ct:200"]}\nGET  /api/v1/cluster/{host_id}/evacuations/{job_id}')}
 
       <h3>HA Status</h3>
       <p>Navigate to <strong>HA Management → Status</strong> to see:</p>

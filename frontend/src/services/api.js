@@ -997,8 +997,12 @@ export default {
     updateReplication: (hostId, jobId, data) => api.put(`/cluster/${hostId}/replication/${encodeURIComponent(jobId)}`, data),
     deleteReplication: (hostId, jobId) => api.delete(`/cluster/${hostId}/replication/${encodeURIComponent(jobId)}`),
     forceReplication: (hostId, jobId) => api.post(`/cluster/${hostId}/replication/${encodeURIComponent(jobId)}/schedule_now`),
-    // Node evacuation (migrate all VMs off node)
-    evacuateNode: (hostId, node, data) => api.post(`/cluster/${hostId}/nodes/${node}/evacuate`, data || {}),
+    // Node maintenance: read-only preview, then a verified evacuation of the reviewed plan
+    maintenancePreview: (hostId, node) => api.get(`/cluster/${hostId}/nodes/${encodeURIComponent(node)}/maintenance/preview`),
+    evacuateNode: (hostId, node, data) => api.post(`/cluster/${hostId}/nodes/${encodeURIComponent(node)}/evacuate`, data),
+    listEvacuations: (hostId) => api.get(`/cluster/${hostId}/evacuations`),
+    getEvacuation: (hostId, jobId) => api.get(`/cluster/${hostId}/evacuations/${jobId}`),
+    cancelEvacuation: (hostId, jobId) => api.post(`/cluster/${hostId}/evacuations/${jobId}/cancel`),
     // Cluster-wide event log
     getLog: (hostId, max) => api.get(`/cluster/${hostId}/log`, { params: { max } }),
     // Cluster config / join

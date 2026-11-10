@@ -5,6 +5,42 @@ All notable changes to Depl0y will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.115] - 2026-11-10 🛠️ Node maintenance preview and verified evacuation
+
+### Added
+
+- **Node maintenance preview.** **Maintenance** on a node in Cluster Overview now opens a read-only plan
+  for every VM and container on it. Each guest gets a destination, a reason and a class: movable
+  online, downtime required, blocked or unknown. The plan checks:
+  - local disks (with a storage mapping when the target uses another storage ID), bind mounts, attached ISOs
+  - raw and mapped PCI/USB passthrough
+  - HA rules and groups, including failback towards the node, `pve-ha-lrm` and resource affinity
+  - quorum with the node down, and the API token's privileges
+  - vCPUs, and RAM and disk space summed over all proposed moves
+
+  Any user with access to the host can open it.
+- **Verified evacuation.** Admins carry out the reviewed plan, one guest at a time. Before each move,
+  the target is checked again. A guest is skipped, never re-routed, if:
+  - the target went offline or filled up,
+  - the guest changed since review.
+
+  Each Proxmox task is followed to its end, and a move counts only once the guest is seen on its
+  target. A queued HA migration does not count. Failed and skipped guests are listed with their
+  current location, and running the plan again is safe. Restart migrations and cold moves run only
+  for guests picked explicitly. You can stop a job after the current move. Shutting the node down
+  stays a separate step.
+- Operator guide: [docs/NODE_MAINTENANCE.md](docs/NODE_MAINTENANCE.md).
+
+### Changed
+
+- `POST /api/v1/cluster/{host_id}/nodes/{node}/evacuate` now needs the `plan_id` of a preview. It used
+  to queue a round-robin migration of every VM and report queued tasks as the result.
+
+### Fixed
+
+- The failover wizard treated a cloud-init drive on node-local storage as an attached ISO and
+  offered to eject it.
+
 ## [2.2.114] - 2026-11-10 🔐 Security hardening
 
 ### Security

@@ -428,3 +428,12 @@ def test_replication_prefers_failover_node_with_room_over_more_memory():
     nodes["pve3"]["storages"]["tank"] = storage("zfspool", avail=4 * GiB)   # most memory, no room
     plan = hf.build_plan(facts({"scsi0": "tank:vm-100-disk-0,size=32G"}, nodes))
     assert plan["eligible"] and plan["target"] == "pve2"
+
+
+def test_cloud_init_drive_is_not_an_iso_to_eject():
+    cfg = {"scsi0": "nfs:100/a.qcow2,size=8G", "ide2": "local-lvm:vm-100-cloudinit,media=cdrom"}
+    plan = hf.build_plan(facts(cfg, three_nodes()))
+    assert plan["eligible"]
+    assert not any(a["type"] == "eject_iso" for a in plan["actions"])
+    assert hf.guest_volumes("qemu", cfg)["cloudinit"] == [
+        {"key": "ide2", "volume": "local-lvm:vm-100-cloudinit", "storage": "local-lvm"}]

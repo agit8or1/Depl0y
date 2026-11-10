@@ -7,6 +7,7 @@ from app.core.database import get_db
 from app.models import ProxmoxHost
 from app.api.auth import get_current_user, require_operator, require_admin
 from app.services.proxmox import ProxmoxService
+from app.services import node_evacuation
 import logging
 
 logger = logging.getLogger(__name__)
@@ -310,60 +311,129 @@ def force_replication(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ── Node evacuation ───────────────────────────────────────────────────────────
+# ── Node maintenance: preview and verified evacuation ────────────────────────
+#
+# GET  .../nodes/{node}/maintenance/preview  read-only plan for every guest (any user with host access)
+# POST .../nodes/{node}/evacuate             carry out a reviewed plan (admin)
+# GET  .../evacuations[/{job_id}]            follow a job; POST .../{job_id}/cancel stops after the current move
+#
+# The decisions live in app.services.node_evacuation. Host power actions are not part of this.
+
+class EvacuateRequest(BaseModel):
+    plan_id: str
+    guests: Optional[List[str]] = None          # sids to move; default: every "online" guest in the plan
+    allow_downtime: List[str] = []              # sids allowed a restart/cold move (an explicit decision each)
+
+
+def _plan_or_404(plan_id: str, host_id: int, node: str, user):
+    plan = node_evacuation.get_plan(plan_id)
+    if not plan or plan["host_id"] != host_id or plan["node"] != node:
+        raise HTTPException(status_code=404, detail="Plan not found or expired; preview the node again")
+    if plan["user_id"] != getattr(user, "id", None):
+        raise HTTPException(status_code=403, detail="Only the user who reviewed this plan can carry it out")
+    return plan
+
+
+@router.get("/{host_id}/nodes/{node}/maintenance/preview")
+def maintenance_preview(
+    host_id: int,
+    node: str,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Where every VM and container on the node would go, and why. Makes no changes in Proxmox."""
+    pve = _pve(_get_host(host_id, db))
+    try:
+        facts = node_evacuation.gather_facts(pve, node)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Could not read the cluster from Proxmox: {e}")
+    if node not in facts["cluster"]["nodes"]:
+        raise HTTPException(status_code=404, detail=f"Node {node} is not in this cluster")
+    return node_evacuation.store_plan(host_id, node_evacuation.build_preview(facts), current_user.id)
+
 
 @router.post("/{host_id}/nodes/{node}/evacuate")
 def evacuate_node(
     host_id: int,
     node: str,
-    body: dict = {},
+    body: EvacuateRequest,
     db: Session = Depends(get_db),
     current_user=Depends(require_admin),
 ):
+    """Carry out a reviewed maintenance plan. Each move is checked again first and verified after.
+
+    Only guests from the plan move, each to its reviewed target. A guest that needs downtime moves
+    only if listed in allow_downtime. Returns a job id; follow it at GET /evacuations/{job_id}.
     """
-    Migrate all VMs off a node to other online nodes.
-    Optional body: { target: 'nodename' }  — if not given, picks first available online node.
-    Returns list of UPIDs for queued migrations.
-    """
-    host = _get_host(host_id, db)
-    pve = _pve(host)
-
-    # Get all online nodes
-    try:
-        all_nodes = pve.nodes.get()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to list nodes: {e}")
-
-    online_nodes = [n["node"] for n in all_nodes if n.get("status") == "online" and n["node"] != node]
-    if not online_nodes:
-        raise HTTPException(status_code=400, detail="No online target nodes available for evacuation")
-
-    # Get VMs on the source node
-    try:
-        vms = pve.nodes(node).qemu.get()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to list VMs: {e}")
-
-    # Pick target from body or round-robin
-    explicit_target = body.get("target")
-    upids = []
-    errors = []
-
-    for i, vm in enumerate(vms):
-        vmid = vm.get("vmid")
-        if not vmid:
+    plan = _plan_or_404(body.plan_id, host_id, node, current_user)
+    preview = plan["preview"]
+    if not preview.get("executable"):
+        raise HTTPException(status_code=409, detail="The reviewed plan failed a cluster check; fix it and preview again")
+    by_sid = {e["sid"]: e for e in preview["guests"]}
+    wanted = body.guests if body.guests is not None else [
+        e["sid"] for e in preview["guests"] if e["class"] == "online"] + [
+        s for s in body.allow_downtime if s in by_sid]
+    if not wanted:
+        raise HTTPException(status_code=400, detail="Nothing to move")
+    entries, seen = [], set()
+    for sid in wanted:
+        e = by_sid.get(sid)
+        if e is None:
+            raise HTTPException(status_code=400, detail=f"{sid} is not in the reviewed plan")
+        if sid in seen:
             continue
-        target_node = explicit_target or online_nodes[i % len(online_nodes)]
-        try:
-            upid = pve.nodes(node).qemu(vmid).migrate.post(
-                target=target_node,
-                online=1,
-            )
-            upids.append({"vmid": vmid, "target": target_node, "upid": upid})
-        except Exception as e:
-            errors.append({"vmid": vmid, "error": str(e)})
+        seen.add(sid)
+        if e["class"] not in ("online", "downtime"):
+            raise HTTPException(status_code=400, detail=f"{sid} is {e['class']} in the plan: {e['reason']}")
+        if e["class"] == "downtime" and sid not in body.allow_downtime:
+            raise HTTPException(status_code=400,
+                                detail=f"{sid} needs downtime ({e['method']} move); list it in allow_downtime to move it")
+        entries.append(e)
+    pve = _pve(_get_host(host_id, db))
+    perms = node_evacuation.check_permissions(_safe_permissions(pve), entries)
+    if perms["checked"] and not perms["execute"]["ok"]:
+        missing = sorted({f"{m['privilege']} on {m['path']}" for m in perms["execute"]["missing"]})
+        raise HTTPException(status_code=403,
+                            detail="The Proxmox API token for this host lacks: " + ", ".join(missing))
+    try:
+        job = node_evacuation.start_job(host_id, node, body.plan_id, current_user.id, entries, pve)
+    except RuntimeError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    return {"job_id": job.id, "guests": [e["sid"] for e in entries]}
 
-    return {"queued": upids, "errors": errors, "total": len(vms)}
+
+def _safe_permissions(pve):
+    try:
+        return pve.access.permissions.get()
+    except Exception:
+        return None
+
+
+@router.get("/{host_id}/evacuations")
+def list_evacuations(host_id: int, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    """Recent evacuation jobs on this cluster (kept in memory for a day)."""
+    _get_host(host_id, db)
+    return [j.snapshot() for j in node_evacuation.list_jobs(host_id)]
+
+
+@router.get("/{host_id}/evacuations/{job_id}")
+def evacuation_status(host_id: int, job_id: str, db: Session = Depends(get_db),
+                      current_user=Depends(get_current_user)):
+    job = node_evacuation.get_job(job_id)
+    if not job or job.host_id != host_id:
+        raise HTTPException(status_code=404, detail="Evacuation job not found (it may have expired)")
+    return job.snapshot()
+
+
+@router.post("/{host_id}/evacuations/{job_id}/cancel")
+def cancel_evacuation(host_id: int, job_id: str, db: Session = Depends(get_db),
+                      current_user=Depends(require_admin)):
+    """Stop after the move in progress; a running Proxmox migration is not interrupted."""
+    job = node_evacuation.get_job(job_id)
+    if not job or job.host_id != host_id:
+        raise HTTPException(status_code=404, detail="Evacuation job not found (it may have expired)")
+    job.cancel.set()
+    return {"cancel_requested": True, "status": job.status}
 
 
 # ── Cluster event log ─────────────────────────────────────────────────────────

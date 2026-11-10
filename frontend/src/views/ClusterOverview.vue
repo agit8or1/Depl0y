@@ -514,48 +514,15 @@
       </div>
     </div>
 
-    <!-- Maintenance Mode / Node Evacuation -->
-    <div v-if="evacuationNode" class="card mb-2">
-      <div class="card-header">
-        <h3>Evacuate Node: {{ evacuationNode }}</h3>
-      </div>
-      <div class="card-body">
-        <p class="text-sm text-muted mb-2">
-          This will migrate all VMs off <strong>{{ evacuationNode }}</strong> to other online nodes.
-        </p>
-        <div class="flex gap-1 align-center mb-2">
-          <div class="form-group" style="min-width:200px;margin-bottom:0;">
-            <label class="form-label">Target Node (optional)</label>
-            <select v-model="evacuateTarget" class="form-control">
-              <option value="">Auto (round-robin)</option>
-              <option v-for="n in evacuationTargets" :key="n.name" :value="n.name">{{ n.name }}</option>
-            </select>
-          </div>
-          <button
-            class="btn btn-danger"
-            :disabled="evacuating"
-            @click="doEvacuate"
-          >
-            {{ evacuating ? 'Evacuating...' : 'Start Evacuation' }}
-          </button>
-          <button class="btn btn-outline" @click="evacuationNode = null">Cancel</button>
-        </div>
-        <div v-if="evacuationResult" class="evacuation-result text-sm">
-          <div v-if="evacuationResult.queued && evacuationResult.queued.length">
-            <strong>Queued {{ evacuationResult.queued.length }} migrations:</strong>
-            <div v-for="q in evacuationResult.queued" :key="q.vmid" class="text-muted">
-              VM {{ q.vmid }} → {{ q.target }}
-            </div>
-          </div>
-          <div v-if="evacuationResult.errors && evacuationResult.errors.length" class="text-danger mt-1">
-            <strong>Errors:</strong>
-            <div v-for="e in evacuationResult.errors" :key="e.vmid">
-              VM {{ e.vmid }}: {{ e.error }}
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+    <!-- Maintenance Mode / Node Evacuation: preview, then a verified evacuation -->
+    <NodeMaintenancePanel
+      v-if="evacuationNode"
+      :host-id="hostId"
+      :node="evacuationNode"
+      :is-admin="isAdmin"
+      @close="evacuationNode = null"
+      @finished="fetchMigrationTasks"
+    />
 
     <!-- Cluster Join Wizard (admin only) -->
     <div v-if="isAdmin" class="card mb-2">
@@ -748,6 +715,7 @@ import { useToast } from 'vue-toastification'
 import { useAuthStore } from '@/store/auth'
 import api from '@/services/api'
 import { formatBytes } from '@/utils/proxmox'
+import NodeMaintenancePanel from '@/components/NodeMaintenancePanel.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -805,9 +773,6 @@ const migrateSuccess = ref('')
 
 // Evacuation
 const evacuationNode = ref(null)
-const evacuateTarget = ref('')
-const evacuating = ref(false)
-const evacuationResult = ref(null)
 
 // ── Cluster Topology ──────────────────────────────────────────────────────────
 
@@ -1022,10 +987,6 @@ const migrateTargetNodes = computed(() => {
   return clusterNodes.value.filter(n => n.name !== selectedVmNode.value)
 })
 
-const evacuationTargets = computed(() => {
-  return clusterNodes.value.filter(n => n.online && n.name !== evacuationNode.value)
-})
-
 function barClass(ratio) {
   if (ratio >= 0.9) return 'fill--danger'
   if (ratio >= 0.75) return 'fill--warning'
@@ -1070,41 +1031,15 @@ function toggleMaintenance(nodeName) {
   const inMaintenance = maintenanceNodes.value.has(nodeName)
   if (!inMaintenance) {
     // Enter maintenance — prompt evacuation
-    if (!confirm(`Put ${nodeName} into maintenance mode?\n\nThis will mark the node as under maintenance. You can then evacuate all VMs off the node.`)) return
+    if (!confirm(`Put ${nodeName} into maintenance mode?\n\nThis marks the node as under maintenance and opens a preview of where each VM and container would go. Nothing moves until you review the plan and start it.`)) return
     maintenanceNodes.value = new Set([...maintenanceNodes.value, nodeName])
     toast.info(`${nodeName} is now in maintenance mode`)
     // Prompt evacuation
     evacuationNode.value = nodeName
-    evacuateTarget.value = ''
-    evacuationResult.value = null
   } else {
     maintenanceNodes.value = new Set([...maintenanceNodes.value].filter(n => n !== nodeName))
     toast.success(`${nodeName} exited maintenance mode`)
     if (evacuationNode.value === nodeName) evacuationNode.value = null
-  }
-}
-
-// ── Node Evacuation ───────────────────────────────────────────────────────────
-
-async function doEvacuate() {
-  if (!evacuationNode.value) return
-  evacuating.value = true
-  evacuationResult.value = null
-  try {
-    const body = evacuateTarget.value ? { target: evacuateTarget.value } : {}
-    const res = await api.cluster.evacuateNode(hostId.value, evacuationNode.value, body)
-    evacuationResult.value = res.data
-    const queued = res.data?.queued?.length || 0
-    const errs = res.data?.errors?.length || 0
-    if (queued > 0) toast.success(`Queued ${queued} VM migrations from ${evacuationNode.value}`)
-    if (errs > 0) toast.warning(`${errs} migrations failed to queue`)
-    // Refresh migration list after a moment
-    setTimeout(fetchMigrationTasks, 2000)
-  } catch (err) {
-    const msg = err?.response?.data?.detail || err?.message || 'Evacuation failed'
-    toast.error('Evacuation failed: ' + msg)
-  } finally {
-    evacuating.value = false
   }
 }
 
@@ -2018,14 +1953,6 @@ onUnmounted(() => {
 .migrate-success { color: #10b981; }
 
 /* Evacuation result */
-.evacuation-result {
-  border: 1px solid var(--border-color);
-  border-radius: 0.375rem;
-  padding: 0.75rem;
-  background: var(--bg-secondary);
-  margin-top: 0.75rem;
-}
-
 /* Join wizard */
 .join-command {
   background: #0f1419;

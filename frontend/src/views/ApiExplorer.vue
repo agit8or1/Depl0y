@@ -384,7 +384,11 @@ const HARDCODED_ENDPOINTS = [
   { method: 'PUT',    path: '/api/v1/cluster/{host_id}/replication/{jobId}',                tag: 'Cluster Operations', summary: 'Update replication job' },
   { method: 'DELETE', path: '/api/v1/cluster/{host_id}/replication/{jobId}',                tag: 'Cluster Operations', summary: 'Delete replication job' },
   { method: 'POST',   path: '/api/v1/cluster/{host_id}/replication/{jobId}/schedule_now',   tag: 'Cluster Operations', summary: 'Force replication job now' },
-  { method: 'POST',   path: '/api/v1/cluster/{host_id}/nodes/{node}/evacuate',              tag: 'Cluster Operations', summary: 'Evacuate node (migrate all VMs off)' },
+  { method: 'GET',    path: '/api/v1/cluster/{host_id}/nodes/{node}/maintenance/preview',   tag: 'Cluster Operations', summary: 'Preview node maintenance (read-only plan per guest)' },
+  { method: 'POST',   path: '/api/v1/cluster/{host_id}/nodes/{node}/evacuate',              tag: 'Cluster Operations', summary: 'Evacuate node: carry out a reviewed plan (plan_id required)' },
+  { method: 'GET',    path: '/api/v1/cluster/{host_id}/evacuations',                        tag: 'Cluster Operations', summary: 'List recent evacuation jobs' },
+  { method: 'GET',    path: '/api/v1/cluster/{host_id}/evacuations/{jobId}',                tag: 'Cluster Operations', summary: 'Evacuation job status, per guest' },
+  { method: 'POST',   path: '/api/v1/cluster/{host_id}/evacuations/{jobId}/cancel',         tag: 'Cluster Operations', summary: 'Stop an evacuation after the current move' },
   { method: 'GET',    path: '/api/v1/cluster/{host_id}/log',                                tag: 'Cluster Operations', summary: 'Get cluster event log' },
 
   // High Availability

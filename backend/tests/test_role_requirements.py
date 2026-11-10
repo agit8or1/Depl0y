@@ -32,6 +32,10 @@ EXPECTED = {
     ("POST", "/pbs/{server_id}/idrac/ssh/update"): "admin",
     # cluster / node / shared resources / global settings
     ("POST", "/cluster/{host_id}/nodes/{node}/evacuate"): "admin",
+    ("POST", "/cluster/{host_id}/evacuations/{job_id}/cancel"): "admin",
+    # the maintenance preview is read-only: anyone with access to the host may look
+    ("GET", "/cluster/{host_id}/nodes/{node}/maintenance/preview"): "viewer",
+    ("GET", "/cluster/{host_id}/evacuations/{job_id}"): "viewer",
     ("GET", "/cluster/{host_id}/config/join"): "admin",
     ("DELETE", "/pve-node/{host_id}/nodes/{node}/storage/{storage}/content/{volid:path}"): "admin",
     ("GET", "/pve-node/{host_id}/access/acl"): "admin",

@@ -36,8 +36,14 @@ node is shown from these real settings.
 **Replication**
 Job create / edit / delete, force-sync, and log viewer.
 
-**Node evacuation**
-Migrate every VM off a node onto the remaining online nodes.
+**Node maintenance and evacuation**
+A read-only preview for every VM and container on a node. It shows where each one would go and why,
+classed as movable online, downtime required, blocked or unknown. It checks local disks, bind
+mounts, ISOs, PCI/USB passthrough, HA rules, quorum, destination storage, and RAM and disk capacity
+summed over all proposed moves. Admins then carry out the reviewed plan. Each move is checked again,
+followed to the end of its Proxmox task and confirmed on its target. Guests that need downtime move
+only when picked explicitly. Powering the node off stays a separate step. See
+[NODE_MAINTENANCE.md](NODE_MAINTENANCE.md).
 
 **Failover wizard**
 Makes one VM or container restart on another node automatically if its node

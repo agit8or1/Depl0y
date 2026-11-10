@@ -59,15 +59,21 @@ def _parse_size(text: str) -> int:
 
 
 def guest_volumes(vmtype: str, config: dict) -> dict:
-    """Split a guest config into disks, attached ISOs, unused volumes and blockers."""
-    disks, isos, unused, passthrough = [], [], [], []
+    """Split a guest config into disks, attached ISOs, cloud-init drives, unused volumes and blockers.
+
+    A cloud-init drive is also `media=cdrom`, but Proxmox regenerates it on the node the guest
+    runs on, so it is neither an ISO to eject nor a disk to copy.
+    """
+    disks, isos, cloudinit, unused, passthrough = [], [], [], [], []
     for key, value in config.items():
         if not isinstance(value, str):
             continue
         if vmtype == "qemu" and _QEMU_DISK.match(key):
             volume = value.split(",")[0]
             if "media=cdrom" in value:
-                if volume not in ("none", "cdrom") and ":" in volume:
+                if re.search(r"(^|[/:])(vm|base)-\d+-cloudinit", volume):
+                    cloudinit.append({"key": key, "volume": volume, "storage": volume.split(":")[0]})
+                elif volume not in ("none", "cdrom") and ":" in volume:
                     isos.append({"key": key, "volume": volume, "storage": volume.split(":")[0]})
                 continue
             if ":" not in volume:      # e.g. a raw /dev path
@@ -92,7 +98,7 @@ def guest_volumes(vmtype: str, config: dict) -> dict:
             passthrough.append(f"{key} passes through a USB device on this node")
         elif vmtype == "lxc" and re.match(r"^dev\d+$", key):
             passthrough.append(f"{key} passes through device {value.split(',')[0]}")
-    return {"disks": disks, "isos": isos, "unused": unused, "passthrough": passthrough}
+    return {"disks": disks, "isos": isos, "cloudinit": cloudinit, "unused": unused, "passthrough": passthrough}
 
 
 # ── Facts ───────────────────────────────────────────────────────────────────────
@@ -113,6 +119,8 @@ def gather_cluster(pve) -> dict:
         nodes[res["node"]] = {
             "online": res.get("status") == "online",
             "mem_free": max(0, int(res.get("maxmem", 0)) - int(res.get("mem", 0))),
+            "maxmem": int(res.get("maxmem", 0) or 0),
+            "maxcpu": int(res.get("maxcpu", 0) or 0),
         }
     for name, info in nodes.items():
         if not info["online"]:
